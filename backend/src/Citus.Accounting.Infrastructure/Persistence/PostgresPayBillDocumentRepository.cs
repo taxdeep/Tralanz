@@ -31,7 +31,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
 
         return await LoadOpenPayableCandidatesAsync(
             scope,
-            companyId.Value,
+            companyId,
             vendorId,
             null,
             forUpdate: false,
@@ -62,10 +62,10 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureActiveVendorAsync(scope, request.CompanyId.Value, request.VendorId, cancellationToken);
+        await EnsureActiveVendorAsync(scope, request.CompanyId, request.VendorId, cancellationToken);
         await PostgresSettlementDraftingSupport.EnsureActiveBankAccountAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             request.BankAccountId,
             "Pay bill draft references a bank account outside the active company context or an inactive bank account.",
             cancellationToken);
@@ -75,7 +75,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             .ToArray();
         var candidates = await LoadOpenPayableCandidatesAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             request.VendorId,
             requestedTargetIds,
             forUpdate: true,
@@ -116,13 +116,13 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
 
         var baseCurrencyCode = await PostgresSettlementDraftingSupport.LoadCompanyBaseCurrencyCodeAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             cancellationToken);
         var fxSnapshot = string.Equals(documentCurrencyCode, baseCurrencyCode, StringComparison.OrdinalIgnoreCase)
             ? PostgresSettlementDraftingSupport.CreateIdentitySnapshot(baseCurrencyCode, request.PaymentDate)
             : await PostgresSettlementDraftingSupport.LoadAcceptedFxSnapshotAsync(
                 scope,
-                request.CompanyId.Value,
+                request.CompanyId,
                 baseCurrencyCode,
                 documentCurrencyCode,
                 request.PaymentDate,
@@ -134,14 +134,14 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         var draftId = Guid.NewGuid();
         var entityNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             $"entity-number:pay-bill:{request.PaymentDate:yyyy}",
             $"EN{request.PaymentDate:yyyy}",
             padding: 8,
             cancellationToken);
         var paymentNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             "pay-bill-display",
             "PB-",
             padding: 6,
@@ -150,8 +150,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         await InsertDraftHeaderAsync(
             scope,
             draftId,
-            request.CompanyId.Value,
-            request.UserId.Value,
+            request.CompanyId,
+            request.UserId,
             entityNumber,
             paymentNumber,
             request.VendorId,
@@ -165,7 +165,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             cancellationToken);
         await InsertDraftLinesAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             draftId,
             request.Lines,
             cancellationToken);
@@ -315,13 +315,13 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         {
             realizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_gain",
                 "fx_gain_realized");
             realizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_loss",
                 "fx_loss_realized");
@@ -376,7 +376,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             var rawLine = rawLines[index];
             var target = await LoadApOpenItemAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 rawLine.TargetOpenItemId,
                 cancellationToken);
 
@@ -432,7 +432,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         return new PayBillDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(paymentNumber),
             status,
             paymentDate,
@@ -451,7 +451,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
 
     private static async Task<IReadOnlyList<SettlementOpenItemCandidate>> LoadOpenPayableCandidatesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         Guid[]? openItemIds,
         bool forUpdate,
@@ -492,7 +492,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             """;
 
         await using var command = scope.CreateCommand(sql);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
 
         if (openItemIds is not null)
@@ -527,7 +527,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
 
     private static async Task EnsureActiveVendorAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -541,7 +541,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -554,8 +554,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
     private static async Task InsertDraftHeaderAsync(
         PostgresCommandScope scope,
         Guid documentId,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string entityNumber,
         string paymentNumber,
         Guid vendorId,
@@ -613,7 +613,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             """);
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("payment_number", paymentNumber);
         command.Parameters.AddWithValue("vendor_id", vendorId);
@@ -628,14 +628,14 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         command.Parameters.AddWithValue("fx_source", fxSnapshot.SourceSemantics);
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(memo) ? DBNull.Value : memo.Trim());
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertDraftLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         IReadOnlyList<SettlementDraftLine> lines,
         CancellationToken cancellationToken)
@@ -661,7 +661,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
                 );
                 """);
 
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("pay_bill_id", documentId);
             command.Parameters.AddWithValue("line_number", index + 1);
             command.Parameters.AddWithValue("target_ap_open_item_id", line.TargetOpenItemId);
@@ -673,7 +673,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
 
     private static async Task<ApOpenItemTarget> LoadApOpenItemAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid openItemId,
         CancellationToken cancellationToken)
     {
@@ -691,7 +691,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             for update;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("open_item_id", openItemId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

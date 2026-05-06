@@ -12,7 +12,7 @@ public sealed class InventoryManufacturingWorkflow
     }
 
     public Task<InventoryManufacturingDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default) =>
         _store.GetDashboardAsync(companyId, cancellationToken);
 
@@ -22,12 +22,12 @@ public sealed class InventoryManufacturingWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new InvalidOperationException("Manufacturing BOM must stay inside a company.");
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new InvalidOperationException("Manufacturing BOM save requires the active user.");
         }
@@ -61,12 +61,12 @@ public sealed class InventoryManufacturingWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new InvalidOperationException("Manufacturing post must stay inside a company.");
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new InvalidOperationException("Manufacturing post requires the active user.");
         }

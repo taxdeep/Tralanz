@@ -14,7 +14,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
     }
 
     public async Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -41,7 +41,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               u.email,
               u.username;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var memberships = new List<CompanyMembershipPermissionListItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -54,7 +54,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
     }
 
     public async Task<IReadOnlyList<CompanyMembershipPermissionAuditRecord>> ListRecentAuditAsync(
-        Guid companyId,
+        CompanyId companyId,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -88,7 +88,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             order by al.created_at desc
             limit @limit;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("limit", limit);
 
         var records = new List<CompanyMembershipPermissionAuditRecord>();
@@ -102,7 +102,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
     }
 
     public async Task<CompanyMembershipPermissionListItem?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         CancellationToken cancellationToken)
     {
@@ -128,7 +128,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               and m.id = @membership_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("membership_id", membershipId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -138,8 +138,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
     }
 
     public async Task<CompanyMembershipPermissionActorAuthority?> GetActorAuthorityAsync(
-        Guid companyId,
-        Guid actorUserId,
+        CompanyId companyId,
+        UserId actorUserId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -155,8 +155,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               and is_active = true
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("actor_user_id", actorUserId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("actor_user_id", actorUserId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -172,9 +172,9 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
     }
 
     public async Task<CompanyMembershipPermissionListItem?> SavePermissionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
-        Guid actorUserId,
+        UserId actorUserId,
         IReadOnlyList<string> permissionTokens,
         CancellationToken cancellationToken)
     {
@@ -184,7 +184,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         IReadOnlyList<string> previousTokens;
-        Guid targetUserId;
+        UserId targetUserId;
         string targetRole;
         await using (var previousCommand = connection.CreateCommand())
         {
@@ -197,7 +197,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
                   and id = @membership_id
                 for update;
                 """;
-            previousCommand.Parameters.AddWithValue("company_id", companyId);
+            previousCommand.Parameters.AddWithValue("company_id", companyId.Value);
             previousCommand.Parameters.AddWithValue("membership_id", membershipId);
 
             await using var previousReader = await previousCommand.ExecuteReaderAsync(cancellationToken);
@@ -207,7 +207,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
                 return null;
             }
 
-            targetUserId = previousReader.GetGuid(previousReader.GetOrdinal("user_id"));
+            targetUserId = UserId.Parse(previousReader.GetString(previousReader.GetOrdinal("user_id")));
             targetRole = previousReader.GetString(previousReader.GetOrdinal("role")).Trim().ToLowerInvariant();
             previousTokens = ParsePermissionTokens(previousReader.GetString(previousReader.GetOrdinal("permissions")));
         }
@@ -230,13 +230,13 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               is_active,
               updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("membership_id", membershipId);
         command.Parameters.AddWithValue("permissions", JsonSerializer.Serialize(permissionTokens));
 
         Guid? savedMembershipId = null;
-        Guid? savedCompanyId = null;
-        Guid? savedUserId = null;
+        CompanyId? savedCompanyId = null;
+        UserId? savedUserId = null;
         string? savedRole = null;
         string? savedPermissions = null;
         bool savedIsActive = false;
@@ -250,8 +250,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             }
 
             savedMembershipId = reader.GetGuid(reader.GetOrdinal("id"));
-            savedCompanyId = reader.GetGuid(reader.GetOrdinal("company_id"));
-            savedUserId = reader.GetGuid(reader.GetOrdinal("user_id"));
+            savedCompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")));
+            savedUserId = UserId.Parse(reader.GetString(reader.GetOrdinal("user_id")));
             savedRole = reader.GetString(reader.GetOrdinal("role"));
             savedPermissions = reader.GetString(reader.GetOrdinal("permissions"));
             savedIsActive = reader.GetBoolean(reader.GetOrdinal("is_active"));
@@ -280,7 +280,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             where id = @user_id
             limit 1;
             """;
-        userCommand.Parameters.AddWithValue("user_id", savedUserId.Value);
+        userCommand.Parameters.AddWithValue("user_id", savedUserId.Value.Value);
 
         await using var userReader = await userCommand.ExecuteReaderAsync(cancellationToken);
         if (!await userReader.ReadAsync(cancellationToken))
@@ -311,10 +311,10 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
     private static async Task InsertAuditLogAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
-        Guid actorUserId,
-        Guid targetUserId,
+        UserId actorUserId,
+        UserId targetUserId,
         string targetRole,
         IReadOnlyList<string> previousTokens,
         IReadOnlyList<string> savedTokens,
@@ -359,8 +359,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             );
             """;
         auditCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-        auditCommand.Parameters.AddWithValue("company_id", companyId);
-        auditCommand.Parameters.AddWithValue("actor_id", actorUserId);
+        auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        auditCommand.Parameters.AddWithValue("actor_id", actorUserId.Value);
         auditCommand.Parameters.AddWithValue("entity_id", membershipId);
         auditCommand.Parameters.AddWithValue("payload", payload);
         await auditCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -386,14 +386,14 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         return new CompanyMembershipPermissionAuditRecord
         {
             AuditId = reader.GetGuid(reader.GetOrdinal("id")),
-            CompanyId = reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             MembershipId = reader.GetGuid(reader.GetOrdinal("membership_id")),
-            ActorUserId = reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            ActorUserId = reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             ActorEmail = actorEmail,
             ActorDisplayName = !string.IsNullOrWhiteSpace(actorUsername) ? actorUsername : actorEmail,
             TargetUserId = reader.IsDBNull(reader.GetOrdinal("target_user_id"))
-                ? TryReadGuid(root, "TargetUserId")
-                : reader.GetGuid(reader.GetOrdinal("target_user_id")),
+                ? TryReadUserId(root, "TargetUserId")
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("target_user_id"))),
             TargetEmail = targetEmail,
             TargetDisplayName = !string.IsNullOrWhiteSpace(targetUsername) ? targetUsername : targetEmail,
             TargetRole = ReadString(root, "TargetRole"),
@@ -415,8 +415,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         return new CompanyMembershipPermissionListItem
         {
             MembershipId = reader.GetGuid(reader.GetOrdinal("id")),
-            CompanyId = reader.GetGuid(reader.GetOrdinal("company_id")),
-            UserId = reader.GetGuid(reader.GetOrdinal("user_id")),
+            CompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
+            UserId = UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
             Email = email,
             Username = username,
             DisplayName = !string.IsNullOrWhiteSpace(username) ? username : email,
@@ -449,7 +449,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             """
             create table if not exists audit_logs (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               actor_type text not null,
               actor_id uuid null,
               entity_type text not null,
@@ -522,6 +522,18 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         if (!root.TryGetProperty(propertyName, out var value) ||
             value.ValueKind != JsonValueKind.String ||
             !Guid.TryParse(value.GetString(), out var parsed))
+        {
+            return null;
+        }
+
+        return parsed;
+    }
+
+    private static UserId? TryReadUserId(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var value) ||
+            value.ValueKind != JsonValueKind.String ||
+            !UserId.TryParse(value.GetString(), out var parsed))
         {
             return null;
         }

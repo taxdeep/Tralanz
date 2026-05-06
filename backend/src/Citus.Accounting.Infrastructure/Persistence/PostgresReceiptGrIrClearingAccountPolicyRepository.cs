@@ -60,7 +60,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
             _executionContextAccessor,
             cancellationToken);
         await EnsureSchemaAsync(scope, cancellationToken);
-        await EnsureActiveAccountAsync(scope, companyId.Value, grIrClearingAccountId, cancellationToken);
+        await EnsureActiveAccountAsync(scope, companyId, grIrClearingAccountId, cancellationToken);
 
         await using var command = scope.CreateCommand(
             """
@@ -90,7 +90,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
 
     private static async Task EnsureActiveAccountAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         CancellationToken cancellationToken)
     {
@@ -108,7 +108,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
                 and company.status = 'active'
             );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", accountId);
 
         if (await command.ExecuteScalarAsync(cancellationToken) is not true)
@@ -125,9 +125,9 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
         await using var command = scope.CreateCommand(
             """
             create table if not exists receipt_grir_clearing_account_policies (
-              company_id uuid primary key references companies(id) on delete cascade,
+              company_id char(7) primary key references companies(id) on delete cascade,
               grir_clearing_account_id uuid not null references accounts(id),
-              updated_by_user_id uuid not null,
+              updated_by_user_id char(7) not null,
               updated_at timestamptz not null default now()
             );
             """);

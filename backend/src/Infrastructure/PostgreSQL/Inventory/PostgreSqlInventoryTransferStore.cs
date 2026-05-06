@@ -20,7 +20,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     }
 
     public async Task<InventoryTransferDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -134,7 +134,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                           and company_id = @company_id;
                         """;
                     updateTransferCommand.Parameters.AddWithValue("id", transferId);
-                    updateTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    updateTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     updateTransferCommand.Parameters.AddWithValue("source_warehouse_id", request.SourceWarehouseId);
                     updateTransferCommand.Parameters.AddWithValue("destination_warehouse_id", request.DestinationWarehouseId);
                     updateTransferCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
@@ -185,11 +185,11 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                     );
                     """;
                 insertTransferCommand.Parameters.AddWithValue("id", transferId);
-                insertTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertTransferCommand.Parameters.AddWithValue("transfer_number", transferNumber);
                 insertTransferCommand.Parameters.AddWithValue("source_warehouse_id", request.SourceWarehouseId);
                 insertTransferCommand.Parameters.AddWithValue("destination_warehouse_id", request.DestinationWarehouseId);
-                insertTransferCommand.Parameters.AddWithValue("requested_by_user_id", request.UserId);
+                insertTransferCommand.Parameters.AddWithValue("requested_by_user_id", request.UserId.Value);
                 insertTransferCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
                 insertTransferCommand.Parameters.AddWithValue("created_at", createdAt);
                 await insertTransferCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -224,7 +224,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       @memo
                     );
                     """;
-                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertLineCommand.Parameters.AddWithValue("transfer_id", transferId);
                 insertLineCommand.Parameters.AddWithValue("line_no", line.LineNo);
                 insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -248,9 +248,9 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     }
 
     public async Task<InventoryTransferSummary> SubmitAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -280,9 +280,9 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                   and company_id = @company_id;
                 """;
             command.Parameters.AddWithValue("id", transferId);
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("submitted_at", DateTimeOffset.UtcNow);
-            command.Parameters.AddWithValue("submitted_by_user_id", userId);
+            command.Parameters.AddWithValue("submitted_by_user_id", userId.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -298,17 +298,17 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     }
 
     public Task<InventoryTransferSummary> ShipAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken) =>
         ShipCoreAsync(companyId, transferId, userId, postingDate, cancellationToken);
 
     public Task<InventoryTransferSummary> ReceiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken) =>
         ReceiveCoreAsync(companyId, transferId, userId, postingDate, cancellationToken);
@@ -345,13 +345,13 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                   add column if not exists submitted_at timestamptz null;
 
                 alter table warehouse_transfers
-                  add column if not exists submitted_by_user_id uuid null;
+                  add column if not exists submitted_by_user_id char(7) null;
 
                 alter table warehouse_transfers
-                  add column if not exists shipped_by_user_id uuid null;
+                  add column if not exists shipped_by_user_id char(7) null;
 
                 alter table warehouse_transfers
-                  add column if not exists received_by_user_id uuid null;
+                  add column if not exists received_by_user_id char(7) null;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -366,7 +366,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -377,7 +377,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is string baseCurrencyCode && !string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -391,7 +391,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<Dictionary<Guid, InventoryManagedItemSummary>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken)
     {
@@ -427,7 +427,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and is_active = true
               and id = any(@item_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -436,7 +436,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         {
             var item = new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -477,7 +477,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -509,7 +509,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and manage_inventory_method = 'manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -517,7 +517,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -557,7 +557,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<Dictionary<Guid, InventoryManagedWarehouseSummary>> LoadWarehouseMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> warehouseIds,
         CancellationToken cancellationToken)
     {
@@ -583,7 +583,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and is_active = true
               and id = any(@warehouse_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_ids", warehouseIds.ToArray());
 
         var warehouses = new Dictionary<Guid, InventoryManagedWarehouseSummary>();
@@ -592,7 +592,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         {
             var warehouse = new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -609,7 +609,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -629,7 +629,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -637,7 +637,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -653,7 +653,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<InventoryTransferHeader?> LoadTransferForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
         CancellationToken cancellationToken)
     {
@@ -679,7 +679,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and id = @transfer_id
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transfer_id", transferId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -690,12 +690,12 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
 
         return new InventoryTransferHeader(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("transfer_number")),
             reader.GetString(reader.GetOrdinal("status")),
             reader.GetGuid(reader.GetOrdinal("source_warehouse_id")),
             reader.GetGuid(reader.GetOrdinal("destination_warehouse_id")),
-            reader.GetGuid(reader.GetOrdinal("requested_by_user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("requested_by_user_id"))),
             reader.IsDBNull(reader.GetOrdinal("memo"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("memo")),
@@ -714,7 +714,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<IReadOnlyList<InventoryTransferLineRow>> LoadTransferLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
         CancellationToken cancellationToken)
     {
@@ -734,7 +734,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and transfer_id = @transfer_id
             order by line_no asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transfer_id", transferId);
 
         var lines = new List<InventoryTransferLineRow>();
@@ -758,7 +758,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<Dictionary<int, decimal>> LoadShippedLineCostsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
         CancellationToken cancellationToken)
     {
@@ -776,7 +776,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and d.document_type = 'transfer_ship'
               and d.source_document_id = @source_document_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_document_id", transferId);
 
         var costs = new Dictionary<int, decimal>();
@@ -792,7 +792,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<InventoryTransferSummary?> LoadTransferSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
         CancellationToken cancellationToken)
     {
@@ -844,7 +844,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               t.received_at,
               t.memo;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transfer_id", transferId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -855,7 +855,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
 
         return new InventoryTransferSummary(
             reader.GetGuid(reader.GetOrdinal("transfer_id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("transfer_number")),
             reader.GetString(reader.GetOrdinal("status")),
             reader.GetGuid(reader.GetOrdinal("source_warehouse_id")),
@@ -884,7 +884,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<IReadOnlyList<InventoryTransferSummary>> LoadRecentTransfersAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -936,7 +936,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             order by t.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var transfers = new List<InventoryTransferSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -944,7 +944,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         {
             transfers.Add(new InventoryTransferSummary(
                 reader.GetGuid(reader.GetOrdinal("transfer_id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("transfer_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetGuid(reader.GetOrdinal("source_warehouse_id")),
@@ -976,7 +976,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<ItemWarehouseBalanceSnapshot> LoadCurrentBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -995,7 +995,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1015,7 +1015,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<decimal> LoadCurrentCostBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1030,7 +1030,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1041,7 +1041,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task<IReadOnlyList<OpenCostLayer>> LoadOpenCostLayersAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1064,7 +1064,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and remaining_qty > 0
             order by layer_date asc, created_at asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1085,9 +1085,9 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     }
 
     private async Task<InventoryTransferSummary> ShipCoreAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
@@ -1148,12 +1148,12 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", shipDocumentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", postingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", transferId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", transfer.TransferNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(transfer.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", movementTimestamp);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -1268,7 +1268,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                           gen_random_uuid(), @company_id, @issue_ledger_entry_id, @cost_layer_id, @consumed_qty, @consumed_cost_base, @created_at
                         );
                         """;
-                    insertConsumptionCommand.Parameters.AddWithValue("company_id", companyId);
+                    insertConsumptionCommand.Parameters.AddWithValue("company_id", companyId.Value);
                     insertConsumptionCommand.Parameters.AddWithValue("issue_ledger_entry_id", shipLedgerEntryId);
                     insertConsumptionCommand.Parameters.AddWithValue("cost_layer_id", consumption.CostLayerId);
                     insertConsumptionCommand.Parameters.AddWithValue("consumed_qty", consumption.ConsumedQty);
@@ -1291,9 +1291,9 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       and company_id = @company_id;
                     """;
                 updateTransferCommand.Parameters.AddWithValue("id", transferId);
-                updateTransferCommand.Parameters.AddWithValue("company_id", companyId);
+                updateTransferCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 updateTransferCommand.Parameters.AddWithValue("shipped_at", movementTimestamp);
-                updateTransferCommand.Parameters.AddWithValue("shipped_by_user_id", userId);
+                updateTransferCommand.Parameters.AddWithValue("shipped_by_user_id", userId.Value);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -1310,9 +1310,9 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     }
 
     private async Task<InventoryTransferSummary> ReceiveCoreAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
@@ -1350,12 +1350,12 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", receiveDocumentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", postingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", transferId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", transfer.TransferNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(transfer.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", movementTimestamp);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -1427,7 +1427,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       gen_random_uuid(), @company_id, @item_id, @warehouse_id, @source_ledger_entry_id, @source_document_id, @layer_date, @original_qty, @remaining_qty, @unit_cost_base, @remaining_cost_base, @created_at
                     );
                     """;
-                insertLayerCommand.Parameters.AddWithValue("company_id", companyId);
+                insertLayerCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 insertLayerCommand.Parameters.AddWithValue("item_id", line.ItemId);
                 insertLayerCommand.Parameters.AddWithValue("warehouse_id", transfer.DestinationWarehouseId);
                 insertLayerCommand.Parameters.AddWithValue("source_ledger_entry_id", receiveLedgerEntryId);
@@ -1454,9 +1454,9 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       and company_id = @company_id;
                     """;
                 updateTransferCommand.Parameters.AddWithValue("id", transferId);
-                updateTransferCommand.Parameters.AddWithValue("company_id", companyId);
+                updateTransferCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 updateTransferCommand.Parameters.AddWithValue("received_at", movementTimestamp);
-                updateTransferCommand.Parameters.AddWithValue("received_by_user_id", userId);
+                updateTransferCommand.Parameters.AddWithValue("received_by_user_id", userId.Value);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -1475,7 +1475,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task InsertInventoryDocumentLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid lineDocumentId,
         Guid documentId,
         int lineNo,
@@ -1502,7 +1502,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             );
             """;
         command.Parameters.AddWithValue("id", lineDocumentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
         command.Parameters.AddWithValue("line_no", lineNo);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -1522,7 +1522,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid ledgerEntryId,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         Guid documentId,
@@ -1549,7 +1549,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             );
             """;
         command.Parameters.AddWithValue("id", ledgerEntryId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("document_id", documentId);
@@ -1568,7 +1568,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
     private static async Task AdjustBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         decimal onHandDelta,
@@ -1595,7 +1595,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                   in_transit_in_qty = item_warehouse_balances.in_transit_in_qty + excluded.in_transit_in_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("on_hand_delta", onHandDelta);
@@ -1777,12 +1777,12 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
 
     private sealed record InventoryTransferHeader(
         Guid Id,
-        Guid CompanyId,
+        CompanyId CompanyId,
         string TransferNumber,
         string Status,
         Guid SourceWarehouseId,
         Guid DestinationWarehouseId,
-        Guid RequestedByUserId,
+        UserId RequestedByUserId,
         string? Memo,
         DateTimeOffset CreatedAt,
         DateTimeOffset? SubmittedAt,

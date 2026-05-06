@@ -88,7 +88,7 @@ public sealed record class TrialBalanceAccountBalance
 
 public sealed record class TrialBalanceReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly AsOfDate { get; init; }
 
@@ -107,7 +107,7 @@ public sealed record class TrialBalanceReport
     public IReadOnlyList<TrialBalanceAccountBalance> Rows { get; init; } = Array.Empty<TrialBalanceAccountBalance>();
 
     public static TrialBalanceReport Create(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         string baseCurrencyCode,
         bool includeZeroBalanceAccounts,

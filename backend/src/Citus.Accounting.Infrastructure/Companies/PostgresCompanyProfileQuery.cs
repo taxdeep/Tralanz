@@ -12,7 +12,7 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
         _connections = connections;
     }
 
-    public async Task<CompanyProfileSnapshot?> GetByIdAsync(Guid companyId, CancellationToken cancellationToken)
+    public async Task<CompanyProfileSnapshot?> GetByIdAsync(CompanyId companyId, CancellationToken cancellationToken)
     {
         const string sql = """
             select id, entity_number, legal_name, email, phone, address_line, city,
@@ -24,7 +24,7 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -33,7 +33,7 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
         }
 
         return new CompanyProfileSnapshot(
-            Id: reader.GetGuid(0),
+            Id: CompanyId.Parse(reader.GetString(0)),
             EntityNumber: reader.GetString(1),
             LegalName: reader.GetString(2),
             Email: reader.IsDBNull(3) ? null : reader.GetString(3),

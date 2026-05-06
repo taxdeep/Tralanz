@@ -33,7 +33,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
             create table if not exists account_login_attempts (
               id uuid primary key default gen_random_uuid(),
               realm text not null,
-              account_id uuid,
+              account_id char(7),
               email_hash text not null,
               remote_ip text,
               user_agent text,
@@ -49,7 +49,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
               id uuid primary key default gen_random_uuid(),
               realm text not null,
               email_hash text not null,
-              account_id uuid,
+              account_id char(7),
               lockout_kind text not null,
               locked_at timestamptz not null default now(),
               locked_until timestamptz,
@@ -149,7 +149,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                   (@realm, @account_id, @email_hash, @remote_ip, @user_agent, @succeeded);
                 """;
             insert.Parameters.AddWithValue("realm", attempt.Realm);
-            insert.Parameters.AddWithValue("account_id", (object?)attempt.AccountId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("account_id", attempt.AccountId.HasValue ? (object)attempt.AccountId.Value.Value : DBNull.Value);
             insert.Parameters.AddWithValue("email_hash", emailHash);
             insert.Parameters.AddWithValue("remote_ip", (object?)attempt.RemoteIp ?? DBNull.Value);
             insert.Parameters.AddWithValue("user_agent", (object?)attempt.UserAgent ?? DBNull.Value);
@@ -228,7 +228,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 """;
             insertLockout.Parameters.AddWithValue("realm", attempt.Realm);
             insertLockout.Parameters.AddWithValue("email_hash", emailHash);
-            insertLockout.Parameters.AddWithValue("account_id", (object?)attempt.AccountId ?? DBNull.Value);
+            insertLockout.Parameters.AddWithValue("account_id", attempt.AccountId.HasValue ? (object)attempt.AccountId.Value.Value : DBNull.Value);
             insertLockout.Parameters.AddWithValue("kind", LoginLockoutKinds.Temporary15Min);
             insertLockout.Parameters.AddWithValue("lock_minutes", TempLockoutMinutes);
             await insertLockout.ExecuteNonQueryAsync(cancellationToken);
@@ -272,7 +272,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 """;
             insertPermanent.Parameters.AddWithValue("realm", attempt.Realm);
             insertPermanent.Parameters.AddWithValue("email_hash", emailHash);
-            insertPermanent.Parameters.AddWithValue("account_id", (object?)attempt.AccountId ?? DBNull.Value);
+            insertPermanent.Parameters.AddWithValue("account_id", attempt.AccountId.HasValue ? (object)attempt.AccountId.Value.Value : DBNull.Value);
             insertPermanent.Parameters.AddWithValue("kind", LoginLockoutKinds.Permanent);
             await insertPermanent.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -336,7 +336,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 Id: reader.GetGuid(0),
                 Realm: reader.GetString(1),
                 MaskedEmail: maskedEmail,
-                AccountId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                AccountId: reader.IsDBNull(3) ? null : UserId.Parse(reader.GetString(3)),
                 LockoutKind: reader.GetString(4),
                 LockedAt: reader.GetFieldValue<DateTimeOffset>(5),
                 LockedUntil: reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
@@ -348,7 +348,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
 
     public async Task<LockoutLiftResult> LiftLockoutAsync(
         Guid lockoutId,
-        Guid sysAdminAccountId,
+        UserId sysAdminAccountId,
         string reason,
         CancellationToken cancellationToken)
     {
@@ -361,7 +361,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         string? realm;
-        Guid? accountId;
+        UserId? accountId;
         string? kind;
 
         await using (var lift = connection.CreateCommand())
@@ -377,7 +377,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 returning realm, account_id, lockout_kind;
                 """;
             lift.Parameters.AddWithValue("id", lockoutId);
-            lift.Parameters.AddWithValue("sysadmin_id", sysAdminAccountId);
+            lift.Parameters.AddWithValue("sysadmin_id", sysAdminAccountId.Value);
             lift.Parameters.AddWithValue("reason", reason.Trim());
 
             await using var reader = await lift.ExecuteReaderAsync(cancellationToken);
@@ -387,7 +387,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 return new LockoutLiftResult(false, "Lockout not found or already lifted.");
             }
             realm = reader.GetString(0);
-            accountId = reader.IsDBNull(1) ? null : reader.GetGuid(1);
+            accountId = reader.IsDBNull(1) ? null : UserId.Parse(reader.GetString(1));
             kind = reader.GetString(2);
         }
 
@@ -430,7 +430,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
         string realm,
-        Guid accountId,
+        UserId accountId,
         string newStatus,
         CancellationToken cancellationToken)
     {

@@ -12,14 +12,14 @@ public sealed class CompanyCurrencyGovernanceWorkflow : ICompanyCurrencyGovernan
     }
 
     public Task<CompanyCurrencyProfile> GetProfileAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken) =>
         _store.GetProfileAsync(companyId, cancellationToken);
 
     public async Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
-        Guid companyId,
+        CompanyId companyId,
         string currencyCode,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         _ = userId;
@@ -55,7 +55,7 @@ public sealed class CompanyCurrencyGovernanceWorkflow : ICompanyCurrencyGovernan
     }
 
     private async Task<IReadOnlyList<ControlAccountProvisioningRequest>> BuildControlAccountsAsync(
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string currencyCode,
         CancellationToken cancellationToken)

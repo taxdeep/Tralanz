@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Business;
 
 public sealed record class BusinessUserSummary
 {
-    public Guid Id { get; init; }
+    public UserId Id { get; init; }
 
     public string DisplayName { get; init; } = string.Empty;
 

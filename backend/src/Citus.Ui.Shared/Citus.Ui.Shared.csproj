@@ -16,4 +16,8 @@
     <EmbeddedResource Include="Icons\tabler-sprite.svg" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel\SharedKernel.csproj" />
+  </ItemGroup>
+
 </Project>

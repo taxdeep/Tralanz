@@ -38,7 +38,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         await using var scope = await PostgresCommandScope.CreateAsync(
             _connections, _executionContextAccessor, cancellationToken);
 
-        var periods = await ReadAllAsync(scope, companyId.Value, cancellationToken);
+        var periods = await ReadAllAsync(scope, companyId, cancellationToken);
         if (periods.Count > 0)
         {
             return periods;
@@ -49,7 +49,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         // both seed (the unique constraint on (company_id, period_start,
         // period_end) catches a race; one wins, the other gets back
         // the loser's empty list and re-reads).
-        var seeded = await SeedCurrentFiscalYearAsync(scope, companyId.Value, cancellationToken);
+        var seeded = await SeedCurrentFiscalYearAsync(scope, companyId, cancellationToken);
         return seeded;
     }
 
@@ -196,7 +196,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         command.CommandText = """
             create table if not exists accounting_periods (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               period_start date not null,
               period_end date not null,
               status text not null default 'open',
@@ -222,7 +222,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
 
     private static async Task<List<AccountingPeriod>> ReadAllAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -235,7 +235,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
             where company_id = @company_id
             order by period_start asc;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var rows = new List<AccountingPeriod>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -248,7 +248,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
 
     private async Task<List<AccountingPeriod>> SeedCurrentFiscalYearAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         // Read the company's fiscal year end (default 12-31).
@@ -257,7 +257,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         await using (var fyCommand = scope.CreateCommand(
                          "select fiscal_year_end_month, fiscal_year_end_day from companies where id = @company_id;"))
         {
-            fyCommand.Parameters.AddWithValue("company_id", companyId);
+            fyCommand.Parameters.AddWithValue("company_id", companyId.Value);
             await using var reader = await fyCommand.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
             {
@@ -295,7 +295,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
                          on conflict on constraint ux_accounting_periods_company_period do nothing;
                          """))
         {
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.Add(new NpgsqlParameter("period_starts", NpgsqlDbType.Array | NpgsqlDbType.Date)
             {
                 Value = periods.Select(p => p.Start).ToArray(),
@@ -349,7 +349,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
     {
         return new AccountingPeriod(
             Id: reader.GetGuid(reader.GetOrdinal("id")),
-            CompanyId: new CompanyId(reader.GetGuid(reader.GetOrdinal("company_id"))),
+            CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             PeriodStart: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("period_start")),
             PeriodEnd: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("period_end")),
             Status: reader.GetString(reader.GetOrdinal("status")),

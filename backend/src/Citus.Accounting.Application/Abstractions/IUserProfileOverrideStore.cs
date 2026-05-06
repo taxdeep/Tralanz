@@ -8,17 +8,17 @@ namespace Citus.Accounting.Application.Abstractions;
 /// onto the same row.
 /// </summary>
 public sealed record UserProfileOverrideRecord(
-    Guid UserId,
+    UserId UserId,
     string? DisplayName,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
 public interface IUserProfileOverrideStore
 {
-    Task<UserProfileOverrideRecord?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken);
+    Task<UserProfileOverrideRecord?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken);
 
     Task<UserProfileOverrideRecord> UpsertDisplayNameAsync(
-        Guid userId,
+        UserId userId,
         string displayName,
         CancellationToken cancellationToken);
 

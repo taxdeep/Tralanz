@@ -7,7 +7,7 @@ internal static class PostgreSqlNumberingSequences
     public static async Task<string> PeekAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -47,7 +47,7 @@ internal static class PostgreSqlNumberingSequences
               and scope_key = @scope_key
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", scopeKey);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -61,7 +61,7 @@ internal static class PostgreSqlNumberingSequences
     public static async Task<string> ReserveAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -102,7 +102,7 @@ internal static class PostgreSqlNumberingSequences
               and scope_key = @scope_key
             returning prefix, greatest(next_number - 1, @seed_number) as issued_number, padding;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", scopeKey);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
@@ -117,7 +117,7 @@ internal static class PostgreSqlNumberingSequences
     private static async Task EnsureSeededAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -149,7 +149,7 @@ internal static class PostgreSqlNumberingSequences
                 )
                 on conflict (company_id, scope_key) do nothing;
                 """;
-            seedCommand.Parameters.AddWithValue("company_id", companyId);
+            seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
             seedCommand.Parameters.AddWithValue("scope_key", scopeKey);
             seedCommand.Parameters.AddWithValue("prefix", prefix);
             seedCommand.Parameters.AddWithValue("next_number", seedNumber);
@@ -167,7 +167,7 @@ internal static class PostgreSqlNumberingSequences
             where company_id = @company_id
               and scope_key = @scope_key;
             """;
-        alignCommand.Parameters.AddWithValue("company_id", companyId);
+        alignCommand.Parameters.AddWithValue("company_id", companyId.Value);
         alignCommand.Parameters.AddWithValue("scope_key", scopeKey);
         alignCommand.Parameters.AddWithValue("seed_number", seedNumber);
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -197,7 +197,7 @@ internal static class PostgreSqlNumberingSequences
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         var nextNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
-        return $"{prefix}{nextNumber.ToString().PadLeft(padding, '0')}";
+        return $"{prefix}{Base36.Encode(nextNumber, padding)}";
     }
 
     private static async Task<string> ReserveEntityNumberAsync(
@@ -224,7 +224,7 @@ internal static class PostgreSqlNumberingSequences
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
-        return $"{prefix}{issuedNumber.ToString().PadLeft(padding, '0')}";
+        return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
     private static async Task EnsureEntityNumberSeededAsync(

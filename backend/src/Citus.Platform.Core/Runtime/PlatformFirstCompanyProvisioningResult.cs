@@ -8,13 +8,13 @@ public sealed record class PlatformFirstCompanyProvisioningResult
 
     public string FailureMessage { get; init; } = string.Empty;
 
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public string CompanyEntityNumber { get; init; } = string.Empty;
 
     public string CompanyName { get; init; } = string.Empty;
 
-    public Guid OwnerUserId { get; init; }
+    public UserId OwnerUserId { get; init; }
 
     public string OwnerEmail { get; init; } = string.Empty;
 

@@ -15,8 +15,8 @@ public sealed class ReceiptGrIrPostingFragmentBuilderTests
         var grIrClearingAccountId = Guid.NewGuid();
         var document = new ReceiptGrIrPostingDocument(
             Guid.NewGuid(),
-            new CompanyId(Guid.NewGuid()),
-            new EntityNumber("EN-GRIR-FRAG"),
+            CompanyId.FromOrdinal(1),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("GRIR-FRAG"),
             "draft",
             Guid.NewGuid(),

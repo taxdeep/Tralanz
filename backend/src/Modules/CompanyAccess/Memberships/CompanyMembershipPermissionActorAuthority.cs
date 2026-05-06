@@ -1,8 +1,8 @@
 namespace Modules.CompanyAccess.Memberships;
 
 public sealed record class CompanyMembershipPermissionActorAuthority(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     string Role,
     IReadOnlyList<string> PermissionTokens)
 {

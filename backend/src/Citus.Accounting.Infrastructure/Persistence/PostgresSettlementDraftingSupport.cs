@@ -6,7 +6,7 @@ internal static class PostgresSettlementDraftingSupport
 {
     public static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -17,7 +17,7 @@ internal static class PostgresSettlementDraftingSupport
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         if (scalar is null || scalar == DBNull.Value)
         {
@@ -29,7 +29,7 @@ internal static class PostgresSettlementDraftingSupport
 
     public static async Task EnsureActiveBankAccountAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid bankAccountId,
         string errorMessage,
         CancellationToken cancellationToken)
@@ -44,7 +44,7 @@ internal static class PostgresSettlementDraftingSupport
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bank_account_id", bankAccountId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -56,7 +56,7 @@ internal static class PostgresSettlementDraftingSupport
 
     public static async Task<FxSnapshotRef?> LoadAcceptedFxSnapshotAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string transactionCurrencyCode,
         DateOnly requestedDate,
@@ -100,7 +100,7 @@ internal static class PostgresSettlementDraftingSupport
               """;
 
         await using var command = scope.CreateCommand(sql);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);

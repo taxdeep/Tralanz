@@ -27,10 +27,10 @@
 
     <div class="citus-topbar__company">
         <CitusIcon Name="IconName.BuildingSkyscraper" Size="IconSize.Inline" />
-        <RadzenDropDown TValue="Guid"
+        <RadzenDropDown TValue="CompanyId"
                         Data="@ShellState.AvailableCompanies"
                         Value="@SelectedCompanyId"
-                        ValueChanged="OnCompanyChangedAsync"
+                        ValueChanged="@(EventCallback.Factory.Create<CompanyId>(this, OnCompanyChangedAsync))"
                         ValueProperty="Id"
                         Disabled="@IsCompanySwitcherDisabled"
                         Style="min-width: 220px;">
@@ -49,7 +49,7 @@
 
     <div class="citus-topbar__search">
         <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
-                           UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                           UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                            Context="@SearchScopeContext.GlobalTopbar"
                            Placeholder="Search anything…"
                            Take="8"
@@ -111,7 +111,7 @@
 
     [Parameter] public EventCallback OnToggle { get; set; }
 
-    private Guid SelectedCompanyId => ShellState.ActiveCompany.Id;
+    private CompanyId SelectedCompanyId => ShellState.ActiveCompany.Id;
 
     private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count <= 1;
 
@@ -184,9 +184,9 @@
         NavigationManager.NavigateTo(option.NavigationHref);
     }
 
-    private async Task OnCompanyChangedAsync(Guid companyId)
+    private async Task OnCompanyChangedAsync(CompanyId companyId)
     {
-        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.Id)
+        if (companyId.Value is null || companyId == ShellState.ActiveCompany.Id)
         {
             return;
         }

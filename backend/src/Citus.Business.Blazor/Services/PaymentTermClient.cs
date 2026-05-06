@@ -115,7 +115,7 @@ public sealed class PaymentTermClient(HttpClient httpClient, ILogger<PaymentTerm
 
 public sealed record PaymentTermSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string Code,
     string Name,
     int NetDays,

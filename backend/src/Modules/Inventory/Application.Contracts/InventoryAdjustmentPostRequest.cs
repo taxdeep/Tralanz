@@ -3,8 +3,8 @@ using Citus.Modules.Inventory.Domain.Shared;
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryAdjustmentPostRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     InventoryAdjustmentKind AdjustmentKind,
     Guid WarehouseId,
     DateOnly PostingDate,

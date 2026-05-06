@@ -112,7 +112,7 @@ public sealed class InvoiceEmailComposerTests
     {
         Issuer = new InvoiceIssuerSummary(
             CompanyName: "Tralanz Studio Ltd.",
-            CompanyCode: "EN20260000000001",
+            CompanyCode: "EN20260000A",
             AddressBlock: null,
             Email: "ops@tralanz.com",
             Phone: null),
@@ -123,7 +123,7 @@ public sealed class InvoiceEmailComposerTests
             Phone: null),
         Header = new InvoiceHeaderSummary(
             DisplayNumber: "INV-2026-000001",
-            EntityNumber: "EN20260000000002",
+            EntityNumber: "EN20260000B",
             DocumentDate: new DateOnly(2026, 04, 28),
             DueDate: new DateOnly(2026, 05, 28),
             Status: "posted",

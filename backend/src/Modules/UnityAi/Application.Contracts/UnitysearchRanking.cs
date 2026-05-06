@@ -23,8 +23,8 @@ public sealed record UnitysearchRankingAnchor(
     Guid AnchorEntityId);
 
 public sealed record UnitysearchRankingRequest(
-    Guid CompanyId,
-    Guid? UserId,
+    CompanyId CompanyId,
+    UserId? UserId,
     string Context,
     string EntityType,
     string? Query,
@@ -66,8 +66,8 @@ public interface IUnitysearchRankingEngine
 public interface IUnitysearchDecisionTraceStore
 {
     Task<Guid> WriteAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string context,
         string entityType,
         string? query,

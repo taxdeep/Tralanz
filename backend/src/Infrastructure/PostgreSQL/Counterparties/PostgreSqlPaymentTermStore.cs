@@ -37,7 +37,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<IReadOnlyList<PaymentTermRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
         command.CommandText = includeInactive
             ? SelectColumns + " WHERE company_id = @company_id ORDER BY is_active DESC, net_days, code;"
             : SelectColumns + " WHERE company_id = @company_id AND is_active = TRUE ORDER BY net_days, code;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -58,14 +58,14 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", paymentTermId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -73,7 +73,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         PaymentTermUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -88,7 +88,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
                 @company_id, @code, @name, @net_days, @is_active, @now, @now)
             RETURNING id, company_id, code, name, net_days, is_active, created_at, updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("net_days", input.NetDays);
@@ -104,7 +104,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         PaymentTermUpsertInput input,
         CancellationToken cancellationToken)
@@ -124,7 +124,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
             RETURNING id, company_id, code, name, net_days, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", paymentTermId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("net_days", input.NetDays);
@@ -136,7 +136,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -153,7 +153,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
             RETURNING id, company_id, code, name, net_days, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", paymentTermId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
         command.Parameters.AddWithValue("now", now);
 
@@ -168,7 +168,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
 
     private static PaymentTermRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         Code: reader.GetString(2),
         Name: reader.GetString(3),
         NetDays: reader.GetInt32(4),

@@ -4,7 +4,7 @@ public sealed record class SysAdminSecretRotationResult
 {
     public bool Succeeded { get; init; }
 
-    public Guid SysAdminAccountId { get; init; }
+    public UserId SysAdminAccountId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

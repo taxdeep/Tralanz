@@ -7,10 +7,12 @@ public sealed class BusinessSessionRequestReaderTests
     [Fact]
     public void TryRead_ReturnsContext_WhenRequiredHeadersArePresent()
     {
+        var expectedUserId = UserId.FromOrdinal(1);
+        var expectedCompanyId = CompanyId.FromOrdinal(1);
         var headers = new HeaderDictionary
         {
-            [BusinessSessionHeaders.UserId] = "7bd0e908-cfe7-4f7b-8a0d-f19292e4186d",
-            [BusinessSessionHeaders.ActiveCompanyId] = "5e492df2-37ab-47df-a1bb-2d559c876cbc"
+            [BusinessSessionHeaders.UserId] = expectedUserId.Value,
+            [BusinessSessionHeaders.ActiveCompanyId] = expectedCompanyId.Value
         };
 
         var reader = new BusinessSessionRequestReader();
@@ -20,8 +22,8 @@ public sealed class BusinessSessionRequestReaderTests
         Assert.True(success);
         Assert.Null(error);
         Assert.NotNull(context);
-        Assert.Equal(Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d"), context.UserId);
-        Assert.Equal(Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"), context.ActiveCompanyId);
+        Assert.Equal((object?)expectedUserId, (object?)context.UserId);
+        Assert.Equal((object?)expectedCompanyId, (object?)context.ActiveCompanyId);
     }
 
     [Fact]
@@ -37,12 +39,12 @@ public sealed class BusinessSessionRequestReaderTests
     }
 
     [Fact]
-    public void TryRead_ReturnsError_WhenHeaderIsNotGuid()
+    public void TryRead_ReturnsError_WhenHeaderIsNotValidId()
     {
         var headers = new HeaderDictionary
         {
-            [BusinessSessionHeaders.UserId] = "not-a-guid",
-            [BusinessSessionHeaders.ActiveCompanyId] = "5e492df2-37ab-47df-a1bb-2d559c876cbc"
+            [BusinessSessionHeaders.UserId] = "not-an-id",
+            [BusinessSessionHeaders.ActiveCompanyId] = CompanyId.FromOrdinal(1).Value
         };
 
         var reader = new BusinessSessionRequestReader();
@@ -50,6 +52,6 @@ public sealed class BusinessSessionRequestReaderTests
         var success = reader.TryRead(headers, out _, out var error);
 
         Assert.False(success);
-        Assert.Equal($"Header '{BusinessSessionHeaders.UserId}' must be a valid GUID.", error);
+        Assert.Equal($"Header '{BusinessSessionHeaders.UserId}' must be a valid user id.", error);
     }
 }

@@ -13,7 +13,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class SalesOverviewClient(HttpClient httpClient, ILogger<SalesOverviewClient> logger)
 {
     public async Task<SalesCashFlowSummary?> GetCashFlowAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken = default)
     {
@@ -41,7 +41,7 @@ public sealed class SalesOverviewClient(HttpClient httpClient, ILogger<SalesOver
     }
 
     public async Task<IncomeOverTimeSummary?> GetIncomeOverTimeAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly fromDate,
         DateOnly toDate,
         bool compareToPreviousYear,

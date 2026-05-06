@@ -224,7 +224,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         return new InvoiceDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(invoiceNumber),
             status,
             invoiceDate,
@@ -323,24 +323,24 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
-                8,
+                5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken),
                 cancellationToken);
 
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "invoice-display",
                 "INV-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "invoices",
                     "invoice_number",
                     "^INV-[0-9]+$",
@@ -412,7 +412,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         }
         else
         {
-            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
@@ -539,7 +539,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         var (entityNumber, displayNumber) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -701,7 +701,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -715,7 +715,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

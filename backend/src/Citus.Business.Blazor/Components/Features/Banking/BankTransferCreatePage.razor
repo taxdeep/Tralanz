@@ -60,7 +60,7 @@
                     @* Source account — credited (money leaves). Asset
                        only: bank / cash / credit-card / wallet. *@
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="bank_transfer.from"
                                    AllowedRootTypes="asset"
                                    SelectedId="@_fromAccountId"
@@ -75,7 +75,7 @@
                        blocks picking the same account on both sides
                        (clientside validation only — backend re-checks). *@
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="bank_transfer.to"
                                    AllowedRootTypes="asset"
                                    SelectedId="@_toAccountId"
@@ -133,7 +133,7 @@
             <h2 class="citus-panel__title">Summary</h2>
             <table class="citus-keyvalue">
                 <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
+                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
                     <tr><th>From</th><td>@(string.IsNullOrEmpty(_fromAccountDisplay) ? "—" : _fromAccountDisplay)</td></tr>
                     <tr><th>To</th><td>@(string.IsNullOrEmpty(_toAccountDisplay) ? "—" : _toAccountDisplay)</td></tr>
                     <tr><th>Amount out</th><td>@FormatAmount(_amount) @_fromCurrency</td></tr>

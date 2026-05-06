@@ -133,7 +133,7 @@ public sealed class TaxCodeClient(HttpClient httpClient, ILogger<TaxCodeClient> 
 
 public sealed record TaxCodeSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string Code,
     string Name,

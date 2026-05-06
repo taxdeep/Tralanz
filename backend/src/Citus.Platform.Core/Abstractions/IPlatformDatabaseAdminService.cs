@@ -18,7 +18,7 @@ public interface IPlatformDatabaseAdminService
     /// 'succeeded' or 'failed' when the spawned process exits.
     /// </summary>
     Task<PlatformDatabaseBackupRecord> StartBackupAsync(
-        Guid triggeredByUserId,
+        UserId triggeredByUserId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PlatformDatabaseBackupRecord>> ListBackupsAsync(
@@ -37,7 +37,7 @@ public interface IPlatformDatabaseAdminService
     /// regularly so concurrent business writes are not blocked.
     /// </summary>
     Task<PlatformDatabaseMaintenanceRun> RunVacuumAnalyzeAsync(
-        Guid triggeredByUserId,
+        UserId triggeredByUserId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PlatformDatabaseMaintenanceRun>> ListMaintenanceRunsAsync(
@@ -61,7 +61,7 @@ public sealed record PlatformDatabaseBackupRecord(
     string Status,
     string? FilePath,
     long? SizeBytes,
-    Guid TriggeredByUserId,
+    UserId TriggeredByUserId,
     string? ErrorMessage);
 
 public sealed record PlatformDatabaseMaintenanceRun(
@@ -71,7 +71,7 @@ public sealed record PlatformDatabaseMaintenanceRun(
     DateTimeOffset? CompletedAt,
     string Status,
     long? DurationMs,
-    Guid TriggeredByUserId,
+    UserId TriggeredByUserId,
     string? ErrorMessage);
 
 public sealed record PlatformDatabaseTableSize(

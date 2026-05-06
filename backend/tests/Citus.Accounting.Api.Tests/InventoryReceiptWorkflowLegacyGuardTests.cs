@@ -97,8 +97,8 @@ public sealed class InventoryReceiptWorkflowLegacyGuardTests
 
     private static InventoryPurchaseReceiptPostRequest BuildRequest(string? sourceModule, decimal quantity = 1m) =>
         new(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
+            UserId.FromOrdinal(1),
             Guid.NewGuid(),
             new DateOnly(2026, 4, 19),
             "CAD",
@@ -151,18 +151,18 @@ public sealed class InventoryReceiptWorkflowLegacyGuardTests
     {
         public int PostCalls { get; private set; }
 
-        public Task<InventoryPurchaseReceiptDashboard> GetDashboardAsync(Guid companyId, CancellationToken cancellationToken) =>
+        public Task<InventoryPurchaseReceiptDashboard> GetDashboardAsync(CompanyId companyId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<InventoryBillReceiptHandoffSummary> GetBillHandoffSummaryAsync(Guid companyId, Guid billDocumentId, CancellationToken cancellationToken) =>
+        public Task<InventoryBillReceiptHandoffSummary> GetBillHandoffSummaryAsync(CompanyId companyId, Guid billDocumentId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyDictionary<Guid, InventoryBillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(Guid companyId, IReadOnlyCollection<Guid> billDocumentIds, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyDictionary<Guid, InventoryBillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(CompanyId companyId, IReadOnlyCollection<Guid> billDocumentIds, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public LegacyInboundReceiptPathSnapshot? Snapshot { get; init; }
 
-        public Task<LegacyInboundReceiptPathSnapshot?> GetLegacyInboundReceiptPathSnapshotAsync(Guid companyId, Guid billDocumentId, CancellationToken cancellationToken) =>
+        public Task<LegacyInboundReceiptPathSnapshot?> GetLegacyInboundReceiptPathSnapshotAsync(CompanyId companyId, Guid billDocumentId, CancellationToken cancellationToken) =>
             Task.FromResult(Snapshot);
 
         public Task<InventoryPurchaseReceiptSummary> PostAsync(InventoryPurchaseReceiptPostRequest request, CancellationToken cancellationToken)

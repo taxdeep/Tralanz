@@ -20,7 +20,7 @@ public sealed class CreditApplicationDraftPreparationWorkflow : ICreditApplicati
     }
 
     public async Task<IReadOnlyList<CreditApplicationOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -90,7 +90,7 @@ public sealed class CreditApplicationDraftPreparationWorkflow : ICreditApplicati
     }
 
     private async Task EnsurePhaseOneSameCurrencyApplicationAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string documentCurrencyCode,
         IReadOnlyList<CreditApplicationDraftLine> lines,

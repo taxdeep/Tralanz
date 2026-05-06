@@ -43,7 +43,7 @@ public interface IPlatformBusinessPasswordResetService
 
 public sealed record class PasswordResetIssueResult(
     string PlaintextToken,
-    Guid AccountId,
+    UserId AccountId,
     string Email,
     string DisplayName,
     DateTimeOffset ExpiresAtUtc);

@@ -57,8 +57,8 @@ internal static class InventoryItemRequestMapper
     }
 
     public static InventoryItemUpsertRequest BuildItemUpsertRequest(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid? itemId,
         InventoryItemUpsertHttpRequest request)
     {

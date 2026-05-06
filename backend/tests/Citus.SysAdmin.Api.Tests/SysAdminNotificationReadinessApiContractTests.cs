@@ -117,10 +117,10 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                 new PlatformFirstCompanyProvisioningResult
                 {
                     Succeeded = true,
-                    CompanyId = Guid.Parse("f5105d94-cfa6-48e2-bdff-4b4e82dd4d62"),
-                    CompanyEntityNumber = "EN202600000001",
+                    CompanyId = CompanyId.FromOrdinal(1),
+                    CompanyEntityNumber = "EN20260000A",
                     CompanyName = command.CompanyName,
-                    OwnerUserId = Guid.Parse("8e576bcb-cd88-4120-a91d-6cf512880343"),
+                    OwnerUserId = UserId.FromOrdinal(1),
                     OwnerEmail = command.OwnerEmail,
                     CompanyBookId = Guid.Parse("5c245d6a-a4da-4d75-a8f1-204f7d8f648f"),
                     CompanyBookCode = "PRIMARY",
@@ -165,9 +165,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         Assert.NotNull(payload);
         Assert.True(payload!.Succeeded);
         Assert.Equal("Northwind Studio Ltd.", payload.CompanyName);
-        Assert.Equal("EN202600000001", payload.CompanyEntityNumber);
+        Assert.Equal("EN20260000A", payload.CompanyEntityNumber);
         Assert.NotNull(factory.FirstCompanyProvisioningRepository.LastCommand);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.FirstCompanyProvisioningRepository.LastCommand!.SysAdminAccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.FirstCompanyProvisioningRepository.LastCommand!.SysAdminAccountId);
         Assert.Equal("owner@example.com", factory.FirstCompanyProvisioningRepository.LastCommand.OwnerEmail);
         Assert.Equal("ca_general_small_business", factory.FirstCompanyProvisioningRepository.LastCommand.TemplateKey);
         Assert.Equal(5, factory.FirstCompanyProvisioningRepository.LastCommand.AccountCodeLength);
@@ -176,10 +176,10 @@ public sealed class SysAdminNotificationReadinessApiContractTests
     }
 
     [Theory]
-    [InlineData("1001", 4, "1001")]
-    [InlineData("1001", 5, "10010")]
-    [InlineData("1001", 6, "100100")]
-    [InlineData("3000", 5, "30000")]
+    [InlineData("10010", 4, "1001")]
+    [InlineData("10010", 5, "10010")]
+    [InlineData("10010", 6, "100100")]
+    [InlineData("30000", 5, "30000")]
     public void FirstCompanyTemplateAccountCodes_AreRightPadded_ToSelectedLength(
         string canonicalCode,
         int accountCodeLength,
@@ -319,7 +319,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var factory = new SysAdminNotificationApiApplicationFactory();
         using var client = factory.CreateClient();
 
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         var response = await client.PutAsJsonAsync(
             $"/control/companies/{companyId}/status",
             new CompanyStatusUpdateRequest
@@ -339,13 +339,13 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         factory.GovernanceRepository.OnSetCompanyStatus = static (requestedCompanyId, status, reason, _, _) =>
             Task.FromResult<CompanyStatusGovernanceResult?>(
                 new CompanyStatusGovernanceResult
                 {
                     CompanyId = requestedCompanyId,
-                    EntityNumber = "EN202600000123",
+                    EntityNumber = "EN20260000A",
                     LegalName = "Northwind Studio Ltd.",
                     PreviousStatus = "active",
                     Status = status,
@@ -359,7 +359,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             {
                 Status = "inactive",
                 Reason = "Compliance hold",
-                SysAdminAccountId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+                SysAdminAccountId = UserId.FromOrdinal(1)
             });
 
         response.EnsureSuccessStatusCode();
@@ -367,10 +367,10 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         var payload = await response.Content.ReadFromJsonAsync<CompanyStatusGovernanceResult>();
 
         Assert.NotNull(payload);
-        Assert.Equal(companyId, factory.GovernanceRepository.LastCompanyStatusCompanyId);
+        Assert.Equal((object?)companyId, (object?)factory.GovernanceRepository.LastCompanyStatusCompanyId);
         Assert.Equal("inactive", factory.GovernanceRepository.LastCompanyStatusStatus);
         Assert.Equal("Compliance hold", factory.GovernanceRepository.LastCompanyStatusReason);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastCompanyStatusSysAdminAccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.GovernanceRepository.LastCompanyStatusSysAdminAccountId);
         Assert.Equal("Northwind Studio Ltd.", payload!.LegalName);
         Assert.Equal("inactive", payload.Status);
     }
@@ -382,7 +382,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         factory.GovernanceRepository.OnSetCompanyStatus = static (_, _, _, _, _) =>
             Task.FromResult<CompanyStatusGovernanceResult?>(null);
 
@@ -409,7 +409,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         factory.GovernanceRepository.OnSetCompanyStatus = static (_, _, _, _, _) =>
             throw new InvalidOperationException("Company status transition is not allowed from archived to active.");
 
@@ -435,7 +435,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var factory = new SysAdminNotificationApiApplicationFactory();
         using var client = factory.CreateClient();
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         var response = await client.PutAsJsonAsync(
             $"/control/accounts/{accountId}/status",
             new AccountStatusUpdateRequest
@@ -456,7 +456,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         var lockedUntilUtc = new DateTimeOffset(2026, 4, 20, 8, 0, 0, TimeSpan.Zero);
         factory.GovernanceRepository.OnSetAccountStatus = static (requestedAccountId, status, lockedUntil, reason, _, _) =>
             Task.FromResult<AccountStatusGovernanceResult?>(
@@ -479,7 +479,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                 Status = "locked",
                 LockedUntilUtc = lockedUntilUtc,
                 Reason = "Fraud review",
-                SysAdminAccountId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+                SysAdminAccountId = UserId.FromOrdinal(1)
             });
 
         response.EnsureSuccessStatusCode();
@@ -487,11 +487,11 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         var payload = await response.Content.ReadFromJsonAsync<AccountStatusGovernanceResult>();
 
         Assert.NotNull(payload);
-        Assert.Equal(accountId, factory.GovernanceRepository.LastAccountStatusAccountId);
+        Assert.Equal((object?)accountId, (object?)factory.GovernanceRepository.LastAccountStatusAccountId);
         Assert.Equal("locked", factory.GovernanceRepository.LastAccountStatusStatus);
         Assert.Equal(lockedUntilUtc, factory.GovernanceRepository.LastAccountStatusLockedUntilUtc);
         Assert.Equal("Fraud review", factory.GovernanceRepository.LastAccountStatusReason);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastAccountStatusSysAdminAccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.GovernanceRepository.LastAccountStatusSysAdminAccountId);
         Assert.Equal("user@example.com", payload!.Email);
         Assert.Equal("locked", payload.Status);
     }
@@ -503,7 +503,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnSetAccountStatus = static (_, _, _, _, _, _) =>
             Task.FromResult<AccountStatusGovernanceResult?>(null);
 
@@ -530,7 +530,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnSetAccountStatus = static (_, _, _, _, _, _) =>
             throw new InvalidOperationException("Account status transition is not allowed while a password reset request is pending.");
 
@@ -574,7 +574,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             [
                 new ManagedPlatformAccountSummary
                 {
-                    AccountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0"),
+                    AccountId = UserId.FromOrdinal(1),
                     DisplayName = "Morgan Hale",
                     Email = "user@example.com",
                     Username = "user.one",
@@ -583,7 +583,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                     ActiveMfaRecoveryStatus = "approved",
                     LastMfaResetAtUtc = new DateTimeOffset(2026, 4, 16, 23, 30, 0, TimeSpan.Zero),
                     LastMfaResetReason = "Operator recovery reset",
-                    CompanyCodes = ["EN202600000123"]
+                    CompanyCodes = ["EN20260000A"]
                 }
             ]);
 
@@ -626,14 +626,14 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         var auditId = Guid.Parse("67f94677-64d8-4c07-9383-fcb87dc67ba0");
         var entityId = Guid.Parse("75299d36-d88d-4bd0-8c0d-caf2520d5f31");
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         factory.GovernanceRepository.OnListRecentAuditEvents = static (limit, _) =>
             Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(
             [
                 new PlatformAuditEvent
                 {
                     AuditId = Guid.Parse("67f94677-64d8-4c07-9383-fcb87dc67ba0"),
-                    CompanyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa"),
+                    CompanyId = CompanyId.FromOrdinal(1),
                     CompanyCode = "NORTHWIND",
                     CompanyName = "Northwind Studio Ltd.",
                     ScopeLabel = "Northwind Studio Ltd. (NORTHWIND)",
@@ -663,7 +663,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         Assert.Equal(7, factory.GovernanceRepository.LastAuditLimit);
         Assert.Single(payload!);
         Assert.Equal(auditId, payload[0].AuditId);
-        Assert.Equal(companyId, payload[0].CompanyId);
+        Assert.Equal((object?)companyId, (object?)payload[0].CompanyId);
         Assert.Equal(entityId, payload[0].EntityId);
         Assert.Equal("membership_role_changed", payload[0].Action);
         Assert.Equal("Membership Role Changed", payload[0].ActionLabel);
@@ -675,7 +675,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var factory = new SysAdminNotificationApiApplicationFactory();
         using var client = factory.CreateClient();
 
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         var membershipId = Guid.Parse("75299d36-d88d-4bd0-8c0d-caf2520d5f31");
         var response = await client.PutAsJsonAsync(
             $"/control/companies/{companyId}/memberships/{membershipId}/role",
@@ -696,16 +696,16 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         var membershipId = Guid.Parse("75299d36-d88d-4bd0-8c0d-caf2520d5f31");
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.MembershipGovernanceWorkflow.OnChangeRole = static (requestedCompanyId, requestedMembershipId, role, reason, _, _) =>
             Task.FromResult(
                 new CompanyMembershipRoleChangeResult
                 {
                     CompanyId = requestedCompanyId,
                     MembershipId = requestedMembershipId,
-                    AccountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0"),
+                    AccountId = UserId.FromOrdinal(1),
                     Email = "user@example.com",
                     Username = "user.one",
                     PreviousRole = "user",
@@ -720,7 +720,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             {
                 Role = "owner",
                 Reason = "Owner recovery",
-                SysAdminAccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+                SysAdminAccountId = UserId.FromOrdinal(1)
             });
 
         response.EnsureSuccessStatusCode();
@@ -728,12 +728,12 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         var payload = await response.Content.ReadFromJsonAsync<CompanyMembershipRoleChangeResult>();
 
         Assert.NotNull(payload);
-        Assert.Equal(companyId, factory.MembershipGovernanceWorkflow.LastCompanyId);
+        Assert.Equal((object?)companyId, (object?)factory.MembershipGovernanceWorkflow.LastCompanyId);
         Assert.Equal(membershipId, factory.MembershipGovernanceWorkflow.LastMembershipId);
         Assert.Equal("owner", factory.MembershipGovernanceWorkflow.LastRole);
         Assert.Equal("Owner recovery", factory.MembershipGovernanceWorkflow.LastReason);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.MembershipGovernanceWorkflow.LastSysAdminAccountId);
-        Assert.Equal(accountId, payload!.AccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.MembershipGovernanceWorkflow.LastSysAdminAccountId);
+        Assert.Equal((object?)accountId, (object?)payload!.AccountId);
         Assert.Equal("owner", payload.Role);
         Assert.Equal("user", payload.PreviousRole);
     }
@@ -745,7 +745,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var companyId = Guid.Parse("0b27b195-e635-4524-aef5-e9a2bd16aefa");
+        var companyId = CompanyId.FromOrdinal(1);
         var membershipId = Guid.Parse("75299d36-d88d-4bd0-8c0d-caf2520d5f31");
         factory.MembershipGovernanceWorkflow.OnChangeRole = static (_, _, _, _, _, _) =>
             throw new InvalidOperationException("At least one owner must remain assigned to the company.");
@@ -772,7 +772,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var factory = new SysAdminNotificationApiApplicationFactory();
         using var client = factory.CreateClient();
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         var response = await client.PostAsJsonAsync(
             $"/control/accounts/{accountId}/password-reset-requests",
             new PasswordResetRequestCommand
@@ -791,7 +791,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         var requestId = Guid.Parse("f48b5f2c-a4ca-42c3-a3cf-c2e2b4444a6e");
         factory.GovernanceRepository.OnRequestPasswordReset = static (requestedAccountId, reason, sysAdminAccountId, _) =>
             Task.FromResult<PasswordResetGovernanceResult?>(
@@ -811,7 +811,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             new PasswordResetRequestCommand
             {
                 Reason = "Operator reset request",
-                SysAdminAccountId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+                SysAdminAccountId = UserId.FromOrdinal(1)
             });
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
@@ -820,9 +820,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         var payload = await response.Content.ReadFromJsonAsync<PasswordResetGovernanceResult>();
 
         Assert.NotNull(payload);
-        Assert.Equal(accountId, factory.GovernanceRepository.LastPasswordResetAccountId);
+        Assert.Equal((object?)accountId, (object?)factory.GovernanceRepository.LastPasswordResetAccountId);
         Assert.Equal("Operator reset request", factory.GovernanceRepository.LastPasswordResetReason);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastPasswordResetSysAdminAccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.GovernanceRepository.LastPasswordResetSysAdminAccountId);
         Assert.Equal("queued", payload!.DeliveryStatus);
         Assert.Equal("user@example.com", payload.Email);
     }
@@ -834,7 +834,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnRequestPasswordReset = static (_, _, _, _) =>
             Task.FromResult<PasswordResetGovernanceResult?>(null);
 
@@ -860,7 +860,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnRequestPasswordReset = static (_, _, _, _) =>
             throw new InvalidOperationException("Password reset is blocked because notification readiness is not verified.");
 
@@ -886,7 +886,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnRequestPasswordReset = static (_, _, _, _) =>
             throw new PlatformNotificationDeliveryException("SMTP provider rejected the password reset dispatch.");
 
@@ -911,7 +911,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var factory = new SysAdminNotificationApiApplicationFactory();
         using var client = factory.CreateClient();
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         var response = await client.PostAsJsonAsync(
             $"/control/accounts/{accountId}/mfa-reset",
             new AccountMfaResetRequest
@@ -930,7 +930,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnResetAccountMfa = static (requestedAccountId, reason, sysAdminAccountId, _) =>
             Task.FromResult<AccountMfaResetGovernanceResult?>(
                 new AccountMfaResetGovernanceResult
@@ -950,7 +950,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             new AccountMfaResetRequest
             {
                 Reason = "Operator MFA reset",
-                SysAdminAccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+                SysAdminAccountId = UserId.FromOrdinal(1)
             });
 
         response.EnsureSuccessStatusCode();
@@ -958,9 +958,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         var payload = await response.Content.ReadFromJsonAsync<AccountMfaResetGovernanceResult>();
 
         Assert.NotNull(payload);
-        Assert.Equal(accountId, factory.GovernanceRepository.LastMfaResetAccountId);
+        Assert.Equal((object?)accountId, (object?)factory.GovernanceRepository.LastMfaResetAccountId);
         Assert.Equal("Operator MFA reset", factory.GovernanceRepository.LastMfaResetReason);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastMfaResetSysAdminAccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.GovernanceRepository.LastMfaResetSysAdminAccountId);
         Assert.Equal("user@example.com", payload!.Email);
         Assert.Equal("email_code", payload.PreviousMfaMode);
         Assert.Equal("none", payload.MfaMode);
@@ -974,7 +974,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnResetAccountMfa = static (_, _, _, _) =>
             Task.FromResult<AccountMfaResetGovernanceResult?>(null);
 
@@ -1000,7 +1000,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnResetAccountMfa = static (_, _, _, _) =>
             throw new InvalidOperationException("MFA reset is blocked because the account has a pending recovery review.");
 
@@ -1044,7 +1044,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                 new Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary
                 {
                     RequestId = Guid.Parse("5ee30770-a50e-4f19-a27f-8990202f8117"),
-                    AccountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0"),
+                    AccountId = UserId.FromOrdinal(1),
                     DisplayName = "Morgan Hale",
                     Email = "user@example.com",
                     Username = "user.one",
@@ -1074,7 +1074,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var factory = new SysAdminNotificationApiApplicationFactory();
         using var client = factory.CreateClient();
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         var response = await client.GetAsync($"/control/accounts/{accountId}/mfa-timeline");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -1088,7 +1088,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnListAccountMfaTimeline = static (_, _, _) =>
             Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(
             [
@@ -1112,7 +1112,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         Assert.NotNull(payload);
         Assert.Single(payload!);
-        Assert.Equal(accountId, factory.GovernanceRepository.LastMfaTimelineAccountId);
+        Assert.Equal((object?)accountId, (object?)factory.GovernanceRepository.LastMfaTimelineAccountId);
         Assert.Equal(7, factory.GovernanceRepository.LastMfaTimelineLimit);
         Assert.Equal("Account MFA Recovery Requested", payload[0].ActionLabel);
         Assert.Equal("Morgan Hale", payload[0].ActorDisplayName);
@@ -1124,7 +1124,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var factory = new SysAdminNotificationApiApplicationFactory();
         using var client = factory.CreateClient();
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         var response = await client.GetAsync($"/control/accounts/{accountId}/mfa-recovery-history");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -1138,7 +1138,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnListAccountMfaRecoveryHistory = static (requestedAccountId, _, _) =>
             Task.FromResult<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>(
             [
@@ -1170,7 +1170,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         Assert.NotNull(payload);
         Assert.Single(payload!);
-        Assert.Equal(accountId, factory.GovernanceRepository.LastMfaRecoveryHistoryAccountId);
+        Assert.Equal((object?)accountId, (object?)factory.GovernanceRepository.LastMfaRecoveryHistoryAccountId);
         Assert.Equal(6, factory.GovernanceRepository.LastMfaRecoveryHistoryLimit);
         Assert.Equal("executed", payload[0].Status);
         Assert.Equal("Approved MFA recovery executed by SysAdmin.", payload[0].ExecutionReason);
@@ -1205,7 +1205,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
         var requestId = Guid.Parse("5ee30770-a50e-4f19-a27f-8990202f8117");
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnReviewMfaRecoveryRequest = (requestedRequestId, decision, reason, _, _) =>
             Task.FromResult<MfaRecoveryReviewResult?>(
                 new MfaRecoveryReviewResult
@@ -1223,7 +1223,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             {
                 Decision = "approve",
                 Reason = "Recovery evidence checked.",
-                SysAdminAccountId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd")
+                SysAdminAccountId = UserId.FromOrdinal(1)
             });
 
         response.EnsureSuccessStatusCode();
@@ -1234,7 +1234,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         Assert.Equal(requestId, factory.GovernanceRepository.LastReviewedMfaRecoveryRequestId);
         Assert.Equal("approve", factory.GovernanceRepository.LastReviewedMfaRecoveryDecision);
         Assert.Equal("Recovery evidence checked.", factory.GovernanceRepository.LastReviewedMfaRecoveryReason);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastReviewedMfaRecoverySysAdminAccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.GovernanceRepository.LastReviewedMfaRecoverySysAdminAccountId);
         Assert.Equal("approved", payload!.Status);
     }
 
@@ -1246,7 +1246,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
 
         var requestId = Guid.Parse("5ee30770-a50e-4f19-a27f-8990202f8117");
-        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var accountId = UserId.FromOrdinal(1);
         factory.GovernanceRepository.OnExecuteMfaRecoveryRequest = (requestedRequestId, reason, _, _) =>
             Task.FromResult<MfaRecoveryExecutionResult?>(
                 new MfaRecoveryExecutionResult
@@ -1265,7 +1265,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             new MfaRecoveryExecuteRequest
             {
                 Reason = "Approved recovery executed by operator.",
-                SysAdminAccountId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+                SysAdminAccountId = UserId.FromOrdinal(1)
             });
 
         response.EnsureSuccessStatusCode();
@@ -1275,7 +1275,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         Assert.NotNull(payload);
         Assert.Equal(requestId, factory.GovernanceRepository.LastExecutedMfaRecoveryRequestId);
         Assert.Equal("Approved recovery executed by operator.", factory.GovernanceRepository.LastExecutedMfaRecoveryReason);
-        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastExecutedMfaRecoverySysAdminAccountId);
+        Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.GovernanceRepository.LastExecutedMfaRecoverySysAdminAccountId);
         Assert.Equal("none", payload!.MfaMode);
         Assert.Equal(3, payload.RevokedChallengeCount);
     }
@@ -1483,7 +1483,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
     {
         public const string ValidSessionToken = "test-sysadmin-session";
 
-        public static Guid ValidSysAdminAccountId { get; } = Guid.Parse("ef88f7b8-a616-49d7-ac0e-874ca9bd2e1e");
+        public static UserId ValidSysAdminAccountId { get; } = UserId.FromOrdinal(1);
 
         public string ValidationDisplayName { get; } = "Platform Operator";
 
@@ -1568,7 +1568,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             Task.CompletedTask;
 
         public Task<SysAdminSecretRotationResult> RotateSecretAsync(
-            Guid sysAdminAccountId,
+            UserId sysAdminAccountId,
             string currentPassword,
             string newPassword,
             CancellationToken cancellationToken) =>
@@ -1586,52 +1586,52 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public Func<int, CancellationToken, Task<IReadOnlyList<PlatformAuditEvent>>> OnListRecentAuditEvents { get; set; } =
             static (_, _) => Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(Array.Empty<PlatformAuditEvent>());
 
-        public Func<Guid, int, CancellationToken, Task<IReadOnlyList<PlatformAuditEvent>>> OnListAccountMfaTimeline { get; set; } =
+        public Func<UserId, int, CancellationToken, Task<IReadOnlyList<PlatformAuditEvent>>> OnListAccountMfaTimeline { get; set; } =
             static (_, _, _) => Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(Array.Empty<PlatformAuditEvent>());
 
-        public Func<Guid, int, CancellationToken, Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>> OnListAccountMfaRecoveryHistory { get; set; } =
+        public Func<UserId, int, CancellationToken, Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>> OnListAccountMfaRecoveryHistory { get; set; } =
             static (_, _, _) => Task.FromResult<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>(Array.Empty<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>());
 
-        public Func<Guid, string, string, Guid?, CancellationToken, Task<CompanyStatusGovernanceResult?>> OnSetCompanyStatus { get; set; } =
+        public Func<CompanyId, string, string, UserId?, CancellationToken, Task<CompanyStatusGovernanceResult?>> OnSetCompanyStatus { get; set; } =
             static (_, _, _, _, _) => Task.FromResult<CompanyStatusGovernanceResult?>(null);
 
-        public Func<Guid, string, DateTimeOffset?, string, Guid?, CancellationToken, Task<AccountStatusGovernanceResult?>> OnSetAccountStatus { get; set; } =
+        public Func<UserId, string, DateTimeOffset?, string, UserId?, CancellationToken, Task<AccountStatusGovernanceResult?>> OnSetAccountStatus { get; set; } =
             static (_, _, _, _, _, _) => Task.FromResult<AccountStatusGovernanceResult?>(null);
 
-        public Func<Guid, string, Guid?, CancellationToken, Task<PasswordResetGovernanceResult?>> OnRequestPasswordReset { get; set; } =
+        public Func<UserId, string, UserId?, CancellationToken, Task<PasswordResetGovernanceResult?>> OnRequestPasswordReset { get; set; } =
             static (_, _, _, _) => Task.FromResult<PasswordResetGovernanceResult?>(null);
 
-        public Func<Guid, string, Guid?, CancellationToken, Task<AccountMfaResetGovernanceResult?>> OnResetAccountMfa { get; set; } =
+        public Func<UserId, string, UserId?, CancellationToken, Task<AccountMfaResetGovernanceResult?>> OnResetAccountMfa { get; set; } =
             static (_, _, _, _) => Task.FromResult<AccountMfaResetGovernanceResult?>(null);
 
         public Func<CancellationToken, Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>> OnListOpenMfaRecoveryRequests { get; set; } =
             static _ => Task.FromResult<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>(Array.Empty<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>());
 
-        public Func<Guid, string, string, Guid?, CancellationToken, Task<MfaRecoveryReviewResult?>> OnReviewMfaRecoveryRequest { get; set; } =
+        public Func<Guid, string, string, UserId?, CancellationToken, Task<MfaRecoveryReviewResult?>> OnReviewMfaRecoveryRequest { get; set; } =
             static (_, _, _, _, _) => Task.FromResult<MfaRecoveryReviewResult?>(null);
 
-        public Func<Guid, string, Guid?, CancellationToken, Task<MfaRecoveryExecutionResult?>> OnExecuteMfaRecoveryRequest { get; set; } =
+        public Func<Guid, string, UserId?, CancellationToken, Task<MfaRecoveryExecutionResult?>> OnExecuteMfaRecoveryRequest { get; set; } =
             static (_, _, _, _) => Task.FromResult<MfaRecoveryExecutionResult?>(null);
 
         public int? LastAuditLimit { get; private set; }
 
-        public Guid? LastMfaTimelineAccountId { get; private set; }
+        public UserId? LastMfaTimelineAccountId { get; private set; }
 
         public int? LastMfaTimelineLimit { get; private set; }
 
-        public Guid? LastMfaRecoveryHistoryAccountId { get; private set; }
+        public UserId? LastMfaRecoveryHistoryAccountId { get; private set; }
 
         public int? LastMfaRecoveryHistoryLimit { get; private set; }
 
-        public Guid? LastCompanyStatusCompanyId { get; private set; }
+        public CompanyId? LastCompanyStatusCompanyId { get; private set; }
 
         public string LastCompanyStatusStatus { get; private set; } = string.Empty;
 
         public string LastCompanyStatusReason { get; private set; } = string.Empty;
 
-        public Guid? LastCompanyStatusSysAdminAccountId { get; private set; }
+        public UserId? LastCompanyStatusSysAdminAccountId { get; private set; }
 
-        public Guid? LastAccountStatusAccountId { get; private set; }
+        public UserId? LastAccountStatusAccountId { get; private set; }
 
         public string LastAccountStatusStatus { get; private set; } = string.Empty;
 
@@ -1639,19 +1639,19 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         public string LastAccountStatusReason { get; private set; } = string.Empty;
 
-        public Guid? LastAccountStatusSysAdminAccountId { get; private set; }
+        public UserId? LastAccountStatusSysAdminAccountId { get; private set; }
 
-        public Guid? LastPasswordResetAccountId { get; private set; }
+        public UserId? LastPasswordResetAccountId { get; private set; }
 
         public string LastPasswordResetReason { get; private set; } = string.Empty;
 
-        public Guid? LastPasswordResetSysAdminAccountId { get; private set; }
+        public UserId? LastPasswordResetSysAdminAccountId { get; private set; }
 
-        public Guid? LastMfaResetAccountId { get; private set; }
+        public UserId? LastMfaResetAccountId { get; private set; }
 
         public string LastMfaResetReason { get; private set; } = string.Empty;
 
-        public Guid? LastMfaResetSysAdminAccountId { get; private set; }
+        public UserId? LastMfaResetSysAdminAccountId { get; private set; }
 
         public Guid? LastReviewedMfaRecoveryRequestId { get; private set; }
 
@@ -1659,13 +1659,13 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         public string LastReviewedMfaRecoveryReason { get; private set; } = string.Empty;
 
-        public Guid? LastReviewedMfaRecoverySysAdminAccountId { get; private set; }
+        public UserId? LastReviewedMfaRecoverySysAdminAccountId { get; private set; }
 
         public Guid? LastExecutedMfaRecoveryRequestId { get; private set; }
 
         public string LastExecutedMfaRecoveryReason { get; private set; } = string.Empty;
 
-        public Guid? LastExecutedMfaRecoverySysAdminAccountId { get; private set; }
+        public UserId? LastExecutedMfaRecoverySysAdminAccountId { get; private set; }
 
         public int ListManagedUsersCallCount { get; private set; }
 
@@ -1688,7 +1688,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<IReadOnlyList<PlatformAuditEvent>> ListAccountMfaTimelineAsync(
-            Guid accountId,
+            UserId accountId,
             int limit,
             CancellationToken cancellationToken)
         {
@@ -1698,7 +1698,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
-            Guid accountId,
+            UserId accountId,
             int limit,
             CancellationToken cancellationToken)
         {
@@ -1708,10 +1708,10 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
-            Guid companyId,
+            CompanyId companyId,
             string status,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastCompanyStatusCompanyId = companyId;
@@ -1722,11 +1722,11 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<AccountStatusGovernanceResult?> SetAccountStatusAsync(
-            Guid accountId,
+            UserId accountId,
             string status,
             DateTimeOffset? lockedUntilUtc,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastAccountStatusAccountId = accountId;
@@ -1738,9 +1738,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<PasswordResetGovernanceResult?> RequestPasswordResetAsync(
-            Guid accountId,
+            UserId accountId,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastPasswordResetAccountId = accountId;
@@ -1750,9 +1750,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
-            Guid accountId,
+            UserId accountId,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastMfaResetAccountId = accountId;
@@ -1772,7 +1772,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             Guid requestId,
             string decision,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastReviewedMfaRecoveryRequestId = requestId;
@@ -1785,7 +1785,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public Task<MfaRecoveryExecutionResult?> ExecuteMfaRecoveryRequestAsync(
             Guid requestId,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastExecutedMfaRecoveryRequestId = requestId;
@@ -1797,14 +1797,14 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
     private sealed class FakeCompanyMembershipGovernanceWorkflow : ICompanyMembershipGovernanceWorkflow
     {
-        public Func<Guid, Guid, string, string, Guid?, CancellationToken, Task<CompanyMembershipRoleChangeResult>> OnChangeRole { get; set; } =
+        public Func<CompanyId, Guid, string, string, UserId?, CancellationToken, Task<CompanyMembershipRoleChangeResult>> OnChangeRole { get; set; } =
             static (companyId, membershipId, role, reason, _, _) =>
                 Task.FromResult(
                     new CompanyMembershipRoleChangeResult
                     {
                         CompanyId = companyId,
                         MembershipId = membershipId,
-                        AccountId = Guid.Empty,
+                        AccountId = default,
                         Email = string.Empty,
                         Username = string.Empty,
                         PreviousRole = "user",
@@ -1813,7 +1813,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                         UpdatedAtUtc = DateTimeOffset.UtcNow
                     });
 
-        public Guid? LastCompanyId { get; private set; }
+        public CompanyId? LastCompanyId { get; private set; }
 
         public Guid? LastMembershipId { get; private set; }
 
@@ -1821,14 +1821,14 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         public string LastReason { get; private set; } = string.Empty;
 
-        public Guid? LastSysAdminAccountId { get; private set; }
+        public UserId? LastSysAdminAccountId { get; private set; }
 
         public Task<CompanyMembershipRoleChangeResult> ChangeRoleFromSysAdminAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid membershipId,
             string role,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastCompanyId = companyId;

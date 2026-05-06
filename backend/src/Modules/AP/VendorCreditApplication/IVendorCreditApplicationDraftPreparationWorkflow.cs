@@ -3,7 +3,7 @@ namespace Modules.AP.VendorCreditApplication;
 public interface IVendorCreditApplicationDraftPreparationWorkflow
 {
     Task<IReadOnlyList<VendorCreditApplicationOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken);
 

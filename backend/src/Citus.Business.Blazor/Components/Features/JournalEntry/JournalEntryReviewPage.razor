@@ -301,7 +301,7 @@
                 Title = "Journal Entry review",
                 Subtitle = "The requested journal entry was not found in the active company context."
             };
-            _error = $"Journal entry {JournalEntryId:D} could not be found for company {ShellState.ActiveCompany.CompanyCode}.";
+            _error = $"Journal entry {JournalEntryId:D} could not be found for company {ShellState.ActiveCompany.CompanyName}.";
             _isLoading = false;
             return;
         }
@@ -322,7 +322,7 @@
             new("FX rate snapshot", review.FxRateSnapshotId?.ToString("D") ?? "No snapshot id"),
             new("Voided at", review.VoidedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Not voided"),
             new("Reversed at", review.ReversedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Not reversed"),
-            new("Created by", review.CreatedByUserId.ToString("D"))
+            new("Created by", review.CreatedByUserId.ToString())
         ];
         _sourceRows =
         [

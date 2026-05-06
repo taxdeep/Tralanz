@@ -55,7 +55,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<IReadOnlyList<AccountRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -65,7 +65,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
         command.CommandText = includeInactive
             ? SelectColumns + " WHERE company_id = @company_id ORDER BY root_type, code;"
             : SelectColumns + " WHERE company_id = @company_id AND is_active = TRUE ORDER BY root_type, code;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -76,14 +76,14 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", accountId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -91,7 +91,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         AccountUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -113,7 +113,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
                       currency_code, allow_manual_posting, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
@@ -134,7 +134,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         AccountUpsertInput input,
         CancellationToken cancellationToken)
@@ -161,7 +161,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
                       currency_code, allow_manual_posting, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("root_type", input.RootType);
@@ -177,7 +177,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -199,7 +199,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
                       currency_code, allow_manual_posting, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
         command.Parameters.AddWithValue("now", now);
 
@@ -208,7 +208,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> SeedSystemAccountAsync(
-        Guid companyId,
+        CompanyId companyId,
         AccountSeedInput input,
         CancellationToken cancellationToken)
     {
@@ -239,7 +239,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
                       currency_code, allow_manual_posting, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
@@ -281,7 +281,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
 
     private static AccountRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         EntityNumber: reader.GetString(2),
         Code: reader.GetString(3),
         Name: reader.GetString(4),

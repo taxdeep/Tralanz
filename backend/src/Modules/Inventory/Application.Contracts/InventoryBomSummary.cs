@@ -2,7 +2,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryBomSummary(
     Guid BomId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string BomCode,
     Guid OutputItemId,
     string OutputItemCode,

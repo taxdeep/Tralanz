@@ -14,7 +14,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
     }
 
     public async Task<SystemSetupPreference> GetAsync(
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -28,7 +28,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
             where user_id = @user_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -45,7 +45,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
     }
 
     public async Task<SystemSetupPreference> SaveAsync(
-        Guid userId,
+        UserId userId,
         NumberDisplayMode numberDisplayMode,
         CancellationToken cancellationToken)
     {
@@ -73,7 +73,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
                   updated_at = now()
             returning updated_at;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("number_display_mode", NumberDisplayModeDefaults.ToCode(numberDisplayMode));
 
         var updatedAt = CoerceTimestamp(await command.ExecuteScalarAsync(cancellationToken));
@@ -89,7 +89,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
         command.CommandText =
             """
             create table if not exists user_preferences (
-              user_id uuid primary key,
+              user_id char(7) primary key,
               number_display_mode text not null,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now()

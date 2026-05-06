@@ -6,7 +6,7 @@ internal static class PostgresAccountLookup
 {
     public static async Task<Guid?> TryResolveActiveAccountIdAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken,
         params string[] markers)
     {
@@ -43,7 +43,7 @@ internal static class PostgresAccountLookup
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("markers", NpgsqlDbType.Array | NpgsqlDbType.Text, normalizedMarkers);
 
         var resolved = await command.ExecuteScalarAsync(cancellationToken);

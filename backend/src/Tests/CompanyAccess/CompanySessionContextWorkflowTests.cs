@@ -9,9 +9,9 @@ public sealed class CompanySessionContextWorkflowTests
     [Fact]
     public async Task GetAsync_ReturnsPreferredActiveCompanyFromMembershipTruth()
     {
-        var userId = Guid.NewGuid();
-        var firstCompanyId = Guid.NewGuid();
-        var secondCompanyId = Guid.NewGuid();
+        var userId = UserId.FromOrdinal(101);
+        var firstCompanyId = CompanyId.FromOrdinal(101);
+        var secondCompanyId = CompanyId.FromOrdinal(102);
         var firstEntityNumber = BuildEntityNumber();
         var secondEntityNumber = BuildEntityNumber();
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -32,7 +32,7 @@ public sealed class CompanySessionContextWorkflowTests
             var context = await workflow.GetAsync(userId, secondCompanyId, CancellationToken.None);
 
             Assert.NotNull(context);
-            Assert.Equal(userId, context!.User.Id);
+            Assert.Equal((object?)userId, (object?)context!.User.Id);
             Assert.Equal("alice.session", context.User.DisplayName);
             Assert.Equal(secondCompanyId, context.ActiveCompany.Id);
             Assert.Equal(secondEntityNumber, context.ActiveCompany.CompanyCode);
@@ -54,8 +54,8 @@ public sealed class CompanySessionContextWorkflowTests
     [Fact]
     public async Task GetAsync_ReturnsNullWhenUserHasNoActiveMemberships()
     {
-        var userId = Guid.NewGuid();
-        var companyId = Guid.NewGuid();
+        var userId = UserId.FromOrdinal(101);
+        var companyId = CompanyId.FromOrdinal(101);
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var store = new PostgreSqlCompanySessionContextStore(connectionFactory);
         var workflow = new CompanySessionContextWorkflow(store);
@@ -77,8 +77,8 @@ public sealed class CompanySessionContextWorkflowTests
     [Fact]
     public async Task GetAsync_IncludesMembershipPermissionTokensInUserRoles()
     {
-        var userId = Guid.NewGuid();
-        var companyId = Guid.NewGuid();
+        var userId = UserId.FromOrdinal(101);
+        var companyId = CompanyId.FromOrdinal(101);
         var entityNumber = BuildEntityNumber();
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var store = new PostgreSqlCompanySessionContextStore(connectionFactory);
@@ -117,15 +117,16 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static string BuildEntityNumber()
     {
-        var numeric = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 100_000_000;
-        return $"EN2099{numeric:D8}";
+        // EN + YYYY (4) + 5 base36 = 11 chars total. Base36 5-char range 0-60_466_175.
+        var ordinal = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 60_466_176;
+        return EntityNumber.Create(2099, ordinal).Value;
     }
 
     private static async Task SeedAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
-        Guid firstCompanyId,
-        Guid secondCompanyId,
+        UserId userId,
+        CompanyId firstCompanyId,
+        CompanyId secondCompanyId,
         string firstEntityNumber,
         string secondEntityNumber,
         CancellationToken cancellationToken)
@@ -141,8 +142,8 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task SeedInactiveMembershipAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
-        Guid companyId,
+        UserId userId,
+        CompanyId companyId,
         string entityNumber,
         CancellationToken cancellationToken)
     {
@@ -155,17 +156,17 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task InsertUserAsync(
         Npgsql.NpgsqlConnection connection,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            insert into users (id, email, username, password_hash, is_active)
-            values (@id, @email, @username, @password_hash, true);
+            insert into users (id, email, username, password_hash, status)
+            values (@id, @email, @username, @password_hash, 'active');
             """;
-        command.Parameters.AddWithValue("id", userId);
-        command.Parameters.AddWithValue("email", $"{userId:N}@example.test");
+        command.Parameters.AddWithValue("id", userId.Value);
+        command.Parameters.AddWithValue("email", $"{userId.Value}@example.test");
         command.Parameters.AddWithValue("username", "alice.session");
         command.Parameters.AddWithValue("password_hash", "hashed-password");
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -173,7 +174,7 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task InsertCompanyAsync(
         Npgsql.NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         string entityNumber,
         string legalName,
         string baseCurrencyCode,
@@ -200,7 +201,7 @@ public sealed class CompanySessionContextWorkflowTests
               'active'
             );
             """;
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("legal_name", legalName);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
@@ -210,8 +211,8 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task InsertMembershipAsync(
         Npgsql.NpgsqlConnection connection,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string role,
         bool isActive,
         CancellationToken cancellationToken,
@@ -252,8 +253,8 @@ public sealed class CompanySessionContextWorkflowTests
               @is_active
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("role", role);
         if (hasPermissionsColumn)
         {
@@ -285,9 +286,9 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task CleanupAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
-        Guid firstCompanyId,
-        Guid? secondCompanyId,
+        UserId userId,
+        CompanyId firstCompanyId,
+        CompanyId? secondCompanyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
@@ -303,10 +304,10 @@ public sealed class CompanySessionContextWorkflowTests
             delete from users
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         var companyIds = secondCompanyId.HasValue
-            ? new[] { firstCompanyId, secondCompanyId.Value }
-            : new[] { firstCompanyId };
+            ? new[] { firstCompanyId.Value, secondCompanyId.Value.Value }
+            : new[] { firstCompanyId.Value };
         command.Parameters.AddWithValue("company_ids", companyIds);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

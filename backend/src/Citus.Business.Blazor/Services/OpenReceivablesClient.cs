@@ -14,11 +14,11 @@ namespace Citus.Business.Blazor.Services;
 public sealed class OpenReceivablesClient(HttpClient httpClient, ILogger<OpenReceivablesClient> logger)
 {
     public async Task<IReadOnlyList<OpenReceivableSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken = default)
     {
-        if (companyId == Guid.Empty || customerId == Guid.Empty)
+        if (companyId.Value is null || customerId == Guid.Empty)
         {
             return Array.Empty<OpenReceivableSummary>();
         }

@@ -124,11 +124,11 @@ public sealed class BusinessWriteFlowClient
     /// </summary>
     public async Task<WriteFlowResult> PostInvoiceAsync(InvoiceDraft draft, CancellationToken cancellationToken = default)
     {
-        if (draft.CompanyId == Guid.Empty)
+        if (draft.CompanyId.Value is null)
         {
             return new WriteFlowResult(false, "Active company is required.", nameof(PostInvoiceAsync), draft);
         }
-        if (draft.UserId == Guid.Empty)
+        if (draft.UserId.Value is null)
         {
             return new WriteFlowResult(false, "Active user is required.", nameof(PostInvoiceAsync), draft);
         }
@@ -825,8 +825,8 @@ public sealed record ManualJournalLineDraft
 
 public sealed record InvoiceDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public DateOnly? DueDate { get; init; }
     public Guid? CustomerId { get; init; }
@@ -890,8 +890,8 @@ public sealed record InvoiceLineDraft
 /// </summary>
 public sealed record SalesReceiptDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -948,8 +948,8 @@ public sealed record SalesReceiptLineDraft
 /// </summary>
 public sealed record CreditMemoDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -989,8 +989,8 @@ public sealed record CreditMemoLineDraft
 /// </summary>
 public sealed record RefundReceiptDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -1029,8 +1029,8 @@ public sealed record RefundReceiptLineDraft
 /// </summary>
 public sealed record VendorCreditDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? VendorId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -1084,8 +1084,8 @@ public sealed record VendorCreditLineDraft
 /// </summary>
 public sealed record BankTransferDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
 
     /// <summary>Account funds leave (credited).</summary>
@@ -1115,8 +1115,8 @@ public sealed record BankTransferDraft
 /// </summary>
 public sealed record BankDepositDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? DepositToAccountId { get; init; }
     public string DepositToAccountCode { get; init; } = string.Empty;
@@ -1172,8 +1172,8 @@ public sealed record BankDepositItemDraft
 /// </summary>
 public sealed record TaxReturnDraft
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly PeriodStart { get; init; }
     public DateOnly PeriodEnd { get; init; }
 
@@ -1219,10 +1219,10 @@ public sealed record ReceivePaymentDraft
     /// <summary>Active company id. The page reads this from
     /// <c>BusinessShellState.ActiveCompany.Id</c>; the API endpoint
     /// expects it in the prepare-draft request body.</summary>
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     /// <summary>The acting user id from the same source.</summary>
-    public Guid UserId { get; init; }
+    public UserId UserId { get; init; }
 
     /// <summary>Asset account that receives the cash. Picked from the
     /// page's "Deposit to (Bank)" dropdown, filtered by detail_type

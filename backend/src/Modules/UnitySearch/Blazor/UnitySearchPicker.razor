@@ -128,10 +128,10 @@
 @code
 {
     [Parameter, EditorRequired]
-    public Guid CompanyId { get; set; }
+    public CompanyId CompanyId { get; set; }
 
     [Parameter]
-    public Guid? UserId { get; set; }
+    public UserId? UserId { get; set; }
 
     [Parameter, EditorRequired]
     public string Context { get; set; } = string.Empty;
@@ -267,7 +267,7 @@
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
 
-        if (Disabled || CompanyId == Guid.Empty || (!allowEmptyQuery && query.Length < 1))
+        if (Disabled || string.IsNullOrEmpty(CompanyId.Value) || (!allowEmptyQuery && query.Length < 1))
         {
             _showResults = CanCreateFromSearch;
             await InvokeAsync(StateHasChanged);

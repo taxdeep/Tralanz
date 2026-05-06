@@ -44,7 +44,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
 
         // Idempotency probe — if a JE with this source already exists, skip
         // building the doc; caller surfaces the existing JE id.
-        var existing = await TryReadExistingJournalAsync(scope, companyId.Value, salesIssueDocumentId, cancellationToken);
+        var existing = await TryReadExistingJournalAsync(scope, companyId, salesIssueDocumentId, cancellationToken);
         if (existing is not null)
         {
             return new SalesIssueCogsPostingPreparation(
@@ -55,7 +55,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
 
         // Header — verify sales-issue exists, is posted, and capture the
         // base currency + posting date for the produced JE.
-        var header = await ReadHeaderAsync(scope, companyId.Value, salesIssueDocumentId, cancellationToken);
+        var header = await ReadHeaderAsync(scope, companyId, salesIssueDocumentId, cancellationToken);
         if (header is null)
         {
             throw new InvalidOperationException(
@@ -71,7 +71,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
         // belongs to a ledger entry of this sales-issue. JOIN inventory_items
         // to surface item-level COGS / Inventory account overrides; fall
         // back to company-level SystemRoles when item didn't pin one.
-        var lines = await ReadLineCandidatesAsync(scope, companyId.Value, salesIssueDocumentId, cancellationToken);
+        var lines = await ReadLineCandidatesAsync(scope, companyId, salesIssueDocumentId, cancellationToken);
         if (lines.Count == 0)
         {
             throw new InvalidOperationException(
@@ -81,9 +81,9 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
         // Resolve company-level fallbacks once — same accounts apply to
         // every item that didn't pin its own.
         var fallbackCogs = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
-            scope, companyId.Value, cancellationToken, "cost_of_goods_sold", "inventory:cogs");
+            scope, companyId, cancellationToken, "cost_of_goods_sold", "inventory:cogs");
         var fallbackInventory = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
-            scope, companyId.Value, cancellationToken, "inventory_asset", "inventory:asset");
+            scope, companyId, cancellationToken, "inventory_asset", "inventory:asset");
 
         var documentLines = new List<SalesIssueCogsPostingDocumentLine>();
         var lineNumber = 0;
@@ -122,7 +122,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
         }
 
         var idShort = salesIssueDocumentId.ToString("N")[..12].ToUpperInvariant();
-        var entityNumber = new EntityNumber($"EN-COGS-{idShort}");
+        var entityNumber = EntityNumber.FromLegacy($"EN-COGS-{idShort}");
         var displayNumber = new DocumentNumber($"COGS-{idShort}");
         var baseCurrency = new CurrencyCode(header.Value.BaseCurrencyCode);
 
@@ -145,7 +145,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
 
     private static async Task<(Guid Id, string DisplayNumber)?> TryReadExistingJournalAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid salesIssueDocumentId,
         CancellationToken cancellationToken)
     {
@@ -158,7 +158,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
               and source_id = @source_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_type", CogsSourceType);
         command.Parameters.AddWithValue("source_id", salesIssueDocumentId);
 
@@ -172,7 +172,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
 
     private static async Task<HeaderRow?> ReadHeaderAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid salesIssueDocumentId,
         CancellationToken cancellationToken)
     {
@@ -185,7 +185,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
               and d.id = @sales_issue_id
               and d.document_type = 'sales_issue';
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -202,7 +202,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
 
     private static async Task<List<LineCandidateRow>> ReadLineCandidatesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid salesIssueDocumentId,
         CancellationToken cancellationToken)
     {
@@ -223,7 +223,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
             having sum(c.consumed_cost_base) > 0
             order by i.item_code;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
 
         var rows = new List<LineCandidateRow>();

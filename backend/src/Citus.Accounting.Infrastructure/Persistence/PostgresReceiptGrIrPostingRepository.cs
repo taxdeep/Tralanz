@@ -43,12 +43,12 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             _executionContextAccessor,
             cancellationToken);
         await EnsureSchemaAsync(scope, cancellationToken);
-        await AcquireReceiptPostingLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await EnsureActiveAccountAsync(scope, companyId.Value, grIrClearingAccountId, "GR/IR clearing account", cancellationToken);
+        await AcquireReceiptPostingLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await EnsureActiveAccountAsync(scope, companyId, grIrClearingAccountId, "GR/IR clearing account", cancellationToken);
 
         var existingDraft = await TryLoadExistingPostingDocumentAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             grIrClearingAccountId,
             status: "draft",
@@ -60,14 +60,14 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
         var eligibleLineCount = await CountUnbatchedEligibleLinesAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             cancellationToken);
         if (eligibleLineCount <= 0)
         {
             var existingPosted = await TryLoadExistingPostingDocumentAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 receiptDocumentId,
                 grIrClearingAccountId,
                 status: "posted",
@@ -81,27 +81,27 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
                 "No eligible GR/IR bridge lines are ready for posting. Refresh the bridge and resolve blocked reconciliation before posting.");
         }
 
-        await EnsureEligibleLinesHaveInventoryAssetAccountsAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await EnsureEligibleLinesHaveInventoryAssetAccountsAsync(scope, companyId, receiptDocumentId, cancellationToken);
 
         var postingBatchId = Guid.NewGuid();
         var batchIdentity = await CreatePostingBatchAsync(
             scope,
-            companyId.Value,
-            userId.Value,
+            companyId,
+            userId,
             postingBatchId,
             receiptDocumentId,
             grIrClearingAccountId,
             cancellationToken);
         await AttachEligibleLinesAsync(
             scope,
-            companyId.Value,
+            companyId,
             postingBatchId,
             receiptDocumentId,
             cancellationToken);
 
         return await LoadPostingDocumentAsync(
             scope,
-            companyId.Value,
+            companyId,
             postingBatchId,
             batchIdentity.EntityNumber,
             batchIdentity.DisplayNumber,
@@ -198,16 +198,16 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               add column if not exists journal_entry_display_number text null;
 
             alter table receipt_grir_bridge_lines
-              add column if not exists posted_by_user_id uuid null;
+              add column if not exists posted_by_user_id char(7) null;
 
             alter table receipt_grir_bridge_lines
               add column if not exists posted_at timestamptz null;
 
             create table if not exists receipt_grir_bridge_posting_batches (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               receipt_id uuid not null,
-              entity_number text not null,
+              entity_number char(11) not null,
               display_number text not null,
               status text not null,
               document_date date not null,
@@ -218,9 +218,9 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               line_count integer not null,
               journal_entry_id uuid null references journal_entries(id) on delete set null,
               journal_entry_display_number text null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now(),
-              posted_by_user_id uuid null,
+              posted_by_user_id char(7) null,
               posted_at timestamptz null,
               updated_at timestamptz not null default now()
             );
@@ -233,7 +233,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
             create table if not exists receipt_grir_bridge_posting_batch_lines (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               posting_batch_id uuid not null references receipt_grir_bridge_posting_batches(id) on delete cascade,
               bridge_line_id uuid not null references receipt_grir_bridge_lines(id) on delete cascade,
               inventory_asset_account_id uuid not null references accounts(id),
@@ -252,18 +252,18 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
     private static async Task AcquireReceiptPostingLockAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand("select pg_advisory_xact_lock(hashtext(@lock_key));");
-        command.Parameters.AddWithValue("lock_key", $"receipt-grir-posting:{companyId:N}:{receiptDocumentId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-posting:{companyId.Value}:{receiptDocumentId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task EnsureActiveAccountAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         string label,
         CancellationToken cancellationToken)
@@ -278,7 +278,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
                 and is_active = true
             );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", accountId);
         var exists = await command.ExecuteScalarAsync(cancellationToken);
         if (exists is not true)
@@ -289,7 +289,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
     private static async Task<int> CountUnbatchedEligibleLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -307,14 +307,14 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
                   and batch_line.bridge_line_id = bridge.id
               );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
     private static async Task EnsureEligibleLinesHaveInventoryAssetAccountsAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -336,7 +336,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
                   and batch_line.bridge_line_id = bridge.id
               );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         var missingCount = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
         if (missingCount > 0)
@@ -348,8 +348,8 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
     private static async Task<(string EntityNumber, string DisplayNumber)> CreatePostingBatchAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid postingBatchId,
         Guid receiptDocumentId,
         Guid grIrClearingAccountId,
@@ -420,13 +420,13 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               and r.id = @receipt_id
               and r.status = 'posted';
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("posting_batch_id", postingBatchId);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("display_number", displayNumber);
         command.Parameters.AddWithValue("grir_clearing_account_id", grIrClearingAccountId);
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
         {
@@ -438,7 +438,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
     private static async Task AttachEligibleLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid postingBatchId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
@@ -475,7 +475,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             on conflict (company_id, bridge_line_id)
             do nothing;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("posting_batch_id", postingBatchId);
 
@@ -487,7 +487,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
     private static async Task<ReceiptGrIrPostingDocument?> TryLoadExistingPostingDocumentAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid grIrClearingAccountId,
         string status,
@@ -504,7 +504,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             order by created_at desc
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("grir_clearing_account_id", grIrClearingAccountId);
         command.Parameters.AddWithValue("status", status);
@@ -525,7 +525,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
     private static async Task<ReceiptGrIrPostingDocument> LoadPostingDocumentAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid postingBatchId,
         string entityNumber,
         string displayNumber,
@@ -556,14 +556,14 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               and batch.id = @posting_batch_id
             order by bridge.receipt_line_number, bridge.id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("posting_batch_id", postingBatchId);
 
         Guid receiptDocumentId = Guid.Empty;
         string status = "draft";
         DateOnly documentDate = default;
         string baseCurrencyCode = string.Empty;
-        Guid grIrClearingAccountId = Guid.Empty;
+        Guid grIrClearingAccountId = default;
         var lines = new List<ReceiptGrIrPostingDocumentLine>();
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -595,8 +595,8 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
         return new ReceiptGrIrPostingDocument(
             postingBatchId,
-            new CompanyId(companyId),
-            new EntityNumber(entityNumber),
+            CompanyId.Parse(companyId.ToString()),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(displayNumber),
             status,
             receiptDocumentId,

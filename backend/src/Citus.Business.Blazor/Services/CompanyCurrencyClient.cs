@@ -76,7 +76,7 @@ public sealed class CompanyCurrencyClient(HttpClient httpClient, ILogger<Company
 }
 
 public sealed record CompanyCurrencyProfileSummary(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string LegalName,
     string BaseCurrencyCode,
     bool MultiCurrencyEnabled,
@@ -95,7 +95,7 @@ public sealed record EnableCompanyCurrencyResponse(
     IReadOnlyList<ProvisionedControlAccountSummary> ProvisionedControlAccounts);
 
 public sealed record ProvisionedControlAccountSummary(
-    Guid AccountId,
+    UserId AccountId,
     string Code,
     string Name,
     string CurrencyCode,

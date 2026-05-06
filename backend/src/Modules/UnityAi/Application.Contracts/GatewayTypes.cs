@@ -5,8 +5,8 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 /// audit / log / company-isolation context.
 /// </summary>
 public sealed record UnityAiInvocationContext(
-    Guid? CompanyId,
-    Guid? UserId,
+    CompanyId? CompanyId,
+    UserId? UserId,
     Guid? JobRunId,
     string? ScopeLabel = null);
 

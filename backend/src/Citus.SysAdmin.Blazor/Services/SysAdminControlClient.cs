@@ -73,7 +73,7 @@ public sealed class SysAdminControlClient(
     }
 
     public async Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
-        Guid accountId,
+        UserId accountId,
         int limit = 10,
         CancellationToken cancellationToken = default)
     {
@@ -93,7 +93,7 @@ public sealed class SysAdminControlClient(
     }
 
     public async Task<IReadOnlyList<PlatformMfaTimelineEntrySummary>> ListAccountMfaTimelineAsync(
-        Guid accountId,
+        UserId accountId,
         int limit = 20,
         CancellationToken cancellationToken = default)
     {
@@ -113,7 +113,7 @@ public sealed class SysAdminControlClient(
     }
 
     public async Task<IReadOnlyList<ManagedCompanyMembershipSummary>> ListCompanyMembershipsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -131,7 +131,7 @@ public sealed class SysAdminControlClient(
         }
     }
 
-    public async Task<SysAdminControlContextSummary?> SetActiveCompanyAsync(Guid companyId, CancellationToken cancellationToken = default)
+    public async Task<SysAdminControlContextSummary?> SetActiveCompanyAsync(CompanyId companyId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -266,7 +266,7 @@ public sealed class SysAdminControlClient(
     }
 
     public async Task<bool> SetCompanyStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         string status,
         string reason,
         CancellationToken cancellationToken = default)
@@ -283,7 +283,7 @@ public sealed class SysAdminControlClient(
     }
 
     public async Task<bool> SetAccountStatusAsync(
-        Guid accountId,
+        UserId accountId,
         string status,
         DateTimeOffset? lockedUntilUtc,
         string reason,
@@ -301,7 +301,7 @@ public sealed class SysAdminControlClient(
     }
 
     public Task<CommandOutcome> RequestPasswordResetAsync(
-        Guid accountId,
+        UserId accountId,
         string reason,
         CancellationToken cancellationToken = default) =>
         SendGovernanceCommandWithOutcomeAsync(
@@ -313,7 +313,7 @@ public sealed class SysAdminControlClient(
             cancellationToken);
 
     public Task<CommandOutcome> ResetMfaAsync(
-        Guid accountId,
+        UserId accountId,
         string reason,
         CancellationToken cancellationToken = default) =>
         SendGovernanceCommandWithOutcomeAsync(
@@ -350,7 +350,7 @@ public sealed class SysAdminControlClient(
             cancellationToken);
 
     public async Task<bool> ChangeMembershipRoleAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         string role,
         string reason,

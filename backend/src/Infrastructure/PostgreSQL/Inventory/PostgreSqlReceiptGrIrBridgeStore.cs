@@ -24,8 +24,8 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     }
 
     public async Task<ReceiptGrIrBridgeSummary> RefreshReceiptGrIrBridgeAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -74,7 +74,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     }
 
     public async Task<ReceiptGrIrBridgeSummary?> GetReceiptGrIrBridgeSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -90,7 +90,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     }
 
     public async Task<IReadOnlyDictionary<Guid, ReceiptGrIrBridgeSummary>> GetReceiptGrIrBridgeSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -114,22 +114,22 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     private static async Task AcquireReceiptGrIrBridgeLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "select pg_advisory_xact_lock(hashtext(@lock_key));";
-        command.Parameters.AddWithValue("lock_key", $"receipt-grir-bridge:{companyId:N}:{receiptDocumentId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-bridge:{companyId.Value}:{receiptDocumentId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task UpsertBridgeLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -276,16 +276,16 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
               refreshed_by_user_id = excluded.refreshed_by_user_id,
               refreshed_at = excluded.refreshed_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<ReceiptGrIrBridgeSummary?> LoadReceiptGrIrBridgeSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         bool hasBridgeLines,
         CancellationToken cancellationToken)
@@ -303,7 +303,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     private static async Task<IReadOnlyDictionary<Guid, ReceiptGrIrBridgeSummary>> LoadReceiptGrIrBridgeSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         bool hasBridgeLines,
         CancellationToken cancellationToken)
@@ -388,7 +388,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
         {
             TypedValue = receiptDocumentIds
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var summaries = new Dictionary<Guid, ReceiptGrIrBridgeSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -471,7 +471,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
                 $"""
                 create table if not exists {BridgeLinesTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   receipt_line_number integer not null,
                   valuation_line_id uuid not null,
@@ -488,9 +488,9 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
                   blocked_reason_code text null,
                   journal_entry_id uuid null,
                   journal_entry_display_number text null,
-                  posted_by_user_id uuid null,
+                  posted_by_user_id char(7) null,
                   posted_at timestamptz null,
-                  refreshed_by_user_id uuid not null,
+                  refreshed_by_user_id char(7) not null,
                   refreshed_at timestamptz not null default now()
                 );
 
@@ -501,7 +501,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
                   add column if not exists journal_entry_display_number text null;
 
                 alter table {BridgeLinesTableName}
-                  add column if not exists posted_by_user_id uuid null;
+                  add column if not exists posted_by_user_id char(7) null;
 
                 alter table {BridgeLinesTableName}
                   add column if not exists posted_at timestamptz null;

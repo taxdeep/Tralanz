@@ -70,9 +70,9 @@ public sealed class PostgresAuditLogReader : IAuditLogReader
         {
             rows.Add(new AuditLogEntry(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? (CompanyId?)null : CompanyId.Parse(reader.GetString(1)),
                 ActorType: reader.GetString(2),
-                ActorId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                ActorId: reader.IsDBNull(3) ? (UserId?)null : UserId.Parse(reader.GetString(3)),
                 ActorDisplay: reader.IsDBNull(4) ? null : reader.GetString(4),
                 EntityType: reader.GetString(5),
                 EntityId: reader.GetGuid(6),

@@ -29,8 +29,8 @@ public sealed class NullActionCenterTaskProvider : IActionCenterTaskProvider
     public string ProviderName => _name;
 
     public Task<IReadOnlyList<ActionCenterTaskDraft>> GenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         DateTimeOffset asOfUtc,
         CancellationToken cancellationToken)
     {
@@ -53,11 +53,11 @@ public sealed class NullActionCenterTaskProvider : IActionCenterTaskProvider
 /// </summary>
 public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvider
 {
-    private readonly Func<Guid, CancellationToken, ValueTask<SystemSetupSnapshot>> _readSnapshotAsync;
+    private readonly Func<CompanyId, CancellationToken, ValueTask<SystemSetupSnapshot>> _readSnapshotAsync;
     private readonly ILogger<SystemSetupActionCenterTaskProvider> _logger;
 
     public SystemSetupActionCenterTaskProvider(
-        Func<Guid, CancellationToken, ValueTask<SystemSetupSnapshot>> readSnapshotAsync,
+        Func<CompanyId, CancellationToken, ValueTask<SystemSetupSnapshot>> readSnapshotAsync,
         ILogger<SystemSetupActionCenterTaskProvider> logger)
     {
         _readSnapshotAsync = readSnapshotAsync;
@@ -67,8 +67,8 @@ public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvi
     public string ProviderName => "system_setup";
 
     public async Task<IReadOnlyList<ActionCenterTaskDraft>> GenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         DateTimeOffset asOfUtc,
         CancellationToken cancellationToken)
     {
@@ -101,7 +101,7 @@ public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvi
                 Priority: ActionCenterTaskPriority.Medium,
                 DueDate: null,
                 ActionUrl: "/settings/notifications",
-                Fingerprint: $"sys-setup:smtp:{companyId:N}"));
+                Fingerprint: $"sys-setup:smtp:{companyId.Value}"));
         }
 
         if (!snapshot.CompanyProfileComplete)
@@ -120,7 +120,7 @@ public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvi
                 Priority: ActionCenterTaskPriority.Medium,
                 DueDate: null,
                 ActionUrl: "/settings/profile",
-                Fingerprint: $"sys-setup:profile:{companyId:N}"));
+                Fingerprint: $"sys-setup:profile:{companyId.Value}"));
         }
 
         return drafts;

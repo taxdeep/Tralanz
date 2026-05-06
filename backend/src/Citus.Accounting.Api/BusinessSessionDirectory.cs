@@ -7,8 +7,8 @@ namespace Citus.Accounting.Api;
 
 public sealed class BusinessSessionDirectory
 {
-    private readonly IReadOnlyDictionary<Guid, BusinessSessionCompanyOptions> _companies;
-    private readonly IReadOnlyDictionary<Guid, BusinessSessionUserOptions> _users;
+    private readonly IReadOnlyDictionary<CompanyId, BusinessSessionCompanyOptions> _companies;
+    private readonly IReadOnlyDictionary<UserId, BusinessSessionUserOptions> _users;
     private readonly ICompanySessionContextWorkflow? _companySessionContextWorkflow;
     private readonly bool _allowStaticFallback;
 

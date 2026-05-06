@@ -4,9 +4,9 @@ public sealed record class CompanyMembershipPermissionListItem
 {
     public Guid MembershipId { get; init; }
 
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
-    public Guid UserId { get; init; }
+    public UserId UserId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

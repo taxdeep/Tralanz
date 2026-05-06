@@ -38,7 +38,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
             create table if not exists account_password_reset_tokens (
               id uuid primary key default gen_random_uuid(),
               realm text not null default 'business',
-              account_id uuid not null,
+              account_id char(7) not null,
               token_hash text not null,
               expires_at timestamptz not null,
               used_at timestamptz,
@@ -77,7 +77,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
         // Look up the user. Active accounts only — we don't issue
         // tokens for disabled / locked accounts (operator should get
         // unstuck through the SysAdmin path, not bypass it).
-        Guid accountId;
+        UserId accountId;
         string accountEmail;
         string displayName;
         await using (var lookup = connection.CreateCommand())
@@ -102,7 +102,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
             {
                 return null;
             }
-            accountId = reader.GetGuid(reader.GetOrdinal("id"));
+            accountId = UserId.Parse(reader.GetString(reader.GetOrdinal("id")));
             accountEmail = reader.GetString(reader.GetOrdinal("email")).Trim();
             displayName = reader.GetString(reader.GetOrdinal("display_name")).Trim();
         }
@@ -178,7 +178,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        Guid accountId;
+        UserId accountId;
         await using (var consume = connection.CreateCommand())
         {
             consume.Transaction = transaction;
@@ -201,7 +201,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
                     "invalid_or_expired_token",
                     "This reset link is no longer valid. Request a new one.");
             }
-            accountId = reader.GetGuid(0);
+            accountId = UserId.Parse(reader.GetString(0));
         }
 
         var newHash = _passwordHasher.HashPassword(newPassword);

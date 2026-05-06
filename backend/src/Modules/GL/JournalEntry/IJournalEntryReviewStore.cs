@@ -3,30 +3,30 @@ namespace Modules.GL.JournalEntry;
 public interface IJournalEntryReviewStore
 {
     Task<IReadOnlyList<JournalEntryReviewListItem>> ListRecentAsync(
-        Guid companyId,
+        CompanyId companyId,
         int take,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<JournalLedgerAccountBalance>> ListAccountBalancesAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly throughDate,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<JournalLedgerEntryReviewItem>> ListLedgerEntriesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         int take,
         CancellationToken cancellationToken);
 
     Task<JournalEntryReview?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         CancellationToken cancellationToken);
 }
 
 public sealed record class JournalEntryReviewListItem(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

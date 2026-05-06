@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace SharedKernel.Identity;
 
+[JsonConverter(typeof(CompanyIdJsonConverter))]
 public readonly record struct CompanyId
 {
     public const char Prefix = 'C';

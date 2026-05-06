@@ -2,7 +2,7 @@ namespace Modules.AR.CustomerCurrency;
 
 public sealed record CustomerCurrencyPreference(
     Guid CustomerId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string DisplayName,
     string DefaultCurrencyCode,
     bool CurrencyLocked,

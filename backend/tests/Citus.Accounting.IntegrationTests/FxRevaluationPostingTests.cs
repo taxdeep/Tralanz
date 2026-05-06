@@ -258,8 +258,8 @@ public sealed class FxRevaluationPostingTests
         string? targetBalanceSide = null) =>
         new(
             Guid.NewGuid(),
-            new CompanyId(Guid.NewGuid()),
-            new EntityNumber("EN2026000003"),
+            CompanyId.FromOrdinal(1),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("FXRV-0001"),
             "draft",
             new DateOnly(2026, 4, 12),

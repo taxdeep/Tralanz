@@ -114,7 +114,7 @@ public sealed class ForeignCurrencySettlementPostingTests
             document,
             new PostingContext(
                 document.CompanyId,
-                new UserId(Guid.NewGuid()),
+                UserId.FromOrdinal(1),
                 document.BaseCurrencyCode,
                 AcceptedFxSnapshotId: null,
                 IdempotencyKey: null,
@@ -194,11 +194,11 @@ public sealed class ForeignCurrencySettlementPostingTests
         decimal appliedAmountBase,
         decimal carryingAmountBase)
     {
-        var companyId = new CompanyId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
         return new ReceivePaymentDocument(
             Guid.NewGuid(),
             companyId,
-            new EntityNumber("EN2026000001"),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("RP-0001"),
             "draft",
             new DateOnly(2026, 4, 12),
@@ -228,11 +228,11 @@ public sealed class ForeignCurrencySettlementPostingTests
         decimal appliedAmountBase,
         decimal carryingAmountBase)
     {
-        var companyId = new CompanyId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
         return new PayBillDocument(
             Guid.NewGuid(),
             companyId,
-            new EntityNumber("EN2026000002"),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("PB-0001"),
             "draft",
             new DateOnly(2026, 4, 12),

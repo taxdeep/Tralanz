@@ -3,11 +3,11 @@ namespace Modules.CompanyAccess.SystemSetup;
 public interface ISystemSetupStore
 {
     Task<SystemSetupPreference> GetAsync(
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<SystemSetupPreference> SaveAsync(
-        Guid userId,
+        UserId userId,
         SharedKernel.CompanyAccess.NumberDisplayMode numberDisplayMode,
         CancellationToken cancellationToken);
 }

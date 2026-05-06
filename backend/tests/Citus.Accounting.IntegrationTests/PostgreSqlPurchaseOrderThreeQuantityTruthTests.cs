@@ -31,8 +31,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var receiptRepository = new PostgresReceiptDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemAId = Guid.NewGuid();
             var itemBId = Guid.NewGuid();
@@ -40,8 +40,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var saved = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 20),
                     null,
@@ -52,10 +52,10 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                         new PurchaseOrderDraftLineSaveModel(2, itemBId, 5m, "EA", "Item B", 20m)
                     ]),
                 CancellationToken.None);
-            _ = await repository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
-            _ = await repository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            _ = await repository.ApproveAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
 
-            var orderedOnly = await repository.GetThreeQuantitySummaryAsync(new(companyId), saved.DocumentId, CancellationToken.None);
+            var orderedOnly = await repository.GetThreeQuantitySummaryAsync(companyId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(orderedOnly);
             Assert.Equal(PurchaseOrderThreeQuantityStatusPolicy.OrderedOnly, orderedOnly!.QuantityStatus);
             Assert.Equal(15m, orderedOnly.OrderedQuantity);
@@ -65,7 +65,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, lineNumber: 1, itemAId, quantity: 4m, status: "draft");
             await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, lineNumber: 1, itemAId, quantity: 3m, status: "draft");
 
-            var draftAnchorsIgnored = await repository.GetThreeQuantitySummaryAsync(new(companyId), saved.DocumentId, CancellationToken.None);
+            var draftAnchorsIgnored = await repository.GetThreeQuantitySummaryAsync(companyId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(draftAnchorsIgnored);
             Assert.Equal(0m, draftAnchorsIgnored!.ReceivedQuantity);
             Assert.Equal(0m, draftAnchorsIgnored.BilledQuantity);
@@ -73,7 +73,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, lineNumber: 1, itemAId, quantity: 4m, status: "posted");
             await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, lineNumber: 1, itemAId, quantity: 3m, status: "posted");
 
-            var partial = await repository.GetThreeQuantitySummaryAsync(new(companyId), saved.DocumentId, CancellationToken.None);
+            var partial = await repository.GetThreeQuantitySummaryAsync(companyId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(partial);
             Assert.Equal(PurchaseOrderThreeQuantityStatusPolicy.PartiallyBilled, partial!.QuantityStatus);
             Assert.Equal(4m, partial.ReceivedQuantity);
@@ -84,7 +84,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, lineNumber: 1, itemAId, quantity: 7m, status: "posted");
             await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, lineNumber: 2, itemBId, quantity: 6m, status: "posted");
 
-            var over = await repository.GetThreeQuantitySummaryAsync(new(companyId), saved.DocumentId, CancellationToken.None);
+            var over = await repository.GetThreeQuantitySummaryAsync(companyId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(over);
             Assert.Equal(PurchaseOrderThreeQuantityStatusPolicy.OverReceived, over!.QuantityStatus);
             Assert.Equal(1, over.OverReceivedLineCount);
@@ -92,19 +92,19 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             Assert.Contains(over.Lines, static line => line.LineNumber == 1 && line.QuantityStatus == PurchaseOrderThreeQuantityStatusPolicy.OverReceived);
             Assert.Contains(over.Lines, static line => line.LineNumber == 2 && line.QuantityStatus == PurchaseOrderThreeQuantityStatusPolicy.OverBilled);
 
-            var refreshed = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            var refreshed = await repository.RefreshQuantityDiscrepanciesAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(refreshed);
             Assert.Equal(2, refreshed!.OpenDiscrepancyCount);
             Assert.Contains(refreshed.Discrepancies, static lane => lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverReceived);
             Assert.Contains(refreshed.Discrepancies, static lane => lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverBilled);
 
-            var retried = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            var retried = await repository.RefreshQuantityDiscrepanciesAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(retried);
             Assert.Equal(2, retried!.OpenDiscrepancyCount);
 
             var resolved = await repository.ReviewQuantityDiscrepancyAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 saved.DocumentId,
                 1,
                 PurchaseOrderQuantityDiscrepancyPolicy.OverReceived,
@@ -115,13 +115,13 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             Assert.Equal(1, resolved!.OpenDiscrepancyCount);
             Assert.DoesNotContain(resolved.Discrepancies, static lane => lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverReceived);
 
-            var reopened = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            var reopened = await repository.RefreshQuantityDiscrepanciesAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(reopened);
             Assert.Equal(2, reopened!.OpenDiscrepancyCount);
 
             var overrideAuthorized = await repository.ReviewQuantityDiscrepancyAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 saved.DocumentId,
                 1,
                 PurchaseOrderQuantityDiscrepancyPolicy.OverReceived,
@@ -136,7 +136,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                 lane.ReviewNote is not null &&
                 lane.ReviewedAt.HasValue);
 
-            var preserved = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            var preserved = await repository.RefreshQuantityDiscrepanciesAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
             Assert.NotNull(preserved);
             Assert.Equal(1, preserved!.OpenDiscrepancyCount);
             Assert.Contains(preserved.Discrepancies, static lane =>
@@ -145,8 +145,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
             var overReceiptAfterOverride = new ReceiptDraftSaveModel(
                 null,
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 vendorId,
                 Guid.NewGuid(),
                 new DateOnly(2026, 4, 22),
@@ -157,8 +157,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(overReceiptAfterOverride, CancellationToken.None));
 
             var overrideBilledAuthorized = await repository.ReviewQuantityDiscrepancyAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 saved.DocumentId,
                 2,
                 PurchaseOrderQuantityDiscrepancyPolicy.OverBilled,
@@ -171,7 +171,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                 lane.InvestigationStatus == PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized);
 
             var overBillAfterOverride = await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 2, itemBId, 1m, "submitted", vendorId);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ValidateBillAnchorsForPostingAsync(new(companyId), overBillAfterOverride, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ValidateBillAnchorsForPostingAsync(companyId, overBillAfterOverride, CancellationToken.None));
         }
         finally
         {
@@ -201,8 +201,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var receiptRepository = new PostgresReceiptDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 executionContext);
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var warehouseId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -210,8 +210,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var saved = await poRepository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 20),
                     null,
@@ -222,8 +222,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
             var draftAnchor = new ReceiptDraftSaveModel(
                 null,
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 vendorId,
                 warehouseId,
                 new DateOnly(2026, 4, 21),
@@ -234,12 +234,12 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None));
-            _ = await poRepository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => poRepository.IssueAsync(companyId, userId, saved.DocumentId, CancellationToken.None));
+            _ = await poRepository.ApproveAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
             await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None));
-            _ = await poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            _ = await poRepository.IssueAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
             var receipt = await receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None);
-            _ = await receiptRepository.PostAsync(new(companyId), new(userId), receipt.DocumentId, CancellationToken.None);
+            _ = await receiptRepository.PostAsync(companyId, userId, receipt.DocumentId, CancellationToken.None);
 
             var overReceipt = draftAnchor with
             {
@@ -271,16 +271,16 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var poRepository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 
             var saved = await poRepository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 20),
                     null,
@@ -288,15 +288,15 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
                 CancellationToken.None);
-            _ = await poRepository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
-            _ = await poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            _ = await poRepository.ApproveAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
+            _ = await poRepository.IssueAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
 
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 4m, "posted");
             var coveredBillId = await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 4m, "submitted", vendorId);
-            await poRepository.ValidateBillAnchorsForPostingAsync(new(companyId), coveredBillId, CancellationToken.None);
+            await poRepository.ValidateBillAnchorsForPostingAsync(companyId, coveredBillId, CancellationToken.None);
 
             var overBillId = await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 5m, "submitted", vendorId);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => poRepository.ValidateBillAnchorsForPostingAsync(new(companyId), overBillId, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => poRepository.ValidateBillAnchorsForPostingAsync(companyId, overBillId, CancellationToken.None));
         }
         finally
         {
@@ -322,16 +322,16 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var repository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 
             var cancellableDraft = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 20),
                     null,
@@ -339,14 +339,14 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
                 CancellationToken.None);
-            var cancelledDraft = await repository.CancelAsync(new(companyId), new(userId), cancellableDraft.DocumentId, CancellationToken.None);
+            var cancelledDraft = await repository.CancelAsync(companyId, userId, cancellableDraft.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledDraft.Status);
 
             var cancellableApproved = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 20),
                     null,
@@ -354,17 +354,17 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
                 CancellationToken.None);
-            var approved = await repository.ApproveAsync(new(companyId), new(userId), cancellableApproved.DocumentId, CancellationToken.None);
+            var approved = await repository.ApproveAsync(companyId, userId, cancellableApproved.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Approved, approved.Status);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CloseAsync(new(companyId), new(userId), cancellableApproved.DocumentId, CancellationToken.None));
-            var cancelledApproved = await repository.CancelAsync(new(companyId), new(userId), cancellableApproved.DocumentId, CancellationToken.None);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CloseAsync(companyId, userId, cancellableApproved.DocumentId, CancellationToken.None));
+            var cancelledApproved = await repository.CancelAsync(companyId, userId, cancellableApproved.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledApproved.Status);
 
             var untouchedIssued = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 21),
                     null,
@@ -372,16 +372,16 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
                 CancellationToken.None);
-            _ = await repository.ApproveAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
-            _ = await repository.IssueAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
-            var cancelledIssued = await repository.CancelAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
+            _ = await repository.ApproveAsync(companyId, userId, untouchedIssued.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(companyId, userId, untouchedIssued.DocumentId, CancellationToken.None);
+            var cancelledIssued = await repository.CancelAsync(companyId, userId, untouchedIssued.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledIssued.Status);
 
             var partiallyReceived = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 22),
                     null,
@@ -389,17 +389,17 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
                 CancellationToken.None);
-            _ = await repository.ApproveAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None);
-            _ = await repository.IssueAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None);
+            _ = await repository.ApproveAsync(companyId, userId, partiallyReceived.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(companyId, userId, partiallyReceived.DocumentId, CancellationToken.None);
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, partiallyReceived.DocumentId, 1, itemId, 4m, "posted");
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CancelAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CloseAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CancelAsync(companyId, userId, partiallyReceived.DocumentId, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CloseAsync(companyId, userId, partiallyReceived.DocumentId, CancellationToken.None));
 
             var fullyAligned = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 23),
                     null,
@@ -407,14 +407,14 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
                 CancellationToken.None);
-            _ = await repository.ApproveAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None);
-            _ = await repository.IssueAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None);
+            _ = await repository.ApproveAsync(companyId, userId, fullyAligned.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(companyId, userId, fullyAligned.DocumentId, CancellationToken.None);
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, fullyAligned.DocumentId, 1, itemId, 10m, "posted");
             _ = await SeedBillAnchorAsync(schemaConnectionString, companyId, fullyAligned.DocumentId, 1, itemId, 10m, "posted", vendorId);
 
-            var closed = await repository.CloseAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None);
+            var closed = await repository.CloseAsync(companyId, userId, fullyAligned.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Closed, closed.Status);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CancelAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CancelAsync(companyId, userId, fullyAligned.DocumentId, CancellationToken.None));
         }
         finally
         {
@@ -440,16 +440,16 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var repository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 
             var draft = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 24),
                     null,
@@ -457,13 +457,13 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
                 CancellationToken.None);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ReopenForAmendmentAsync(companyId, userId, draft.DocumentId, CancellationToken.None));
 
-            var approved = await repository.ApproveAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            var approved = await repository.ApproveAsync(companyId, userId, draft.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Approved, approved.Status);
-            var reopenedApproved = await repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            var reopenedApproved = await repository.ReopenForAmendmentAsync(companyId, userId, draft.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Draft, reopenedApproved.Status);
-            var reopenedApprovedDocument = await repository.GetAsync(new(companyId), draft.DocumentId, CancellationToken.None);
+            var reopenedApprovedDocument = await repository.GetAsync(companyId, draft.DocumentId, CancellationToken.None);
             Assert.NotNull(reopenedApprovedDocument);
             Assert.Null(reopenedApprovedDocument!.ApprovedAt);
             Assert.NotNull(reopenedApprovedDocument.AmendmentStartedAt);
@@ -471,8 +471,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             _ = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     draft.DocumentId,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 24),
                     null,
@@ -480,19 +480,19 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     "Amended ordered quantity before release.",
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 6m, "EA")]),
                 CancellationToken.None);
-            _ = await repository.ApproveAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
-            _ = await repository.IssueAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
-            var reopenedIssued = await repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            _ = await repository.ApproveAsync(companyId, userId, draft.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(companyId, userId, draft.DocumentId, CancellationToken.None);
+            var reopenedIssued = await repository.ReopenForAmendmentAsync(companyId, userId, draft.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Draft, reopenedIssued.Status);
-            var reopenedIssuedDocument = await repository.GetAsync(new(companyId), draft.DocumentId, CancellationToken.None);
+            var reopenedIssuedDocument = await repository.GetAsync(companyId, draft.DocumentId, CancellationToken.None);
             Assert.NotNull(reopenedIssuedDocument);
             Assert.Null(reopenedIssuedDocument!.ApprovedAt);
             Assert.Null(reopenedIssuedDocument.IssuedAt);
 
-            _ = await repository.ApproveAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
-            _ = await repository.IssueAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            _ = await repository.ApproveAsync(companyId, userId, draft.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(companyId, userId, draft.DocumentId, CancellationToken.None);
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, draft.DocumentId, 1, itemId, 1m, "draft");
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ReopenForAmendmentAsync(companyId, userId, draft.DocumentId, CancellationToken.None));
         }
         finally
         {
@@ -520,16 +520,16 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var repository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 
             var saved = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     vendorId,
                     new DateOnly(2026, 4, 25),
                     null,
@@ -538,9 +538,9 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
                 CancellationToken.None);
 
-            _ = await repository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
-            _ = await repository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
-            _ = await repository.ReopenForAmendmentAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            _ = await repository.ApproveAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
+            _ = await repository.ReopenForAmendmentAsync(companyId, userId, saved.DocumentId, CancellationToken.None);
 
             var actions = await ReadPurchaseOrderAuditActionsAsync(schemaConnectionString, companyId, saved.DocumentId);
             Assert.Equal(
@@ -551,7 +551,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                 ],
                 actions);
 
-            var timeline = await repository.ListLifecycleAuditAsync(new(companyId), saved.DocumentId, 10, CancellationToken.None);
+            var timeline = await repository.ListLifecycleAuditAsync(companyId, saved.DocumentId, 10, CancellationToken.None);
             Assert.Equal(3, timeline.Count);
             Assert.Equal("purchase_order_reopened_for_amendment", timeline[0].Action);
             Assert.Equal(PurchaseOrderDocumentStatuses.Issued, timeline[0].FromStatus);
@@ -566,7 +566,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             {
                 Assert.Equal(saved.DocumentId, entry.PurchaseOrderId);
                 Assert.Equal("user", entry.ActorType);
-                Assert.Equal(userId, entry.ActorId);
+                Assert.Equal((object?)userId, (object?)entry.ActorId);
                 Assert.Equal(saved.EntityNumber, entry.EntityNumber);
                 Assert.Equal(saved.DisplayNumber, entry.DisplayNumber);
             });
@@ -579,7 +579,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
     private static async Task SeedReceiptAnchorAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         int lineNumber,
         Guid itemId,
@@ -593,13 +593,13 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """
             create table if not exists receipts (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               status text not null
             );
 
             create table if not exists receipt_lines (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               receipt_id uuid not null,
               line_number integer not null,
               item_id uuid not null,
@@ -636,7 +636,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             );
             """;
         command.Parameters.AddWithValue("receipt_id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("line_number", lineNumber);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -648,7 +648,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
     private static async Task<Guid> SeedBillAnchorAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         int lineNumber,
         Guid itemId,
@@ -663,14 +663,14 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """
             create table if not exists bills (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               vendor_id uuid null,
               status text not null
             );
 
             create table if not exists bill_lines (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               bill_id uuid not null,
               line_number integer not null,
               item_id uuid null,
@@ -708,7 +708,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """;
         var billId = Guid.NewGuid();
         command.Parameters.AddWithValue("bill_id", billId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId ?? Guid.NewGuid());
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("line_number", lineNumber);
@@ -729,9 +729,9 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """
             create table audit_logs (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               actor_type text not null,
-              actor_id uuid null,
+              actor_id char(7) null,
               entity_type text not null,
               entity_id uuid not null,
               action text not null,
@@ -744,7 +744,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
     private static async Task<IReadOnlyList<string>> ReadPurchaseOrderAuditActionsAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -759,7 +759,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
               and entity_id = @purchase_order_id
             order by created_at asc, action asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
 
         var actions = new List<string>();

@@ -5,7 +5,7 @@ namespace Tests.Company;
 
 public sealed class CompanyCurrencyGovernanceWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
 
     [Fact]
     public async Task EnableCurrencyAsync_ProvisionsForeignControlAccounts()
@@ -16,7 +16,7 @@ public sealed class CompanyCurrencyGovernanceWorkflowTests
         var result = await workflow.EnableCurrencyAsync(
             CompanyId,
             "cad",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Equal("CAD", store.EnabledCurrencyCode);
@@ -35,7 +35,7 @@ public sealed class CompanyCurrencyGovernanceWorkflowTests
         var result = await workflow.EnableCurrencyAsync(
             CompanyId,
             "usd",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Null(store.EnabledCurrencyCode);
@@ -49,7 +49,7 @@ public sealed class CompanyCurrencyGovernanceWorkflowTests
 
         public IReadOnlyList<ControlAccountProvisioningRequest> ControlAccounts { get; private set; } = [];
 
-        public Task<CompanyCurrencyProfile> GetProfileAsync(Guid companyId, CancellationToken cancellationToken) =>
+        public Task<CompanyCurrencyProfile> GetProfileAsync(CompanyId companyId, CancellationToken cancellationToken) =>
             Task.FromResult(new CompanyCurrencyProfile(
                 companyId,
                 "Northwind Studio Ltd.",
@@ -58,12 +58,12 @@ public sealed class CompanyCurrencyGovernanceWorkflowTests
                 [new CompanyCurrencyOption("USD", "US Dollar", true, true)]));
 
         public Task<CompanyControlAccountSlots> AllocateControlAccountSlotsAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken) =>
             Task.FromResult(new CompanyControlAccountSlots("11001", "20001"));
 
         public Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
-            Guid companyId,
+            CompanyId companyId,
             string currencyCode,
             IReadOnlyList<ControlAccountProvisioningRequest> controlAccounts,
             CancellationToken cancellationToken)

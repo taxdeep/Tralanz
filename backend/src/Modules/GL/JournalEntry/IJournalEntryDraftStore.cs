@@ -4,6 +4,6 @@ public interface IJournalEntryDraftStore
 {
     Task<JournalEntryDraftSaveResult> SaveAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 }

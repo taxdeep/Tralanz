@@ -35,7 +35,7 @@ public sealed class PostgresPlatformSmtpConfigStore : IPlatformSmtpConfigStore
               username text not null default '',
               password_protected text,
               updated_at timestamptz not null default now(),
-              updated_by_user_id uuid,
+              updated_by_user_id char(7),
               constraint platform_smtp_config_provider_chk
                 check (provider in ('disabled','smtp'))
             );
@@ -80,12 +80,12 @@ public sealed class PostgresPlatformSmtpConfigStore : IPlatformSmtpConfigStore
             Username: reader.GetString(6),
             HasPassword: !string.IsNullOrWhiteSpace(passwordProtected),
             UpdatedAt: reader.GetFieldValue<DateTimeOffset>(8),
-            UpdatedByUserId: reader.IsDBNull(9) ? null : reader.GetGuid(9));
+            UpdatedByUserId: reader.IsDBNull(9) ? null : UserId.Parse(reader.GetString(9)));
     }
 
     public async Task<PlatformSmtpConfigSnapshot> UpsertAsync(
         PlatformSmtpConfigUpsertRequest request,
-        Guid updatedByUserId,
+        UserId updatedByUserId,
         CancellationToken cancellationToken)
     {
         // Resolve the password column we want to persist: explicit clear

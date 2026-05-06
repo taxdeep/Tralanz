@@ -86,7 +86,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<IReadOnlyList<PurchaseOrderSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderListFilter filter,
         CancellationToken cancellationToken)
     {
@@ -130,7 +130,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         }
         sql += " ORDER BY p.order_date DESC, p.created_at DESC;";
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -141,7 +141,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken)
     {
@@ -151,7 +151,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = SelectColumns + " WHERE p.company_id = @company_id AND p.id = @id LIMIT 1;";
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("id", purchaseOrderId);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -166,7 +166,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -218,7 +218,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         PurchaseOrderUpsertInput input,
         CancellationToken cancellationToken)
@@ -232,7 +232,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         {
             statusCmd.Transaction = transaction;
             statusCmd.CommandText = "SELECT status FROM ap_purchase_orders WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCmd.Parameters.AddWithValue("company_id", companyId);
+            statusCmd.Parameters.AddWithValue("company_id", companyId.Value);
             statusCmd.Parameters.AddWithValue("id", purchaseOrderId);
             var statusObj = await statusCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null) return null;
@@ -302,7 +302,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         string newStatus,
         CancellationToken cancellationToken)
@@ -321,7 +321,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", purchaseOrderId);
         command.Parameters.AddWithValue("new_status", newStatus);
 
@@ -332,7 +332,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> MarkClosedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken)
     {
@@ -346,7 +346,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
                AND status IN ('open', 'draft', 'closed')
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", purchaseOrderId);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -459,14 +459,14 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
 
     private static void BindUpsertParameters(
         NpgsqlCommand command,
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderUpsertInput input,
         decimal subtotal,
         decimal discount,
         decimal tax,
         decimal total)
     {
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", input.VendorId);
         command.Parameters.Add("order_date", NpgsqlDbType.Date).Value = input.OrderDate.ToDateTime(TimeOnly.MinValue);
         command.Parameters.Add("expected_delivery_date", NpgsqlDbType.Date).Value =
@@ -527,7 +527,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
 
     private static PurchaseOrderSummary MapSummary(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         PurchaseOrderNumber: reader.GetString(2),
         VendorId: reader.GetGuid(3),
         VendorName: reader.GetString(4),
@@ -541,7 +541,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
 
     private static PurchaseOrderRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<PurchaseOrderLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
-        CompanyId: reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         PurchaseOrderNumber: reader.GetString(reader.GetOrdinal("purchase_order_number")),
         Status: reader.GetString(reader.GetOrdinal("status")),
         VendorId: reader.GetGuid(reader.GetOrdinal("vendor_id")),

@@ -12,22 +12,22 @@ public interface IVendorStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<VendorRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken);
 
     Task<VendorRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken);
 
     Task<VendorRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         VendorUpsertRequest request,
         CancellationToken cancellationToken);
 
     Task<VendorRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         VendorUpsertRequest request,
         CancellationToken cancellationToken);
@@ -35,7 +35,7 @@ public interface IVendorStore
 
 public sealed record VendorRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayName,
     string DefaultCurrencyCode,

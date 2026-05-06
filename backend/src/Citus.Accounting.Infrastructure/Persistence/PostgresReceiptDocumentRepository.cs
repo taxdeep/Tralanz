@@ -141,7 +141,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         return new ReceiptDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(receiptNumber),
             status,
             vendorId,
@@ -256,7 +256,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         await ValidatePurchaseOrderReceiptAnchorsAsync(
             connection,
             transaction,
-            draft.CompanyId.Value,
+            draft.CompanyId,
             draft.VendorId,
             documentId,
             draft.Lines
@@ -281,24 +281,24 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
-                8,
+                5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken),
                 cancellationToken);
 
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "receipt-display",
                 "RECEIPT-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     ReceiptsTableName,
                     "receipt_number",
                     "^RECEIPT-[0-9]+$",
@@ -357,7 +357,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             (entityNumber, displayNumber, var currentStatus) = await LoadIdentityAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 documentId,
                 cancellationToken);
 
@@ -481,7 +481,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -493,7 +493,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         await ValidatePersistedPurchaseOrderReceiptAnchorsAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -607,7 +607,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     private static async Task ValidatePurchaseOrderReceiptAnchorsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptVendorId,
         Guid receiptDocumentId,
         IReadOnlyCollection<PurchaseOrderReceiptAnchorCandidate> candidates,
@@ -655,7 +655,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                   and po.id = @purchase_order_id
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
             command.Parameters.AddWithValue("purchase_order_id", candidate.PurchaseOrderId);
             command.Parameters.AddWithValue("purchase_order_line_number", candidate.PurchaseOrderLineNumber);
@@ -696,7 +696,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     private static async Task ValidatePersistedPurchaseOrderReceiptAnchorsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -726,7 +726,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               line.item_id,
               line.uom_code;
             """;
-        loadCommand.Parameters.AddWithValue("company_id", companyId);
+        loadCommand.Parameters.AddWithValue("company_id", companyId.Value);
         loadCommand.Parameters.AddWithValue("receipt_id", receiptDocumentId);
 
         var candidates = new List<PurchaseOrderReceiptAnchorCandidate>();
@@ -777,7 +777,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     private static async Task<(string EntityNumber, string DisplayNumber, string Status)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -791,7 +791,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -817,8 +817,8 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             $"""
             create table if not exists {ReceiptsTableName} (
               id uuid primary key,
-              company_id uuid not null,
-              entity_number text not null,
+              company_id char(7) not null,
+              entity_number char(11) not null,
               receipt_number text not null,
               vendor_id uuid not null,
               warehouse_id uuid not null,
@@ -827,11 +827,11 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               vendor_reference text null,
               source_reference text null,
               memo text null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now(),
-              updated_by_user_id uuid null,
+              updated_by_user_id char(7) null,
               updated_at timestamptz not null default now(),
-              posted_by_user_id uuid null,
+              posted_by_user_id char(7) null,
               posted_at timestamptz null
             );
 
@@ -846,7 +846,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
 
             create table if not exists {ReceiptLinesTableName} (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               receipt_id uuid not null,
               line_number integer not null,
               item_id uuid not null,

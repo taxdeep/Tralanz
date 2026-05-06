@@ -166,7 +166,7 @@ public sealed class QuoteClient(HttpClient httpClient, ILogger<QuoteClient> logg
 
 public sealed record QuoteSummaryDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string QuoteNumber,
     Guid CustomerId,
     string CustomerName,
@@ -181,7 +181,7 @@ public sealed record QuoteSummaryDto(
 
 public sealed record QuoteRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string QuoteNumber,
     string Status,
     Guid CustomerId,

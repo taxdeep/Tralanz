@@ -13,7 +13,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
     }
 
     public async Task<ManualJournalSourceReview?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -58,7 +58,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                   and mj.id = @document_id
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("document_id", documentId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -67,7 +67,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                 review = new ManualJournalSourceReview
                 {
                     Id = reader.GetGuid(reader.GetOrdinal("id")),
-                    CompanyId = reader.GetGuid(reader.GetOrdinal("company_id")),
+                    CompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                     EntityNumber = reader.GetString(reader.GetOrdinal("entity_number")),
                     DisplayNumber = reader.GetString(reader.GetOrdinal("display_number")),
                     Status = reader.GetString(reader.GetOrdinal("status")),
@@ -87,7 +87,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                     PostedAt = reader.IsDBNull(reader.GetOrdinal("posted_at"))
                         ? null
                         : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
-                    CreatedByUserId = reader.GetGuid(reader.GetOrdinal("created_by_user_id")),
+                    CreatedByUserId = UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id"))),
                     LinkedJournalEntryId = reader.IsDBNull(reader.GetOrdinal("linked_journal_entry_id"))
                         ? null
                         : reader.GetGuid(reader.GetOrdinal("linked_journal_entry_id")),
@@ -128,7 +128,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                   and mjl.manual_journal_document_id = @document_id
                 order by mjl.line_number asc;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("document_id", documentId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -163,7 +163,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
 
     private static async Task<IReadOnlyList<JournalEntryRelatedEntry>> LoadRelatedEntriesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         CancellationToken cancellationToken)
     {
@@ -183,7 +183,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
               and source_id = @source_id
             order by coalesce(posted_at, created_at) asc, display_number asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

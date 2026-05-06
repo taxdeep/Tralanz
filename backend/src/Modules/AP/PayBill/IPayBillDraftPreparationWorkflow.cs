@@ -3,7 +3,7 @@ namespace Modules.AP.PayBill;
 public interface IPayBillDraftPreparationWorkflow
 {
     Task<IReadOnlyList<PayBillOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken);
 

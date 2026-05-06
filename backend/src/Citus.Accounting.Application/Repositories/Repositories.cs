@@ -513,7 +513,7 @@ public sealed record PurchaseOrderLifecycleAuditEntry(
     Guid PurchaseOrderId,
     string Action,
     string ActorType,
-    Guid? ActorId,
+    UserId? ActorId,
     string? FromStatus,
     string? ToStatus,
     string? EntityNumber,
@@ -533,13 +533,13 @@ public sealed record PurchaseOrderApprovalRequestRecord(
     string RequestStatus,
     string ApprovalStatus,
     string RequestedByActorType,
-    Guid? RequestedByActorId,
+    UserId? RequestedByActorId,
     DateTimeOffset RequestedAt,
     string? SubmittedByActorType,
-    Guid? SubmittedByActorId,
+    UserId? SubmittedByActorId,
     DateTimeOffset? SubmittedAt,
     string? RejectedByActorType,
-    Guid? RejectedByActorId,
+    UserId? RejectedByActorId,
     DateTimeOffset? RejectedAt,
     string? Reason);
 
@@ -576,7 +576,7 @@ public sealed record PurchaseOrderQuantityDiscrepancySummary(
     DateTimeOffset FirstDetectedAt,
     DateTimeOffset LastDetectedAt,
     string? ReviewNote = null,
-    Guid? ReviewedByUserId = null,
+    UserId? ReviewedByUserId = null,
     DateTimeOffset? ReviewedAt = null);
 
 public sealed record PurchaseOrderThreeQuantitySummary(
@@ -1104,7 +1104,7 @@ public sealed record JournalEntryReview(
     DateTimeOffset? PostedAt,
     DateTimeOffset? VoidedAt,
     DateTimeOffset? ReversedAt,
-    Guid CreatedByUserId,
+    UserId CreatedByUserId,
     IReadOnlyList<JournalEntryReviewLine> Lines);
 
 public sealed record JournalEntryReviewLine(
@@ -1196,7 +1196,7 @@ public interface IAccountingDocumentReviewRepository
         CompanyId companyId,
         string sourceType,
         Guid documentId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<AccountingDocumentLifecycleRequestRecord?> GetReverseRequestAsync(
@@ -1217,7 +1217,7 @@ public interface IAccountingDocumentReviewRepository
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<AccountingDocumentLifecycleRequestTransitionResult?> CancelReverseRequestAsync(
@@ -1225,7 +1225,7 @@ public interface IAccountingDocumentReviewRepository
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<AccountingDocumentLifecycleRequestReadiness?> GetReverseRequestApplyReadinessAsync(
@@ -1241,7 +1241,7 @@ public interface IAccountingDocumentReviewRepository
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         DateOnly asOfDate,
         CancellationToken cancellationToken);
 
@@ -1250,7 +1250,7 @@ public interface IAccountingDocumentReviewRepository
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         Guid compensationJournalEntryId,
         string compensationJournalEntryDisplayNumber,
         string compensationSourceType,
@@ -1452,20 +1452,20 @@ public sealed record AccountingDocumentLifecycleRequestRecord(
     string Reason,
     string RequestStatus,
     string RequestedByActorType,
-    Guid? RequestedByActorId,
+    UserId? RequestedByActorId,
     DateTimeOffset RequestedAt,
     string? SubmittedByActorType,
-    Guid? SubmittedByActorId,
+    UserId? SubmittedByActorId,
     DateTimeOffset? SubmittedAt,
     string? CancelledByActorType,
-    Guid? CancelledByActorId,
+    UserId? CancelledByActorId,
     DateTimeOffset? CancelledAt,
     string ExecutionStatus,
     string? ExecutionRequestedByActorType,
-    Guid? ExecutionRequestedByActorId,
+    UserId? ExecutionRequestedByActorId,
     DateTimeOffset? ExecutionRequestedAt,
     string? ExecutionCompletedByActorType,
-    Guid? ExecutionCompletedByActorId,
+    UserId? ExecutionCompletedByActorId,
     DateTimeOffset? ExecutionCompletedAt,
     Guid? CompensationJournalEntryId,
     string? CompensationJournalEntryDisplayNumber,
@@ -1555,7 +1555,7 @@ public sealed record AccountingDocumentSettlementApplicationReversal(
     Guid? OriginalApplicationCreatedByUserId,
     DateTimeOffset ReversedAt,
     string ReversedByActorType,
-    Guid? ReversedByActorId,
+    UserId? ReversedByActorId,
     string ReversalMode);
 
 public sealed record OpenItemDrillDown(
@@ -1619,7 +1619,7 @@ public interface IOpenItemAdjustmentAccountMappingRepository
     Task<OpenItemAdjustmentAccountMappingTransitionResult?> DeactivateAsync(
         CompanyId companyId,
         Guid mappingId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 }
 
@@ -1636,8 +1636,8 @@ public sealed record OpenItemAdjustmentAccountMappingRecord(
     string AdjustmentAccountName,
     string AdjustmentAccountRootType,
     bool IsActive,
-    Guid? CreatedByUserId,
-    Guid? UpdatedByUserId,
+    UserId? CreatedByUserId,
+    UserId? UpdatedByUserId,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? DeactivatedAt);
@@ -1671,7 +1671,7 @@ public sealed record OpenItemAdjustmentAccountMappingSaveRequest(
     string OpenItemType,
     string AdjustmentType,
     Guid AdjustmentAccountId,
-    Guid? ActorId);
+    UserId? ActorId);
 
 public sealed record OpenItemAdjustmentAccountMappingSaveResult(
     OpenItemAdjustmentAccountMappingRecord Mapping,
@@ -1715,7 +1715,7 @@ public interface IArOpenItemRepository
         string adjustmentType,
         DateOnly adjustmentDate,
         decimal? adjustmentAmountTx,
-        Guid? actorId,
+        UserId? actorId,
         string? reason,
         CancellationToken cancellationToken);
 
@@ -1728,28 +1728,28 @@ public interface IArOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestTransitionResult?> CancelAdjustmentRequestAsync(
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestTransitionResult?> ApproveAdjustmentRequestAsync(
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestTransitionResult?> RejectAdjustmentRequestAsync(
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestReadiness?> GetAdjustmentRequestReadinessAsync(
@@ -1778,7 +1778,7 @@ public interface IArOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         Guid journalEntryId,
         string journalEntryDisplayNumber,
         DateTimeOffset executedAt,
@@ -1816,7 +1816,7 @@ public interface IApOpenItemRepository
         string adjustmentType,
         DateOnly adjustmentDate,
         decimal? adjustmentAmountTx,
-        Guid? actorId,
+        UserId? actorId,
         string? reason,
         CancellationToken cancellationToken);
 
@@ -1829,28 +1829,28 @@ public interface IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestTransitionResult?> CancelAdjustmentRequestAsync(
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestTransitionResult?> ApproveAdjustmentRequestAsync(
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestTransitionResult?> RejectAdjustmentRequestAsync(
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentRequestReadiness?> GetAdjustmentRequestReadinessAsync(
@@ -1879,7 +1879,7 @@ public interface IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         Guid journalEntryId,
         string journalEntryDisplayNumber,
         DateTimeOffset executedAt,
@@ -1933,21 +1933,21 @@ public sealed record OpenItemAdjustmentRequestRecord(
     bool RequiresApproval,
     string ApprovalStatus,
     string? ApprovedByActorType,
-    Guid? ApprovedByActorId,
+    UserId? ApprovedByActorId,
     DateTimeOffset? ApprovedAt,
     string? RejectedByActorType,
-    Guid? RejectedByActorId,
+    UserId? RejectedByActorId,
     DateTimeOffset? RejectedAt,
     string RequestStatus,
     string ExecutionStatus,
     string RequestedByActorType,
-    Guid? RequestedByActorId,
+    UserId? RequestedByActorId,
     DateTimeOffset RequestedAt,
     string? SubmittedByActorType,
-    Guid? SubmittedByActorId,
+    UserId? SubmittedByActorId,
     DateTimeOffset? SubmittedAt,
     string? CancelledByActorType,
-    Guid? CancelledByActorId,
+    UserId? CancelledByActorId,
     DateTimeOffset? CancelledAt,
     string? Reason);
 

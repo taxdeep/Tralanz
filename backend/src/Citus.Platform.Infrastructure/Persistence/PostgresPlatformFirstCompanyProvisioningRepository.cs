@@ -20,7 +20,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             create extension if not exists pgcrypto;
 
             create table if not exists users (
-              id uuid primary key default gen_random_uuid(),
+              id char(7) primary key,
               email text not null unique,
               username text unique,
               display_name text,
@@ -99,8 +99,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             where code = 'KWD';
 
             create table if not exists companies (
-              id uuid primary key default gen_random_uuid(),
-              entity_number text not null unique,
+              id char(7) primary key,
+              entity_number char(11) not null unique,
               legal_name text not null,
               base_currency_code char(3) not null,
               multi_currency_enabled boolean not null default false,
@@ -153,8 +153,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_memberships (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              user_id uuid not null references users(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               role text not null,
               is_active boolean not null default true,
               permissions jsonb not null default '[]'::jsonb,
@@ -167,7 +167,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_currencies (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               currency_code char(3) not null references currency_catalog(code) on delete restrict,
               is_enabled boolean not null default true,
               created_at timestamptz not null default now(),
@@ -175,7 +175,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
 
             create table if not exists company_settings (
-              company_id uuid primary key references companies(id) on delete cascade,
+              company_id char(7) primary key references companies(id) on delete cascade,
               profile jsonb not null default '{}'::jsonb,
               security jsonb not null default '{}'::jsonb,
               notification jsonb not null default '{}'::jsonb,
@@ -185,8 +185,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists accounts (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null unique,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null unique,
               code text not null,
               name text not null,
               root_type text not null,
@@ -205,7 +205,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_books (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               book_code text not null,
               book_name text not null,
               book_role text not null,
@@ -217,7 +217,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               is_adjustment_only boolean not null default false,
               effective_from date not null,
               is_active boolean not null default true,
-              created_by_user_id uuid references users(id) on delete restrict,
+              created_by_user_id char(7) references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
               constraint company_books_unique unique (company_id, book_code)
@@ -225,7 +225,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_book_remeasurement_policies (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               company_book_id uuid not null references company_books(id) on delete cascade,
               rate_type text not null default 'closing',
               quote_basis text not null default 'direct',
@@ -235,13 +235,13 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               fx_rounding_policy text not null default 'currency_precision',
               effective_from date not null,
               is_active boolean not null default true,
-              created_by_user_id uuid references users(id) on delete restrict,
+              created_by_user_id char(7) references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now()
             );
 
             create table if not exists company_chart_template_bindings (
-              company_id uuid primary key references companies(id) on delete cascade,
+              company_id char(7) primary key references companies(id) on delete cascade,
               template_key text not null,
               template_version text not null,
               account_code_length smallint not null,
@@ -251,7 +251,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               industry text not null,
               reserved_ranges jsonb not null default '[]'::jsonb,
               mandatory_system_roles jsonb not null default '[]'::jsonb,
-              applied_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              applied_by_sysadmin_account_id char(7),
               applied_at timestamptz not null default now()
             );
 
@@ -309,8 +309,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
                 return Failed("owner_email_exists", "The first business owner email is already in use.");
             }
 
-            var ownerUserId = Guid.NewGuid();
-            var companyId = Guid.NewGuid();
+            var ownerUserId = UserId.FromOrdinal(1);
+            var companyId = CompanyId.FromOrdinal(1);
             var membershipId = Guid.NewGuid();
             var companyBookId = Guid.NewGuid();
             var companyEntityNumber = await ReserveEntityNumberAsync(connection, transaction, provisionedAtUtc.Year, cancellationToken);
@@ -952,7 +952,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private async Task InsertBusinessOwnerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid ownerUserId,
+        UserId ownerUserId,
         PlatformFirstCompanyProvisioningCommand normalized,
         DateTimeOffset provisionedAtUtc,
         CancellationToken cancellationToken)
@@ -988,7 +988,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("id", ownerUserId);
+        command.Parameters.AddWithValue("id", ownerUserId.Value);
         command.Parameters.AddWithValue("email", normalized.OwnerEmail);
         command.Parameters.AddWithValue("display_name", normalized.OwnerDisplayName);
         command.Parameters.AddWithValue("password_hash", passwordHasher.HashPassword(normalized.OwnerPassword));
@@ -1001,7 +1001,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertCompanyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string companyEntityNumber,
         PlatformFirstCompanyProvisioningCommand normalized,
         (int Month, int Day) fiscalYearEnd,
@@ -1061,7 +1061,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", companyEntityNumber);
         command.Parameters.AddWithValue("legal_name", normalized.CompanyName);
         command.Parameters.AddWithValue("base_currency_code", normalized.BaseCurrencyCode);
@@ -1088,8 +1088,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid membershipId,
-        Guid companyId,
-        Guid ownerUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
         DateTimeOffset provisionedAtUtc,
         CancellationToken cancellationToken)
     {
@@ -1133,8 +1133,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
             """;
         command.Parameters.AddWithValue("id", membershipId);
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", ownerUserId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", ownerUserId.Value);
         command.Parameters.AddWithValue("permissions", permissionsJson);
         command.Parameters.AddWithValue("created_at", provisionedAtUtc);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
@@ -1144,7 +1144,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task EnableBaseCurrencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         CancellationToken cancellationToken)
     {
@@ -1170,7 +1170,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             do update
               set is_enabled = true;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("currency_code", baseCurrencyCode);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1178,8 +1178,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertCompanySettingsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid ownerUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
         PlatformFirstCompanyProvisioningCommand normalized,
         TemplateDefinition template,
         IReadOnlyList<string> starterAccountCodes,
@@ -1255,7 +1255,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
                   currency = excluded.currency,
                   updated_at = excluded.updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("profile", profileJson);
         command.Parameters.AddWithValue("currency", currencyJson);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
@@ -1266,8 +1266,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid companyBookId,
-        Guid companyId,
-        Guid ownerUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
         string baseCurrencyCode,
         string accountingStandard,
         DateTime effectiveFrom,
@@ -1316,11 +1316,11 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
             """;
         command.Parameters.AddWithValue("id", companyBookId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("accounting_standard", accountingStandard);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("effective_from", effectiveFrom);
-        command.Parameters.AddWithValue("created_by_user_id", ownerUserId);
+        command.Parameters.AddWithValue("created_by_user_id", ownerUserId.Value);
         command.Parameters.AddWithValue("created_at", provisionedAtUtc);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1329,9 +1329,9 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertDefaultRemeasurementPolicyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid companyBookId,
-        Guid ownerUserId,
+        UserId ownerUserId,
         DateTime effectiveFrom,
         DateTimeOffset provisionedAtUtc,
         CancellationToken cancellationToken)
@@ -1373,10 +1373,10 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("company_book_id", companyBookId);
         command.Parameters.AddWithValue("effective_from", effectiveFrom);
-        command.Parameters.AddWithValue("created_by_user_id", ownerUserId);
+        command.Parameters.AddWithValue("created_by_user_id", ownerUserId.Value);
         command.Parameters.AddWithValue("created_at", provisionedAtUtc);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1385,7 +1385,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertStarterAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         int entityYear,
         string baseCurrencyCode,
         string formattedCode,
@@ -1436,7 +1436,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", formattedCode);
         command.Parameters.AddWithValue("name", account.Name);
@@ -1456,7 +1456,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertChartTemplateBindingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         PlatformFirstCompanyProvisioningCommand normalized,
         TemplateDefinition template,
         DateTimeOffset provisionedAtUtc,
@@ -1504,7 +1504,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @applied_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("template_key", template.TemplateKey);
         command.Parameters.AddWithValue("template_version", template.TemplateVersion);
         command.Parameters.AddWithValue("account_code_length", normalized.AccountCodeLength);
@@ -1516,7 +1516,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         command.Parameters.AddWithValue("mandatory_system_roles", mandatorySystemRolesJson);
         command.Parameters.AddWithValue(
             "applied_by_sysadmin_account_id",
-            normalized.SysAdminAccountId.HasValue ? normalized.SysAdminAccountId.Value : DBNull.Value);
+            normalized.SysAdminAccountId.HasValue ? (object)normalized.SysAdminAccountId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("applied_at", provisionedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1524,8 +1524,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertAuditLogIfAvailableAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid? sysAdminAccountId,
-        Guid companyId,
+        UserId? sysAdminAccountId,
+        CompanyId companyId,
         PlatformFirstCompanyProvisioningCommand normalized,
         TemplateDefinition template,
         IReadOnlyList<string> starterAccountCodes,
@@ -1582,9 +1582,9 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
-        command.Parameters.AddWithValue("entity_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
+        command.Parameters.AddWithValue("entity_id", companyId.Value);
         command.Parameters.AddWithValue("payload", payload);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1614,6 +1614,6 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             """;
         command.Parameters.AddWithValue("entity_year", year);
         var sequenceNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
-        return $"EN{year}{sequenceNumber.ToString().PadLeft(8, '0')}";
+        return $"EN{year}{Base36.Encode(sequenceNumber, 5)}";
     }
 }

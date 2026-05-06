@@ -24,8 +24,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     }
 
     public async Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -83,7 +83,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     }
 
     public async Task<ReceiptInventoryCostLayerEmissionSummary?> GetReceiptCostLayerEmissionSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -104,7 +104,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     }
 
     public async Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>> GetReceiptCostLayerEmissionSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -130,7 +130,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     }
 
     public async Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> GetReceiptCostLayerEmissionReconciliationSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -151,7 +151,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     }
 
     public async Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> GetReceiptCostLayerEmissionReconciliationSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -179,22 +179,22 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     private static async Task AcquireReceiptEmissionLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "select pg_advisory_xact_lock(hashtext(@lock_key));";
-        command.Parameters.AddWithValue("lock_key", $"receipt-cost-layer-emission:{companyId:N}:{receiptDocumentId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-cost-layer-emission:{companyId.Value}:{receiptDocumentId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertEmissionLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -321,16 +321,16 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
             on conflict (company_id, valuation_line_id)
             do nothing;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<ReceiptInventoryCostLayerEmissionSummary?> LoadReceiptCostLayerEmissionSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         bool hasActivationLines,
         bool hasValuationLines,
@@ -352,7 +352,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     private static async Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>> LoadReceiptCostLayerEmissionSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         bool hasActivationLines,
         bool hasValuationLines,
@@ -456,7 +456,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         {
             TypedValue = receiptDocumentIds
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var summaries = new Dictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -494,7 +494,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     private static async Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> LoadReceiptCostLayerEmissionReconciliationSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         bool hasActivationLines,
         bool hasEmissionLines,
@@ -514,7 +514,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
     private static async Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> LoadReceiptCostLayerEmissionReconciliationSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         bool hasActivationLines,
         bool hasEmissionLines,
@@ -633,7 +633,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         {
             TypedValue = receiptDocumentIds
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var summaries = new Dictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -702,7 +702,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
 
                 create table if not exists {EmissionLinesTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   receipt_line_number integer not null,
                   valuation_line_id uuid not null,
@@ -717,7 +717,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
                   uom_code text not null,
                   emitted_quantity numeric(20, 6) not null,
                   emitted_cost_base numeric(20, 6) not null,
-                  emitted_by_user_id uuid not null,
+                  emitted_by_user_id char(7) not null,
                   emitted_at timestamptz not null default now()
                 );
 

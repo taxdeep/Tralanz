@@ -59,7 +59,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<IReadOnlyList<TaxCodeRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -69,7 +69,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         command.CommandText = includeInactive
             ? SelectColumns + " WHERE company_id = @company_id ORDER BY is_active DESC, code;"
             : SelectColumns + " WHERE company_id = @company_id AND is_active = TRUE ORDER BY code;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -80,14 +80,14 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", taxCodeId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -95,7 +95,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         TaxCodeUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -116,7 +116,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                       applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
@@ -136,7 +136,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         TaxCodeUpsertInput input,
         CancellationToken cancellationToken)
@@ -159,7 +159,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                       applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", taxCodeId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("rate_percent", input.RatePercent);
@@ -174,7 +174,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -192,7 +192,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                       applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", taxCodeId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
         command.Parameters.AddWithValue("now", now);
 
@@ -221,7 +221,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
 
     private static TaxCodeRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         EntityNumber: reader.GetString(2),
         Code: reader.GetString(3),
         Name: reader.GetString(4),

@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace SharedKernel.Identity;
 
+[JsonConverter(typeof(EntityNumberJsonConverter))]
 public readonly record struct EntityNumber
 {
     public const string Prefix = "EN";
@@ -72,4 +75,19 @@ public readonly record struct EntityNumber
     }
 
     public override string ToString() => Value ?? string.Empty;
+
+    /// <summary>
+    /// Transition helper for legacy/computed entity numbers that don't follow
+    /// the standard EN+YYYY+5base36 format (e.g. EN-DSWO-..., EN-COGS-...).
+    /// To be removed once all such call sites are migrated to Create().
+    /// </summary>
+    [Obsolete("Use Create() with proper year + ordinal once the call site is migrated.")]
+    public static EntityNumber FromLegacy(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Entity number is required.", nameof(value));
+        }
+        return new EntityNumber(value.Trim().ToUpperInvariant());
+    }
 }

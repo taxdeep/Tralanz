@@ -4,52 +4,52 @@ namespace Citus.Platform.Core.Abstractions;
 
 public interface IPlatformAccountProfileRepository
 {
-    Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken);
+    Task<PlatformAccountProfileSummary?> GetAsync(UserId userId, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(UserId userId, CancellationToken cancellationToken);
 
     Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
-        Guid userId,
+        UserId userId,
         Guid enrollmentId,
         string verificationCode,
         CancellationToken cancellationToken);
 
     Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
-        Guid userId,
+        UserId userId,
         string displayName,
         CancellationToken cancellationToken);
 
     Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
-        Guid userId,
+        UserId userId,
         string mfaMode,
         CancellationToken cancellationToken);
 
     Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
-        Guid userId,
+        UserId userId,
         string reason,
         CancellationToken cancellationToken);
 
     Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
-        Guid userId,
+        UserId userId,
         string newEmail,
         CancellationToken cancellationToken);
 
     Task<PlatformProfileChangeRequestResult?> RequestPasswordChangeAsync(
-        Guid userId,
+        UserId userId,
         string newPasswordHash,
         CancellationToken cancellationToken);
 
     Task<PlatformProfileChangeConfirmationResult?> ConfirmEmailChangeAsync(
-        Guid userId,
+        UserId userId,
         string verificationCode,
         CancellationToken cancellationToken);
 
     Task<PlatformProfileChangeConfirmationResult?> ConfirmPasswordChangeAsync(
-        Guid userId,
+        UserId userId,
         string verificationCode,
         CancellationToken cancellationToken);
 }

@@ -33,7 +33,7 @@ public sealed record class ExpenseOverTimeMonthBucket
 
 public sealed record class ExpenseOverTimeReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly FromDate { get; init; }
 

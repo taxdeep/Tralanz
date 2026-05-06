@@ -13,7 +13,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
     }
 
     public async Task<IReadOnlyList<JournalEntryReviewListItem>> ListRecentAsync(
-        Guid companyId,
+        CompanyId companyId,
         int take,
         CancellationToken cancellationToken)
     {
@@ -72,7 +72,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             order by coalesce(je.posted_at, je.created_at) desc, je.display_number desc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("take", effectiveTake);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -85,7 +85,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
     }
 
     public async Task<IReadOnlyList<JournalLedgerAccountBalance>> ListAccountBalancesAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly throughDate,
         CancellationToken cancellationToken)
     {
@@ -126,7 +126,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                 or coalesce(sum(le.credit), 0) <> 0
             order by a.code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("through_date", throughDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -151,7 +151,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
     }
 
     public async Task<IReadOnlyList<JournalLedgerEntryReviewItem>> ListLedgerEntriesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         int take,
         CancellationToken cancellationToken)
@@ -193,7 +193,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             order by le.posting_date desc, le.created_at desc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", accountId);
         command.Parameters.AddWithValue("take", effectiveTake);
 
@@ -226,7 +226,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
     }
 
     public async Task<JournalEntryReview?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         CancellationToken cancellationToken)
     {
@@ -308,7 +308,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   je.created_by_user_id
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -317,7 +317,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                 review = new JournalEntryReview
                 {
                     Id = reader.GetGuid(reader.GetOrdinal("id")),
-                    CompanyId = reader.GetGuid(reader.GetOrdinal("company_id")),
+                    CompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                     EntityNumber = reader.GetString(reader.GetOrdinal("entity_number")),
                     DisplayNumber = reader.GetString(reader.GetOrdinal("display_number")),
                     Status = reader.GetString(reader.GetOrdinal("status")),
@@ -366,7 +366,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                     ReversedAt = reader.IsDBNull(reader.GetOrdinal("reversed_at"))
                         ? null
                         : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reversed_at")),
-                    CreatedByUserId = reader.GetGuid(reader.GetOrdinal("created_by_user_id"))
+                    CreatedByUserId = UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id")))
                 };
             }
         }
@@ -411,7 +411,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   and jel.journal_entry_id = @journal_entry_id
                 order by jel.line_number asc;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -470,7 +470,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
     private static JournalEntryReviewListItem MapListItem(System.Data.Common.DbDataReader reader) =>
         new(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("entity_number")),
             reader.GetString(reader.GetOrdinal("display_number")),
             reader.GetString(reader.GetOrdinal("status")),
@@ -512,7 +512,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
     }
 
     private async Task<IReadOnlyList<JournalLedgerCurrencyExposure>> LoadCurrencyExposuresAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly throughDate,
         CancellationToken cancellationToken)
     {
@@ -536,7 +536,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             group by le.account_id, coalesce(nullif(le.transaction_currency_code, ''), 'BASE')
             order by currency_code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("through_date", throughDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -557,7 +557,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
 
     private static async Task<IReadOnlyList<JournalEntryRelatedEntry>> LoadRelatedEntriesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         CancellationToken cancellationToken)
     {
@@ -577,7 +577,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
               and source_id = @source_id
             order by coalesce(posted_at, created_at) asc, display_number asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

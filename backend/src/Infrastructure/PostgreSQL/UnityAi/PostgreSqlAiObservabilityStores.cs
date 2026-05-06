@@ -8,8 +8,8 @@ namespace Infrastructure.PostgreSQL.UnityAi;
 public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connections) : IAiJobRunStore
 {
     public async Task<Guid> StartAsync(
-        Guid? companyId, string jobType, string triggerType,
-        Guid? triggeredByUserId,
+        CompanyId? companyId, string jobType, string triggerType,
+        UserId? triggeredByUserId,
         DateTimeOffset? sourceWindowStart, DateTimeOffset? sourceWindowEnd,
         string? inputSummaryJson,
         CancellationToken cancellationToken)
@@ -76,7 +76,7 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<IReadOnlyList<AiJobRunRecord>> GetRecentAsync(
-        Guid companyId, string? jobType, int limit, CancellationToken cancellationToken)
+        CompanyId companyId, string? jobType, int limit, CancellationToken cancellationToken)
     {
         var items = new List<AiJobRunRecord>();
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -97,7 +97,7 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
               FROM ai_job_runs WHERE company_id = @company_id AND job_type = @job_type
               ORDER BY created_at DESC LIMIT @limit;
               """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         if (jobType is not null) command.Parameters.AddWithValue("job_type", jobType);
         command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 200));
 
@@ -106,11 +106,11 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
         {
             items.Add(new AiJobRunRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobType: reader.GetString(2),
                 Status: reader.GetString(3),
                 TriggerType: reader.GetString(4),
-                TriggeredByUserId: reader.IsDBNull(5) ? null : reader.GetGuid(5),
+                TriggeredByUserId: reader.IsDBNull(5) ? null : UserId.Parse(reader.GetString(5)),
                 StartedAt: reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                 FinishedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                 SourceWindowStart: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
@@ -147,11 +147,11 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
         {
             items.Add(new AiJobRunRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobType: reader.GetString(2),
                 Status: reader.GetString(3),
                 TriggerType: reader.GetString(4),
-                TriggeredByUserId: reader.IsDBNull(5) ? null : reader.GetGuid(5),
+                TriggeredByUserId: reader.IsDBNull(5) ? null : UserId.Parse(reader.GetString(5)),
                 StartedAt: reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                 FinishedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                 SourceWindowStart: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
@@ -214,7 +214,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
     }
 
     public async Task<IReadOnlyList<AiRequestLogRecord>> GetRecentAsync(
-        Guid companyId, string? taskType, int limit, CancellationToken cancellationToken)
+        CompanyId companyId, string? taskType, int limit, CancellationToken cancellationToken)
     {
         var items = new List<AiRequestLogRecord>();
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -237,7 +237,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
               FROM ai_request_logs WHERE company_id = @company_id AND task_type = @task_type
               ORDER BY created_at DESC LIMIT @limit;
               """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         if (taskType is not null) command.Parameters.AddWithValue("task_type", taskType);
         command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 500));
 
@@ -246,7 +246,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
         {
             items.Add(new AiRequestLogRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobRunId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
                 TaskType: reader.GetString(3),
                 Provider: reader.IsDBNull(4) ? null : reader.GetString(4),
@@ -291,7 +291,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
         {
             items.Add(new AiRequestLogRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobRunId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
                 TaskType: reader.GetString(3),
                 Provider: reader.IsDBNull(4) ? null : reader.GetString(4),

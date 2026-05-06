@@ -6,7 +6,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class ApAgingClient(HttpClient httpClient, ILogger<ApAgingClient> logger)
 {
     public Task<ReportCsvDownload?> ExportCsvAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken = default) =>
         ReportExportClientSupport.TryGetCsvAsync(
@@ -18,7 +18,7 @@ public sealed class ApAgingClient(HttpClient httpClient, ILogger<ApAgingClient> 
             cancellationToken);
 
     public async Task<ApAgingReportSummary?> GetReportAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken = default)
     {

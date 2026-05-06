@@ -5,7 +5,7 @@ namespace Modules.Company.MultiCurrency;
 public interface ICompanyCurrencyProvisioningStore : ICompanyCurrencyCatalog
 {
     Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
-        Guid companyId,
+        CompanyId companyId,
         string currencyCode,
         IReadOnlyList<ControlAccountProvisioningRequest> controlAccounts,
         CancellationToken cancellationToken);
@@ -19,7 +19,7 @@ public interface ICompanyCurrencyProvisioningStore : ICompanyCurrencyCatalog
     /// at 11001 will allocate the next currency at 11002.
     /// </summary>
     Task<CompanyControlAccountSlots> AllocateControlAccountSlotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 }
 

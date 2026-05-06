@@ -16,12 +16,12 @@ namespace Citus.Accounting.Application.Abstractions;
 public interface ICustomerOverviewQueries
 {
     Task<CustomerFinancialSummary> GetFinancialSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<CustomerTransactionRow>> ListTransactionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CustomerTransactionFilter filter,
         CancellationToken cancellationToken);

@@ -12,11 +12,11 @@ public sealed class InventoryReportingWorkflow
     }
 
     public Task<InventoryAvailabilityDashboard> GetAvailabilityDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter? filter,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }

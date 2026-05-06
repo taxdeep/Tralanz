@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Reports;
 
 public sealed record class SalesCashFlowSummary
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly AsOfDate { get; init; }
 

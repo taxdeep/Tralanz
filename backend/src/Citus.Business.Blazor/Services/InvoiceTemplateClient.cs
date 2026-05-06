@@ -7,7 +7,7 @@ public sealed class InvoiceTemplateClient(
     ILogger<InvoiceTemplateClient> logger)
 {
     public async Task<IReadOnlyList<InvoiceTemplateDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -25,7 +25,7 @@ public sealed class InvoiceTemplateClient(
     }
 
     public async Task<InvoiceTemplateDto?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         CancellationToken cancellationToken = default)
     {
@@ -43,7 +43,7 @@ public sealed class InvoiceTemplateClient(
     }
 
     public async Task<InvoiceTemplateOutcome> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         InvoiceTemplateUpsertDto request,
         CancellationToken cancellationToken = default)
     {
@@ -55,7 +55,7 @@ public sealed class InvoiceTemplateClient(
     }
 
     public async Task<InvoiceTemplateOutcome> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         InvoiceTemplateUpsertDto request,
         CancellationToken cancellationToken = default)
@@ -75,7 +75,7 @@ public sealed class InvoiceTemplateClient(
     /// editor can leave the previous preview visible while typing.
     /// </summary>
     public async Task<byte[]?> GeneratePreviewAsync(
-        Guid companyId,
+        CompanyId companyId,
         InvoiceTemplateUpsertDto request,
         CancellationToken cancellationToken = default)
     {
@@ -101,7 +101,7 @@ public sealed class InvoiceTemplateClient(
     }
 
     public async Task<InvoiceTemplateOutcome> SetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         CancellationToken cancellationToken = default)
     {
@@ -161,7 +161,7 @@ public sealed class InvoiceTemplateClient(
 
 public sealed record InvoiceTemplateDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string Name,
     bool IsDefault,
     string? LogoUrl,

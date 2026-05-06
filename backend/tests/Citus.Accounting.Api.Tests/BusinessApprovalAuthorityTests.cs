@@ -253,8 +253,8 @@ public sealed class BusinessApprovalAuthorityTests
     private static BusinessSessionContext CreateSession(params string[] roles) =>
         new()
         {
-            UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d"),
-            ActiveCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"),
+            UserId = UserId.FromOrdinal(1),
+            ActiveCompanyId = CompanyId.FromOrdinal(1),
             Roles = roles
         };
 }

@@ -25,7 +25,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -33,7 +33,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.PaymentLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "receive_payment",
@@ -51,7 +51,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                     ? null
                     : SettlementAmountMath.RoundBase(line.AppliedAmountBase - line.CarryingAmountBase),
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -63,7 +63,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -71,7 +71,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.PaymentLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "pay_bill",
@@ -89,7 +89,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                     ? null
                     : SettlementAmountMath.RoundBase(line.CarryingAmountBase - line.AppliedAmountBase),
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -101,7 +101,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -109,7 +109,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.ApplicationLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "credit_application",
@@ -123,11 +123,11 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
 
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "credit_application",
@@ -141,7 +141,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -153,7 +153,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -161,7 +161,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.ApplicationLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "vendor_credit_application",
@@ -175,11 +175,11 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
 
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "vendor_credit_application",
@@ -193,7 +193,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -284,7 +284,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     }
 
     private async Task<bool> HasExistingApplicationsAsync(
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid sourceId,
         CancellationToken cancellationToken)
@@ -304,7 +304,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
 
@@ -313,7 +313,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     }
 
     private async Task ApplySingleAsync(
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid sourceId,
         string applicationType,
@@ -327,7 +327,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         decimal? settlementFxRate,
         decimal? realizedFxAmount,
         Guid partyId,
-        Guid createdByUserId,
+        UserId createdByUserId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -358,7 +358,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                          for update;
                          """))
         {
-            selectCommand.Parameters.AddWithValue("company_id", companyId);
+            selectCommand.Parameters.AddWithValue("company_id", companyId.Value);
             selectCommand.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
 
             await using var reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
@@ -445,7 +445,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                          """))
         {
             insertCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.AddWithValue("application_type", applicationType);
             insertCommand.Parameters.AddWithValue("source_type", sourceType);
             insertCommand.Parameters.AddWithValue("source_id", sourceId);
@@ -459,7 +459,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
             insertCommand.Parameters.AddWithValue(
                 "realized_fx_amount",
                 realizedFxAmount.HasValue ? (object)realizedFxAmount.Value : DBNull.Value);
-            insertCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+            insertCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -477,7 +477,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         updateCommand.Parameters.AddWithValue("open_amount_tx", newOpenAmountTx);
         updateCommand.Parameters.AddWithValue("open_amount_base", newOpenAmountBase);
         updateCommand.Parameters.AddWithValue("status", newStatus);
-        updateCommand.Parameters.AddWithValue("company_id", companyId);
+        updateCommand.Parameters.AddWithValue("company_id", companyId.Value);
         updateCommand.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
         await updateCommand.ExecuteNonQueryAsync(cancellationToken);
     }

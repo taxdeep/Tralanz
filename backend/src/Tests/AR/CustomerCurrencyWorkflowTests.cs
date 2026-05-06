@@ -6,7 +6,7 @@ namespace Tests.AR;
 
 public sealed class CustomerCurrencyWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -18,7 +18,7 @@ public sealed class CustomerCurrencyWorkflowTests
         var result = await workflow.ChangeDefaultCurrencyAsync(
             CustomerId,
             "cad",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.True(result.CurrencyChanged);
@@ -36,7 +36,7 @@ public sealed class CustomerCurrencyWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.ChangeDefaultCurrencyAsync(
             CustomerId,
             "eur",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None));
 
         Assert.Contains("not enabled", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -51,7 +51,7 @@ public sealed class CustomerCurrencyWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.ChangeDefaultCurrencyAsync(
             CustomerId,
             "cad",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None));
 
         Assert.Contains("locked", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -104,7 +104,7 @@ public sealed class CustomerCurrencyWorkflowTests
         }
 
         public Task<CompanyCurrencyProfile> GetProfileAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken)
         {
             var currencies = _enabledCurrencies

@@ -6,8 +6,8 @@ namespace Tests.GL;
 
 public sealed class JournalEntryWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
     private static readonly JournalEntryAccountOption OfficeExpense = new()
     {
         AccountId = Guid.Parse("60000000-0000-0000-0000-000000000001"),
@@ -296,7 +296,7 @@ public sealed class JournalEntryWorkflowTests
     private sealed class StubAccountCatalog : IJournalEntryAccountCatalog
     {
         public Task<IReadOnlyList<JournalEntryAccountOption>> ListManualPostingAccountsAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<JournalEntryAccountOption>>([OfficeExpense, OwnerCapital]);
     }
@@ -307,7 +307,7 @@ public sealed class JournalEntryWorkflowTests
 
         public Task<JournalEntryDraftSaveResult> SaveAsync(
             JournalEntryDraft draft,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken)
         {
             SavedDraft = draft;
@@ -324,7 +324,7 @@ public sealed class JournalEntryWorkflowTests
 
         public Task<JournalEntryPostResult> PostAsync(
             JournalEntryDraft draft,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken)
         {
             PostedDraft = draft;
@@ -353,7 +353,7 @@ public sealed class JournalEntryWorkflowTests
             Task.FromResult(new Engines.FX.FxRateLookup.FxRateSelectionData([], []));
 
         public Task<SharedKernel.FX.FxRateResolution> UseCompanySnapshotAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid snapshotId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
@@ -387,7 +387,7 @@ public sealed class JournalEntryWorkflowTests
 
     private sealed class StubCompanyCurrencyCatalog : ICompanyCurrencyCatalog
     {
-        public Task<CompanyCurrencyProfile> GetProfileAsync(Guid companyId, CancellationToken cancellationToken) =>
+        public Task<CompanyCurrencyProfile> GetProfileAsync(CompanyId companyId, CancellationToken cancellationToken) =>
             Task.FromResult(new CompanyCurrencyProfile(
                 companyId,
                 "Northwind Studio Ltd.",

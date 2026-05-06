@@ -5,6 +5,6 @@ namespace Modules.Company.MultiCurrency;
 public interface ICompanyCurrencyCatalog
 {
     Task<CompanyCurrencyProfile> GetProfileAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 }

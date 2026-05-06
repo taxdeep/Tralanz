@@ -42,7 +42,7 @@ public sealed record class ExpenseCashOutflowMonthBucket
 
 public sealed record class ExpenseCashOutflowReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly AsOfDate { get; init; }
 

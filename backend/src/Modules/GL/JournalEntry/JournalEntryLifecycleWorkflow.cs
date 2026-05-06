@@ -10,16 +10,16 @@ public sealed class JournalEntryLifecycleWorkflow : IJournalEntryLifecycleWorkfl
     }
 
     public Task<JournalEntryLifecycleResult> VoidAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         _store.VoidAsync(companyId, journalEntryId, userId, cancellationToken);
 
     public Task<JournalEntryLifecycleResult> ReverseAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         _store.ReverseAsync(companyId, journalEntryId, userId, cancellationToken);
 }

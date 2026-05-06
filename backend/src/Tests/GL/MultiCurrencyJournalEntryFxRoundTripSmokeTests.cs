@@ -24,8 +24,8 @@ namespace Tests.GL;
 /// </summary>
 public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
 
     /// <summary>
     /// Worked example: company base = USD (per the demo company seed),
@@ -150,10 +150,11 @@ public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
         {
             command.CommandText =
                 """
-                select tx_debit, tx_credit, debit, credit
-                from ledger_entries
-                where journal_entry_id = @id
-                order by line_number;
+                select le.tx_debit, le.tx_credit, le.debit, le.credit
+                from ledger_entries le
+                join journal_entry_lines jel on jel.id = le.journal_entry_line_id
+                where le.journal_entry_id = @id
+                order by jel.line_number;
                 """;
             command.Parameters.AddWithValue("id", journalEntryId);
 
@@ -185,7 +186,7 @@ public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
                 select id from journal_entries
                 where company_id = @company_id and source_id = @source_id;
                 """;
-            command.Parameters.AddWithValue("company_id", CompanyId);
+            command.Parameters.AddWithValue("company_id", CompanyId.Value);
             command.Parameters.AddWithValue("source_id", fixture.DocumentId);
             await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
             while (await reader.ReadAsync(CancellationToken.None))
@@ -248,7 +249,7 @@ public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
                   and effective_date = @effective
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", CompanyId);
+            command.Parameters.AddWithValue("company_id", CompanyId.Value);
             command.Parameters.AddWithValue("base", baseCurrencyCode);
             command.Parameters.AddWithValue("quote", quoteCurrencyCode);
             command.Parameters.AddWithValue("effective", candidate);

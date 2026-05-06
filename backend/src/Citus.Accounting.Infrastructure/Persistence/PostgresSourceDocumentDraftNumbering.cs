@@ -7,7 +7,7 @@ internal static class PostgresSourceDocumentDraftNumbering
     public static async Task<string> ReserveAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -48,7 +48,7 @@ internal static class PostgresSourceDocumentDraftNumbering
               and scope_key = @scope_key
             returning prefix, greatest(next_number - 1, @seed_number) as issued_number, padding;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", scopeKey);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
@@ -184,7 +184,7 @@ internal static class PostgresSourceDocumentDraftNumbering
     public static async Task<long> FindDisplaySeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string tableName,
         string displayColumn,
         string prefixPattern,
@@ -208,7 +208,7 @@ internal static class PostgresSourceDocumentDraftNumbering
             from {tableName}
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("prefix_pattern", prefixPattern);
         command.Parameters.AddWithValue("prefix_length", prefixLength);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
@@ -217,7 +217,7 @@ internal static class PostgresSourceDocumentDraftNumbering
     private static async Task EnsureSeededAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -249,7 +249,7 @@ internal static class PostgresSourceDocumentDraftNumbering
                 )
                 on conflict (company_id, scope_key) do nothing;
                 """;
-            seedCommand.Parameters.AddWithValue("company_id", companyId);
+            seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
             seedCommand.Parameters.AddWithValue("scope_key", scopeKey);
             seedCommand.Parameters.AddWithValue("prefix", prefix);
             seedCommand.Parameters.AddWithValue("next_number", seedNumber);
@@ -267,7 +267,7 @@ internal static class PostgresSourceDocumentDraftNumbering
             where company_id = @company_id
               and scope_key = @scope_key;
             """;
-        alignCommand.Parameters.AddWithValue("company_id", companyId);
+        alignCommand.Parameters.AddWithValue("company_id", companyId.Value);
         alignCommand.Parameters.AddWithValue("scope_key", scopeKey);
         alignCommand.Parameters.AddWithValue("seed_number", seedNumber);
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -312,7 +312,9 @@ internal static class PostgresSourceDocumentDraftNumbering
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
-        return $"{prefix}{issuedNumber.ToString().PadLeft(padding, '0')}";
+        // EntityNumber format: EN + YYYY + 5 base36 chars (11 chars total).
+        // The `padding` parameter is the base36 width (typically 5).
+        return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
     private static async Task EnsurePlatformEntityNumberSequenceAsync(

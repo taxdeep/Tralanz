@@ -12,7 +12,7 @@ public sealed class PostgreSqlJournalEntryNumberLookup : IJournalEntryNumberLook
     }
 
     public async Task<string> GetNextDisplayNumberAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -29,7 +29,7 @@ public sealed class PostgreSqlJournalEntryNumberLookup : IJournalEntryNumberLook
     }
 
     public async Task<string> ReserveNextDisplayNumberAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -47,7 +47,7 @@ public sealed class PostgreSqlJournalEntryNumberLookup : IJournalEntryNumberLook
 
     private static async Task<long> FindSeedNumberAsync(
         Npgsql.NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -66,7 +66,7 @@ public sealed class PostgreSqlJournalEntryNumberLookup : IJournalEntryNumberLook
             from journal_entries
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(value ?? 1L);
     }

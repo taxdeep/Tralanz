@@ -9,20 +9,20 @@ public sealed class PlatformAccountProfileWorkflow(
     IPlatformAccountProfileRepository repository,
     SysAdminPasswordHasher passwordHasher) : IPlatformAccountProfileWorkflow
 {
-    public Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken)
+    public Task<PlatformAccountProfileSummary?> GetAsync(UserId userId, CancellationToken cancellationToken)
     {
         EnsureUserId(userId);
         return repository.GetAsync(userId, cancellationToken);
     }
 
-    public Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(UserId userId, CancellationToken cancellationToken)
     {
         EnsureUserId(userId);
         return repository.GetMfaTimelineAsync(userId, cancellationToken);
     }
 
     public Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         EnsureUserId(userId);
@@ -30,7 +30,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
-        Guid userId,
+        UserId userId,
         Guid enrollmentId,
         string verificationCode,
         CancellationToken cancellationToken)
@@ -49,7 +49,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
-        Guid userId,
+        UserId userId,
         string displayName,
         CancellationToken cancellationToken)
     {
@@ -61,7 +61,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
-        Guid userId,
+        UserId userId,
         string mfaMode,
         CancellationToken cancellationToken)
     {
@@ -73,7 +73,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
-        Guid userId,
+        UserId userId,
         string reason,
         CancellationToken cancellationToken)
     {
@@ -85,7 +85,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
-        Guid userId,
+        UserId userId,
         string newEmail,
         CancellationToken cancellationToken)
     {
@@ -97,7 +97,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformProfileChangeRequestResult?> RequestPasswordChangeAsync(
-        Guid userId,
+        UserId userId,
         string newPassword,
         CancellationToken cancellationToken)
     {
@@ -110,7 +110,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformProfileChangeConfirmationResult?> ConfirmEmailChangeAsync(
-        Guid userId,
+        UserId userId,
         string verificationCode,
         CancellationToken cancellationToken)
     {
@@ -122,7 +122,7 @@ public sealed class PlatformAccountProfileWorkflow(
     }
 
     public Task<PlatformProfileChangeConfirmationResult?> ConfirmPasswordChangeAsync(
-        Guid userId,
+        UserId userId,
         string verificationCode,
         CancellationToken cancellationToken)
     {
@@ -133,9 +133,9 @@ public sealed class PlatformAccountProfileWorkflow(
             cancellationToken);
     }
 
-    private static void EnsureUserId(Guid userId)
+    private static void EnsureUserId(UserId userId)
     {
-        if (userId == Guid.Empty)
+        if (userId.Value is null)
         {
             throw new InvalidOperationException("Platform account id is required.");
         }

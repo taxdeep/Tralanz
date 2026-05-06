@@ -17,7 +17,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
         const string sql = """
             create table if not exists vendor_shipping_address_book (
                 id uuid primary key default gen_random_uuid(),
-                company_id uuid not null references companies(id) on delete cascade,
+                company_id char(7) not null references companies(id) on delete cascade,
                 vendor_id uuid not null references vendors(id) on delete cascade,
                 label text,
                 address_line text not null default '',
@@ -45,7 +45,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
     }
 
     public async Task<IReadOnlyList<VendorShippingAddressBookEntry>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -63,7 +63,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -75,7 +75,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
     }
 
     public async Task<VendorShippingAddressBookEntry?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         Guid addressId,
         CancellationToken cancellationToken)
@@ -94,7 +94,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("id", addressId);
 
@@ -103,7 +103,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
     }
 
     public async Task<VendorShippingAddressBookEntry> InsertAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         VendorShippingAddressBookUpsertRequest request,
         CancellationToken cancellationToken)
@@ -148,7 +148,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
     }
 
     public async Task<VendorShippingAddressBookEntry?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         Guid addressId,
         VendorShippingAddressBookUpsertRequest request,
@@ -198,7 +198,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
     }
 
     public async Task<bool> DeleteAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         Guid addressId,
         CancellationToken cancellationToken)
@@ -213,7 +213,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("id", addressId);
 
@@ -222,7 +222,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
     }
 
     public async Task<VendorShippingAddressBookEntry?> SetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         Guid addressId,
         CancellationToken cancellationToken)
@@ -247,7 +247,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("id", addressId);
 
@@ -265,7 +265,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
     private static async Task ClearExistingDefaultAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         Guid? excludeId,
         CancellationToken cancellationToken)
@@ -283,15 +283,15 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("exclude_id", (object?)excludeId ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static void BindUpsert(NpgsqlCommand command, Guid companyId, Guid vendorId, VendorShippingAddressBookUpsertRequest request)
+    private static void BindUpsert(NpgsqlCommand command, CompanyId companyId, Guid vendorId, VendorShippingAddressBookUpsertRequest request)
     {
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("label", (object?)NormalizeOptional(request.Label) ?? DBNull.Value);
         command.Parameters.AddWithValue("address_line", request.AddressLine?.Trim() ?? string.Empty);
@@ -310,7 +310,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
 
     private static VendorShippingAddressBookEntry Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         VendorId: reader.GetGuid(2),
         Label: reader.IsDBNull(3) ? null : NullIfEmpty(reader.GetString(3)),
         AddressLine: NullIfEmpty(reader.GetString(4)),

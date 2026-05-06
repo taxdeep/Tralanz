@@ -7,7 +7,7 @@ namespace Citus.Platform.Core.Tests;
 
 public sealed class PlatformAccountProfileWorkflowTests
 {
-    private static readonly Guid UserId = Guid.Parse("f3fbb642-60c1-4a33-b14b-f633a95d7ee9");
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task SaveDisplayNameTrimsBeforePersisting()
@@ -123,14 +123,14 @@ public sealed class PlatformAccountProfileWorkflowTests
 
         public string? ConfirmedTotpVerificationCode { get; private set; }
 
-        public Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken) =>
+        public Task<PlatformAccountProfileSummary?> GetAsync(UserId userId, CancellationToken cancellationToken) =>
             Task.FromResult<PlatformAccountProfileSummary?>(new PlatformAccountProfileSummary { UserId = userId });
 
-        public Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(UserId userId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PlatformMfaTimelineEntry>>(Array.Empty<PlatformMfaTimelineEntry>());
 
         public Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken) =>
             Task.FromResult<PlatformTotpEnrollmentStartResult?>(new PlatformTotpEnrollmentStartResult
             {
@@ -144,7 +144,7 @@ public sealed class PlatformAccountProfileWorkflowTests
             });
 
         public Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
-            Guid userId,
+            UserId userId,
             Guid enrollmentId,
             string verificationCode,
             CancellationToken cancellationToken)
@@ -160,7 +160,7 @@ public sealed class PlatformAccountProfileWorkflowTests
         }
 
         public Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
-            Guid userId,
+            UserId userId,
             string displayName,
             CancellationToken cancellationToken)
         {
@@ -169,7 +169,7 @@ public sealed class PlatformAccountProfileWorkflowTests
         }
 
         public Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
-            Guid userId,
+            UserId userId,
             string mfaMode,
             CancellationToken cancellationToken)
         {
@@ -178,7 +178,7 @@ public sealed class PlatformAccountProfileWorkflowTests
         }
 
         public Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
-            Guid userId,
+            UserId userId,
             string reason,
             CancellationToken cancellationToken)
         {
@@ -194,7 +194,7 @@ public sealed class PlatformAccountProfileWorkflowTests
         }
 
         public Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
-            Guid userId,
+            UserId userId,
             string newEmail,
             CancellationToken cancellationToken)
         {
@@ -209,7 +209,7 @@ public sealed class PlatformAccountProfileWorkflowTests
         }
 
         public Task<PlatformProfileChangeRequestResult?> RequestPasswordChangeAsync(
-            Guid userId,
+            UserId userId,
             string newPasswordHash,
             CancellationToken cancellationToken)
         {
@@ -224,7 +224,7 @@ public sealed class PlatformAccountProfileWorkflowTests
         }
 
         public Task<PlatformProfileChangeConfirmationResult?> ConfirmEmailChangeAsync(
-            Guid userId,
+            UserId userId,
             string verificationCode,
             CancellationToken cancellationToken)
         {
@@ -238,7 +238,7 @@ public sealed class PlatformAccountProfileWorkflowTests
         }
 
         public Task<PlatformProfileChangeConfirmationResult?> ConfirmPasswordChangeAsync(
-            Guid userId,
+            UserId userId,
             string verificationCode,
             CancellationToken cancellationToken) =>
             Task.FromResult<PlatformProfileChangeConfirmationResult?>(new PlatformProfileChangeConfirmationResult

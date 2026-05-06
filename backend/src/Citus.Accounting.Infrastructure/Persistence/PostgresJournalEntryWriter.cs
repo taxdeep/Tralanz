@@ -41,7 +41,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
         var existing = await TryFindExistingByIdempotencyKeyAsync(
             scope,
-            context.CompanyId.Value,
+            context.CompanyId,
             idempotencyKey,
             cancellationToken);
         if (existing is not null)
@@ -51,7 +51,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
         existing = await TryFindExistingBySourceAsync(
             scope,
-            context.CompanyId.Value,
+            context.CompanyId,
             draft.SourceType,
             draft.SourceId,
             cancellationToken);
@@ -63,7 +63,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
         var postingDate = draft.FxSnapshot.RequestedDate;
         await EnsurePostingPeriodOpenAsync(
             scope,
-            context.CompanyId.Value,
+            context.CompanyId,
             postingDate,
             cancellationToken);
 
@@ -71,7 +71,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
         var claimed = await TryMarkSourcePostedAsync(
             scope,
-            context.CompanyId.Value,
+            context.CompanyId,
             draft.SourceType,
             draft.SourceId,
             postedAt,
@@ -81,7 +81,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
         {
             existing = await TryFindExistingBySourceAsync(
                 scope,
-                context.CompanyId.Value,
+                context.CompanyId,
                 draft.SourceType,
                 draft.SourceId,
                 cancellationToken);
@@ -97,7 +97,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
         var entityNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            context.CompanyId.Value,
+            context.CompanyId,
             $"entity-number:journal-entry:{postedAt:yyyy}",
             $"EN{postedAt:yyyy}",
             padding: 8,
@@ -105,7 +105,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
         var displayNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            context.CompanyId.Value,
+            context.CompanyId,
             "journal-entry-display",
             "JE-",
             padding: 6,
@@ -350,7 +350,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
     private static async Task<JournalEntryWriteResult?> TryFindExistingByIdempotencyKeyAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -363,7 +363,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -379,7 +379,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
     private static async Task<JournalEntryWriteResult?> TryFindExistingBySourceAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid sourceId,
         CancellationToken cancellationToken)
@@ -396,7 +396,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
 
@@ -413,7 +413,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
     private static async Task EnsurePostingPeriodOpenAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
@@ -440,7 +440,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             order by s.signal_date asc, s.created_at asc, s.id asc
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("posting_date", postingDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -471,7 +471,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
     private static async Task<bool> TryMarkSourcePostedAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid sourceId,
         DateTime postedAt,
@@ -689,7 +689,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
         await using var command = scope.CreateCommand(sql);
 
         command.Parameters.AddWithValue("posted_at", postedAt);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("claim_id", Guid.NewGuid());

@@ -6,11 +6,11 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 /// </summary>
 public sealed record AiJobRunRecord(
     Guid Id,
-    Guid? CompanyId,
+    CompanyId? CompanyId,
     string JobType,
     string Status,
     string TriggerType,
-    Guid? TriggeredByUserId,
+    UserId? TriggeredByUserId,
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
     DateTimeOffset? SourceWindowStart,
@@ -24,7 +24,7 @@ public sealed record AiJobRunRecord(
 
 public sealed record AiRequestLogRecord(
     Guid Id,
-    Guid? CompanyId,
+    CompanyId? CompanyId,
     Guid? JobRunId,
     string TaskType,
     string? Provider,
@@ -46,10 +46,10 @@ public sealed record AiRequestLogRecord(
 public interface IAiJobRunStore
 {
     Task<Guid> StartAsync(
-        Guid? companyId,
+        CompanyId? companyId,
         string jobType,
         string triggerType,
-        Guid? triggeredByUserId,
+        UserId? triggeredByUserId,
         DateTimeOffset? sourceWindowStart,
         DateTimeOffset? sourceWindowEnd,
         string? inputSummaryJson,
@@ -64,7 +64,7 @@ public interface IAiJobRunStore
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<AiJobRunRecord>> GetRecentAsync(
-        Guid companyId,
+        CompanyId companyId,
         string? jobType,
         int limit,
         CancellationToken cancellationToken);
@@ -84,7 +84,7 @@ public interface IAiRequestLogStore
     Task<Guid> WriteAsync(AiRequestLogRecord record, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<AiRequestLogRecord>> GetRecentAsync(
-        Guid companyId,
+        CompanyId companyId,
         string? taskType,
         int limit,
         CancellationToken cancellationToken);

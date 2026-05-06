@@ -21,7 +21,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     }
 
     public async Task<InventoryPurchaseReceiptDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -43,7 +43,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     }
 
     public async Task<InventoryBillReceiptHandoffSummary> GetBillHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -103,7 +103,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     }
 
     public async Task<LegacyInboundReceiptPathSnapshot?> GetLegacyInboundReceiptPathSnapshotAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -149,7 +149,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     }
 
     public async Task<IReadOnlyDictionary<Guid, InventoryBillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -217,7 +217,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             TypedValue = billDocumentIds.Distinct().ToArray()
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var snapshots = new Dictionary<Guid, InventoryBillReceiptPostingGateSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -396,7 +396,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_module", ToDbValue(request.SourceModule));
@@ -404,7 +404,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", ToDbValue(request.SourceDocumentNumber));
                 insertDocumentCommand.Parameters.AddWithValue("counterparty_id", request.VendorId);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", createdAt);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", createdAt);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -479,7 +479,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                         );
                         """;
                     insertLineCommand.Parameters.AddWithValue("id", lineId);
-                    insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     insertLineCommand.Parameters.AddWithValue("document_id", documentId);
                     insertLineCommand.Parameters.AddWithValue("line_no", line.LineNo);
                     insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -547,7 +547,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                         );
                         """;
                     insertLedgerCommand.Parameters.AddWithValue("id", ledgerEntryId);
-                    insertLedgerCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    insertLedgerCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     insertLedgerCommand.Parameters.AddWithValue("item_id", line.ItemId);
                     insertLedgerCommand.Parameters.AddWithValue("warehouse_id", line.WarehouseId);
                     insertLedgerCommand.Parameters.AddWithValue("document_id", documentId);
@@ -599,7 +599,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                         );
                         """;
                     insertCostLayerCommand.Parameters.AddWithValue("id", costLayerId);
-                    insertCostLayerCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    insertCostLayerCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     insertCostLayerCommand.Parameters.AddWithValue("item_id", line.ItemId);
                     insertCostLayerCommand.Parameters.AddWithValue("warehouse_id", line.WarehouseId);
                     insertCostLayerCommand.Parameters.AddWithValue("source_document_id", documentId);
@@ -690,7 +690,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -702,7 +702,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string baseCurrencyCode || string.IsNullOrWhiteSpace(baseCurrencyCode))
         {
@@ -725,7 +725,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task EnforceFifoBackdatingGuardAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] itemIds,
         DateOnly postingDate,
         CancellationToken cancellationToken)
@@ -743,7 +743,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and movement_direction = 'outbound'
               and posting_date >= @posting_date;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter("item_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             Value = itemIds,
@@ -765,7 +765,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<string> LoadVendorDisplayNameAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -781,7 +781,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             limit 1;
             """;
         command.Parameters.AddWithValue("vendor_id", vendorId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string displayName || string.IsNullOrWhiteSpace(displayName))
@@ -795,7 +795,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<Dictionary<Guid, InventoryManagedItemSummary>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken)
     {
@@ -831,7 +831,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and is_active = true
               and id = any(@item_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -840,7 +840,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             var summary = new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -881,7 +881,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<Dictionary<Guid, InventoryManagedWarehouseSummary>> LoadWarehouseMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> warehouseIds,
         CancellationToken cancellationToken)
     {
@@ -907,7 +907,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and is_active = true
               and id = any(@warehouse_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_ids", warehouseIds.ToArray());
 
         var warehouses = new Dictionary<Guid, InventoryManagedWarehouseSummary>();
@@ -916,7 +916,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             var summary = new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -933,7 +933,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<decimal> LoadCurrentOnHandAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -949,7 +949,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and warehouse_id = @warehouse_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         return Convert.ToDecimal(await command.ExecuteScalarAsync(cancellationToken) ?? 0m);
@@ -958,7 +958,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<decimal> LoadCurrentCostBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -973,7 +973,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         return Convert.ToDecimal(await command.ExecuteScalarAsync(cancellationToken) ?? 0m);
@@ -982,7 +982,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task UpsertBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         decimal quantityDelta,
@@ -1019,7 +1019,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               set on_hand_qty = item_warehouse_balances.on_hand_qty + excluded.on_hand_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("quantity_delta", quantityDelta);
@@ -1029,7 +1029,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1061,7 +1061,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and manage_inventory_method <> 'dont_manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1069,7 +1069,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1109,7 +1109,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1129,7 +1129,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1137,7 +1137,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1153,7 +1153,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<IReadOnlyList<InventoryPurchaseReceiptSummary>> LoadRecentReceiptsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1202,7 +1202,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var receipts = new List<InventoryPurchaseReceiptSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1210,7 +1210,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             receipts.Add(new InventoryPurchaseReceiptSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -1235,7 +1235,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     }
 
     private async Task<IReadOnlyList<LegacyInboundReceiptCoverageRow>> LoadFirstClassReceiptCoverageAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1294,7 +1294,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               bg.warehouse_id,
               bg.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var rows = new List<LegacyInboundReceiptCoverageRow>();
@@ -1327,7 +1327,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<(int LineCount, decimal Quantity)> LoadBillInboundSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1350,7 +1350,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and l.quantity is not null
               and l.unit_cost is not null;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1367,7 +1367,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<IReadOnlyList<InventoryBillReceiptHandoffLineSummary>> LoadBillHandoffLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1449,7 +1449,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
              and r.uom_code = b.uom_code
             order by b.item_code, b.warehouse_code, b.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var rows = new List<InventoryBillReceiptHandoffLineSummary>();
@@ -1489,7 +1489,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
     private static async Task<IReadOnlyList<InventoryPurchaseReceiptSummary>> LoadBillAnchoredReceiptsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1541,7 +1541,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             order by d.posting_date desc, d.created_at desc
             limit 5;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var receipts = new List<InventoryPurchaseReceiptSummary>();
@@ -1550,7 +1550,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             receipts.Add(new InventoryPurchaseReceiptSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),

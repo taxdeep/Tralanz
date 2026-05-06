@@ -34,9 +34,9 @@ public sealed class PostgresYearEndPreCloseChecksReader : IYearEndPreCloseChecks
         await using var scope = await PostgresCommandScope.CreateAsync(
             _connections, _executionContextAccessor, cancellationToken);
 
-        var grirCount = await CountGrIrAgedAsync(scope, companyId.Value, cancellationToken);
-        var dropShipCount = await CountDropShipClearingAgedAsync(scope, companyId.Value, cancellationToken);
-        var soCount = await CountSalesOrderBackorderAgedAsync(scope, companyId.Value, cancellationToken);
+        var grirCount = await CountGrIrAgedAsync(scope, companyId, cancellationToken);
+        var dropShipCount = await CountDropShipClearingAgedAsync(scope, companyId, cancellationToken);
+        var soCount = await CountSalesOrderBackorderAgedAsync(scope, companyId, cancellationToken);
 
         return new YearEndPreCloseChecks(
             GrIrAged: new YearEndPreCloseCheck(
@@ -58,7 +58,7 @@ public sealed class PostgresYearEndPreCloseChecksReader : IYearEndPreCloseChecks
 
     private static async Task<int> CountGrIrAgedAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         // Inline the company id as a literal uuid because Postgres DO
@@ -97,7 +97,7 @@ public sealed class PostgresYearEndPreCloseChecksReader : IYearEndPreCloseChecks
 
     private static async Task<int> CountDropShipClearingAgedAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         // Per-item residual + oldest-activity check, mirroring the
@@ -141,7 +141,7 @@ public sealed class PostgresYearEndPreCloseChecksReader : IYearEndPreCloseChecks
                and abs(coalesce(b.billed_base, 0) - coalesce(inv.invoiced_base, 0)) > 0.005
                and least(b.oldest_bill_date, inv.oldest_invoice_date) < (current_date - interval '90 days');
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is null ? 0 : Convert.ToInt32(result);
@@ -149,7 +149,7 @@ public sealed class PostgresYearEndPreCloseChecksReader : IYearEndPreCloseChecks
 
     private static async Task<int> CountSalesOrderBackorderAgedAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         // Schema check — sales_order_lines may not exist if the SO

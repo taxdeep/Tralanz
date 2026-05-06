@@ -174,7 +174,7 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
 
 public sealed record AccountSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string Code,
     string Name,

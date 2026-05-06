@@ -14,7 +14,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> logger)
 {
     public async Task<IReadOnlyList<InvoiceSummaryDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeDrafts = true,
         CancellationToken cancellationToken = default)
     {
@@ -33,7 +33,7 @@ public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> 
 
     public async Task<InvoiceRecordDto?> GetByIdAsync(
         Guid invoiceId,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         var requestUri = $"accounting/invoices/{invoiceId:D}?CompanyId={companyId:D}";
@@ -72,7 +72,7 @@ public sealed record InvoiceSummaryDto(
 
 public sealed record InvoiceRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

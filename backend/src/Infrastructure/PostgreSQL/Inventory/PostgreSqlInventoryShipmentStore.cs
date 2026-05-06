@@ -21,7 +21,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryShipmentDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -43,7 +43,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryShipmentSummary?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -98,7 +98,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               d.memo
             limit 1;
             """;
-        headerCommand.Parameters.AddWithValue("company_id", companyId);
+        headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
         headerCommand.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         await using var reader = await headerCommand.ExecuteReaderAsync(cancellationToken);
@@ -108,7 +108,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         }
 
         var documentId = reader.GetGuid(reader.GetOrdinal("id"));
-        var summaryCompanyId = reader.GetGuid(reader.GetOrdinal("company_id"));
+        var summaryCompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")));
         var documentNumber = reader.GetString(reader.GetOrdinal("document_number"));
         var status = reader.GetString(reader.GetOrdinal("status"));
         var postingDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date"));
@@ -167,7 +167,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryInvoiceShipmentHandoffSummary> GetInvoiceHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -199,7 +199,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryInvoiceShipmentIssueLaneSummary> GetInvoiceLaneSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -243,7 +243,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<IReadOnlyDictionary<Guid, InventoryInvoiceShipmentPostingGateSnapshot>> GetInvoicePostingGateSnapshotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> invoiceDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -320,7 +320,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             TypedValue = requestedInvoiceIds
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var snapshots = new Dictionary<Guid, InventoryInvoiceShipmentPostingGateSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -488,7 +488,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_module", ToDbValue(request.SourceModule));
@@ -499,7 +499,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                 insertDocumentCommand.Parameters.AddWithValue("tracking_number", ToDbValue(request.TrackingNumber));
                 insertDocumentCommand.Parameters.AddWithValue("shipping_slip_number", ToDbValue(request.ShippingSlipNumber));
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", createdAt);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", createdAt);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -553,7 +553,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                     );
                     """;
                 insertLineCommand.Parameters.AddWithValue("id", lineId);
-                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertLineCommand.Parameters.AddWithValue("document_id", documentId);
                 insertLineCommand.Parameters.AddWithValue("line_no", line.LineNo);
                 insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -633,7 +633,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
 
                 create table if not exists inventory_outbound_matching_lanes (
                   id uuid primary key,
-                  company_id uuid not null,
+                  company_id char(7) not null,
                   lane_type text not null,
                   source_document_id uuid not null,
                   item_id uuid not null,
@@ -661,7 +661,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
 
                 create table if not exists inventory_outbound_discrepancy_lanes (
                   id uuid primary key,
-                  company_id uuid not null,
+                  company_id char(7) not null,
                   discrepancy_type text not null,
                   source_document_id uuid not null,
                   item_id uuid not null,
@@ -723,7 +723,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -735,7 +735,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string baseCurrencyCode || string.IsNullOrWhiteSpace(baseCurrencyCode))
         {
@@ -748,7 +748,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<string> LoadCustomerDisplayNameAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -763,7 +763,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and is_active = true
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string displayName || string.IsNullOrWhiteSpace(displayName))
@@ -777,7 +777,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyDictionary<Guid, InventoryManagedItemSummary>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] itemIds,
         CancellationToken cancellationToken)
     {
@@ -813,7 +813,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and id = any(@item_ids)
               and is_active = true;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("item_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = itemIds
@@ -826,7 +826,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             var id = reader.GetGuid(reader.GetOrdinal("id"));
             items[id] = new InventoryManagedItemSummary(
                 id,
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -866,7 +866,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyDictionary<Guid, InventoryManagedWarehouseSummary>> LoadWarehouseMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] warehouseIds,
         CancellationToken cancellationToken)
     {
@@ -892,7 +892,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and id = any(@warehouse_ids)
               and is_active = true;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("warehouse_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = warehouseIds
@@ -905,7 +905,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             var id = reader.GetGuid(reader.GetOrdinal("id"));
             warehouses[id] = new InventoryManagedWarehouseSummary(
                 id,
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -921,7 +921,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var ids = await LoadIdsAsync(connection, transaction, companyId, "inventory_items", cancellationToken);
@@ -932,7 +932,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var ids = await LoadIdsAsync(connection, transaction, companyId, "inventory_warehouses", cancellationToken);
@@ -943,14 +943,14 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<Guid[]> LoadIdsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string tableName,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = $"select id from {tableName} where company_id = @company_id and is_active = true;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var ids = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -964,7 +964,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentLineInput>> LoadShipmentLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -985,7 +985,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and document_id = @document_id
             order by line_no asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", shipmentDocumentId);
 
         var lines = new List<InventoryShipmentLineInput>();
@@ -1012,7 +1012,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<(int LineCount, decimal TotalQuantity)> LoadInvoiceOutboundSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1030,7 +1030,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and l.warehouse_id is not null
               and l.uom_code is not null;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1047,7 +1047,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryInvoiceShipmentHandoffLineSummary>> LoadInvoiceHandoffLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1124,7 +1124,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
              and s.uom_code = i.uom_code
             order by i.item_code, i.warehouse_code, i.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         var rows = new List<InventoryInvoiceShipmentHandoffLineSummary>();
@@ -1164,7 +1164,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentSummary>> LoadInvoiceAnchoredShipmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1216,7 +1216,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         var shipments = new List<InventoryShipmentSummary>();
@@ -1225,7 +1225,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             shipments.Add(new InventoryShipmentSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -1264,7 +1264,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentSummary>> LoadRecentShipmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1313,7 +1313,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var shipments = new List<InventoryShipmentSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1321,7 +1321,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             shipments.Add(new InventoryShipmentSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -1360,7 +1360,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task RefreshInvoiceShipmentLanesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> invoiceDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -1439,7 +1439,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             from combined
             where source_document_id is not null;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("invoice_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = invoiceDocumentIds.Distinct().ToArray()
@@ -1542,7 +1542,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task RefreshInvoiceShipmentIssueLanesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1557,7 +1557,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and source_module = 'ar_invoice'
               and source_document_id = @invoice_document_id;
             """;
-        shipmentCommand.Parameters.AddWithValue("company_id", companyId);
+        shipmentCommand.Parameters.AddWithValue("company_id", companyId.Value);
         shipmentCommand.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         var shipmentIds = new List<Guid>();
@@ -1578,7 +1578,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task RefreshShipmentIssueLaneAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1649,7 +1649,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             from combined
             where source_document_id is not null;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         var rows = new List<(Guid SourceDocumentId, MatchingLaneRow Row)>();
@@ -1712,7 +1712,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task ReplaceMatchingLaneRowsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string laneType,
         Guid[] sourceDocumentIds,
         IReadOnlyCollection<(Guid SourceDocumentId, MatchingLaneRow Row)> rows,
@@ -1733,7 +1733,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                   and lane_type = @lane_type
                   and source_document_id = any(@source_document_ids);
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", companyId);
+            deleteCommand.Parameters.AddWithValue("company_id", companyId.Value);
             deleteCommand.Parameters.AddWithValue("lane_type", laneType);
             deleteCommand.Parameters.Add(new NpgsqlParameter<Guid[]>("source_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
             {
@@ -1784,7 +1784,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.AddWithValue("lane_type", laneType);
             insertCommand.Parameters.AddWithValue("source_document_id", sourceDocumentId);
             insertCommand.Parameters.AddWithValue("item_id", row.ItemId);
@@ -1805,7 +1805,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task ReplaceDiscrepancyLaneRowsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string discrepancyType,
         Guid[] sourceDocumentIds,
         IReadOnlyCollection<(Guid SourceDocumentId, DiscrepancyLaneRow Row)> rows,
@@ -1826,7 +1826,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                   and discrepancy_type = @discrepancy_type
                   and source_document_id = any(@source_document_ids);
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", companyId);
+            deleteCommand.Parameters.AddWithValue("company_id", companyId.Value);
             deleteCommand.Parameters.AddWithValue("discrepancy_type", discrepancyType);
             deleteCommand.Parameters.Add(new NpgsqlParameter<Guid[]>("source_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
             {
@@ -1875,7 +1875,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.AddWithValue("discrepancy_type", discrepancyType);
             insertCommand.Parameters.AddWithValue("source_document_id", sourceDocumentId);
             insertCommand.Parameters.AddWithValue("item_id", row.ItemId);
@@ -1895,7 +1895,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyDictionary<Guid, string?>> LoadInvoiceStatusMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] invoiceDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -1913,7 +1913,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             where company_id = @company_id
               and id = any(@invoice_document_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("invoice_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = invoiceDocumentIds
@@ -1932,7 +1932,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<InvoiceShipmentCoverageRow> LoadInvoiceShipmentCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1951,7 +1951,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and lane_type = 'invoice_shipment'
               and source_document_id = @invoice_document_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1980,7 +1980,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<InvoiceCoverageRow> LoadInvoiceCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         InvoiceShipmentCoverageRow shipmentCoverage,
         CancellationToken cancellationToken)
@@ -1995,7 +1995,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and id = @invoice_document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2038,7 +2038,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<ShipmentIssueCoverageRow> LoadShipmentIssueCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2053,7 +2053,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             where company_id = @company_id
               and document_id = @shipment_document_id;
             """;
-        sourceCommand.Parameters.AddWithValue("company_id", companyId);
+        sourceCommand.Parameters.AddWithValue("company_id", companyId.Value);
         sourceCommand.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         await using var sourceReader = await sourceCommand.ExecuteReaderAsync(cancellationToken);
@@ -2075,7 +2075,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and lane_type = 'shipment_issue'
               and source_document_id = @shipment_document_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2104,7 +2104,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentIssueLineSummary>> LoadShipmentIssueLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2137,7 +2137,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               and lane.source_document_id = @shipment_document_id
             order by i.item_code, w.warehouse_code, lane.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         var rows = new List<InventoryShipmentIssueLineSummary>();
@@ -2165,7 +2165,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<ShipmentIssueCoverageRow> LoadInvoiceIssueCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2208,7 +2208,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               coalesce((select issued_quantity from issue_totals), 0) as issued_quantity,
               (select latest_matched_at from issue_totals) as latest_matched_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2239,7 +2239,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryInvoiceShipmentIssueLineLaneSummary>> LoadInvoiceIssueLaneSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2320,7 +2320,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
              and il.uom_code = i.uom_code
             order by i.item_code, i.warehouse_code, i.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         var rows = new List<InventoryInvoiceShipmentIssueLineLaneSummary>();
@@ -2359,7 +2359,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryOutboundDiscrepancySummary>> LoadInvoiceOutboundDiscrepanciesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2420,7 +2420,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
               on w.id = lane.warehouse_id
              and w.company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         var rows = new List<InventoryOutboundDiscrepancySummary>();
@@ -2458,7 +2458,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadInvoiceAnchoredIssuesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2513,7 +2513,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         return await ReadIssueSummariesAsync(command, cancellationToken);
@@ -2522,7 +2522,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadShipmentAnchoredIssuesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2569,7 +2569,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         return await ReadIssueSummariesAsync(command, cancellationToken);
@@ -2585,7 +2585,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             issues.Add(new InventorySalesIssueSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),

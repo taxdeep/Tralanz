@@ -1,6 +1,6 @@
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryReturnReceiveDashboard(
-    Guid CompanyId,
+    CompanyId CompanyId,
     IReadOnlyList<InventoryShipmentSummary> RecentShipments,
     IReadOnlyList<InventoryReturnReceiveSummary> RecentReturns);

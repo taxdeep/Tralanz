@@ -15,7 +15,7 @@ namespace Citus.Accounting.Application.Abstractions;
 /// </summary>
 public sealed record TaxCodeRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string Code,
     string Name,
@@ -48,28 +48,28 @@ public interface ITaxCodeStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TaxCodeRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken);
 
     Task<TaxCodeRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         CancellationToken cancellationToken);
 
     Task<TaxCodeRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         TaxCodeUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<TaxCodeRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         TaxCodeUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<TaxCodeRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         bool isActive,
         CancellationToken cancellationToken);

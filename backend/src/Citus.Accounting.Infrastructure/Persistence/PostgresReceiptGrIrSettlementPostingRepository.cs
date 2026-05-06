@@ -40,12 +40,12 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             _executionContextAccessor,
             cancellationToken);
         await EnsureSchemaAsync(scope, cancellationToken);
-        await RefreshJournalStatusAsync(scope, companyId.Value, settlementBatchId, cancellationToken);
-        await AcquireSettlementPostingLockAsync(scope, companyId.Value, settlementBatchId, cancellationToken);
+        await RefreshJournalStatusAsync(scope, companyId, settlementBatchId, cancellationToken);
+        await AcquireSettlementPostingLockAsync(scope, companyId, settlementBatchId, cancellationToken);
 
         return await LoadPostingDocumentAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -123,7 +123,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               add column if not exists journal_entry_display_number text null;
 
             alter table receipt_grir_ap_settlement_batches
-              add column if not exists journal_posted_by_user_id uuid null;
+              add column if not exists journal_posted_by_user_id char(7) null;
 
             alter table receipt_grir_ap_settlement_batches
               add column if not exists journal_posted_at timestamptz null;
@@ -139,18 +139,18 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
     private static async Task AcquireSettlementPostingLockAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand("select pg_advisory_xact_lock(hashtext(@lock_key));");
-        command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement-posting:{companyId:N}:{settlementBatchId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement-posting:{companyId.Value}:{settlementBatchId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task RefreshJournalStatusAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -182,14 +182,14 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               and batch.id = @settlement_batch_id
               and batch.journal_entry_id is not null;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<ReceiptGrIrSettlementPostingDocument> LoadPostingDocumentAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
@@ -215,7 +215,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               and batch.receipt_id = @receipt_id
             limit 1;
             """);
-        headerCommand.Parameters.AddWithValue("company_id", companyId);
+        headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
         headerCommand.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
         headerCommand.Parameters.AddWithValue("receipt_id", receiptDocumentId);
 
@@ -270,8 +270,8 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
         return new ReceiptGrIrSettlementPostingDocument(
             batchId,
-            new CompanyId(companyId),
-            new EntityNumber($"EN-{displayNumber}"),
+            CompanyId.Parse(companyId.ToString()),
+            EntityNumber.FromLegacy($"EN-{displayNumber}"),
             new DocumentNumber(displayNumber),
             documentStatus,
             receiptDocumentId,
@@ -283,7 +283,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
     private static async Task<IReadOnlyList<ReceiptGrIrSettlementPostingDocumentLine>> LoadPostingLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -337,7 +337,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               and posting_batch.status = 'posted'
             order by settlement_line.receipt_line_number, settlement_line.bill_line_number, batch_line.id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
         var lines = new List<ReceiptGrIrSettlementPostingDocumentLine>();

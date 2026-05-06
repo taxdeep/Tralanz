@@ -7,7 +7,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class JournalEntryReviewClient(HttpClient httpClient, ILogger<JournalEntryReviewClient> logger)
 {
     public async Task<IReadOnlyList<JournalEntryReviewListItemSummary>> GetRecentAsync(
-        Guid companyId,
+        CompanyId companyId,
         int take = 10,
         CancellationToken cancellationToken = default)
     {
@@ -26,7 +26,7 @@ public sealed class JournalEntryReviewClient(HttpClient httpClient, ILogger<Jour
     }
 
     public async Task<JournalEntryReviewSummary?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         CancellationToken cancellationToken = default)
     {
@@ -121,7 +121,7 @@ public sealed class JournalEntryReviewClient(HttpClient httpClient, ILogger<Jour
     }
 
     public async Task<JournalEntryReviewListItemSummary?> FindBySourceAsync(
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid sourceId,
         CancellationToken cancellationToken = default)

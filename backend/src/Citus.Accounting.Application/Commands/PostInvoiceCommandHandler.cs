@@ -54,7 +54,7 @@ public sealed class PostInvoiceCommandHandler
             }
 
             var shipmentHandoffSummary = await _inventoryShipmentStore.GetInvoiceHandoffSummaryAsync(
-                command.CompanyId.Value,
+                command.CompanyId,
                 command.DocumentId,
                 ct);
             if (!ShipmentPostingGatePolicy.AllowsInvoicePost(shipmentHandoffSummary.MatchStatus))
@@ -236,7 +236,7 @@ public sealed class PostInvoiceCommandHandler
         try
         {
             lane = await _inventoryShipmentStore.GetInvoiceLaneSummaryAsync(
-                command.CompanyId.Value,
+                command.CompanyId,
                 command.DocumentId,
                 cancellationToken);
         }

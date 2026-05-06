@@ -28,7 +28,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflow : IReceivePaymentDraf
     }
 
     public async Task<IReadOnlyList<ReceivePaymentOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -109,7 +109,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflow : IReceivePaymentDraf
     }
 
     private async Task EnsurePhaseOneSameCurrencySettlementAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string documentCurrencyCode,
         IReadOnlyList<ReceivePaymentDraftLine> lines,
@@ -140,8 +140,8 @@ public sealed class ReceivePaymentDraftPreparationWorkflow : IReceivePaymentDraf
     }
 
     private async Task<FxRateResolution> ResolveFxAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string baseCurrencyCode,
         string documentCurrencyCode,
         DateOnly paymentDate,

@@ -7,7 +7,7 @@ namespace Tests.Company;
 
 public sealed class CompanyCurrencyProvisioningSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
 
     [Fact]
     public async Task EnableCurrencyAsync_UpsertsCompanyCurrencyAndForeignControlAccounts()
@@ -19,7 +19,7 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
 
         try
         {
-            var result = await workflow.EnableCurrencyAsync(CompanyId, currencyCode, Guid.NewGuid(), CancellationToken.None);
+            var result = await workflow.EnableCurrencyAsync(CompanyId, currencyCode, UserId.FromOrdinal(1), CancellationToken.None);
 
             Assert.True(result.Profile.IsCurrencyEnabled(currencyCode));
             Assert.Contains(result.ProvisionedControlAccounts, account => account.SystemRole == "accounts_receivable:CAD");
@@ -67,7 +67,7 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
@@ -110,7 +110,7 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

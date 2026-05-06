@@ -111,16 +111,16 @@ public sealed class UnitySearchEngine(
             .ToArray();
 
     public Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         int take,
         CancellationToken cancellationToken) =>
         statsStore.ListRecentQueriesAsync(companyId, userId, context, take, cancellationToken);
 
     public async Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         int take,
         CancellationToken cancellationToken)
@@ -130,8 +130,8 @@ public sealed class UnitySearchEngine(
     }
 
     public Task RecordClickAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         string entityType,
         Guid sourceId,

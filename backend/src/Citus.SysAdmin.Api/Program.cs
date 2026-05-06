@@ -568,9 +568,9 @@ control.MapGet(
     });
 
 control.MapGet(
-    "/accounts/{accountId:guid}/mfa-recovery-history",
+    "/accounts/{accountId}/mfa-recovery-history",
     async (
-        Guid accountId,
+        UserId accountId,
         IPlatformGovernanceRepository governanceRepository,
         int? limit,
         CancellationToken cancellationToken) =>
@@ -597,9 +597,9 @@ control.MapGet(
     });
 
 control.MapGet(
-    "/accounts/{accountId:guid}/mfa-timeline",
+    "/accounts/{accountId}/mfa-timeline",
     async (
-        Guid accountId,
+        UserId accountId,
         IPlatformGovernanceRepository governanceRepository,
         int? limit,
         CancellationToken cancellationToken) =>
@@ -609,9 +609,9 @@ control.MapGet(
     });
 
 control.MapGet(
-    "/companies/{companyId:guid}/memberships",
+    "/companies/{companyId}/memberships",
     async (
-        Guid companyId,
+        CompanyId companyId,
         ICompanyMembershipPermissionStore membershipStore,
         CancellationToken cancellationToken) =>
     {
@@ -667,8 +667,8 @@ control.MapGet(
     });
 
 control.MapPut(
-    "/active-company/{companyId:guid}",
-    async (Guid companyId, HttpContext httpContext, SysAdminControlState state, IPlatformRuntimeStateRepository runtimeRepository, CancellationToken cancellationToken) =>
+    "/active-company/{companyId}",
+    async (CompanyId companyId, HttpContext httpContext, SysAdminControlState state, IPlatformRuntimeStateRepository runtimeRepository, CancellationToken cancellationToken) =>
     {
         if (!state.TrySetActiveCompany(companyId, ToOperatorSummary(GetAuthenticatedSession(httpContext)), out var context))
         {
@@ -751,9 +751,9 @@ control.MapPost(
     });
 
 control.MapPut(
-    "/companies/{companyId:guid}/status",
+    "/companies/{companyId}/status",
     async (
-        Guid companyId,
+        CompanyId companyId,
         HttpContext httpContext,
         CompanyStatusUpdateRequest request,
         IPlatformGovernanceRepository governanceRepository,
@@ -785,9 +785,9 @@ control.MapPut(
     });
 
 control.MapPut(
-    "/accounts/{accountId:guid}/status",
+    "/accounts/{accountId}/status",
     async (
-        Guid accountId,
+        UserId accountId,
         HttpContext httpContext,
         AccountStatusUpdateRequest request,
         IPlatformGovernanceRepository governanceRepository,
@@ -820,9 +820,9 @@ control.MapPut(
     });
 
 control.MapPost(
-    "/accounts/{accountId:guid}/password-reset-requests",
+    "/accounts/{accountId}/password-reset-requests",
     async (
-        Guid accountId,
+        UserId accountId,
         HttpContext httpContext,
         PasswordResetRequestCommand request,
         IPlatformGovernanceRepository governanceRepository,
@@ -860,9 +860,9 @@ control.MapPost(
     });
 
 control.MapPost(
-    "/accounts/{accountId:guid}/mfa-reset",
+    "/accounts/{accountId}/mfa-reset",
     async (
-        Guid accountId,
+        UserId accountId,
         HttpContext httpContext,
         AccountMfaResetRequest request,
         IPlatformGovernanceRepository governanceRepository,
@@ -960,9 +960,9 @@ control.MapPost(
     });
 
 control.MapPut(
-    "/companies/{companyId:guid}/memberships/{membershipId:guid}/role",
+    "/companies/{companyId}/memberships/{membershipId:guid}/role",
     async (
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         HttpContext httpContext,
         CompanyMembershipRoleUpdateRequest request,
@@ -1293,7 +1293,7 @@ control.MapPost(
             new PlatformVerificationNotificationMessage
             {
                 DispatchId = Guid.NewGuid(),
-                UserId = Guid.Empty,
+                UserId = default,
                 Purpose = "notification_test",
                 Destination = request.ToEmail.Trim(),
                 RecipientDisplayName = "SMTP test recipient",

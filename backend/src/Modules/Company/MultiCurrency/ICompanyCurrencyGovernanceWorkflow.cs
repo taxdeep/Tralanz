@@ -5,12 +5,12 @@ namespace Modules.Company.MultiCurrency;
 public interface ICompanyCurrencyGovernanceWorkflow
 {
     Task<CompanyCurrencyProfile> GetProfileAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
-        Guid companyId,
+        CompanyId companyId,
         string currencyCode,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 }

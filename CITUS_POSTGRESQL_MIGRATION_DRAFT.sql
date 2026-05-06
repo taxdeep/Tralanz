@@ -30,7 +30,7 @@ $$;
 -- actor-reference FK in the baseline. Semantically, this is Platform
 -- Identity / Account storage, not a Business App Users module.
 CREATE TABLE users (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id char(7) PRIMARY KEY,
   email text NOT NULL UNIQUE,
   username text UNIQUE,
   display_name text,
@@ -48,7 +48,7 @@ CREATE TABLE users (
 
 CREATE TABLE account_verification_codes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id char(7) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   purpose text NOT NULL,
   destination text,
   code_hash text NOT NULL,
@@ -64,7 +64,7 @@ CREATE TABLE account_verification_codes (
 -- SysAdmin is an independent PlatformOps identity realm. SysAdmin accounts are
 -- not company members and must never become business posting actors.
 CREATE TABLE sysadmin_accounts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id char(7) PRIMARY KEY,
   email text NOT NULL UNIQUE,
   display_name text NOT NULL DEFAULT '',
   password_hash text NOT NULL,
@@ -77,7 +77,7 @@ CREATE TABLE sysadmin_accounts (
 
 CREATE TABLE sysadmin_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  sysadmin_account_id uuid NOT NULL REFERENCES sysadmin_accounts(id) ON DELETE CASCADE,
+  sysadmin_account_id char(7) NOT NULL REFERENCES sysadmin_accounts(id) ON DELETE CASCADE,
   session_token_hash text NOT NULL UNIQUE,
   expires_at timestamptz NOT NULL,
   last_seen_at timestamptz NOT NULL DEFAULT NOW(),
@@ -105,7 +105,7 @@ CREATE TABLE platform_notification_dispatches (
 CREATE TABLE platform_runtime_state (
   state_key text PRIMARY KEY,
   json jsonb NOT NULL,
-  updated_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  updated_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   updated_at timestamptz NOT NULL DEFAULT NOW()
 );
 
@@ -118,8 +118,8 @@ VALUES ('notification_readiness', '{"configPresent": false, "testStatus": "untes
 ON CONFLICT (state_key) DO NOTHING;
 
 CREATE TABLE companies (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_number text NOT NULL UNIQUE,
+  id char(7) PRIMARY KEY,
+  entity_number char(11) NOT NULL UNIQUE,
   legal_name text NOT NULL,
   entity_type text NOT NULL DEFAULT 'corporation',
   industry text NOT NULL DEFAULT 'general_services',
@@ -140,15 +140,15 @@ CREATE TABLE companies (
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT companies_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT companies_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT companies_account_code_length_chk CHECK (account_code_length BETWEEN 4 AND 6),
   CONSTRAINT companies_status_chk CHECK (status IN ('active', 'inactive', 'suspended', 'archived'))
 );
 
 CREATE TABLE company_memberships (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id char(7) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role text NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
   permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -163,8 +163,8 @@ CREATE TABLE company_memberships (
 CREATE TABLE business_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   token_hash text NOT NULL UNIQUE,
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  active_company_id uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+  user_id char(7) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  active_company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
   membership_id uuid NOT NULL REFERENCES company_memberships(id) ON DELETE CASCADE,
   role text NOT NULL,
   permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -184,8 +184,8 @@ CREATE TABLE business_sessions (
 
 CREATE TABLE business_session_mfa_challenges (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  active_company_id uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+  user_id char(7) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  active_company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
   membership_id uuid NOT NULL REFERENCES company_memberships(id) ON DELETE CASCADE,
   role text NOT NULL,
   permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -206,25 +206,25 @@ CREATE TABLE business_session_mfa_challenges (
 
 CREATE TABLE account_mfa_recovery_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  requested_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id char(7) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   current_mfa_mode text NOT NULL,
   status text NOT NULL DEFAULT 'requested',
   request_reason text NOT NULL,
   requested_at timestamptz NOT NULL DEFAULT NOW(),
   review_reason text,
   reviewed_at timestamptz,
-  reviewed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  reviewed_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   execution_reason text,
   executed_at timestamptz,
-  executed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  executed_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   CONSTRAINT account_mfa_recovery_requests_current_mode_chk CHECK (current_mfa_mode IN ('none', 'email_code', 'totp_app')),
   CONSTRAINT account_mfa_recovery_requests_status_chk CHECK (status IN ('requested', 'approved', 'rejected', 'executed'))
 );
 
 CREATE TABLE account_mfa_totp_enrollments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id char(7) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status text NOT NULL,
   secret_base32 text NOT NULL, -- protected ciphertext for new rows; legacy plaintext tolerated during migration
   created_at timestamptz NOT NULL DEFAULT NOW(),
@@ -286,7 +286,7 @@ ALTER TABLE companies
 
 CREATE TABLE company_currencies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   is_enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT NOW(),
@@ -295,7 +295,7 @@ CREATE TABLE company_currencies (
 
 CREATE TABLE company_books (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   book_code text NOT NULL,
   book_name text NOT NULL,
   book_role text NOT NULL,
@@ -307,7 +307,7 @@ CREATE TABLE company_books (
   is_adjustment_only boolean NOT NULL DEFAULT false,
   effective_from date NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
-  created_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_books_role_chk CHECK (
@@ -324,7 +324,7 @@ CREATE TABLE company_books (
 
 CREATE TABLE company_book_remeasurement_policies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   company_book_id uuid NOT NULL REFERENCES company_books(id) ON DELETE CASCADE,
   rate_type text NOT NULL DEFAULT 'closing',
   quote_basis text NOT NULL DEFAULT 'direct',
@@ -334,7 +334,7 @@ CREATE TABLE company_book_remeasurement_policies (
   fx_rounding_policy text NOT NULL DEFAULT 'currency_precision',
   effective_from date NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
-  created_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_book_remeasurement_policies_rate_type_chk CHECK (
@@ -358,7 +358,7 @@ CREATE TABLE company_book_remeasurement_policies (
 );
 
 CREATE TABLE company_chart_template_bindings (
-  company_id uuid PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
   template_key text NOT NULL,
   template_version text NOT NULL,
   account_code_length smallint NOT NULL,
@@ -368,7 +368,7 @@ CREATE TABLE company_chart_template_bindings (
   industry text NOT NULL,
   reserved_ranges jsonb NOT NULL DEFAULT '[]'::jsonb,
   mandatory_system_roles jsonb NOT NULL DEFAULT '[]'::jsonb,
-  applied_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  applied_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   applied_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_chart_template_bindings_reserved_ranges_array_chk CHECK (jsonb_typeof(reserved_ranges) = 'array'),
   CONSTRAINT company_chart_template_bindings_mandatory_roles_array_chk CHECK (jsonb_typeof(mandatory_system_roles) = 'array')
@@ -382,7 +382,7 @@ CREATE TABLE platform_entity_number_sequences (
 
 CREATE TABLE company_book_governed_change_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   company_book_id uuid NOT NULL REFERENCES company_books(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
   requested_action text NOT NULL,
@@ -422,10 +422,10 @@ CREATE TABLE company_book_governed_change_requests (
   changed_fields text[] NOT NULL DEFAULT '{}',
   change_categories text[] NOT NULL DEFAULT '{}',
   reason text NOT NULL,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  submitted_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  submitted_by_user_id char(7) REFERENCES users(id) ON DELETE RESTRICT,
   submitted_at timestamptz,
-  cancelled_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  cancelled_by_user_id char(7) REFERENCES users(id) ON DELETE RESTRICT,
   cancelled_at timestamptz,
   applied_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT NOW(),
@@ -491,13 +491,13 @@ CREATE TABLE company_book_governed_change_requests (
 
 CREATE TABLE company_book_governance_signals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   company_book_id uuid NOT NULL REFERENCES company_books(id) ON DELETE CASCADE,
   signal_type text NOT NULL,
   signal_date date NOT NULL,
   reference_label text,
   notes text,
-  created_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_book_governance_signals_type_chk CHECK (
@@ -535,7 +535,7 @@ CREATE TABLE system_fx_market_rates (
 
 CREATE TABLE company_fx_rate_snapshots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   quote_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   requested_date date NOT NULL,
@@ -550,7 +550,7 @@ CREATE TABLE company_fx_rate_snapshots (
   snapshot_semantics text NOT NULL,
   system_market_rate_id uuid REFERENCES system_fx_market_rates(id) ON DELETE SET NULL,
   notes text,
-  created_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_by_user_id char(7) REFERENCES users(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_fx_rate_snapshots_positive_rate_chk CHECK (rate > 0),
   CONSTRAINT company_fx_rate_snapshots_row_origin_chk CHECK (
@@ -593,7 +593,7 @@ CREATE UNIQUE INDEX uq_company_fx_rate_snapshots_identity
 
 CREATE TABLE company_numbering_sequences (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   scope_key text NOT NULL,
   prefix text,
   next_number bigint NOT NULL,
@@ -606,7 +606,7 @@ CREATE TABLE company_numbering_sequences (
 );
 
 CREATE TABLE company_settings (
-  company_id uuid PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
   profile jsonb NOT NULL DEFAULT '{}'::jsonb,
   security jsonb NOT NULL DEFAULT '{}'::jsonb,
   notification jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -620,8 +620,8 @@ CREATE TABLE company_settings (
 
 CREATE TABLE accounts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   code text NOT NULL,
   name text NOT NULL,
   root_type text NOT NULL,
@@ -635,7 +635,7 @@ CREATE TABLE accounts (
   allow_manual_posting boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT accounts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT accounts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT accounts_root_type_chk CHECK (
     root_type IN ('asset', 'liability', 'equity', 'revenue', 'cost_of_sales', 'expense')
   ),
@@ -644,8 +644,8 @@ CREATE TABLE accounts (
 
 CREATE TABLE tax_codes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   code text NOT NULL,
   name text NOT NULL,
   rate_percent numeric(9,6) NOT NULL,
@@ -657,7 +657,7 @@ CREATE TABLE tax_codes (
   is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT tax_codes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT tax_codes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT tax_codes_rate_percent_chk CHECK (rate_percent >= 0),
   CONSTRAINT tax_codes_applies_to_chk CHECK (applies_to IN ('sales', 'purchase', 'both')),
   CONSTRAINT tax_codes_recoverability_mode_chk CHECK (
@@ -672,8 +672,8 @@ CREATE TABLE tax_codes (
 
 CREATE TABLE customers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   display_name text NOT NULL,
   default_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   email text,
@@ -683,13 +683,13 @@ CREATE TABLE customers (
   currency_locked boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT customers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$')
+  CONSTRAINT customers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$')
 );
 
 CREATE TABLE vendors (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   display_name text NOT NULL,
   default_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   email text,
@@ -699,7 +699,7 @@ CREATE TABLE vendors (
   currency_locked boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT vendors_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$')
+  CONSTRAINT vendors_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$')
 );
 
 -- ---------------------------------------------------------------------------
@@ -708,8 +708,8 @@ CREATE TABLE vendors (
 
 CREATE TABLE invoices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   invoice_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -729,10 +729,10 @@ CREATE TABLE invoices (
   customer_po_number text,
   sales_order_id uuid,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT invoices_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT invoices_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT invoices_status_chk CHECK (
     status IN ('draft', 'issued', 'posted', 'partially_paid', 'paid', 'voided', 'reversed')
   ),
@@ -742,7 +742,7 @@ CREATE TABLE invoices (
 
 CREATE TABLE invoice_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   invoice_id uuid NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   revenue_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -761,8 +761,8 @@ CREATE TABLE invoice_lines (
 
 CREATE TABLE credit_notes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   credit_note_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -781,10 +781,10 @@ CREATE TABLE credit_notes (
   memo text,
   customer_po_number text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT credit_notes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT credit_notes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT credit_notes_status_chk CHECK (
     status IN ('draft', 'issued', 'posted', 'partially_applied', 'applied', 'voided', 'reversed')
   ),
@@ -794,7 +794,7 @@ CREATE TABLE credit_notes (
 
 CREATE TABLE credit_note_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   credit_note_id uuid NOT NULL REFERENCES credit_notes(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   revenue_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -813,8 +813,8 @@ CREATE TABLE credit_note_lines (
 
 CREATE TABLE bills (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   bill_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -832,10 +832,10 @@ CREATE TABLE bills (
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT bills_status_chk CHECK (
     status IN ('draft', 'posted', 'partially_paid', 'paid', 'voided', 'reversed')
   ),
@@ -845,7 +845,7 @@ CREATE TABLE bills (
 
 CREATE TABLE bill_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   bill_id uuid NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   expense_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -862,8 +862,8 @@ CREATE TABLE bill_lines (
 
 CREATE TABLE vendor_credits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   vendor_credit_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -881,10 +881,10 @@ CREATE TABLE vendor_credits (
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT vendor_credits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT vendor_credits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT vendor_credits_status_chk CHECK (
     status IN ('draft', 'posted', 'partially_applied', 'applied', 'voided', 'reversed')
   ),
@@ -894,7 +894,7 @@ CREATE TABLE vendor_credits (
 
 CREATE TABLE vendor_credit_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   vendor_credit_id uuid NOT NULL REFERENCES vendor_credits(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   expense_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -911,8 +911,8 @@ CREATE TABLE vendor_credit_lines (
 
 CREATE TABLE receive_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   payment_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -934,10 +934,10 @@ CREATE TABLE receive_payments (
   extra_deposit_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT receive_payments_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT receive_payments_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT receive_payments_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT receive_payments_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT receive_payments_total_amount_nonnegative_chk CHECK (total_amount >= 0),
@@ -960,9 +960,9 @@ CREATE TABLE receive_payments (
 -- ---------------------------------------------------------------------------
 CREATE TABLE customer_deposits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
-  entity_number text NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL UNIQUE,
   display_number text NOT NULL,
   status text NOT NULL DEFAULT 'open',
   deposit_date date NOT NULL,
@@ -978,10 +978,10 @@ CREATE TABLE customer_deposits (
   source_receive_payment_id uuid REFERENCES receive_payments(id) ON DELETE RESTRICT,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT customer_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT customer_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT customer_deposits_status_chk CHECK (status IN ('open', 'partially_applied', 'closed', 'voided')),
   CONSTRAINT customer_deposits_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT customer_deposits_amount_positive_chk CHECK (original_amount_tx > 0 AND original_amount_base > 0),
@@ -990,7 +990,7 @@ CREATE TABLE customer_deposits (
 
 CREATE TABLE receive_payment_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   receive_payment_id uuid NOT NULL REFERENCES receive_payments(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   target_ar_open_item_id uuid NOT NULL,
@@ -1003,8 +1003,8 @@ CREATE TABLE receive_payment_lines (
 
 CREATE TABLE pay_bills (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   payment_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1020,10 +1020,10 @@ CREATE TABLE pay_bills (
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT pay_bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT pay_bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT pay_bills_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT pay_bills_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT pay_bills_total_amount_nonnegative_chk CHECK (total_amount >= 0),
@@ -1032,7 +1032,7 @@ CREATE TABLE pay_bills (
 
 CREATE TABLE pay_bill_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   pay_bill_id uuid NOT NULL REFERENCES pay_bills(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   target_ap_open_item_id uuid NOT NULL,
@@ -1045,8 +1045,8 @@ CREATE TABLE pay_bill_lines (
 
 CREATE TABLE credit_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   application_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1056,10 +1056,10 @@ CREATE TABLE credit_applications (
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT credit_applications_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT credit_applications_total_amount_nonnegative_chk CHECK (total_amount >= 0),
   CONSTRAINT credit_applications_unique_company_application_number UNIQUE (company_id, application_number)
@@ -1067,7 +1067,7 @@ CREATE TABLE credit_applications (
 
 CREATE TABLE credit_application_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   credit_application_id uuid NOT NULL REFERENCES credit_applications(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   source_credit_ar_open_item_id uuid NOT NULL,
@@ -1081,8 +1081,8 @@ CREATE TABLE credit_application_lines (
 
 CREATE TABLE vendor_credit_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   application_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1092,10 +1092,10 @@ CREATE TABLE vendor_credit_applications (
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT vendor_credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT vendor_credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT vendor_credit_applications_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT vendor_credit_applications_total_amount_nonnegative_chk CHECK (total_amount >= 0),
   CONSTRAINT vendor_credit_applications_unique_company_application_number UNIQUE (company_id, application_number)
@@ -1103,7 +1103,7 @@ CREATE TABLE vendor_credit_applications (
 
 CREATE TABLE vendor_credit_application_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   vendor_credit_application_id uuid NOT NULL REFERENCES vendor_credit_applications(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   source_vendor_credit_ap_open_item_id uuid NOT NULL,
@@ -1117,8 +1117,8 @@ CREATE TABLE vendor_credit_application_lines (
 
 CREATE TABLE manual_journal_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   display_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   entry_date date NOT NULL,
@@ -1131,11 +1131,11 @@ CREATE TABLE manual_journal_documents (
   fx_source text NOT NULL DEFAULT 'identity',
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT manual_journal_documents_entity_number_format_chk CHECK (
-    entity_number ~ '^EN[0-9]{4}[0-9]{8}$'
+    entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'
   ),
   CONSTRAINT manual_journal_documents_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
@@ -1146,7 +1146,7 @@ CREATE TABLE manual_journal_documents (
 
 CREATE TABLE manual_journal_document_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   manual_journal_document_id uuid NOT NULL REFERENCES manual_journal_documents(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -1169,8 +1169,8 @@ CREATE TABLE manual_journal_document_lines (
 
 CREATE TABLE journal_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   display_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   source_type text NOT NULL,
@@ -1190,9 +1190,9 @@ CREATE TABLE journal_entries (
   posted_at timestamptz,
   voided_at timestamptz,
   reversed_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT journal_entries_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT journal_entries_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT journal_entries_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT journal_entries_exchange_rate_positive_chk CHECK (exchange_rate > 0),
   CONSTRAINT journal_entries_unique_idempotency UNIQUE (company_id, idempotency_key),
@@ -1201,7 +1201,7 @@ CREATE TABLE journal_entries (
 
 CREATE TABLE journal_entry_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   journal_entry_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -1229,7 +1229,7 @@ CREATE TABLE journal_entry_lines (
 
 CREATE TABLE ledger_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   journal_entry_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   journal_entry_line_id uuid NOT NULL REFERENCES journal_entry_lines(id) ON DELETE CASCADE,
   posting_date date NOT NULL,
@@ -1255,7 +1255,7 @@ CREATE TABLE ledger_entries (
 
 CREATE TABLE ar_open_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   source_type text NOT NULL,
   source_id uuid NOT NULL,
@@ -1282,7 +1282,7 @@ CREATE TABLE ar_open_items (
 
 CREATE TABLE ap_open_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   source_type text NOT NULL,
   source_id uuid NOT NULL,
@@ -1309,7 +1309,7 @@ CREATE TABLE ap_open_items (
 
 CREATE TABLE settlement_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   application_type text NOT NULL,
   source_type text NOT NULL,
   source_id uuid NOT NULL,
@@ -1320,7 +1320,7 @@ CREATE TABLE settlement_applications (
   settlement_fx_rate numeric(20,10),
   realized_fx_amount numeric(20,6),
   created_at timestamptz NOT NULL DEFAULT NOW(),
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   CONSTRAINT settlement_applications_application_type_chk CHECK (
     application_type IN ('receive_payment', 'pay_bill', 'credit_application', 'vendor_credit_application')
   ),
@@ -1337,9 +1337,9 @@ CREATE TABLE settlement_applications (
 
 CREATE TABLE fx_revaluation_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   company_book_id uuid REFERENCES company_books(id) ON DELETE RESTRICT,
-  entity_number text NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL UNIQUE,
   display_number text NOT NULL,
   book_code text,
   accounting_standard text,
@@ -1362,7 +1362,7 @@ CREATE TABLE fx_revaluation_batches (
   fx_source text NOT NULL,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT fx_revaluation_batches_status_chk CHECK (status IN ('draft', 'posted', 'voided')),
@@ -1403,7 +1403,7 @@ CREATE TABLE fx_revaluation_batches (
 
 CREATE TABLE fx_revaluation_batch_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   fx_revaluation_batch_id uuid NOT NULL REFERENCES fx_revaluation_batches(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   target_open_item_type text NOT NULL,
@@ -1441,11 +1441,11 @@ CREATE TABLE fx_revaluation_batch_lines (
 
 CREATE TABLE audit_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid REFERENCES companies(id) ON DELETE SET NULL,
+  company_id char(7) REFERENCES companies(id) ON DELETE SET NULL,
   actor_type text NOT NULL,
-  actor_id uuid,
+  actor_id char(7),
   entity_type text NOT NULL,
-  entity_id uuid NOT NULL,
+  entity_id text NOT NULL,
   action text NOT NULL,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT NOW()
@@ -1814,8 +1814,8 @@ EXECUTE FUNCTION citus_set_updated_at();
 -- ============================================================================
 CREATE TABLE sales_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   receipt_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1840,10 +1840,10 @@ CREATE TABLE sales_receipts (
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT sales_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT sales_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT sales_receipts_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -1856,7 +1856,7 @@ CREATE TABLE sales_receipts (
 
 CREATE TABLE sales_receipt_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   sales_receipt_id uuid NOT NULL REFERENCES sales_receipts(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   revenue_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -1887,8 +1887,8 @@ CREATE INDEX ix_sales_receipt_lines_sales_receipt ON sales_receipt_lines (sales_
 -- ============================================================================
 CREATE TABLE refund_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   refund_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1910,10 +1910,10 @@ CREATE TABLE refund_receipts (
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT refund_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT refund_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT refund_receipts_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -1926,7 +1926,7 @@ CREATE TABLE refund_receipts (
 
 CREATE TABLE refund_receipt_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   refund_receipt_id uuid NOT NULL REFERENCES refund_receipts(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   revenue_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
@@ -1960,8 +1960,8 @@ CREATE INDEX ix_refund_receipt_lines_refund_receipt ON refund_receipt_lines (ref
 -- ============================================================================
 CREATE TABLE bank_transfers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   transfer_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   transfer_date date NOT NULL,
@@ -1976,10 +1976,10 @@ CREATE TABLE bank_transfers (
   reference_no text,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT bank_transfers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bank_transfers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT bank_transfers_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -2014,8 +2014,8 @@ CREATE INDEX ix_bank_transfers_company_to ON bank_transfers (company_id, to_acco
 -- ============================================================================
 CREATE TABLE bank_deposits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   deposit_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   deposit_date date NOT NULL,
@@ -2025,10 +2025,10 @@ CREATE TABLE bank_deposits (
   reference_no text,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT bank_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bank_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT bank_deposits_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -2038,7 +2038,7 @@ CREATE TABLE bank_deposits (
 
 CREATE TABLE bank_deposit_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   bank_deposit_id uuid NOT NULL REFERENCES bank_deposits(id) ON DELETE CASCADE,
   line_number integer NOT NULL,
   -- Loose pointer at the source document. backend resolves to the
@@ -2079,8 +2079,8 @@ CREATE INDEX ix_bank_deposit_items_source ON bank_deposit_items (company_id, sou
 -- ============================================================================
 CREATE TABLE tax_returns (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number text NOT NULL UNIQUE,
+  company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number char(11) NOT NULL UNIQUE,
   return_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   tax_regime text NOT NULL,
@@ -2099,10 +2099,10 @@ CREATE TABLE tax_returns (
   regulator_reference_no text,
   memo text,
   posted_at timestamptz,
-  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT tax_returns_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT tax_returns_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT tax_returns_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'amended')
   ),

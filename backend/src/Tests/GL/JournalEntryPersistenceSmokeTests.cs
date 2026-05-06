@@ -17,8 +17,8 @@ namespace Tests.GL;
 
 public sealed class JournalEntryPersistenceSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task SaveDraftAndPost_PersistsManualJournalAndLedgerTruth()
@@ -149,7 +149,7 @@ public sealed class JournalEntryPersistenceSmokeTests
             return;
         }
 
-        var companyId = Guid.NewGuid();
+        var companyId = CompanyId.FromOrdinal(151);
         var bookId = Guid.NewGuid();
         var signalId = Guid.NewGuid();
         var sourceId = Guid.NewGuid();
@@ -169,7 +169,7 @@ public sealed class JournalEntryPersistenceSmokeTests
             var accountingConnectionFactory = new PostgresConnectionFactory(GetConnectionString());
             var usd = new CurrencyCode("USD");
             var draft = new AccountingJournalEntryDraft(
-                new CompanyId(companyId),
+                CompanyId.Parse(companyId.ToString()),
                 "invoice",
                 sourceId,
                 usd,
@@ -187,8 +187,8 @@ public sealed class JournalEntryPersistenceSmokeTests
                 writer.WriteAsync(
                     draft,
                     new PostingContext(
-                        new CompanyId(companyId),
-                        new UserId(Guid.NewGuid()),
+                        CompanyId.Parse(companyId.ToString()),
+                        UserId.FromOrdinal(1),
                         usd,
                         null,
                         $"closed-period:{sourceId:N}",
@@ -254,7 +254,7 @@ public sealed class JournalEntryPersistenceSmokeTests
 
     private static async Task SeedClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         Guid signalId,
         DateOnly closedThrough,
@@ -297,8 +297,8 @@ public sealed class JournalEntryPersistenceSmokeTests
                   'active'
                 );
                 """;
-            companyCommand.Parameters.AddWithValue("id", companyId);
-            companyCommand.Parameters.AddWithValue("entity_number", $"EN{DateTime.UtcNow:yyyy}{Random.Shared.Next(1, 999999):D6}");
+            companyCommand.Parameters.AddWithValue("id", companyId.Value);
+            companyCommand.Parameters.AddWithValue("entity_number", EntityNumber.Create(DateTime.UtcNow.Year, Random.Shared.Next(0, 60_466_176)).Value);
             await companyCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -339,7 +339,7 @@ public sealed class JournalEntryPersistenceSmokeTests
                 );
                 """;
             bookCommand.Parameters.AddWithValue("id", bookId);
-            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             await bookCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -370,7 +370,7 @@ public sealed class JournalEntryPersistenceSmokeTests
                 );
                 """;
             signalCommand.Parameters.AddWithValue("id", signalId);
-            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("company_book_id", bookId);
             signalCommand.Parameters.AddWithValue("signal_date", closedThrough);
             await signalCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -381,7 +381,7 @@ public sealed class JournalEntryPersistenceSmokeTests
 
     private static async Task CleanupClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         Guid signalId,
         CancellationToken cancellationToken)
@@ -405,7 +405,7 @@ public sealed class JournalEntryPersistenceSmokeTests
             connection,
             transaction,
             "delete from companies where id = @id;",
-            companyId,
+            companyId.Value,
             cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
@@ -415,7 +415,7 @@ public sealed class JournalEntryPersistenceSmokeTests
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
-        Guid id,
+        object id,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -454,13 +454,13 @@ public sealed class JournalEntryPersistenceSmokeTests
     private static async Task<int> ReadSingleIntByCompanyAndSourceAsync(
         NpgsqlConnection connection,
         string sql,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }

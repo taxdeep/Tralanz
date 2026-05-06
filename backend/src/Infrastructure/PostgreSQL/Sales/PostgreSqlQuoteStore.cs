@@ -91,7 +91,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<IReadOnlyList<QuoteSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         QuoteListFilter filter,
         CancellationToken cancellationToken)
     {
@@ -136,7 +136,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         }
         sql += " ORDER BY q.document_date DESC, q.created_at DESC;";
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -147,7 +147,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         CancellationToken cancellationToken)
     {
@@ -157,7 +157,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = SelectQuoteColumns + " WHERE q.company_id = @company_id AND q.id = @id LIMIT 1;";
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("id", quoteId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -173,7 +173,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         QuoteUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -225,7 +225,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         QuoteUpsertInput input,
         CancellationToken cancellationToken)
@@ -239,7 +239,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         {
             statusCommand.Transaction = transaction;
             statusCommand.CommandText = "SELECT status FROM quotes WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCommand.Parameters.AddWithValue("company_id", companyId);
+            statusCommand.Parameters.AddWithValue("company_id", companyId.Value);
             statusCommand.Parameters.AddWithValue("id", quoteId);
             var statusObj = await statusCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null)
@@ -312,7 +312,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         string newStatus,
         CancellationToken cancellationToken)
@@ -331,7 +331,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", quoteId);
         command.Parameters.AddWithValue("new_status", newStatus);
 
@@ -342,7 +342,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> MarkConvertedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         Guid salesOrderId,
         CancellationToken cancellationToken)
@@ -357,7 +357,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", quoteId);
         command.Parameters.AddWithValue("sales_order_id", salesOrderId);
 
@@ -478,14 +478,14 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
 
     private static void BindUpsertParameters(
         NpgsqlCommand command,
-        Guid companyId,
+        CompanyId companyId,
         QuoteUpsertInput input,
         decimal subtotal,
         decimal discount,
         decimal tax,
         decimal total)
     {
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", input.CustomerId);
         command.Parameters.Add("document_date", NpgsqlDbType.Date).Value = input.DocumentDate.ToDateTime(TimeOnly.MinValue);
         command.Parameters.Add("expiration_date", NpgsqlDbType.Date).Value =
@@ -550,7 +550,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
 
     private static QuoteSummary MapSummary(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         QuoteNumber: reader.GetString(2),
         CustomerId: reader.GetGuid(3),
         CustomerName: reader.GetString(4),
@@ -565,7 +565,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
 
     private static QuoteRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<QuoteLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
-        CompanyId: reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         QuoteNumber: reader.GetString(reader.GetOrdinal("quote_number")),
         Status: reader.GetString(reader.GetOrdinal("status")),
         CustomerId: reader.GetGuid(reader.GetOrdinal("customer_id")),

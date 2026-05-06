@@ -4,9 +4,9 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanyMembershipPermissionWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.NewGuid();
-    private static readonly Guid OwnerUserId = Guid.NewGuid();
-    private static readonly Guid UserId = Guid.NewGuid();
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(101);
+    private static readonly UserId OwnerUserId = UserId.FromOrdinal(101);
+    private static readonly UserId UserId = UserId.FromOrdinal(101);
     private static readonly Guid MembershipId = Guid.NewGuid();
 
     [Fact]
@@ -89,26 +89,26 @@ public sealed class CompanyMembershipPermissionWorkflowTests
         public IReadOnlyList<string> SavedTokens { get; private set; } = Array.Empty<string>();
 
         public Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<CompanyMembershipPermissionListItem>>(
                 target is null ? Array.Empty<CompanyMembershipPermissionListItem>() : [target]);
 
         public Task<IReadOnlyList<CompanyMembershipPermissionAuditRecord>> ListRecentAuditAsync(
-            Guid companyId,
+            CompanyId companyId,
             int limit,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<CompanyMembershipPermissionAuditRecord>>(Array.Empty<CompanyMembershipPermissionAuditRecord>());
 
         public Task<CompanyMembershipPermissionListItem?> GetAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid membershipId,
             CancellationToken cancellationToken) =>
             Task.FromResult(target);
 
         public Task<CompanyMembershipPermissionActorAuthority?> GetActorAuthorityAsync(
-            Guid companyId,
-            Guid actorUserId,
+            CompanyId companyId,
+            UserId actorUserId,
             CancellationToken cancellationToken) =>
             Task.FromResult<CompanyMembershipPermissionActorAuthority?>(
                 new CompanyMembershipPermissionActorAuthority(
@@ -118,9 +118,9 @@ public sealed class CompanyMembershipPermissionWorkflowTests
                     Array.Empty<string>()));
 
         public Task<CompanyMembershipPermissionListItem?> SavePermissionsAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid membershipId,
-            Guid actorUserId,
+            UserId actorUserId,
             IReadOnlyList<string> permissionTokens,
             CancellationToken cancellationToken)
         {

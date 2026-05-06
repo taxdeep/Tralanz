@@ -8,11 +8,11 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     PostgreSqlConnectionFactory connections) : ICompanyMembershipGovernanceStore
 {
     public async Task<CompanyMembershipRoleChangeResult?> ChangeRoleFromSysAdminAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         string role,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
@@ -65,7 +65,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
                 where company_id = @company_id
                   and id = @membership_id;
                 """;
-            updateCommand.Parameters.AddWithValue("company_id", companyId);
+            updateCommand.Parameters.AddWithValue("company_id", companyId.Value);
             updateCommand.Parameters.AddWithValue("membership_id", membershipId);
             updateCommand.Parameters.AddWithValue("role", role);
             await updateCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -101,7 +101,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     private static async Task<MembershipTarget?> ReadTargetForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         CancellationToken cancellationToken)
     {
@@ -123,7 +123,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
               and m.id = @membership_id
             for update of m;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("membership_id", membershipId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -134,7 +134,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
 
         return new MembershipTarget(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("username")).Trim(),
             reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
@@ -144,7 +144,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     private static async Task<int> CountAndLockActiveOwnersAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -158,7 +158,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
               and is_active = true
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var count = 0;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -173,9 +173,9 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     private static async Task InsertAuditLogAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         MembershipTarget target,
         string role,
         string reason,
@@ -218,8 +218,8 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", membershipId);
         command.Parameters.AddWithValue("payload", payload);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -234,7 +234,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
             """
             create table if not exists audit_logs (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               actor_type text not null,
               actor_id uuid null,
               entity_type text not null,
@@ -249,7 +249,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
 
     private sealed record MembershipTarget(
         Guid MembershipId,
-        Guid UserId,
+        UserId UserId,
         string Email,
         string Username,
         string Role,

@@ -20,7 +20,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     }
 
     public async Task<InventoryReturnReceiveDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -38,7 +38,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     }
 
     public async Task<InventoryReturnReceiveHandoffSummary> GetShipmentHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -121,14 +121,14 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", request.ShipmentDocumentId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", handoff.ShipmentDocumentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("counterparty_id", request.CustomerId);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", now);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -245,7 +245,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<InventoryReturnReceiveHandoffSummary> LoadShipmentHandoffSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -277,7 +277,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<ShipmentHeaderSnapshot?> LoadShipmentHeaderAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -312,7 +312,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
               c.display_name
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -334,7 +334,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryReturnReceiveHandoffLineSummary>> LoadShipmentReturnLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -406,7 +406,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
              and r.uom_code = s.uom_code
             order by s.item_code, s.warehouse_code, s.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         var rows = new List<InventoryReturnReceiveHandoffLineSummary>();
@@ -435,7 +435,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryShipmentSummary>> LoadRecentShipmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -485,7 +485,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var shipments = new List<InventoryShipmentSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -494,7 +494,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             var totalQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("total_quantity")), 6, MidpointRounding.AwayFromZero);
             shipments.Add(new InventoryShipmentSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -533,7 +533,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryReturnReceiveSummary>> LoadRecentReturnsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -616,7 +616,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         return await ReadReturnSummariesAsync(command, cancellationToken);
     }
@@ -624,7 +624,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryReturnReceiveSummary>> LoadShipmentAnchoredReturnsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -696,7 +696,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             order by d.posting_date desc, d.created_at desc
             limit 5;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         return await ReadReturnSummariesAsync(command, cancellationToken);
@@ -714,7 +714,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             var returnedQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("returned_quantity")), 6, MidpointRounding.AwayFromZero);
             returns.Add(new InventoryReturnReceiveSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -743,7 +743,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task InsertDocumentLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         InventoryReturnReceiveLineInput line,
         CancellationToken cancellationToken)
@@ -796,7 +796,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
         command.Parameters.AddWithValue("line_no", line.LineNo);
         command.Parameters.AddWithValue("item_id", line.ItemId);

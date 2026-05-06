@@ -15,8 +15,8 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
     }
 
     public async Task<CompanyAccessSessionContext?> GetAsync(
-        Guid userId,
-        Guid? preferredActiveCompanyId,
+        UserId userId,
+        CompanyId? preferredActiveCompanyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -64,7 +64,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         };
 
     private static CompanyMembershipCompanyRecord ResolveActiveCompany(
-        Guid? preferredActiveCompanyId,
+        CompanyId? preferredActiveCompanyId,
         IReadOnlyList<CompanyMembershipCompanyRecord> companies)
     {
         if (preferredActiveCompanyId.HasValue)
@@ -82,7 +82,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
 
     private static async Task<CompanyAccessUserSummary?> ReadUserAsync(
         NpgsqlConnection connection,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var hasStatusColumn = await HasColumnAsync(connection, "users", "status", cancellationToken);
@@ -107,7 +107,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               and {accountStatusPredicate}
             limit 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -125,7 +125,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
 
         return new CompanyAccessUserSummary
         {
-            Id = reader.GetGuid(reader.GetOrdinal("id")),
+            Id = UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             Email = email,
             Username = username,
             DisplayName = !string.IsNullOrWhiteSpace(displayName)
@@ -136,7 +136,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
 
     private static async Task<IReadOnlyList<CompanyMembershipCompanyRecord>> ReadCompaniesAsync(
         NpgsqlConnection connection,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var hasPermissionsColumn = await HasMembershipPermissionsColumnAsync(connection, cancellationToken);
@@ -189,7 +189,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               and c.status in ('active', 'inactive')
             order by c.entity_number, c.legal_name;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         var companies = new List<CompanyMembershipCompanyRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -197,7 +197,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         {
             companies.Add(
                 new CompanyMembershipCompanyRecord(
-                    reader.GetGuid(reader.GetOrdinal("id")),
+                    CompanyId.Parse(reader.GetString(reader.GetOrdinal("id"))),
                     reader.GetString(reader.GetOrdinal("entity_number")).Trim().ToUpperInvariant(),
                     reader.GetString(reader.GetOrdinal("legal_name")).Trim(),
                     reader.GetString(reader.GetOrdinal("base_currency_code")).Trim().ToUpperInvariant(),
@@ -330,7 +330,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
     }
 
     private sealed record CompanyMembershipCompanyRecord(
-        Guid Id,
+        CompanyId Id,
         string CompanyCode,
         string CompanyName,
         string BaseCurrencyCode,

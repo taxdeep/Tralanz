@@ -4,7 +4,7 @@ public sealed record class JournalEntryReviewSummary
 {
     public Guid Id { get; init; }
 
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public string EntityNumber { get; init; } = string.Empty;
 
@@ -46,7 +46,7 @@ public sealed record class JournalEntryReviewSummary
 
     public DateTimeOffset? ReversedAt { get; init; }
 
-    public Guid CreatedByUserId { get; init; }
+    public UserId CreatedByUserId { get; init; }
 
     public IReadOnlyList<JournalEntryReviewLineSummary> Lines { get; init; } = Array.Empty<JournalEntryReviewLineSummary>();
 }

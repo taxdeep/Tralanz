@@ -37,7 +37,7 @@ public interface ISysAdminAuthRepository
         CancellationToken cancellationToken);
 
     Task<SysAdminSecretRotationResult> RotateSecretAsync(
-        Guid sysAdminAccountId,
+        UserId sysAdminAccountId,
         string currentPassword,
         string newPassword,
         CancellationToken cancellationToken);

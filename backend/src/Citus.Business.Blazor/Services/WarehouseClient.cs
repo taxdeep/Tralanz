@@ -71,7 +71,7 @@ public sealed class WarehouseClient(HttpClient httpClient, ILogger<WarehouseClie
 
 public sealed record WarehouseSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string WarehouseCode,
     string Name,
     string? Description,

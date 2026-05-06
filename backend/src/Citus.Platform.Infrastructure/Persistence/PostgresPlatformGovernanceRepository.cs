@@ -69,7 +69,7 @@ public sealed class PostgresPlatformGovernanceRepository(
               add column if not exists mfa_mode text not null default 'none';
 
             create table if not exists sysadmin_accounts (
-              id uuid primary key default gen_random_uuid(),
+              id char(7) primary key,
               email text not null unique,
               display_name text not null default '',
               password_hash text not null,
@@ -81,18 +81,18 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists account_mfa_recovery_requests (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
-              requested_by_user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
+              requested_by_user_id char(7) not null references users(id) on delete cascade,
               current_mfa_mode text not null,
               status text not null default 'requested',
               request_reason text not null,
               requested_at timestamptz not null default now(),
               review_reason text,
               reviewed_at timestamptz,
-              reviewed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              reviewed_by_sysadmin_account_id char(7),
               execution_reason text,
               executed_at timestamptz,
-              executed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              executed_by_sysadmin_account_id char(7),
               constraint account_mfa_recovery_requests_status_chk check (status in ('requested', 'approved', 'rejected', 'executed'))
             );
 
@@ -105,8 +105,8 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists business_session_mfa_challenges (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
-              active_company_id uuid not null,
+              user_id char(7) not null references users(id) on delete cascade,
+              active_company_id char(7) not null,
               membership_id uuid not null,
               role text not null,
               permissions jsonb not null default '[]'::jsonb,
@@ -142,7 +142,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists account_mfa_totp_enrollments (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               status text not null,
               secret_base32 text not null,
               created_at timestamptz not null default now(),
@@ -156,7 +156,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists account_verification_codes (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               purpose text not null,
               destination text,
               code_hash text not null,
@@ -202,9 +202,9 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists audit_logs (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid null,
+              company_id char(7) null,
               actor_type text not null,
-              actor_id uuid null,
+              actor_id char(7) null,
               entity_type text not null,
               entity_id uuid not null,
               action text not null,
@@ -309,7 +309,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     }
 
     public async Task<IReadOnlyList<PlatformAuditEvent>> ListAccountMfaTimelineAsync(
-        Guid accountId,
+        UserId accountId,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -491,7 +491,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             requests.Add(new MfaRecoveryRequestSummary
             {
                 RequestId = reader.GetGuid(reader.GetOrdinal("id")),
-                AccountId = reader.GetGuid(reader.GetOrdinal("user_id")),
+                AccountId = UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
                 DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
                 Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
                 Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
@@ -511,7 +511,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     }
 
     public async Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
-        Guid accountId,
+        UserId accountId,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -557,7 +557,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             requests.Add(new MfaRecoveryRequestSummary
             {
                 RequestId = reader.GetGuid(reader.GetOrdinal("id")),
-                AccountId = reader.GetGuid(reader.GetOrdinal("user_id")),
+                AccountId = UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
                 DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
                 Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
                 Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
@@ -582,10 +582,10 @@ public sealed class PostgresPlatformGovernanceRepository(
     }
 
     public async Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         string status,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         var normalizedStatus = NormalizeRequired(status, "Company status");
@@ -614,7 +614,7 @@ public sealed class PostgresPlatformGovernanceRepository(
                     updated_at = now()
                 where id = @company_id;
                 """;
-            update.Parameters.AddWithValue("company_id", companyId);
+            update.Parameters.AddWithValue("company_id", companyId.Value);
             update.Parameters.AddWithValue("status", normalizedStatus);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -625,7 +625,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             companyId,
             sysAdminAccountId,
             "company",
-            companyId,
+            companyId.Value,
             "company_status_changed",
             """
             jsonb_build_object(
@@ -657,11 +657,11 @@ public sealed class PostgresPlatformGovernanceRepository(
     }
 
     public async Task<AccountStatusGovernanceResult?> SetAccountStatusAsync(
-        Guid accountId,
+        UserId accountId,
         string status,
         DateTimeOffset? lockedUntilUtc,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         var normalizedStatus = NormalizeRequired(status, "Account status");
@@ -706,7 +706,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             companyId: null,
             sysAdminAccountId,
             "platform_account",
-            accountId,
+            accountId.Value,
             "account_status_changed",
             """
             jsonb_build_object(
@@ -743,9 +743,9 @@ public sealed class PostgresPlatformGovernanceRepository(
     }
 
     public async Task<PasswordResetGovernanceResult?> RequestPasswordResetAsync(
-        Guid accountId,
+        UserId accountId,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         var normalizedReason = NormalizeReason(reason, "Password reset requested by SysAdmin.");
@@ -868,7 +868,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             companyId: null,
             sysAdminAccountId,
             "platform_account",
-            accountId,
+            accountId.Value,
             "password_reset_requested",
             """
             jsonb_build_object(
@@ -942,9 +942,9 @@ public sealed class PostgresPlatformGovernanceRepository(
     }
 
     public async Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
-        Guid accountId,
+        UserId accountId,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         var normalizedReason = NormalizeReason(reason, "MFA reset by SysAdmin.");
@@ -989,7 +989,7 @@ public sealed class PostgresPlatformGovernanceRepository(
         Guid requestId,
         string decision,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         var normalizedDecision = NormalizeRecoveryDecision(decision);
@@ -1038,7 +1038,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             command.Parameters.AddWithValue("reviewed_at", reviewedAtUtc);
             command.Parameters.AddWithValue(
                 "reviewed_by_sysadmin_account_id",
-                sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+                sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -1048,7 +1048,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             companyId: null,
             sysAdminAccountId,
             "platform_account",
-            request.AccountId,
+            request.AccountId.Value,
             targetStatus switch
             {
                 "approved" => "account_mfa_recovery_approved",
@@ -1086,7 +1086,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     public async Task<MfaRecoveryExecutionResult?> ExecuteMfaRecoveryRequestAsync(
         Guid requestId,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         var normalizedReason = NormalizeReason(reason, "Approved MFA recovery executed by SysAdmin.");
@@ -1143,7 +1143,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             command.Parameters.AddWithValue("executed_at", executedAtUtc);
             command.Parameters.AddWithValue(
                 "executed_by_sysadmin_account_id",
-                sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+                sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -1153,7 +1153,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             companyId: null,
             sysAdminAccountId,
             "platform_account",
-            request.AccountId,
+            request.AccountId.Value,
             "account_mfa_recovery_executed",
             """
             jsonb_build_object(
@@ -1191,7 +1191,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task<CompanyRecord?> ReadCompanyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1203,7 +1203,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1221,7 +1221,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task<AccountRecord?> ReadAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid accountId,
+        UserId accountId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1242,7 +1242,7 @@ public sealed class PostgresPlatformGovernanceRepository(
         }
 
         return new AccountRecord(
-            reader.GetGuid(reader.GetOrdinal("id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("username")).Trim(),
             reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
@@ -1283,7 +1283,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
         return new MfaRecoveryRequestRecord(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
             NormalizeMfaMode(reader.GetString(reader.GetOrdinal("current_mfa_mode"))),
             reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
             reader.GetString(reader.GetOrdinal("request_reason")).Trim(),
@@ -1297,7 +1297,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task<Guid?> ReadOpenMfaRecoveryRequestForAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid accountId,
+        UserId accountId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1328,7 +1328,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
         return new ManagedPlatformAccountSummary
         {
-            AccountId = reader.GetGuid(reader.GetOrdinal("id")),
+            AccountId = UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
             Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
             Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
@@ -1348,7 +1348,7 @@ public sealed class PostgresPlatformGovernanceRepository(
         NpgsqlTransaction transaction,
         AccountRecord current,
         string normalizedReason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         var revokedChallengeCount = await RevokeActiveMfaChallengesAsync(
@@ -1378,7 +1378,7 @@ public sealed class PostgresPlatformGovernanceRepository(
                         updated_at = now()
                     where id = @account_id;
                     """;
-                update.Parameters.AddWithValue("account_id", current.Id);
+                update.Parameters.AddWithValue("account_id", current.Id.Value);
                 await update.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -1388,7 +1388,7 @@ public sealed class PostgresPlatformGovernanceRepository(
                 companyId: null,
                 sysAdminAccountId,
                 "platform_account",
-                current.Id,
+                current.Id.Value,
                 "account_mfa_reset",
                 """
                 jsonb_build_object(
@@ -1425,7 +1425,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task<int> RevokeActiveMfaChallengesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid accountId,
+        UserId accountId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1454,7 +1454,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task<int> RevokeActiveTotpEnrollmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid accountId,
+        UserId accountId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1485,10 +1485,10 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task<Guid> InsertAuditAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid? companyId,
-        Guid? sysAdminAccountId,
+        CompanyId? companyId,
+        UserId? sysAdminAccountId,
         string entityType,
-        Guid entityId,
+        string entityId,
         string action,
         string payloadExpression,
         Action<NpgsqlCommand> bindPayload,
@@ -1523,8 +1523,8 @@ public sealed class PostgresPlatformGovernanceRepository(
             );
             """;
         command.Parameters.AddWithValue("id", auditId);
-        command.Parameters.AddWithValue("company_id", companyId.HasValue ? companyId.Value : DBNull.Value);
-        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("company_id", companyId.HasValue ? companyId.Value.Value : (object)DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value.Value : (object)DBNull.Value);
         command.Parameters.AddWithValue("entity_type", entityType);
         command.Parameters.AddWithValue("entity_id", entityId);
         command.Parameters.AddWithValue("action", action);
@@ -1549,14 +1549,14 @@ public sealed class PostgresPlatformGovernanceRepository(
             AuditId = reader.GetGuid(reader.GetOrdinal("id")),
             CompanyId = reader.IsDBNull(reader.GetOrdinal("company_id"))
                 ? null
-                : reader.GetGuid(reader.GetOrdinal("company_id")),
+                : CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             CompanyCode = companyCode,
             CompanyName = companyName,
             ScopeLabel = PlatformAuditEvent.BuildScopeLabel(companyName, companyCode),
             ActorType = reader.GetString(reader.GetOrdinal("actor_type")).Trim().ToLowerInvariant(),
             ActorId = reader.IsDBNull(reader.GetOrdinal("actor_id"))
                 ? null
-                : reader.GetGuid(reader.GetOrdinal("actor_id")),
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             ActorDisplayName = ResolveActorDisplayName(reader),
             ActorEmail = ResolveActorEmail(reader),
             EntityType = entityType,
@@ -1899,8 +1899,8 @@ public sealed class PostgresPlatformGovernanceRepository(
         NpgsqlConnection connection,
         Guid dispatchId,
         Guid requestAuditId,
-        Guid accountId,
-        Guid? sysAdminAccountId,
+        UserId accountId,
+        UserId? sysAdminAccountId,
         string destination,
         PlatformNotificationSendResult sendResult,
         CancellationToken cancellationToken)
@@ -1955,8 +1955,8 @@ public sealed class PostgresPlatformGovernanceRepository(
         NpgsqlConnection connection,
         Guid dispatchId,
         Guid requestAuditId,
-        Guid accountId,
-        Guid? sysAdminAccountId,
+        UserId accountId,
+        UserId? sysAdminAccountId,
         string destination,
         PlatformNotificationSendResult sendResult,
         CancellationToken cancellationToken)
@@ -2005,8 +2005,8 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task AppendPasswordResetDeliveryAuditAsync(
         NpgsqlConnection connection,
         Guid requestAuditId,
-        Guid accountId,
-        Guid? sysAdminAccountId,
+        UserId accountId,
+        UserId? sysAdminAccountId,
         string action,
         string destination,
         PlatformNotificationSendResult sendResult,
@@ -2045,7 +2045,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", accountId);
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("request_audit_id", requestAuditId);
@@ -2191,7 +2191,7 @@ public sealed class PostgresPlatformGovernanceRepository(
         string Status);
 
     private sealed record AccountRecord(
-        Guid Id,
+        UserId Id,
         string Email,
         string Username,
         string Status,
@@ -2199,7 +2199,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
     private sealed record MfaRecoveryRequestRecord(
         Guid Id,
-        Guid AccountId,
+        UserId AccountId,
         string CurrentMfaMode,
         string Status,
         string RequestReason,

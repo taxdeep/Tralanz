@@ -1,8 +1,8 @@
 namespace Citus.Accounting.Api;
 
 public sealed record PrepareFxRevaluationBatchHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? BookId,
     DateOnly RevaluationDate,
     string TransactionCurrencyCode,
@@ -12,20 +12,20 @@ public sealed record PrepareFxRevaluationBatchHttpRequest(
     string? Memo);
 
 public sealed record PrepareFxRevaluationUnwindBatchHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     DateOnly UnwindDate,
     string? Memo,
     string? IdempotencyKey = null);
 
-public sealed record FxRevaluationCascadeUnwindPlanQuery(Guid CompanyId);
+public sealed record FxRevaluationCascadeUnwindPlanQuery(CompanyId CompanyId);
 
 public sealed record CompanyBookGovernanceLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate);
 
 public sealed record CompanyBookGovernedChangePreviewHttpRequest(
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid? BookId,
     DateOnly? AsOfDate,
     bool? IsPrimary,
@@ -41,8 +41,8 @@ public sealed record CompanyBookGovernedChangePreviewHttpRequest(
     string? FxRoundingPolicy);
 
 public sealed record PrepareCompanyBookGovernedChangeRequestHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? BookId,
     DateOnly? AsOfDate,
     DateOnly EffectiveFrom,
@@ -58,63 +58,63 @@ public sealed record PrepareCompanyBookGovernedChangeRequestHttpRequest(
     string? RevaluationProfile,
     string? FxRoundingPolicy);
 
-public sealed record CompanyBookGovernedChangeRequestLookupQuery(Guid CompanyId);
+public sealed record CompanyBookGovernedChangeRequestLookupQuery(CompanyId CompanyId);
 
 public sealed record TransitionCompanyBookGovernedChangeRequestHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record CompanyBookGovernedChangeRequestReadinessQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate);
 
 public sealed record CompanyBookGovernanceSignalsLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate);
 
 public sealed record CreateCompanyBookGovernanceSignalHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     string SignalType,
     DateOnly SignalDate,
     string? ReferenceLabel,
     string? Notes);
 
 public sealed record RegisterCompanyBookClosedPeriodHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     DateOnly PeriodEndDate,
     string? ReferenceLabel,
     string? Notes);
 
 public sealed record RegisterCompanyBookIssuedStatementHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     DateOnly IssuedOn,
     string StatementLabel,
     string? Notes);
 
 public sealed record RegisterCompanyBookFiledTaxHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     DateOnly FiledOn,
     string FilingLabel,
     string? Notes);
 
 public sealed record CompanyBookPolicyLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid? BookId,
     DateOnly? AsOfDate);
 
 public sealed record PostManualJournalHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
-public sealed record ManualJournalLookupQuery(Guid CompanyId);
+public sealed record ManualJournalLookupQuery(CompanyId CompanyId);
 
-public sealed record DocumentReviewLookupQuery(Guid CompanyId);
+public sealed record DocumentReviewLookupQuery(CompanyId CompanyId);
 
 /// <summary>
 /// HTTP body for POST /document-review/invoice/{id}/send. ToEmail is
@@ -148,46 +148,46 @@ public sealed record InvoiceTemplateUpsertHttpRequest(
     string? EmailBodyTemplate);
 
 public sealed record DocumentLifecycleRequestReadinessQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate);
 
-public sealed record OpenItemDrillDownLookupQuery(Guid CompanyId);
+public sealed record OpenItemDrillDownLookupQuery(CompanyId CompanyId);
 
 public sealed record OpenItemAdjustmentPreviewLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string? AdjustmentType,
     DateOnly? AdjustmentDate,
     decimal? AdjustmentAmountTx);
 
 public sealed record RequestOpenItemAdjustmentHttpRequest(
-    Guid CompanyId,
-    Guid? UserId,
+    CompanyId CompanyId,
+    UserId? UserId,
     string AdjustmentType,
     DateOnly? AdjustmentDate,
     decimal? AdjustmentAmountTx,
     string? Reason);
 
 public sealed record TransitionOpenItemAdjustmentRequestHttpRequest(
-    Guid CompanyId,
-    Guid? UserId);
+    CompanyId CompanyId,
+    UserId? UserId);
 
 public sealed record GovernOpenItemAdjustmentApprovalHttpRequest(
-    Guid CompanyId,
-    Guid? UserId);
+    CompanyId CompanyId,
+    UserId? UserId);
 
 public sealed record OpenItemAdjustmentRequestReadinessQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate);
 
 public sealed record ExecuteOpenItemAdjustmentRequestHttpRequest(
-    Guid CompanyId,
-    Guid? UserId,
+    CompanyId CompanyId,
+    UserId? UserId,
     Guid AdjustmentAccountId,
     DateOnly? AsOfDate,
     string? IdempotencyKey);
 
 public sealed record OpenItemAdjustmentAccountMappingLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string? OpenItemType,
     string? AdjustmentType,
     bool? IncludeInactive,
@@ -197,33 +197,33 @@ public sealed record OpenItemAdjustmentAccountMappingLookupQuery(
     int? Limit);
 
 public sealed record SaveOpenItemAdjustmentAccountMappingHttpRequest(
-    Guid CompanyId,
-    Guid? UserId,
+    CompanyId CompanyId,
+    UserId? UserId,
     Guid? BookId,
     string OpenItemType,
     string AdjustmentType,
     Guid AdjustmentAccountId);
 
 public sealed record DeactivateOpenItemAdjustmentAccountMappingHttpRequest(
-    Guid CompanyId,
-    Guid? UserId);
+    CompanyId CompanyId,
+    UserId? UserId);
 
 public sealed record SourceDocumentBrowserLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string? SourceType,
     string? CounterpartyRole,
     Guid? CounterpartyId,
     int? Limit);
 
 public sealed record PostInvoiceHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
 public sealed record SaveInvoiceDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid CustomerId,
     DateOnly InvoiceDate,
     DateOnly DueDate,
@@ -250,17 +250,17 @@ public sealed record SaveInvoiceDraftLineHttpRequest(
     Guid? WarehouseId = null,
     string? UomCode = null);
 
-public sealed record InvoiceLookupQuery(Guid CompanyId);
+public sealed record InvoiceLookupQuery(CompanyId CompanyId);
 
 public sealed record PostCreditNoteHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
 public sealed record SaveCreditNoteDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid CustomerId,
     DateOnly CreditNoteDate,
     DateOnly DueDate,
@@ -282,17 +282,17 @@ public sealed record SaveCreditNoteDraftLineHttpRequest(
     Guid? TaxCodeId,
     decimal TaxAmount);
 
-public sealed record CreditNoteLookupQuery(Guid CompanyId);
+public sealed record CreditNoteLookupQuery(CompanyId CompanyId);
 
 public sealed record PostBillHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
 public sealed record SaveBillDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     DateOnly BillDate,
     DateOnly DueDate,
@@ -321,15 +321,15 @@ public sealed record SaveBillDraftLineHttpRequest(
     Guid? PurchaseOrderId = null,
     int? PurchaseOrderLineNumber = null);
 
-public sealed record BillLookupQuery(Guid CompanyId);
+public sealed record BillLookupQuery(CompanyId CompanyId);
 
 public sealed record SubmitBillDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record SaveReceiptDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     Guid WarehouseId,
     DateOnly ReceiptDate,
@@ -347,13 +347,13 @@ public sealed record SaveReceiptDraftLineHttpRequest(
     Guid? PurchaseOrderId = null,
     int? PurchaseOrderLineNumber = null);
 
-public sealed record ReceiptLookupQuery(Guid CompanyId);
+public sealed record ReceiptLookupQuery(CompanyId CompanyId);
 
-public sealed record ReceiptListQuery(Guid CompanyId, int? Take);
+public sealed record ReceiptListQuery(CompanyId CompanyId, int? Take);
 
 public sealed record SavePurchaseOrderDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     DateOnly OrderDate,
     DateOnly? ExpectedDate,
@@ -369,98 +369,98 @@ public sealed record SavePurchaseOrderDraftLineHttpRequest(
     string? Description,
     decimal? UnitCost);
 
-public sealed record PurchaseOrderLookupQuery(Guid CompanyId);
+public sealed record PurchaseOrderLookupQuery(CompanyId CompanyId);
 
-public sealed record PurchaseOrderLifecycleAuditQuery(Guid CompanyId, int? Take);
+public sealed record PurchaseOrderLifecycleAuditQuery(CompanyId CompanyId, int? Take);
 
-public sealed record PurchaseOrderListQuery(Guid CompanyId, int? Take);
+public sealed record PurchaseOrderListQuery(CompanyId CompanyId, int? Take);
 
-public sealed record PurchaseOrderApprovalRequestListQuery(Guid CompanyId, int? Take, bool? IncludeClosed);
+public sealed record PurchaseOrderApprovalRequestListQuery(CompanyId CompanyId, int? Take, bool? IncludeClosed);
 
 public sealed record RequestPurchaseOrderApprovalHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     string? Reason);
 
 public sealed record SubmitPurchaseOrderApprovalRequestHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record RejectPurchaseOrderApprovalRequestHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record ReversePurchaseOrderApprovalHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record ApprovePurchaseOrderHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record IssuePurchaseOrderHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record ReopenPurchaseOrderForAmendmentHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record ClosePurchaseOrderHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record CancelPurchaseOrderHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record RefreshPurchaseOrderQuantityDiscrepanciesHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record ReviewPurchaseOrderQuantityDiscrepancyHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     int PurchaseOrderLineNumber,
     string DiscrepancyType,
     string InvestigationStatus,
     string? ReviewNote);
 
 public sealed record PostReceiptDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId);
+    CompanyId CompanyId,
+    UserId UserId);
 
 public sealed record PostReceiptGrIrBridgeHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? GrIrClearingAccountId,
     string? IdempotencyKey);
 
 public sealed record ExecuteReceiptGrIrSettlementHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     decimal? SettlementAmountBase,
     string? IdempotencyKey);
 
 public sealed record PostReceiptGrIrSettlementJournalHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     string? IdempotencyKey);
 
 public sealed record SaveReceiptGrIrClearingAccountPolicyHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid GrIrClearingAccountId);
 
 public sealed record PostVendorCreditHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
 public sealed record SaveVendorCreditDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     DateOnly VendorCreditDate,
     DateOnly DueDate,
@@ -482,15 +482,15 @@ public sealed record SaveVendorCreditDraftLineHttpRequest(
     decimal TaxAmount,
     bool IsTaxRecoverable);
 
-public sealed record VendorCreditLookupQuery(Guid CompanyId);
+public sealed record VendorCreditLookupQuery(CompanyId CompanyId);
 
 public sealed record PrepareSettlementDraftLineHttpRequest(
     Guid TargetOpenItemId,
     decimal AppliedAmountTx);
 
 public sealed record PrepareReceivePaymentDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid CustomerId,
     Guid BankAccountId,
     DateOnly PaymentDate,
@@ -502,32 +502,32 @@ public sealed record PrepareReceivePaymentDraftHttpRequest(
     /// behaving exactly as before. The repo creates the deposit when > 0.</summary>
     decimal ExtraDepositAmount = 0m);
 
-public sealed record OpenReceivablesLookupQuery(Guid CompanyId);
+public sealed record OpenReceivablesLookupQuery(CompanyId CompanyId);
 
 public sealed record PostReceivePaymentHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
-public sealed record ReceivePaymentLookupQuery(Guid CompanyId);
+public sealed record ReceivePaymentLookupQuery(CompanyId CompanyId);
 
 public sealed record PostCreditApplicationHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     string? IdempotencyKey);
 
-public sealed record CreditApplicationLookupQuery(Guid CompanyId);
+public sealed record CreditApplicationLookupQuery(CompanyId CompanyId);
 
 public sealed record PostPayBillHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
 public sealed record PreparePayBillDraftHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     Guid BankAccountId,
     DateOnly PaymentDate,
@@ -535,26 +535,26 @@ public sealed record PreparePayBillDraftHttpRequest(
     string? Memo,
     IReadOnlyList<PrepareSettlementDraftLineHttpRequest> Lines);
 
-public sealed record OpenPayablesLookupQuery(Guid CompanyId);
+public sealed record OpenPayablesLookupQuery(CompanyId CompanyId);
 
-public sealed record PayBillLookupQuery(Guid CompanyId);
+public sealed record PayBillLookupQuery(CompanyId CompanyId);
 
 public sealed record PostVendorCreditApplicationHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     string? IdempotencyKey);
 
-public sealed record VendorCreditApplicationLookupQuery(Guid CompanyId);
+public sealed record VendorCreditApplicationLookupQuery(CompanyId CompanyId);
 
 public sealed record PostFxRevaluationBatchHttpRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
-public sealed record FxRevaluationBatchListQuery(Guid CompanyId, int? Take);
+public sealed record FxRevaluationBatchListQuery(CompanyId CompanyId, int? Take);
 
-public sealed record FxRevaluationBatchLookupQuery(Guid CompanyId);
+public sealed record FxRevaluationBatchLookupQuery(CompanyId CompanyId);
 
 /// <summary>
 /// Shared lookup query for the V1-pending detail endpoints (sales-
@@ -563,4 +563,4 @@ public sealed record FxRevaluationBatchLookupQuery(Guid CompanyId);
 /// CompanyId off the query string the same way the existing
 /// detail-endpoint queries do.
 /// </summary>
-public sealed record V1PendingLookupQuery(Guid CompanyId);
+public sealed record V1PendingLookupQuery(CompanyId CompanyId);

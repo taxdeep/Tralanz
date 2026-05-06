@@ -148,8 +148,8 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
         var lines = new List<VendorCreditApplicationDocumentLine>();
         foreach (var rawLine in rawLines)
         {
-            var source = await LoadApOpenItemAsync(scope, companyId.Value, rawLine.SourceVendorCreditApOpenItemId, cancellationToken);
-            var target = await LoadApOpenItemAsync(scope, companyId.Value, rawLine.TargetBillApOpenItemId, cancellationToken);
+            var source = await LoadApOpenItemAsync(scope, companyId, rawLine.SourceVendorCreditApOpenItemId, cancellationToken);
+            var target = await LoadApOpenItemAsync(scope, companyId, rawLine.TargetBillApOpenItemId, cancellationToken);
 
             if (source.VendorId != vendorId || target.VendorId != vendorId)
             {
@@ -211,13 +211,13 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
         {
             realizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_gain",
                 "fx_gain_realized");
             realizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_loss",
                 "fx_loss_realized");
@@ -245,7 +245,7 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
         return new VendorCreditApplicationDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(applicationNumber),
             status,
             applicationDate,
@@ -263,7 +263,7 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
 
     private static async Task<ApOpenItemTarget> LoadApOpenItemAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid openItemId,
         CancellationToken cancellationToken)
     {
@@ -283,7 +283,7 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
             for update;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("open_item_id", openItemId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

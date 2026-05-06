@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Control;
 
 public sealed record class ManagedUserSummary
 {
-    public Guid Id { get; init; }
+    public UserId Id { get; init; }
 
     public string DisplayName { get; init; } = string.Empty;
 

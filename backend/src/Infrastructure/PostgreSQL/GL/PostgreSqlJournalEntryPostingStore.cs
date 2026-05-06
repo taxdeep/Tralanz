@@ -20,7 +20,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
 
     public async Task<JournalEntryPostResult> PostAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -72,7 +72,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             draft.CompanyId,
             $"entity-number:all:{draft.JournalDate.Year}",
             $"EN{draft.JournalDate.Year}",
-            8,
+            5,
             await FindEntitySeedNumberAsync(connection, transaction, draft.JournalDate.Year, cancellationToken),
             cancellationToken);
 
@@ -139,7 +139,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                 );
                 """;
             insertEntryCommand.Parameters.AddWithValue("id", journalEntryId);
-            insertEntryCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertEntryCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
             insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
             insertEntryCommand.Parameters.AddWithValue("source_id", draft.DocumentId.Value);
@@ -159,7 +159,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             insertEntryCommand.Parameters.AddWithValue("idempotency_key", $"manual_journal:{draft.DocumentId.Value}");
             insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
-            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -212,7 +212,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                     );
                     """;
                 insertLineCommand.Parameters.AddWithValue("id", journalEntryLineId);
-                insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+                insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
                 insertLineCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
                 insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
                 insertLineCommand.Parameters.AddWithValue("account_id", line.Account!.AccountId);
@@ -258,7 +258,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                 );
                 """;
             insertLedgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLedgerCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertLedgerCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLedgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
             insertLedgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
             insertLedgerCommand.Parameters.AddWithValue("posting_date", draft.JournalDate);
@@ -286,7 +286,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                 """;
             updateSourceCommand.Parameters.AddWithValue("posted_at", postedAt);
             updateSourceCommand.Parameters.AddWithValue("id", draft.DocumentId.Value);
-            updateSourceCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            updateSourceCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             var affectedRows = await updateSourceCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
@@ -306,7 +306,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private async Task<string> ReserveJournalDisplayNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var nextDisplayNumber = await _journalEntryNumberLookup.GetNextDisplayNumberAsync(companyId, cancellationToken);
@@ -326,7 +326,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private static async Task EnsurePostingPeriodOpenAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
@@ -355,7 +355,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             order by s.signal_date asc, s.created_at asc, s.id asc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("posting_date", postingDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -391,7 +391,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private static async Task<LockedManualJournalSource> LockManualJournalSourceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         CancellationToken cancellationToken)
     {
@@ -405,7 +405,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
               and id = @source_id
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -422,7 +422,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private static async Task<JournalEntryPostResult?> TryFindExistingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         string sourceDisplayNumber,
         CancellationToken cancellationToken)
@@ -440,7 +440,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             order by created_at desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

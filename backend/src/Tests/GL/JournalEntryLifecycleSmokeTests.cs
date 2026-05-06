@@ -12,8 +12,8 @@ namespace Tests.GL;
 
 public sealed class JournalEntryLifecycleSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task VoidAsync_CreatesCompensationJournalAndMarksOriginalVoided()
@@ -377,7 +377,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and source_id = @source_id;
                 """;
-            command.Parameters.AddWithValue("company_id", CompanyId);
+            command.Parameters.AddWithValue("company_id", CompanyId.Value);
             command.Parameters.AddWithValue("source_id", fixture.DocumentId);
 
             await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
@@ -422,7 +422,7 @@ public sealed class JournalEntryLifecycleSmokeTests
 
     private static async Task SeedClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly journalDate,
         CancellationToken cancellationToken)
@@ -439,7 +439,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and company_book_id = @book_id;
                 """;
-            deleteSignals.Parameters.AddWithValue("company_id", companyId);
+            deleteSignals.Parameters.AddWithValue("company_id", companyId.Value);
             deleteSignals.Parameters.AddWithValue("book_id", bookId);
             await deleteSignals.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -453,7 +453,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and id = @book_id;
                 """;
-            deleteBook.Parameters.AddWithValue("company_id", companyId);
+            deleteBook.Parameters.AddWithValue("company_id", companyId.Value);
             deleteBook.Parameters.AddWithValue("book_id", bookId);
             await deleteBook.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -491,7 +491,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 );
                 """;
             bookCommand.Parameters.AddWithValue("id", bookId);
-            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             bookCommand.Parameters.AddWithValue("effective_from", journalDate.AddDays(-30));
             bookCommand.Parameters.AddWithValue("created_by_user_id", UserId);
             await bookCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -524,7 +524,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 );
                 """;
             signalCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("book_id", bookId);
             signalCommand.Parameters.AddWithValue("signal_date", journalDate.AddDays(5));
             signalCommand.Parameters.AddWithValue("created_by_user_id", UserId);
@@ -536,7 +536,7 @@ public sealed class JournalEntryLifecycleSmokeTests
 
     private static async Task CleanupClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         CancellationToken cancellationToken)
     {
@@ -557,7 +557,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and company_book_id = @book_id;
                 """;
-            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("book_id", bookId);
             await signalCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -571,7 +571,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and id = @book_id;
                 """;
-            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             bookCommand.Parameters.AddWithValue("book_id", bookId);
             await bookCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -640,7 +640,7 @@ public sealed class JournalEntryLifecycleSmokeTests
               and requested_date = @requested_date
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);

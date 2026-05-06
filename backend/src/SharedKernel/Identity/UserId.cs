@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace SharedKernel.Identity;
 
+[JsonConverter(typeof(UserIdJsonConverter))]
 public readonly record struct UserId
 {
     public const char Prefix = 'U';

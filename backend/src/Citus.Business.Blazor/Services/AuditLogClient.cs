@@ -41,9 +41,9 @@ public sealed class AuditLogClient(HttpClient httpClient, ILogger<AuditLogClient
 
 public sealed record AuditLogEntryDto(
     Guid Id,
-    Guid? CompanyId,
+    CompanyId? CompanyId,
     string ActorType,
-    Guid? ActorId,
+    UserId? ActorId,
     string? ActorDisplay,
     string EntityType,
     Guid EntityId,

@@ -98,7 +98,7 @@ public sealed class ManualJournalDocument : IPostingDocument
     {
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -271,7 +271,7 @@ public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -460,7 +460,7 @@ public sealed class CreditNoteDocument : IPostingDocument, IOpenItemDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -712,7 +712,7 @@ public sealed class BillDocument : IPostingDocument, IOpenItemDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -1004,7 +1004,7 @@ public sealed class PurchaseOrderDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = PurchaseOrderDocumentStatuses.Normalize(status);
         VendorId = vendorId;
@@ -1091,7 +1091,7 @@ public sealed class ReceiptDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = ReceiptDocumentStatuses.Normalize(status);
         VendorId = vendorId;
@@ -1227,7 +1227,7 @@ public sealed class ReceiptGrIrPostingDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         ReceiptDocumentId = receiptDocumentId;
@@ -1423,7 +1423,7 @@ public sealed class ReceiptGrIrSettlementPostingDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         ReceiptDocumentId = receiptDocumentId;
@@ -1568,7 +1568,7 @@ public sealed class VendorCreditDocument : IPostingDocument, IOpenItemDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -1737,7 +1737,7 @@ public sealed class CreditApplicationDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -1918,7 +1918,7 @@ public sealed class VendorCreditApplicationDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -2093,7 +2093,7 @@ public sealed class ReceivePaymentDocument : IPostingDocument, ISettlementDocume
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -2271,7 +2271,7 @@ public sealed class PayBillDocument : IPostingDocument, ISettlementDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = documentDate;
@@ -2475,7 +2475,7 @@ public sealed class OpenItemAdjustmentDocument : IPostingDocument
     {
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         SourceType = NormalizeSourceType(sourceType);
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
@@ -2727,7 +2727,7 @@ public sealed class FxRevaluationDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         BatchKind = NormalizeBatchKind(batchKind);
@@ -2948,7 +2948,7 @@ public sealed class SalesReceiptDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = receiptDate;
@@ -3145,7 +3145,7 @@ public sealed class RefundReceiptDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = refundDate;
@@ -3286,7 +3286,7 @@ public sealed class BankTransferDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = transferDate;
@@ -3448,7 +3448,7 @@ public sealed class BankDepositDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         DocumentDate = depositDate;
@@ -3567,7 +3567,7 @@ public sealed class TaxReturnDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         TaxRegime = taxRegime.Trim();
@@ -3745,7 +3745,7 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         SalesIssueDocumentId = salesIssueDocumentId;
@@ -3878,7 +3878,7 @@ public sealed class InvoiceDropShipCogsPostingDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         InvoiceDocumentId = invoiceDocumentId;
@@ -3971,7 +3971,7 @@ public sealed class DropShipClearingWriteOffDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         DocumentDate = documentDate;
         ItemId = itemId;
@@ -4087,7 +4087,7 @@ public sealed class CustomerDepositApplicationDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         DocumentDate = documentDate;
         PartyId = customerId;
@@ -4182,7 +4182,7 @@ public sealed class CustomerDepositPostingDocument : IPostingDocument
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         DocumentDate = documentDate;
         CustomerId = customerId;

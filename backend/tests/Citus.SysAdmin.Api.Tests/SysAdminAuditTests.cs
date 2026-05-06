@@ -33,7 +33,7 @@ public sealed class SysAdminAuditTests
     [Fact]
     public void PlatformAuditEvent_BuildScopeLabel_ReturnsCompanyReference_WhenAvailable()
     {
-        var actual = PlatformAuditEvent.BuildScopeLabel("Northwind Studio Ltd.", "EN202600000001");
+        var actual = PlatformAuditEvent.BuildScopeLabel("Northwind Studio Ltd.", "EN20260000A");
 
         Assert.Equal("Northwind Studio Ltd. (EN202600000001)", actual);
     }

@@ -6,5 +6,5 @@ public sealed record class CompanyMembershipRoleUpdateRequest
 
     public string Reason { get; init; } = string.Empty;
 
-    public Guid? SysAdminAccountId { get; init; }
+    public UserId? SysAdminAccountId { get; init; }
 }

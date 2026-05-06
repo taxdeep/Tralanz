@@ -182,7 +182,7 @@
                             </td>
                             <td>
                                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                Context="journal_entry.account_picker"
                                                DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                                SelectedId="@line.AccountId"
@@ -222,7 +222,7 @@
                             </td>
                             <td>
                                 <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                    Context="@SearchScopeContext.JournalEntryNamePicker"
                                                    Take="6"
                                                    Placeholder="Customer / vendor"
@@ -282,7 +282,7 @@
             <h2 class="citus-panel__title">Posting summary</h2>
             <table class="citus-keyvalue">
                 <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
+                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
                     <tr><th>Base currency</th><td>@ShellState.ActiveCompany.BaseCurrencyCode</td></tr>
                     <tr><th>Transaction currency</th><td>@(_currency.ToUpperInvariant())</td></tr>
                     <tr><th>Lines</th><td>@_lines.Count</td></tr>

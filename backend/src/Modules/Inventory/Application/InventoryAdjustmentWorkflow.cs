@@ -13,10 +13,10 @@ public sealed class InventoryAdjustmentWorkflow
     }
 
     public Task<InventoryAdjustmentDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -30,12 +30,12 @@ public sealed class InventoryAdjustmentWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -94,12 +94,12 @@ public sealed class InventoryAdjustmentWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -119,12 +119,12 @@ public sealed class InventoryAdjustmentWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -143,12 +143,12 @@ public sealed class InventoryAdjustmentWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }

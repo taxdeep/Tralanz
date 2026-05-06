@@ -9,7 +9,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 /// </summary>
 public sealed record class InventoryWarehouseListRow(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string WarehouseCode,
     string Name,
     string? Description,

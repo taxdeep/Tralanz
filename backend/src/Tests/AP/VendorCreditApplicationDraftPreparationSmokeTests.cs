@@ -9,7 +9,7 @@ namespace Tests.AP;
 
 public sealed class VendorCreditApplicationDraftPreparationSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid VendorId = Guid.Parse("96000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             companyStore);
 
         Guid documentId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = default;
         Guid sourceOpenItemId = Guid.Empty;
         Guid targetOpenItemId = Guid.Empty;
         var createdUser = false;
@@ -101,7 +101,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
 
     private static async Task<Guid> CreateApOpenItemAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string sourceType,
         string balanceSide,
@@ -155,7 +155,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", openItemId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -172,7 +172,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
         return openItemId;
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -186,12 +186,12 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             limit 1;
             """;
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is string userIdString && UserId.TryParse(userIdString, out var userId))
         {
             return (userId, false);
         }
 
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """
@@ -200,19 +200,19 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
               email,
               username,
               password_hash,
-              is_active
+              status
             )
             values (
               @id,
               @email,
               @username,
               @password_hash,
-              true
+              'active'
             );
             """;
-        insertCommand.Parameters.AddWithValue("id", newUserId);
-        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId:N}@citus.local");
-        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId:N}");
+        insertCommand.Parameters.AddWithValue("id", newUserId.Value);
+        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId.Value}@citus.local");
+        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId.Value}");
         insertCommand.Parameters.AddWithValue("password_hash", "smoke-hash");
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         return (newUserId, true);
@@ -281,11 +281,11 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool createdUser,
         CancellationToken cancellationToken)
     {
-        if (!createdUser || userId == Guid.Empty)
+        if (!createdUser || userId.Value is null)
         {
             return;
         }
@@ -297,7 +297,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             delete from users
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

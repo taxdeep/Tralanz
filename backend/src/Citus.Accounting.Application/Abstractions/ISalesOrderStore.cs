@@ -29,22 +29,22 @@ public interface ISalesOrderStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<SalesOrderSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         SalesOrderListFilter filter,
         CancellationToken cancellationToken);
 
     Task<SalesOrderRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken);
 
     Task<SalesOrderRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         SalesOrderUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<SalesOrderRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         SalesOrderUpsertInput input,
         CancellationToken cancellationToken);
@@ -56,13 +56,13 @@ public interface ISalesOrderStore
     /// honest signal that "this SO has been billed elsewhere".
     /// </summary>
     Task<SalesOrderRecord?> MarkInvoicedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         string invoiceNumber,
         CancellationToken cancellationToken);
 
     Task<SalesOrderRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         string newStatus,
         CancellationToken cancellationToken);
@@ -80,7 +80,7 @@ public interface ISalesOrderStore
     /// auto-promotion.
     /// </summary>
     Task<SalesOrderRecord?> ConfirmAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken);
 
@@ -101,7 +101,7 @@ public interface ISalesOrderStore
     /// InvalidOperationException with a precise message.
     /// </summary>
     Task<SalesOrderCancelResult?> CancelAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken);
 }
@@ -127,7 +127,7 @@ public sealed record SalesOrderListFilter(
 
 public sealed record SalesOrderSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string SalesOrderNumber,
     Guid CustomerId,
     string CustomerName,
@@ -144,7 +144,7 @@ public sealed record SalesOrderSummary(
 
 public sealed record SalesOrderRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string SalesOrderNumber,
     string Status,
     Guid CustomerId,

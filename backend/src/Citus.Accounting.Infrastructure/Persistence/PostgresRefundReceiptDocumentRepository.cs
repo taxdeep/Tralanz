@@ -212,7 +212,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
         return new RefundReceiptDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(refundNumber),
             status,
             refundDate,
@@ -304,10 +304,10 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
-                8,
+                5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
                     connection, transaction, year, cancellationToken),
                 cancellationToken);
@@ -315,14 +315,14 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
             refundNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "refund-receipt-display",
                 "RR-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "refund_receipts",
                     "refund_number",
                     "^RR-[0-9]+$",
@@ -403,7 +403,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
         else
         {
             (entityNumber, refundNumber) = await LoadIdentityAsync(
-                connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+                connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             var subtotal = Round6(draft.Lines.Sum(l => l.Quantity * l.UnitPrice));
             var taxTotal = Round6(draft.Lines.Sum(l => l.TaxAmount));
@@ -619,7 +619,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
     private static async Task<(string EntityNumber, string RefundNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -633,7 +633,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
             limit 1;
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

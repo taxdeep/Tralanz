@@ -5,11 +5,11 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IInventoryFoundationStore
 {
     Task<InventoryFoundationSummary> GetSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InventoryFoundationDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InventoryFoundationSummary> EnsureCompanyFoundationAsync(
@@ -25,7 +25,7 @@ public interface IInventoryFoundationStore
         CancellationToken cancellationToken);
 
     Task SetItemActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         bool isActive,
         CancellationToken cancellationToken);
@@ -35,7 +35,7 @@ public interface IInventoryFoundationStore
     /// Includes both stock and non-inventory items (Service / Non-stock).
     /// </summary>
     Task<IReadOnlyList<InventoryItemListRow>> ListItemsAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken);
 
@@ -44,7 +44,7 @@ public interface IInventoryFoundationStore
         CancellationToken cancellationToken);
 
     Task SetWarehouseActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid warehouseId,
         bool isActive,
         CancellationToken cancellationToken);
@@ -55,7 +55,7 @@ public interface IInventoryFoundationStore
     /// to surface deactivated rows as well.
     /// </summary>
     Task<IReadOnlyList<InventoryWarehouseListRow>> ListWarehousesAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken);
 }

@@ -2,8 +2,8 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 
 public sealed record DashboardUserWidgetRecord(
     Guid Id,
-    Guid CompanyId,
-    Guid? UserId,
+    CompanyId CompanyId,
+    UserId? UserId,
     string WidgetKey,
     string? Title,
     string? ConfigJson,
@@ -15,8 +15,8 @@ public sealed record DashboardUserWidgetRecord(
 
 public sealed record DashboardWidgetSuggestionRecord(
     Guid Id,
-    Guid CompanyId,
-    Guid? UserId,
+    CompanyId CompanyId,
+    UserId? UserId,
     string WidgetKey,
     string Title,
     string Reason,
@@ -34,8 +34,8 @@ public sealed record DashboardWidgetSuggestionRecord(
 public interface IDashboardUserWidgetStore
 {
     Task<IReadOnlyList<DashboardUserWidgetRecord>> GetActiveAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         CancellationToken cancellationToken);
 
     Task UpsertAsync(DashboardUserWidgetRecord record, CancellationToken cancellationToken);
@@ -44,19 +44,19 @@ public interface IDashboardUserWidgetStore
 public interface IDashboardWidgetSuggestionStore
 {
     Task<DashboardWidgetSuggestionRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid suggestionId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<DashboardWidgetSuggestionRecord>> GetForUserAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string? statusFilter,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<DashboardWidgetSuggestionRecord>> GetExistingForWidgetKeysAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         IReadOnlyCollection<string> widgetKeys,
         CancellationToken cancellationToken);
 
@@ -79,8 +79,8 @@ public sealed record DashboardSuggestionGenerationResult(
 public interface IDashboardSuggestionService
 {
     Task<DashboardSuggestionGenerationResult> GenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         CancellationToken cancellationToken);

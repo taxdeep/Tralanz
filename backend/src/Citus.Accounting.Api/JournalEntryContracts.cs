@@ -1,7 +1,7 @@
 namespace Citus.Accounting.Api;
 
 public sealed record JournalEntryListLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     int Take = 10);
 
-public sealed record JournalEntryLookupQuery(Guid CompanyId);
+public sealed record JournalEntryLookupQuery(CompanyId CompanyId);

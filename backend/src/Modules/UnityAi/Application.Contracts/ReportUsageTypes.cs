@@ -1,8 +1,8 @@
 namespace Citus.Modules.UnityAi.Application.Contracts;
 
 public sealed record ReportUsageEventInput(
-    Guid CompanyId,
-    Guid? UserId,
+    CompanyId CompanyId,
+    UserId? UserId,
     string ReportKey,
     string EventType,
     string? DateRangeKey,
@@ -12,9 +12,9 @@ public sealed record ReportUsageEventInput(
 
 public sealed record ReportUsageStatRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ScopeType,
-    Guid? UserId,
+    UserId? UserId,
     string ReportKey,
     int OpenCount,
     int ExportCount,
@@ -36,8 +36,8 @@ public interface IReportUsageStatStore
     Task UpsertAsync(ReportUsageEventInput input, DateTimeOffset occurredAt, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ReportUsageStatRecord>> GetForCompanyAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string scopeType,
         CancellationToken cancellationToken);
 }

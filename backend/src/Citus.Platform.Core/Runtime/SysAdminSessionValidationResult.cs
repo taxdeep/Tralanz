@@ -8,7 +8,7 @@ public sealed record class SysAdminSessionValidationResult
 
     public string FailureMessage { get; init; } = string.Empty;
 
-    public Guid SysAdminAccountId { get; init; }
+    public UserId SysAdminAccountId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

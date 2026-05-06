@@ -14,7 +14,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
     }
 
     public async Task<IReadOnlyList<CreditApplicationOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string documentCurrencyCode,
         CancellationToken cancellationToken)
@@ -181,7 +181,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             preparation.Context.CompanyId,
             $"entity-number:credit-application:{year}",
             $"EN{year}",
-            8,
+            5,
             entityNumberSeed,
             cancellationToken);
 
@@ -234,7 +234,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
     private static async Task<IReadOnlyList<CreditApplicationOpenItemCandidate>> LoadCandidatesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string documentCurrencyCode,
         Guid[]? openItemIds,
@@ -280,7 +280,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
         if (openItemIds is not null)
@@ -317,7 +317,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
     private static async Task EnsureActiveCustomerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -332,7 +332,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
               and is_active = true
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -345,7 +345,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
     private static async Task<string> LoadCompanyBaseCurrencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -357,7 +357,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         if (scalar is null || scalar == DBNull.Value)
         {
@@ -411,7 +411,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             );
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId);
+        command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("application_number", applicationNumber);
         command.Parameters.AddWithValue("customer_id", preparation.Context.CustomerId);
@@ -421,7 +421,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo",
             string.IsNullOrWhiteSpace(preparation.Context.Memo) ? (object)DBNull.Value : preparation.Context.Memo.Trim());
-        command.Parameters.AddWithValue("created_by_user_id", preparation.Context.UserId);
+        command.Parameters.AddWithValue("created_by_user_id", preparation.Context.UserId.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -457,7 +457,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
                   @applied_amount_tx
                 );
                 """;
-            command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId);
+            command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId.Value);
             command.Parameters.AddWithValue("credit_application_id", documentId);
             command.Parameters.AddWithValue("line_number", index + 1);
             command.Parameters.AddWithValue("source_credit_ar_open_item_id", line.SourceCreditOpenItemId);
@@ -470,7 +470,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
     private static async Task<long> FindApplicationSeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -490,7 +490,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             from credit_applications
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 

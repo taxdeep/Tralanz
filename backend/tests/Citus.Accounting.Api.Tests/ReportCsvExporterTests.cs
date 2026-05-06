@@ -7,7 +7,7 @@ public sealed class ReportCsvExporterTests
     [Fact]
     public void ExportTrialBalance_WritesMetadataAndAccountRows()
     {
-        var companyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+        var companyId = CompanyId.FromOrdinal(1);
         var report = new TrialBalanceReportSummary
         {
             CompanyId = companyId,
@@ -23,7 +23,7 @@ public sealed class ReportCsvExporterTests
                 new TrialBalanceAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000101",
+                    EntityNumber = "EN20260000A",
                     Code = "1010",
                     Name = "Cash",
                     RootType = "asset",
@@ -46,7 +46,7 @@ public sealed class ReportCsvExporterTests
         Assert.Contains("Report,Trial Balance", file.Content);
         Assert.Contains("TotalBalanceDebit,1750.00", file.Content);
         Assert.Contains("Section,Accounts", file.Content);
-        Assert.Contains("1010,Cash,asset,cash,EN202600000101,Active,false,1750.00,0.00,1750.00,0.00,1750.00,debit", file.Content);
+        Assert.Contains("1010,Cash,asset,cash,EN20260000A,Active,false,1750.00,0.00,1750.00,0.00,1750.00,debit", file.Content);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class ReportCsvExporterTests
     {
         var report = new IncomeStatementReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             DateFrom = new DateOnly(2026, 4, 1),
             DateTo = new DateOnly(2026, 4, 30),
             BaseCurrencyCode = "USD",
@@ -69,7 +69,7 @@ public sealed class ReportCsvExporterTests
                 new IncomeStatementAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000201",
+                    EntityNumber = "EN20260000A",
                     Code = "4000",
                     Name = "Service Revenue",
                     RootType = "revenue",
@@ -86,7 +86,7 @@ public sealed class ReportCsvExporterTests
                 new IncomeStatementAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000202",
+                    EntityNumber = "EN20260000A",
                     Code = "6100",
                     Name = "Office Expense",
                     RootType = "expense",
@@ -107,7 +107,7 @@ public sealed class ReportCsvExporterTests
         Assert.Contains("Section,Revenue", file.Content);
         Assert.Contains("SectionTotal,Revenue,900.00", file.Content);
         Assert.Contains("Section,Expenses", file.Content);
-        Assert.Contains("6100,Office Expense,expense,office_expense,EN202600000202,Active,false,200.00,0.00,200.00", file.Content);
+        Assert.Contains("6100,Office Expense,expense,office_expense,EN20260000A,Active,false,200.00,0.00,200.00", file.Content);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class ReportCsvExporterTests
     {
         var report = new BalanceSheetReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             AsOfDate = new DateOnly(2026, 4, 30),
             BaseCurrencyCode = "USD",
             AccountCount = 2,
@@ -130,7 +130,7 @@ public sealed class ReportCsvExporterTests
                 new BalanceSheetAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000301",
+                    EntityNumber = "EN20260000A",
                     Code = "1010",
                     Name = "Cash",
                     RootType = "asset",
@@ -178,7 +178,7 @@ public sealed class ReportCsvExporterTests
         var customerId = Guid.NewGuid();
         var report = new ArAgingReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             AsOfDate = new DateOnly(2026, 4, 13),
             BaseCurrencyCode = "USD",
             CustomerCount = 1,
@@ -190,7 +190,7 @@ public sealed class ReportCsvExporterTests
                 new ArAgingCustomerSummary
                 {
                     CustomerId = customerId,
-                    CustomerEntityNumber = "EN202600000401",
+                    CustomerEntityNumber = "EN20260000A",
                     CustomerDisplayName = "Acme Retail",
                     CustomerIsActive = true,
                     OpenItemCount = 1,
@@ -205,7 +205,7 @@ public sealed class ReportCsvExporterTests
                 {
                     OpenItemId = Guid.NewGuid(),
                     CustomerId = customerId,
-                    CustomerEntityNumber = "EN202600000401",
+                    CustomerEntityNumber = "EN20260000A",
                     CustomerDisplayName = "Acme Retail",
                     CustomerIsActive = true,
                     SourceType = "invoice",
@@ -234,9 +234,9 @@ public sealed class ReportCsvExporterTests
         Assert.Equal("ar-aging-2026-04-13.csv", file.FileName);
         Assert.Contains("Report,A/R Aging", file.Content);
         Assert.Contains("Section,Customer Summary", file.Content);
-        Assert.Contains("EN202600000401,Acme Retail,Active,1,2026-04-30,525.00,0.00,0.00,0.00,0.00,0.00,525.00", file.Content);
+        Assert.Contains("EN20260000A,Acme Retail,Active,1,2026-04-30,525.00,0.00,0.00,0.00,0.00,0.00,525.00", file.Content);
         Assert.Contains("Section,Open Item Detail", file.Content);
-        Assert.Contains("EN202600000401,Acme Retail,Active,invoice,INV-AR-1001,2026-04-01,2026-04-30,0,current,USD,USD,debit,open,525.00,525.00,525.00,525.00,525.00,525.00", file.Content);
+        Assert.Contains("EN20260000A,Acme Retail,Active,invoice,INV-AR-1001,2026-04-01,2026-04-30,0,current,USD,USD,debit,open,525.00,525.00,525.00,525.00,525.00,525.00", file.Content);
     }
 
     [Fact]
@@ -245,7 +245,7 @@ public sealed class ReportCsvExporterTests
         var vendorId = Guid.NewGuid();
         var report = new ApAgingReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             AsOfDate = new DateOnly(2026, 4, 13),
             BaseCurrencyCode = "USD",
             VendorCount = 1,
@@ -258,7 +258,7 @@ public sealed class ReportCsvExporterTests
                 new ApAgingVendorSummary
                 {
                     VendorId = vendorId,
-                    VendorEntityNumber = "EN202600000501",
+                    VendorEntityNumber = "EN20260000A",
                     VendorDisplayName = "North Harbor Supply",
                     VendorIsActive = true,
                     OpenItemCount = 1,
@@ -274,7 +274,7 @@ public sealed class ReportCsvExporterTests
                 {
                     OpenItemId = Guid.NewGuid(),
                     VendorId = vendorId,
-                    VendorEntityNumber = "EN202600000501",
+                    VendorEntityNumber = "EN20260000A",
                     VendorDisplayName = "North Harbor Supply",
                     VendorIsActive = true,
                     SourceType = "bill",
@@ -303,8 +303,8 @@ public sealed class ReportCsvExporterTests
         Assert.Equal("ap-aging-2026-04-13.csv", file.FileName);
         Assert.Contains("Report,A/P Aging", file.Content);
         Assert.Contains("Section,Vendor Summary", file.Content);
-        Assert.Contains("EN202600000501,North Harbor Supply,Active,1,2025-12-31,0.00,0.00,0.00,0.00,1100.00,1100.00,1100.00", file.Content);
+        Assert.Contains("EN20260000A,North Harbor Supply,Active,1,2025-12-31,0.00,0.00,0.00,0.00,1100.00,1100.00,1100.00", file.Content);
         Assert.Contains("Section,Open Item Detail", file.Content);
-        Assert.Contains("EN202600000501,North Harbor Supply,Active,bill,BILL-AP-1004,2025-12-01,2025-12-31,103,over_90,USD,USD,credit,open,1100.00,1100.00,1100.00,1100.00,1100.00,1100.00", file.Content);
+        Assert.Contains("EN20260000A,North Harbor Supply,Active,bill,BILL-AP-1004,2025-12-01,2025-12-31,103,over_90,USD,USD,credit,open,1100.00,1100.00,1100.00,1100.00,1100.00,1100.00", file.Content);
     }
 }

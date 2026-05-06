@@ -108,7 +108,7 @@ public sealed class PostgreSqlCustomerCurrencyStore : ICustomerCurrencyStore
 
         return new CustomerCurrencyPreference(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("display_name")),
             reader.GetString(reader.GetOrdinal("default_currency_code")),
             reader.GetBoolean(reader.GetOrdinal("currency_locked")),

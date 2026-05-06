@@ -4,9 +4,9 @@ public sealed record class ManagedCompanyMembershipSummary
 {
     public Guid MembershipId { get; init; }
 
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
-    public Guid AccountId { get; init; }
+    public UserId AccountId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

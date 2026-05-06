@@ -6,7 +6,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class BankDepositClient(HttpClient httpClient, ILogger<BankDepositClient> logger)
 {
     public async Task<IReadOnlyList<BankDepositSummaryDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeDrafts = true,
         CancellationToken cancellationToken = default)
     {
@@ -25,7 +25,7 @@ public sealed class BankDepositClient(HttpClient httpClient, ILogger<BankDeposit
 
     public async Task<BankDepositRecordDto?> GetByIdAsync(
         Guid documentId,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -47,7 +47,7 @@ public sealed class BankDepositClient(HttpClient httpClient, ILogger<BankDeposit
 
 public sealed record BankDepositRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

@@ -7,7 +7,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class TrialBalanceClient(HttpClient httpClient, ILogger<TrialBalanceClient> logger)
 {
     public Task<ReportCsvDownload?> ExportCsvAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         bool includeZeroBalances,
         CancellationToken cancellationToken = default) =>
@@ -20,7 +20,7 @@ public sealed class TrialBalanceClient(HttpClient httpClient, ILogger<TrialBalan
             cancellationToken);
 
     public async Task<TrialBalanceReportSummary?> GetReportAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         bool includeZeroBalances,
         CancellationToken cancellationToken = default)

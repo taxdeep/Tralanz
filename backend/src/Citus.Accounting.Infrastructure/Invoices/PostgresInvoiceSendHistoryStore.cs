@@ -17,10 +17,10 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         const string sql = """
             create table if not exists invoice_send_history (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null,
+              company_id char(7) not null,
               invoice_id uuid not null,
               sent_at timestamptz not null default now(),
-              sent_by_user_id uuid not null,
+              sent_by_user_id char(7) not null,
               to_email text not null,
               cc_emails text not null default '',
               bcc_emails text not null default '',
@@ -57,9 +57,9 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         command.Parameters.AddWithValue("invoice_id", draft.InvoiceId);
-        command.Parameters.AddWithValue("sent_by", draft.SentByUserId);
+        command.Parameters.AddWithValue("sent_by", draft.SentByUserId.Value);
         command.Parameters.AddWithValue("to_email", draft.ToEmail);
         command.Parameters.AddWithValue("cc", draft.CcEmails ?? string.Empty);
         command.Parameters.AddWithValue("bcc", draft.BccEmails ?? string.Empty);
@@ -86,7 +86,7 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
     }
 
     public async Task<IReadOnlyList<InvoiceSendHistoryRecord>> ListByInvoiceAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceId,
         int limit,
         CancellationToken cancellationToken)
@@ -103,7 +103,7 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_id", invoiceId);
         command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 200));
 
@@ -113,10 +113,10 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         {
             results.Add(new InvoiceSendHistoryRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 InvoiceId: reader.GetGuid(2),
                 SentAt: reader.GetFieldValue<DateTimeOffset>(3),
-                SentByUserId: reader.GetGuid(4),
+                SentByUserId: UserId.Parse(reader.GetString(4)),
                 ToEmail: reader.GetString(5),
                 CcEmails: reader.GetString(6),
                 BccEmails: reader.GetString(7),

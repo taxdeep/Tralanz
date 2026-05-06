@@ -13,10 +13,10 @@ public sealed class InventoryFoundationWorkflow
     }
 
     public Task<InventoryFoundationSummary> GetSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -25,10 +25,10 @@ public sealed class InventoryFoundationWorkflow
     }
 
     public Task<InventoryFoundationDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -42,12 +42,12 @@ public sealed class InventoryFoundationWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -61,12 +61,12 @@ public sealed class InventoryFoundationWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -80,12 +80,12 @@ public sealed class InventoryFoundationWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -94,12 +94,12 @@ public sealed class InventoryFoundationWorkflow
     }
 
     public Task SetItemActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         bool isActive,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -118,12 +118,12 @@ public sealed class InventoryFoundationWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -132,12 +132,12 @@ public sealed class InventoryFoundationWorkflow
     }
 
     public Task SetWarehouseActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid warehouseId,
         bool isActive,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }

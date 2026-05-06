@@ -16,8 +16,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(5);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _companyRefreshTimestamps = new();
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _companyLocks = new();
+    private readonly ConcurrentDictionary<CompanyId, DateTimeOffset> _companyRefreshTimestamps = new();
+    private readonly ConcurrentDictionary<CompanyId, SemaphoreSlim> _companyLocks = new();
     private int _schemaEnsured;
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -32,7 +32,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         command.CommandText =
             """
             create table if not exists search_documents (
-              company_id uuid not null,
+              company_id char(7) not null,
               entity_type text not null,
               source_id uuid not null,
               group_key text not null,
@@ -76,8 +76,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             -- Cold-start defaults live in the SQL formula directly — this
             -- table only stores the user's *learned* deviation from default.
             create table if not exists search_query_class_priors (
-              company_id uuid not null,
-              user_id uuid not null,
+              company_id char(7) not null,
+              user_id char(7) not null,
               query_class text not null,
               entity_type text not null,
               click_count bigint not null default 0,
@@ -89,8 +89,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               on search_query_class_priors (company_id, user_id, query_class);
 
             create table if not exists search_recent_queries (
-              company_id uuid not null,
-              user_id uuid not null,
+              company_id char(7) not null,
+              user_id char(7) not null,
               context text not null,
               query_text text not null,
               used_at_utc timestamptz not null,
@@ -101,8 +101,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               on search_recent_queries (company_id, user_id, context, used_at_utc desc);
 
             create table if not exists search_click_stats (
-              company_id uuid not null,
-              user_id uuid not null,
+              company_id char(7) not null,
+              user_id char(7) not null,
               context text not null,
               entity_type text not null,
               source_id uuid not null,
@@ -124,13 +124,13 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     /// <see cref="InvalidateAsync"/> contract — see that doc comment
     /// for the why.
     /// </summary>
-    public Task InvalidateAsync(Guid companyId, CancellationToken cancellationToken)
+    public Task InvalidateAsync(CompanyId companyId, CancellationToken cancellationToken)
     {
         _companyRefreshTimestamps.TryRemove(companyId, out _);
         return Task.CompletedTask;
     }
 
-    public async Task EnsureProjectionFreshAsync(Guid companyId, CancellationToken cancellationToken)
+    public async Task EnsureProjectionFreshAsync(CompanyId companyId, CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken);
 
@@ -160,7 +160,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     }
 
     public async Task<IReadOnlyDictionary<(string EntityType, Guid SourceId), SearchDocumentDisplay>> GetDisplayNamesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<(string EntityType, Guid SourceId)> keys,
         CancellationToken cancellationToken)
     {
@@ -190,7 +190,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
                    and entity_type = @entity_type
                    and source_id = ANY(@ids);
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("entity_type", entityType);
             command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid)
             {
@@ -211,7 +211,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         return result;
     }
 
-    private async Task RebuildCompanyProjectionAsync(Guid companyId, CancellationToken cancellationToken)
+    private async Task RebuildCompanyProjectionAsync(CompanyId companyId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -263,9 +263,9 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     private async Task RunSeedStepAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string stepName,
-        Func<NpgsqlConnection, NpgsqlTransaction, Guid, CancellationToken, Task> seed,
+        Func<NpgsqlConnection, NpgsqlTransaction, CompanyId, CancellationToken, Task> seed,
         CancellationToken cancellationToken)
     {
         var savepoint = $"sp_{stepName}";
@@ -309,20 +309,20 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     private static async Task DeleteCompanyProjectionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "delete from search_documents where company_id = @company_id;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task SeedStaticDocumentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         foreach (var document in BuildStaticDocuments(companyId))
@@ -331,7 +331,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         }
     }
 
-    private static IReadOnlyList<SearchDocumentRecord> BuildStaticDocuments(Guid companyId) =>
+    private static IReadOnlyList<SearchDocumentRecord> BuildStaticDocuments(CompanyId companyId) =>
         new[]
         {
             BuildStatic(companyId, SearchDocumentType.JumpTo, SearchGroupKey.JumpTo, "Quote Pipeline", "Sales quote workbench", "/documents/source-browser?sourceType=quote", 150m),
@@ -353,7 +353,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         };
 
     private static SearchDocumentRecord BuildStatic(
-        Guid companyId,
+        CompanyId companyId,
         string entityType,
         string groupKey,
         string primaryText,
@@ -430,7 +430,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               @version
             );
             """;
-        command.Parameters.AddWithValue("company_id", document.CompanyId);
+        command.Parameters.AddWithValue("company_id", document.CompanyId.Value);
         command.Parameters.AddWithValue("entity_type", document.EntityType);
         command.Parameters.AddWithValue("source_id", document.SourceId);
         command.Parameters.AddWithValue("group_key", document.GroupKey);
@@ -449,7 +449,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task SeedCustomerDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedCustomerDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.customers", cancellationToken))
         {
@@ -489,7 +489,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedVendorDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedVendorDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.vendors", cancellationToken))
         {
@@ -529,7 +529,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedProductServiceDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedProductServiceDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.company_product_service_catalog", cancellationToken))
         {
@@ -569,7 +569,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedInventoryItemDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedInventoryItemDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.inventory_items", cancellationToken))
         {
@@ -609,7 +609,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedInventoryStockItemDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedInventoryStockItemDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.inventory_items", cancellationToken))
         {
@@ -657,7 +657,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedWarehouseDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedWarehouseDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.inventory_warehouses", cancellationToken))
         {
@@ -700,7 +700,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     private static async Task SeedSalesCommercialDocumentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string documentType,
         CancellationToken cancellationToken)
     {
@@ -747,7 +747,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedPurchaseOrderDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedPurchaseOrderDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.purchase_orders", cancellationToken))
         {
@@ -790,7 +790,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedInvoiceDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedInvoiceDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.invoices", cancellationToken))
         {
@@ -838,7 +838,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedBillDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedBillDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.bills", cancellationToken))
         {
@@ -882,7 +882,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedCreditNoteDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedCreditNoteDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.credit_notes", cancellationToken))
         {
@@ -926,7 +926,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedVendorCreditDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedVendorCreditDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.vendor_credits", cancellationToken))
         {
@@ -970,7 +970,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedJournalEntryDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedJournalEntryDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.journal_entries", cancellationToken))
         {
@@ -1015,7 +1015,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             cancellationToken);
     }
 
-    private static async Task SeedAccountDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    private static async Task SeedAccountDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
     {
         if (!await TableExistsAsync(connection, transaction, "public.accounts", cancellationToken))
         {
@@ -1058,14 +1058,14 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     private static async Task ExecuteCompanyProjectionStepAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string commandText,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = commandText;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

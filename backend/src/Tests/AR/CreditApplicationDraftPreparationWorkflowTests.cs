@@ -7,7 +7,7 @@ namespace Tests.AR;
 
 public sealed class CreditApplicationDraftPreparationWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         var result = await workflow.PrepareDraftAsync(
             new CreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CustomerId,
                 new DateOnly(2026, 4, 14),
                 null,
@@ -56,7 +56,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new CreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CustomerId,
                 new DateOnly(2026, 4, 14),
                 "EUR",
@@ -89,7 +89,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new CreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CustomerId,
                 new DateOnly(2026, 4, 14),
                 null,
@@ -128,7 +128,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         public IReadOnlyList<CreditApplicationOpenItemCandidate> Candidates { get; set; } = [];
 
         public Task<IReadOnlyList<CreditApplicationOpenItemCandidate>> ListOpenItemCandidatesAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid customerId,
             string documentCurrencyCode,
             CancellationToken cancellationToken) =>
@@ -143,7 +143,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
             LastPreparation = preparation;
             return Task.FromResult(new CreditApplicationDraftResult(
                 Guid.NewGuid(),
-                "EN202600000001",
+                "EN20260000U",
                 "CA-000001",
                 preparation.DocumentCurrencyCode,
                 preparation.BaseCurrencyCode,
@@ -177,7 +177,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         public Task<CustomerCurrencyChangeResult> ChangeDefaultCurrencyAsync(
             Guid customerId,
             string currencyCode,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
@@ -194,7 +194,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         }
 
         public Task<CompanyCurrencyProfile> GetProfileAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken)
         {
             var currencies = _enabledCurrencies

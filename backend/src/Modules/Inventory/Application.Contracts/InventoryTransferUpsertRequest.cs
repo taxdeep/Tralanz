@@ -1,8 +1,8 @@
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryTransferUpsertRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? TransferId,
     Guid SourceWarehouseId,
     Guid DestinationWarehouseId,

@@ -24,8 +24,8 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     }
 
     public async Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -72,7 +72,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     }
 
     public async Task<ReceiptInventoryValuationSummary?> GetReceiptValuationSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -92,7 +92,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     }
 
     public async Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> GetReceiptValuationSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -119,8 +119,8 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     private static async Task InsertValuationLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -224,16 +224,16 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
             on conflict (company_id, receipt_id, receipt_line_number, bill_id, bill_line_number)
             do nothing;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<ReceiptInventoryValuationSummary?> LoadReceiptValuationSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         bool hasActivationLines,
         bool hasMatchingAllocations,
@@ -253,7 +253,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     private static async Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> LoadReceiptValuationSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         bool hasActivationLines,
         bool hasMatchingAllocations,
@@ -346,7 +346,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         {
             TypedValue = receiptDocumentIds
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var summaries = new Dictionary<Guid, ReceiptInventoryValuationSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -400,7 +400,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
                 $"""
                 create table if not exists {ValuationLinesTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   receipt_line_number integer not null,
                   bill_id uuid not null,
@@ -416,7 +416,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
                   unit_cost_base numeric(20, 6) not null,
                   extended_cost_base numeric(20, 6) not null,
                   valuation_source text not null,
-                  valued_by_user_id uuid not null,
+                  valued_by_user_id char(7) not null,
                   valued_at timestamptz not null default now()
                 );
 

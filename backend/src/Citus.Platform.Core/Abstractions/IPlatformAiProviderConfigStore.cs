@@ -15,7 +15,7 @@ public interface IPlatformAiProviderConfigStore
 
     Task<PlatformAiProviderConfigSnapshot> UpsertAsync(
         PlatformAiProviderConfigUpsertRequest request,
-        Guid updatedByUserId,
+        UserId updatedByUserId,
         CancellationToken cancellationToken);
 
     /// <summary>Returns the encrypted envelope so the connection-test
@@ -33,7 +33,7 @@ public sealed record PlatformAiProviderConfigSnapshot(
     double Temperature,
     bool HasApiKey,
     DateTimeOffset UpdatedAt,
-    Guid? UpdatedByUserId);
+    UserId? UpdatedByUserId);
 
 public sealed record PlatformAiProviderConfigUpsertRequest(
     string Provider,

@@ -43,7 +43,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
               status text not null,
               file_path text,
               size_bytes bigint,
-              triggered_by_user_id uuid not null,
+              triggered_by_user_id char(7) not null,
               error_message text,
               constraint platform_database_backups_status_chk
                 check (status in ('running','succeeded','failed'))
@@ -59,7 +59,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
               completed_at timestamptz,
               status text not null,
               duration_ms bigint,
-              triggered_by_user_id uuid not null,
+              triggered_by_user_id char(7) not null,
               error_message text,
               constraint platform_database_maintenance_runs_status_chk
                 check (status in ('running','succeeded','failed'))
@@ -76,7 +76,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
     }
 
     public async Task<PlatformDatabaseBackupRecord> StartBackupAsync(
-        Guid triggeredByUserId,
+        UserId triggeredByUserId,
         CancellationToken cancellationToken)
     {
         var connectionInfo = ParseConnection();
@@ -101,7 +101,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
         {
             command.CommandText = insertSql;
             command.Parameters.AddWithValue("file_path", filePath);
-            command.Parameters.AddWithValue("triggered_by_user_id", triggeredByUserId);
+            command.Parameters.AddWithValue("triggered_by_user_id", triggeredByUserId.Value);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
             backupId = reader.GetGuid(0);
@@ -154,7 +154,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
                 Status: reader.GetString(3),
                 FilePath: reader.IsDBNull(4) ? null : reader.GetString(4),
                 SizeBytes: reader.IsDBNull(5) ? null : reader.GetInt64(5),
-                TriggeredByUserId: reader.GetGuid(6),
+                TriggeredByUserId: UserId.Parse(reader.GetString(6)),
                 ErrorMessage: reader.IsDBNull(7) ? null : reader.GetString(7)));
         }
 
@@ -190,12 +190,12 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
             Status: reader.GetString(3),
             FilePath: reader.IsDBNull(4) ? null : reader.GetString(4),
             SizeBytes: reader.IsDBNull(5) ? null : reader.GetInt64(5),
-            TriggeredByUserId: reader.GetGuid(6),
+            TriggeredByUserId: UserId.Parse(reader.GetString(6)),
             ErrorMessage: reader.IsDBNull(7) ? null : reader.GetString(7));
     }
 
     public async Task<PlatformDatabaseMaintenanceRun> RunVacuumAnalyzeAsync(
-        Guid triggeredByUserId,
+        UserId triggeredByUserId,
         CancellationToken cancellationToken)
     {
         const string insertSql = """
@@ -213,7 +213,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
         {
             command.CommandText = insertSql;
             command.Parameters.AddWithValue("operation", PlatformDatabaseOperations.VacuumAnalyze);
-            command.Parameters.AddWithValue("triggered_by_user_id", triggeredByUserId);
+            command.Parameters.AddWithValue("triggered_by_user_id", triggeredByUserId.Value);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
             runId = reader.GetGuid(0);
@@ -311,7 +311,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
                 CompletedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
                 Status: reader.GetString(4),
                 DurationMs: reader.IsDBNull(5) ? null : reader.GetInt64(5),
-                TriggeredByUserId: reader.GetGuid(6),
+                TriggeredByUserId: UserId.Parse(reader.GetString(6)),
                 ErrorMessage: reader.IsDBNull(7) ? null : reader.GetString(7)));
         }
 

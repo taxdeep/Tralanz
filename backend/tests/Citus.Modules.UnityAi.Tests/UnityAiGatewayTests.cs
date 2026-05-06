@@ -15,7 +15,7 @@ public sealed class UnityAiGatewayTests
         var result = await gateway.RunStructuredTaskAsync<object, object>(new UnityAiTaskRequest<object>(
             TaskType: UnityAiTaskType.UnitysearchLearningSummary,
             Input: new { },
-            Context: new UnityAiInvocationContext(Guid.NewGuid(), null, null)),
+            Context: new UnityAiInvocationContext(CompanyId.FromOrdinal(1), null, null)),
             CancellationToken.None);
 
         Assert.Equal(UnityAiTaskOutcome.Disabled, result.Outcome);
@@ -32,7 +32,7 @@ public sealed class UnityAiGatewayTests
         var result = await gateway.RunStructuredTaskAsync<object, object>(new UnityAiTaskRequest<object>(
             TaskType: UnityAiTaskType.AccountingCommandParse,
             Input: new { },
-            Context: new UnityAiInvocationContext(Guid.NewGuid(), null, null)),
+            Context: new UnityAiInvocationContext(CompanyId.FromOrdinal(1), null, null)),
             CancellationToken.None);
 
         Assert.Equal(UnityAiTaskOutcome.Disabled, result.Outcome);

@@ -3,16 +3,16 @@ namespace Modules.GL.JournalEntry;
 public interface IJournalEntryWorkflow
 {
     Task<IReadOnlyList<JournalEntryAccountOption>> LoadAccountOptionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<JournalEntryDraftSaveResult> SaveDraftAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<JournalEntryPostResult> PostDraftAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 }

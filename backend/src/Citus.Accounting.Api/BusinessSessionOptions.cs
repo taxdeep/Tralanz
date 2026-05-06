@@ -11,7 +11,7 @@ public sealed class BusinessSessionOptions
 
 public sealed class BusinessSessionCompanyOptions
 {
-    public Guid Id { get; set; }
+    public CompanyId Id { get; set; }
 
     public string CompanyCode { get; set; } = string.Empty;
 
@@ -24,7 +24,7 @@ public sealed class BusinessSessionCompanyOptions
 
 public sealed class BusinessSessionUserOptions
 {
-    public Guid Id { get; set; }
+    public UserId Id { get; set; }
 
     public string DisplayName { get; set; } = string.Empty;
 
@@ -34,5 +34,5 @@ public sealed class BusinessSessionUserOptions
 
     public List<string> Roles { get; set; } = [];
 
-    public List<Guid> CompanyIds { get; set; } = [];
+    public List<CompanyId> CompanyIds { get; set; } = [];
 }

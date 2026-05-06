@@ -8,8 +8,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     private int _schemaEnsured;
 
     public async Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         int take,
         CancellationToken cancellationToken)
@@ -29,8 +29,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
             order by used_at_utc desc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("take", Math.Clamp(take, 1, 20));
 
@@ -49,8 +49,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     }
 
     public async Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         int take,
         CancellationToken cancellationToken)
@@ -87,8 +87,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
             order by stats.last_clicked_at_utc desc, stats.click_count desc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("take", Math.Clamp(take, 1, 20));
 
@@ -112,8 +112,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     }
 
     public async Task RecordQueryAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         string queryText,
         CancellationToken cancellationToken)
@@ -152,8 +152,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
                     do update
                     set used_at_utc = excluded.used_at_utc;
                     """;
-                command.Parameters.AddWithValue("company_id", companyId);
-                command.Parameters.AddWithValue("user_id", userId);
+                command.Parameters.AddWithValue("company_id", companyId.Value);
+                command.Parameters.AddWithValue("user_id", userId.Value);
                 command.Parameters.AddWithValue("context", context);
                 command.Parameters.AddWithValue("query_text", queryText);
                 await command.ExecuteNonQueryAsync(cancellationToken);
@@ -178,8 +178,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
                         limit 20
                       );
                     """;
-                trimCommand.Parameters.AddWithValue("company_id", companyId);
-                trimCommand.Parameters.AddWithValue("user_id", userId);
+                trimCommand.Parameters.AddWithValue("company_id", companyId.Value);
+                trimCommand.Parameters.AddWithValue("user_id", userId.Value);
                 trimCommand.Parameters.AddWithValue("context", context);
                 await trimCommand.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -194,8 +194,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     }
 
     public async Task RecordClickAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         string entityType,
         Guid sourceId,
@@ -230,8 +230,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
             set click_count = search_click_stats.click_count + 1,
                 last_clicked_at_utc = excluded.last_clicked_at_utc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -250,8 +250,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         command.CommandText =
             """
             create table if not exists search_recent_queries (
-              company_id uuid not null,
-              user_id uuid not null,
+              company_id char(7) not null,
+              user_id char(7) not null,
               context text not null,
               query_text text not null,
               used_at_utc timestamptz not null,
@@ -262,8 +262,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
               on search_recent_queries (company_id, user_id, context, used_at_utc desc);
 
             create table if not exists search_click_stats (
-              company_id uuid not null,
-              user_id uuid not null,
+              company_id char(7) not null,
+              user_id char(7) not null,
               context text not null,
               entity_type text not null,
               source_id uuid not null,

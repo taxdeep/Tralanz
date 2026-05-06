@@ -1,8 +1,8 @@
 namespace Modules.AP.VendorCreditApplication;
 
 public sealed record VendorCreditApplicationDraftContext(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     DateOnly ApplicationDate,
     string? RequestedCurrencyCode,

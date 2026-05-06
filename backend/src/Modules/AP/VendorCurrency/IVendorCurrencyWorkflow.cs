@@ -9,6 +9,6 @@ public interface IVendorCurrencyWorkflow
     Task<VendorCurrencyChangeResult> ChangeDefaultCurrencyAsync(
         Guid vendorId,
         string currencyCode,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 }

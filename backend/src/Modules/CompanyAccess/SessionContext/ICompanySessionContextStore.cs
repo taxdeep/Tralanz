@@ -5,7 +5,7 @@ namespace Modules.CompanyAccess.SessionContext;
 public interface ICompanySessionContextStore
 {
     Task<CompanyAccessSessionContext?> GetAsync(
-        Guid userId,
-        Guid? preferredActiveCompanyId,
+        UserId userId,
+        CompanyId? preferredActiveCompanyId,
         CancellationToken cancellationToken);
 }

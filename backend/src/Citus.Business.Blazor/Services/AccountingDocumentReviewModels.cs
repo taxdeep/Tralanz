@@ -37,7 +37,7 @@ public sealed record class AccountingDocumentReviewSummary
 
     public Guid Id { get; init; }
 
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public string EntityNumber { get; init; } = string.Empty;
 
@@ -76,7 +76,7 @@ public sealed record class AccountingDocumentReviewLineSummary
 {
     public int LineNumber { get; init; }
 
-    public Guid AccountId { get; init; }
+    public UserId AccountId { get; init; }
 
     public string AccountCode { get; init; } = string.Empty;
 

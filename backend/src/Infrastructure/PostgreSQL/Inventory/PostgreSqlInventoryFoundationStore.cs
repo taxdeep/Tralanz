@@ -16,7 +16,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<InventoryFoundationSummary> GetSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -42,7 +42,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<InventoryFoundationDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -104,11 +104,11 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       updated_by_user_id = excluded.updated_by_user_id,
                       updated_at = excluded.updated_at;
                 """;
-            command.Parameters.AddWithValue("company_id", request.CompanyId);
+            command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             command.Parameters.AddWithValue("default_costing_method", FormatCostingMethod(request.DefaultCostingMethod));
             command.Parameters.AddWithValue("negative_stock_allowed", request.NegativeStockAllowed);
             command.Parameters.AddWithValue("require_writeoff_approval", request.RequireWriteOffApproval);
-            command.Parameters.AddWithValue("user_id", request.UserId);
+            command.Parameters.AddWithValue("user_id", request.UserId.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -170,7 +170,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       and company_id = @company_id;
                     """;
                 updateCommand.Parameters.AddWithValue("item_id", request.ItemId.Value);
-                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 updateCommand.Parameters.AddWithValue("item_code", normalizedCode);
                 updateCommand.Parameters.AddWithValue("name", normalizedName);
                 updateCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -279,7 +279,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", itemId);
-            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             insertCommand.Parameters.AddWithValue("item_code", normalizedCode);
             insertCommand.Parameters.AddWithValue("name", normalizedName);
             insertCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -337,7 +337,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task SetItemActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -356,7 +356,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               and company_id = @company_id;
             """;
         command.Parameters.AddWithValue("item_id", itemId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
@@ -366,7 +366,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<IReadOnlyList<InventoryItemListRow>> ListItemsAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -409,7 +409,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               item_kind asc,
               item_code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("include_inactive", includeInactive);
 
         var rows = new List<InventoryItemListRow>();
@@ -418,7 +418,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             rows.Add(new InventoryItemListRow(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -490,7 +490,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       and company_id = @company_id;
                     """;
                 updateCommand.Parameters.AddWithValue("warehouse_id", request.WarehouseId.Value);
-                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 updateCommand.Parameters.AddWithValue("warehouse_code", normalizedCode);
                 updateCommand.Parameters.AddWithValue("name", normalizedName);
                 updateCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -531,7 +531,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", warehouseId);
-            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             insertCommand.Parameters.AddWithValue("warehouse_code", normalizedCode);
             insertCommand.Parameters.AddWithValue("name", normalizedName);
             insertCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -553,7 +553,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task SetWarehouseActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid warehouseId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -572,7 +572,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               and company_id = @company_id;
             """;
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
@@ -582,7 +582,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<IReadOnlyList<InventoryWarehouseListRow>> ListWarehousesAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -608,7 +608,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               case when is_active then 0 else 1 end,
               warehouse_code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("include_inactive", includeInactive);
 
         var rows = new List<InventoryWarehouseListRow>();
@@ -617,7 +617,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             rows.Add(new InventoryWarehouseListRow(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -649,13 +649,13 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             command.CommandText =
                 """
                 create table if not exists company_inventory_policies (
-                  company_id uuid primary key references companies(id) on delete cascade,
+                  company_id char(7) primary key references companies(id) on delete cascade,
                   default_costing_method text not null,
                   negative_stock_allowed boolean not null default false,
                   require_writeoff_approval boolean not null default true,
-                  created_by_user_id uuid not null,
+                  created_by_user_id char(7) not null,
                   created_at timestamptz not null default now(),
-                  updated_by_user_id uuid null,
+                  updated_by_user_id char(7) null,
                   updated_at timestamptz null,
                   constraint ck_company_inventory_policies_costing_method
                     check (default_costing_method in ('moving_average', 'fifo'))
@@ -663,7 +663,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_items (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_code text not null,
                   name text not null,
                   description text null,
@@ -753,7 +753,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_warehouses (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   warehouse_code text not null,
                   name text not null,
                   description text null,
@@ -770,7 +770,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists item_warehouse_balances (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_id uuid not null references inventory_items(id) on delete cascade,
                   warehouse_id uuid not null references inventory_warehouses(id) on delete cascade,
                   on_hand_qty numeric(20, 6) not null default 0,
@@ -785,7 +785,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_documents (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   document_type text not null,
                   status text not null,
                   movement_direction text not null,
@@ -797,7 +797,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   customer_po_number text null,
                   sales_order_id uuid null,
                   memo text null,
-                  created_by_user_id uuid not null,
+                  created_by_user_id char(7) not null,
                   created_at timestamptz not null default now(),
                   posted_at timestamptz null,
                   constraint ck_inventory_documents_document_type
@@ -837,7 +837,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_document_lines (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   document_id uuid not null references inventory_documents(id) on delete cascade,
                   line_no integer not null,
                   item_id uuid not null references inventory_items(id),
@@ -859,7 +859,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_ledger_entries (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_id uuid not null references inventory_items(id),
                   warehouse_id uuid null references inventory_warehouses(id),
                   document_id uuid null references inventory_documents(id),
@@ -899,7 +899,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_cost_layers (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_id uuid not null references inventory_items(id),
                   warehouse_id uuid null references inventory_warehouses(id),
                   source_ledger_entry_id uuid null references inventory_ledger_entries(id),
@@ -917,7 +917,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_layer_consumptions (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   issue_ledger_entry_id uuid not null references inventory_ledger_entries(id) on delete cascade,
                   cost_layer_id uuid not null references inventory_cost_layers(id) on delete cascade,
                   consumed_qty numeric(20, 6) not null,
@@ -930,12 +930,12 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists warehouse_transfers (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   transfer_number text not null,
                   status text not null,
                   source_warehouse_id uuid not null references inventory_warehouses(id),
                   destination_warehouse_id uuid not null references inventory_warehouses(id),
-                  requested_by_user_id uuid not null,
+                  requested_by_user_id char(7) not null,
                   memo text null,
                   created_at timestamptz not null default now(),
                   shipped_at timestamptz null,
@@ -949,7 +949,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists warehouse_transfer_lines (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   transfer_id uuid not null references warehouse_transfers(id) on delete cascade,
                   line_no integer not null,
                   item_id uuid not null references inventory_items(id),
@@ -963,7 +963,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists boms (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   bom_code text not null,
                   output_item_id uuid not null references inventory_items(id),
                   output_qty numeric(20, 6) not null,
@@ -977,7 +977,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists bom_lines (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   bom_id uuid not null references boms(id) on delete cascade,
                   line_no integer not null,
                   component_item_id uuid not null references inventory_items(id),
@@ -1122,7 +1122,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task EnsureCompanyExistsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1133,7 +1133,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
         if (count == 0)
         {
@@ -1170,18 +1170,18 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             on conflict (company_id)
             do nothing;
             """;
-        command.Parameters.AddWithValue("company_id", request.CompanyId);
+        command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
         command.Parameters.AddWithValue("default_costing_method", FormatCostingMethod(request.DefaultCostingMethod));
         command.Parameters.AddWithValue("negative_stock_allowed", request.NegativeStockAllowed);
         command.Parameters.AddWithValue("require_writeoff_approval", request.RequireWriteOffApproval);
-        command.Parameters.AddWithValue("created_by_user_id", request.UserId);
+        command.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<InventoryFoundationSummary> LoadSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var policy = await LoadPolicyAsync(connection, transaction, companyId, cancellationToken);
@@ -1206,7 +1206,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1254,7 +1254,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               item.item_code asc,
               item.name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1262,7 +1262,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1302,7 +1302,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<InventoryFoundationAccountCatalog> LoadAccountOptionsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1323,7 +1323,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               and root_type in ('asset', 'expense', 'cost_of_sales')
             order by code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var inventoryAssetAccountOptions = new List<InventoryFoundationAccountOption>();
         var expenseAccountOptions = new List<InventoryFoundationAccountOption>();
@@ -1357,7 +1357,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1379,7 +1379,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               warehouse_code asc,
               name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1387,7 +1387,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1403,7 +1403,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<InventoryCostingPolicyRecord?> LoadPolicyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1422,7 +1422,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             where company_id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1435,11 +1435,11 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             ParseCostingMethod(reader.GetString(reader.GetOrdinal("default_costing_method"))),
             reader.GetBoolean(reader.GetOrdinal("negative_stock_allowed")),
             reader.GetBoolean(reader.GetOrdinal("require_writeoff_approval")),
-            reader.GetGuid(reader.GetOrdinal("created_by_user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
             reader.IsDBNull(reader.GetOrdinal("updated_by_user_id"))
                 ? null
-                : reader.GetGuid(reader.GetOrdinal("updated_by_user_id")),
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("updated_by_user_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("effective_updated_at")));
     }
 
@@ -1447,7 +1447,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         string tableName,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken,
         string extraPredicate = "")
     {
@@ -1460,7 +1460,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             where company_id = @company_id
             {extraPredicate};
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 

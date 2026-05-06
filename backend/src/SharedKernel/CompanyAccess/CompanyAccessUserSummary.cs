@@ -1,8 +1,10 @@
+using SharedKernel.Identity;
+
 namespace SharedKernel.CompanyAccess;
 
 public sealed record class CompanyAccessUserSummary
 {
-    public Guid Id { get; init; }
+    public UserId Id { get; init; }
 
     public string DisplayName { get; init; } = string.Empty;
 

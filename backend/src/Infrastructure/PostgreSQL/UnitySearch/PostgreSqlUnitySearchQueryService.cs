@@ -159,8 +159,8 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
               primary_text asc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
-        command.Parameters.AddWithValue("user_id", query.UserId ?? Guid.Empty);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+        command.Parameters.AddWithValue("user_id", query.UserId?.Value ?? string.Empty);
         command.Parameters.AddWithValue("context", query.Context);
         command.Parameters.AddWithValue("entity_types", policy.EntityTypes.ToArray());
         command.Parameters.AddWithValue("enforce_active_only", policy.EnforceActiveOnly);
@@ -178,7 +178,7 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         while (await reader.ReadAsync(cancellationToken))
         {
             results.Add(new SearchDocumentRecord(
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("entity_type")),
                 reader.GetGuid(reader.GetOrdinal("source_id")),
                 reader.GetString(reader.GetOrdinal("group_key")),

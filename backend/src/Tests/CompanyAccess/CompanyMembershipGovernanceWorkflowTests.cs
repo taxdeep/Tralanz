@@ -4,10 +4,10 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanyMembershipGovernanceWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.NewGuid();
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(101);
     private static readonly Guid MembershipId = Guid.NewGuid();
-    private static readonly Guid AccountId = Guid.NewGuid();
-    private static readonly Guid SysAdminAccountId = Guid.NewGuid();
+    private static readonly UserId AccountId = UserId.FromOrdinal(101);
+    private static readonly UserId SysAdminAccountId = UserId.FromOrdinal(101);
 
     [Fact]
     public async Task ChangeRoleFromSysAdminAsync_NormalizesRoleAndDelegatesToCompanyAccessStore()
@@ -26,7 +26,7 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
         Assert.Equal("owner", result.Role);
         Assert.Equal("owner", store.SavedRole);
         Assert.Equal("Promote controller to owner.", store.SavedReason);
-        Assert.Equal(SysAdminAccountId, store.SavedSysAdminAccountId);
+        Assert.Equal((object?)SysAdminAccountId, (object?)store.SavedSysAdminAccountId);
     }
 
     [Fact]
@@ -86,14 +86,14 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
 
         public string SavedReason { get; private set; } = string.Empty;
 
-        public Guid? SavedSysAdminAccountId { get; private set; }
+        public UserId? SavedSysAdminAccountId { get; private set; }
 
         public Task<CompanyMembershipRoleChangeResult?> ChangeRoleFromSysAdminAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid membershipId,
             string role,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             SavedRole = role;

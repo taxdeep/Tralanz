@@ -12,8 +12,8 @@ public sealed class PrepareSettlementDraftCommandHandlerTests
     [Fact]
     public async Task PrepareReceivePaymentDraft_MapsRepositoryResult()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var repository = new FakeReceivePaymentRepository();
         var handler = new PrepareReceivePaymentDraftCommandHandler(repository, new ImmediateUnitOfWork());
 
@@ -38,8 +38,8 @@ public sealed class PrepareSettlementDraftCommandHandlerTests
     [Fact]
     public async Task PreparePayBillDraft_MapsRepositoryResult()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var repository = new FakePayBillRepository();
         var handler = new PreparePayBillDraftCommandHandler(repository, new ImmediateUnitOfWork());
 

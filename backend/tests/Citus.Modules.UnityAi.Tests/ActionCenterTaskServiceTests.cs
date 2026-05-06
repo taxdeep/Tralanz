@@ -8,9 +8,9 @@ namespace Citus.Modules.UnityAi.Tests;
 
 public sealed class ActionCenterTaskServiceTests
 {
-    private static readonly Guid CompanyA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static readonly Guid CompanyB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    private static readonly Guid UserA = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly CompanyId CompanyA = CompanyId.FromOrdinal(1);
+    private static readonly CompanyId CompanyB = CompanyId.FromOrdinal(2);
+    private static readonly UserId UserA = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task Regenerate_FromOneProvider_InsertsTask()
@@ -150,7 +150,7 @@ public sealed class ActionCenterTaskServiceTests
         return (service, store, events, jobRuns);
     }
 
-    private static ActionCenterTaskDraft BuildDraft(Guid companyId, string fingerprint, string title,
+    private static ActionCenterTaskDraft BuildDraft(CompanyId companyId, string fingerprint, string title,
         string reason = "test reason", string? evidenceJson = null)
         => new(
             CompanyId: companyId,
@@ -170,8 +170,8 @@ public sealed class ActionCenterTaskServiceTests
 
     private sealed class FakeProvider : IActionCenterTaskProvider
     {
-        private readonly Func<Guid, IReadOnlyList<ActionCenterTaskDraft>>? _factory;
-        private readonly Func<Guid, Exception>? _throwFactory;
+        private readonly Func<CompanyId, IReadOnlyList<ActionCenterTaskDraft>>? _factory;
+        private readonly Func<CompanyId, Exception>? _throwFactory;
 
         public FakeProvider(string name, IReadOnlyList<ActionCenterTaskDraft> drafts)
         {
@@ -179,7 +179,7 @@ public sealed class ActionCenterTaskServiceTests
             _factory = _ => drafts;
         }
 
-        public FakeProvider(string name, Func<Guid, Exception> throwFactory)
+        public FakeProvider(string name, Func<CompanyId, Exception> throwFactory)
         {
             ProviderName = name;
             _throwFactory = throwFactory;
@@ -188,7 +188,7 @@ public sealed class ActionCenterTaskServiceTests
         public string ProviderName { get; }
 
         public Task<IReadOnlyList<ActionCenterTaskDraft>> GenerateAsync(
-            Guid companyId, Guid? userId, DateTimeOffset asOfUtc, CancellationToken cancellationToken)
+            CompanyId companyId, UserId? userId, DateTimeOffset asOfUtc, CancellationToken cancellationToken)
         {
             if (_throwFactory is not null)
             {

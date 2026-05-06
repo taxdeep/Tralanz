@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Control;
 
 public sealed record class SysAdminAuthSessionSummary
 {
-    public Guid SysAdminAccountId { get; init; }
+    public UserId SysAdminAccountId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

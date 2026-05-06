@@ -81,7 +81,7 @@ public sealed record class IncomeStatementAccountAmount
 
 public sealed record class IncomeStatementReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly DateFrom { get; init; }
 
@@ -110,7 +110,7 @@ public sealed record class IncomeStatementReport
     public IReadOnlyList<IncomeStatementAccountAmount> ExpenseRows { get; init; } = Array.Empty<IncomeStatementAccountAmount>();
 
     public static IncomeStatementReport Create(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly dateFrom,
         DateOnly dateTo,
         string baseCurrencyCode,

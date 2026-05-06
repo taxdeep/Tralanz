@@ -10,7 +10,7 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public async Task<IReadOnlyList<CompanyBookGovernanceOverview>> ListBookGovernanceAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
@@ -19,20 +19,20 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public Task<CompanyBookGovernanceSignalSummary> GetGovernanceSignalsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken) =>
         _store.GetGovernanceSignalsAsync(companyId, bookId, asOfDate, cancellationToken);
 
     public async Task<CompanyBookGovernanceSignalWriteResult> CreateGovernanceSignalAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         string signalType,
         DateOnly signalDate,
         string? referenceLabel,
         string? notes,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var normalizedSignalType = NormalizeSignalType(signalType);
@@ -57,12 +57,12 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public Task<CompanyBookGovernanceSignalWriteResult> RegisterClosedPeriodAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly periodEndDate,
         string? referenceLabel,
         string? notes,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         CreateTypedGovernanceSignalAsync(
             companyId,
@@ -75,12 +75,12 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
             cancellationToken);
 
     public Task<CompanyBookGovernanceSignalWriteResult> RegisterIssuedStatementAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly issuedOn,
         string statementLabel,
         string? notes,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         CreateTypedGovernanceSignalAsync(
             companyId,
@@ -93,12 +93,12 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
             cancellationToken);
 
     public Task<CompanyBookGovernanceSignalWriteResult> RegisterFiledTaxAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly filedOn,
         string filingLabel,
         string? notes,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         CreateTypedGovernanceSignalAsync(
             companyId,
@@ -111,8 +111,8 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
             cancellationToken);
 
     public async Task<CompanyBookGovernedChangeRequestDraft> PrepareGovernedChangeRequestDraftAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid? bookId,
         DateOnly asOfDate,
         DateOnly effectiveFrom,
@@ -145,9 +145,9 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public async Task<CompanyBookGovernedChangeRequestDraft> SubmitGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var draft = await RequireGovernedChangeRequestDraftAsync(companyId, requestId, cancellationToken);
@@ -165,9 +165,9 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public async Task<CompanyBookGovernedChangeRequestDraft> CancelGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var draft = await RequireGovernedChangeRequestDraftAsync(companyId, requestId, cancellationToken);
@@ -189,12 +189,12 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public Task<IReadOnlyList<CompanyBookGovernedChangeRequestDraft>> ListGovernedChangeRequestDraftsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken) =>
         _store.ListGovernedChangeRequestDraftsAsync(companyId, cancellationToken);
 
     public async Task<CompanyBookGovernedChangeRequestReadiness> ValidateGovernedChangeRequestApplyReadinessAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
@@ -256,7 +256,7 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public async Task<CompanyBookGovernedChangePreview> PreviewGovernedChangeAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid? bookId,
         DateOnly asOfDate,
         CompanyBookProposedChangeSet proposedChanges,
@@ -279,7 +279,7 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public async Task<CompanyBookPolicyGovernanceResult> GetRemeasurementPolicyAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid? bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
@@ -295,7 +295,7 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public async Task<CompanyBookPolicyGovernanceResult> GetDefaultRemeasurementPolicyAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
@@ -307,8 +307,8 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     public Task<CompanyBookPolicyGovernanceResult> EnsureDefaultPrimaryBookPolicyAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         DateOnly asOfDate,
         CancellationToken cancellationToken) =>
         _store.EnsureDefaultPrimaryBookPolicyAsync(
@@ -550,13 +550,13 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
     }
 
     private Task<CompanyBookGovernanceSignalWriteResult> CreateTypedGovernanceSignalAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         string signalType,
         DateOnly signalDate,
         string? referenceLabel,
         string? notes,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         CreateGovernanceSignalAsync(
             companyId,
@@ -569,7 +569,7 @@ public sealed class CompanyBookPolicyWorkflow : ICompanyBookPolicyWorkflow
             cancellationToken);
 
     private async Task<CompanyBookGovernedChangeRequestDraft> RequireGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
         CancellationToken cancellationToken)
     {

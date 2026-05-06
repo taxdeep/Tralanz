@@ -11,7 +11,7 @@ public sealed class JournalEntryEditorStateTests
         var state = JournalEntryEditorState.CreateDarkModeDemo();
 
         Assert.True(state.Draft.IsDarkMode);
-        Assert.Equal(Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"), state.Draft.CompanyId);
+        Assert.Equal(CompanyId.FromOrdinal(1), state.Draft.CompanyId);
         Assert.Equal(string.Empty, state.Draft.JournalNumber);
         Assert.Equal("JE# Draft", state.Draft.Title);
         Assert.Equal("USD", state.Draft.CurrencyCode);
@@ -127,7 +127,7 @@ public sealed class JournalEntryEditorStateTests
         var state = JournalEntryEditorState.CreateDarkModeDemo();
 
         state.ApplyCompanyCurrencyProfile(new CompanyCurrencyProfile(
-            Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"),
+            CompanyId.FromOrdinal(1),
             "Northwind Studio Ltd.",
             "USD",
             true,

@@ -49,7 +49,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<IReadOnlyList<VendorRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -59,7 +59,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
         command.CommandText = includeInactive
             ? SelectColumns + " WHERE company_id = @company_id ORDER BY display_name ASC;"
             : SelectColumns + " WHERE company_id = @company_id AND is_active = TRUE ORDER BY display_name ASC;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -70,14 +70,14 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<VendorRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", vendorId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -85,7 +85,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<VendorRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         VendorUpsertRequest request,
         CancellationToken cancellationToken)
     {
@@ -106,7 +106,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
                       email, phone, address_line, city, province_state, postal_code, country,
                       tax_id, notes, payment_term_id, is_active, created_at, updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", GenerateEntityNumber());
         command.Parameters.AddWithValue("display_name", request.DisplayName.Trim());
         command.Parameters.AddWithValue("default_currency_code", request.DefaultCurrencyCode.Trim().ToUpperInvariant());
@@ -130,7 +130,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<VendorRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         VendorUpsertRequest request,
         CancellationToken cancellationToken)
@@ -158,7 +158,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
                       tax_id, notes, payment_term_id, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", vendorId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("display_name", request.DisplayName.Trim());
         command.Parameters.AddWithValue("default_currency_code", request.DefaultCurrencyCode.Trim().ToUpperInvariant());
         command.Parameters.AddWithValue("email", (object?)NormalizeOptional(request.Email) ?? DBNull.Value);
@@ -195,7 +195,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
 
     private static VendorRecord Map(NpgsqlDataReader reader) => new(
         reader.GetGuid(reader.GetOrdinal("id")),
-        reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         reader.GetString(reader.GetOrdinal("entity_number")),
         reader.GetString(reader.GetOrdinal("display_name")),
         reader.GetString(reader.GetOrdinal("default_currency_code")),

@@ -36,14 +36,14 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         const string sql = """
             create table if not exists open_item_adjustment_account_mappings (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               book_id uuid null,
               open_item_type text not null,
               adjustment_type text not null,
               adjustment_account_id uuid not null,
               is_active boolean not null default true,
-              created_by_user_id uuid null,
-              updated_by_user_id uuid null,
+              created_by_user_id char(7) null,
+              updated_by_user_id char(7) null,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
               deactivated_at timestamptz null
@@ -51,8 +51,8 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
 
             alter table open_item_adjustment_account_mappings
               add column if not exists book_id uuid null,
-              add column if not exists created_by_user_id uuid null,
-              add column if not exists updated_by_user_id uuid null,
+              add column if not exists created_by_user_id char(7) null,
+              add column if not exists updated_by_user_id char(7) null,
               add column if not exists deactivated_at timestamptz null;
 
             do $$
@@ -307,7 +307,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
             deactivateCommand.Parameters.AddWithValue("book_id", request.BookId.HasValue ? request.BookId.Value : DBNull.Value);
             deactivateCommand.Parameters.AddWithValue("open_item_type", openItemType);
             deactivateCommand.Parameters.AddWithValue("adjustment_type", adjustmentType);
-            deactivateCommand.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? request.ActorId.Value : DBNull.Value);
+            deactivateCommand.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? (object)request.ActorId.Value.Value : DBNull.Value);
             await deactivateCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -372,7 +372,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         command.Parameters.AddWithValue("open_item_type", openItemType);
         command.Parameters.AddWithValue("adjustment_type", adjustmentType);
         command.Parameters.AddWithValue("adjustment_account_id", request.AdjustmentAccountId);
-        command.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? request.ActorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? (object)request.ActorId.Value.Value : DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -392,7 +392,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
             new
             {
                 mapping.MappingId,
-                CompanyId = mapping.CompanyId.Value,
+                CompanyId = mapping.CompanyId,
                 mapping.BookId,
                 mapping.OpenItemType,
                 mapping.AdjustmentType,
@@ -411,7 +411,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
     public async Task<OpenItemAdjustmentAccountMappingTransitionResult?> DeactivateAsync(
         CompanyId companyId,
         Guid mappingId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken);
@@ -435,7 +435,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         {
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("mapping_id", mappingId);
-            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
 
             if (await command.ExecuteScalarAsync(cancellationToken) is null)
             {
@@ -458,7 +458,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
             new
             {
                 mapping.MappingId,
-                CompanyId = mapping.CompanyId.Value,
+                CompanyId = mapping.CompanyId,
                 mapping.BookId,
                 mapping.OpenItemType,
                 mapping.AdjustmentType,
@@ -697,7 +697,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid mappingId,
-        Guid? actorId,
+        UserId? actorId,
         string action,
         object payload,
         CancellationToken cancellationToken)
@@ -737,7 +737,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
-        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", mappingId);
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload, JsonOptions));
@@ -747,7 +747,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
     private static OpenItemAdjustmentAccountMappingRecord ReadMapping(NpgsqlDataReader reader) =>
         new(
             reader.GetGuid(reader.GetOrdinal("id")),
-            new CompanyId(reader.GetGuid(reader.GetOrdinal("company_id"))),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.IsDBNull(reader.GetOrdinal("book_id")) ? null : reader.GetGuid(reader.GetOrdinal("book_id")),
             reader.IsDBNull(reader.GetOrdinal("book_code")) ? null : reader.GetString(reader.GetOrdinal("book_code")),
             reader.IsDBNull(reader.GetOrdinal("accounting_standard")) ? null : reader.GetString(reader.GetOrdinal("accounting_standard")),
@@ -758,8 +758,8 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
             reader.GetString(reader.GetOrdinal("adjustment_account_name")),
             reader.GetString(reader.GetOrdinal("adjustment_account_root_type")),
             reader.GetBoolean(reader.GetOrdinal("is_active")),
-            reader.IsDBNull(reader.GetOrdinal("created_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("created_by_user_id")),
-            reader.IsDBNull(reader.GetOrdinal("updated_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("updated_by_user_id")),
+            reader.IsDBNull(reader.GetOrdinal("created_by_user_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id"))),
+            reader.IsDBNull(reader.GetOrdinal("updated_by_user_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("updated_by_user_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")),
             reader.IsDBNull(reader.GetOrdinal("deactivated_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("deactivated_at")));

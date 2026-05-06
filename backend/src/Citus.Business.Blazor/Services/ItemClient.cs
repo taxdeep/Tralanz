@@ -112,7 +112,7 @@ public sealed class ItemClient(HttpClient httpClient, ILogger<ItemClient> logger
 
 public sealed record ItemSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ItemCode,
     string Name,
     string? Description,

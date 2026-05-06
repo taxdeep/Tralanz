@@ -55,7 +55,7 @@ public sealed class InvoicePdfRendererSmokeTests
     {
         var review = new InvoiceReviewProjection(
             DisplayNumber: "INV-2026-000001",
-            EntityNumber: "EN20260000000001",
+            EntityNumber: "EN20260000A",
             DocumentDate: new DateOnly(2026, 04, 28),
             DueDate: new DateOnly(2026, 05, 28),
             Status: "posted",
@@ -71,8 +71,8 @@ public sealed class InvoicePdfRendererSmokeTests
             ]);
 
         var company = new CompanyProfileSnapshot(
-            Id: Guid.NewGuid(),
-            EntityNumber: "EN20260000000001",
+            Id: CompanyId.FromOrdinal(1),
+            EntityNumber: "EN20260000A",
             LegalName: "Tralanz Studio Ltd.",
             Email: "ops@tralanz.com",
             Phone: "+1-604-555-0100",
@@ -86,7 +86,7 @@ public sealed class InvoicePdfRendererSmokeTests
         var customer = new CustomerRecord(
             Id: Guid.NewGuid(),
             CompanyId: company.Id,
-            EntityNumber: "EN20260000000002",
+            EntityNumber: "EN20260000B",
             DisplayName: "Acme Co.",
             DefaultCurrencyCode: "CAD",
             Email: "billing@acme.example",
@@ -119,7 +119,7 @@ public sealed class InvoicePdfRendererSmokeTests
     {
         Issuer = new InvoiceIssuerSummary(
             CompanyName: "Tralanz Studio Ltd.",
-            CompanyCode: "EN20260000000001",
+            CompanyCode: "EN20260000A",
             AddressBlock: "1 Main St." + Environment.NewLine + "Vancouver, BC" + Environment.NewLine + "V6B 1A1 Canada",
             Email: "ops@tralanz.com",
             Phone: "+1-604-555-0100"),
@@ -130,7 +130,7 @@ public sealed class InvoicePdfRendererSmokeTests
             Phone: null),
         Header = new InvoiceHeaderSummary(
             DisplayNumber: "INV-2026-000001",
-            EntityNumber: "EN20260000000001",
+            EntityNumber: "EN20260000A",
             DocumentDate: new DateOnly(2026, 04, 28),
             DueDate: new DateOnly(2026, 05, 28),
             Status: "posted",

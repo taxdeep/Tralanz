@@ -55,9 +55,9 @@ public sealed class PostgresCustomerDepositSchemaBootstrap
 
             create table if not exists customer_deposits (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null,
+              company_id char(7) not null,
               customer_id uuid not null,
-              entity_number text not null unique,
+              entity_number char(11) not null unique,
               display_number text not null,
               status text not null default 'open',
               deposit_date date not null,
@@ -73,7 +73,7 @@ public sealed class PostgresCustomerDepositSchemaBootstrap
               source_receive_payment_id uuid null,
               memo text null,
               posted_at timestamptz null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
               constraint customer_deposits_status_chk

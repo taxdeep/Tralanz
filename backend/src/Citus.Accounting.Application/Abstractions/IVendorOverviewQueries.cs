@@ -17,12 +17,12 @@ namespace Citus.Accounting.Application.Abstractions;
 public interface IVendorOverviewQueries
 {
     Task<VendorFinancialSummary> GetFinancialSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<VendorTransactionRow>> ListTransactionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         VendorTransactionFilter filter,
         CancellationToken cancellationToken);

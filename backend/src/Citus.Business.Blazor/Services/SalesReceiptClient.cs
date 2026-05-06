@@ -12,7 +12,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class SalesReceiptClient(HttpClient httpClient, ILogger<SalesReceiptClient> logger)
 {
     public async Task<IReadOnlyList<SalesReceiptSummaryDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeDrafts = true,
         CancellationToken cancellationToken = default)
     {
@@ -31,7 +31,7 @@ public sealed class SalesReceiptClient(HttpClient httpClient, ILogger<SalesRecei
 
     public async Task<SalesReceiptRecordDto?> GetByIdAsync(
         Guid documentId,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -53,7 +53,7 @@ public sealed class SalesReceiptClient(HttpClient httpClient, ILogger<SalesRecei
 
 public sealed record SalesReceiptRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

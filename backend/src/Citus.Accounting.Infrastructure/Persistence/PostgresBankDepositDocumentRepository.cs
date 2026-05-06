@@ -176,7 +176,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
         return new BankDepositDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(depositNumber),
             status,
             depositDate,
@@ -261,10 +261,10 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
-                8,
+                5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
                     connection, transaction, year, cancellationToken),
                 cancellationToken);
@@ -272,14 +272,14 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
             depositNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "bank-deposit-display",
                 "BD-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "bank_deposits",
                     "deposit_number",
                     "^BD-[0-9]+$",
@@ -334,7 +334,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
         else
         {
             (entityNumber, depositNumber) = await LoadIdentityAsync(
-                connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+                connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             var total = Round6(draft.Items.Sum(i => i.Amount));
 
@@ -499,7 +499,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
     private static async Task<(string EntityNumber, string DepositNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -513,7 +513,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
             limit 1;
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

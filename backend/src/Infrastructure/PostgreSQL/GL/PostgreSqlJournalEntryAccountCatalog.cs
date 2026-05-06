@@ -12,7 +12,7 @@ public sealed class PostgreSqlJournalEntryAccountCatalog : IJournalEntryAccountC
     }
 
     public async Task<IReadOnlyList<JournalEntryAccountOption>> ListManualPostingAccountsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -33,7 +33,7 @@ public sealed class PostgreSqlJournalEntryAccountCatalog : IJournalEntryAccountC
               and allow_manual_posting = true
             order by code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var options = new List<JournalEntryAccountOption>();
 

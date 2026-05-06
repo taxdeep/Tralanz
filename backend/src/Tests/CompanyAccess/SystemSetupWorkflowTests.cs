@@ -10,7 +10,7 @@ public sealed class SystemSetupWorkflowTests
     {
         var store = new StubStore();
         var workflow = new SystemSetupWorkflow(store);
-        var userId = Guid.NewGuid();
+        var userId = UserId.FromOrdinal(101);
 
         var saved = await workflow.SaveNumberDisplayModeAsync(userId, "dot-comma", CancellationToken.None);
 
@@ -30,13 +30,13 @@ public sealed class SystemSetupWorkflowTests
     private sealed class StubStore : ISystemSetupStore
     {
         public SystemSetupPreference Preference { get; private set; } =
-            new(Guid.Empty, NumberDisplayModeDefaults.Default, DateTimeOffset.UtcNow);
+            new(UserId.FromOrdinal(0), NumberDisplayModeDefaults.Default, DateTimeOffset.UtcNow);
 
-        public Task<SystemSetupPreference> GetAsync(Guid userId, CancellationToken cancellationToken) =>
+        public Task<SystemSetupPreference> GetAsync(UserId userId, CancellationToken cancellationToken) =>
             Task.FromResult(Preference with { UserId = userId });
 
         public Task<SystemSetupPreference> SaveAsync(
-            Guid userId,
+            UserId userId,
             NumberDisplayMode numberDisplayMode,
             CancellationToken cancellationToken)
         {

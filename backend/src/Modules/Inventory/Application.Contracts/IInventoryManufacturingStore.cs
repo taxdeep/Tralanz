@@ -3,7 +3,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IInventoryManufacturingStore
 {
     Task<InventoryManufacturingDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InventoryBomSummary> UpsertBomAsync(

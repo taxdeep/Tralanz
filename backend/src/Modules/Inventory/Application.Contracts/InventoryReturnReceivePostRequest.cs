@@ -1,8 +1,8 @@
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryReturnReceivePostRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid CustomerId,
     DateOnly PostingDate,
     Guid ShipmentDocumentId,

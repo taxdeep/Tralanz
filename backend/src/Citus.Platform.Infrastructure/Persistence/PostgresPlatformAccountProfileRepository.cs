@@ -28,7 +28,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private const string MfaRecoveryApprovedStatus = "approved";
     private readonly PlatformTotpSecretProtector totpSecretProtector = new(configuration);
 
-    public async Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<PlatformAccountProfileSummary?> GetAsync(UserId userId, CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken);
 
@@ -36,7 +36,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         return await BuildSummaryAsync(connection, null, userId, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(UserId userId, CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken);
 
@@ -64,7 +64,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             order by al.created_at desc
             limit 20;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue(
             "actions",
             new[]
@@ -109,7 +109,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     public async Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken);
@@ -161,7 +161,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                 );
                 """;
             command.Parameters.AddWithValue("id", enrollmentId);
-            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("user_id", userId.Value);
             command.Parameters.AddWithValue("status", TotpPendingEnrollmentStatus);
             command.Parameters.AddWithValue("secret_base32", protectedSecretBase32);
             command.Parameters.AddWithValue("created_at", startedAtUtc);
@@ -210,7 +210,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     public async Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
-        Guid userId,
+        UserId userId,
         Guid enrollmentId,
         string verificationCode,
         CancellationToken cancellationToken)
@@ -286,7 +286,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                     updated_at = now()
                 where id = @user_id;
                 """;
-            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("user_id", userId.Value);
             command.Parameters.AddWithValue("mfa_mode", TotpAppMfaMode);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -345,7 +345,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     public async Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
-        Guid userId,
+        UserId userId,
         string displayName,
         CancellationToken cancellationToken)
     {
@@ -372,7 +372,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                     updated_at = now()
                 where id = @user_id;
                 """;
-            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("user_id", userId.Value);
             command.Parameters.AddWithValue("display_name", displayName);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -400,7 +400,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     public async Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
-        Guid userId,
+        UserId userId,
         string mfaMode,
         CancellationToken cancellationToken)
     {
@@ -443,7 +443,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                     updated_at = now()
                 where id = @user_id;
                 """;
-            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("user_id", userId.Value);
             command.Parameters.AddWithValue("mfa_mode", mfaMode);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -471,7 +471,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     public async Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
-        Guid userId,
+        UserId userId,
         string reason,
         CancellationToken cancellationToken)
     {
@@ -527,8 +527,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                 );
                 """;
             command.Parameters.AddWithValue("id", requestId);
-            command.Parameters.AddWithValue("user_id", userId);
-            command.Parameters.AddWithValue("requested_by_user_id", userId);
+            command.Parameters.AddWithValue("user_id", userId.Value);
+            command.Parameters.AddWithValue("requested_by_user_id", userId.Value);
             command.Parameters.AddWithValue("current_mfa_mode", current.MfaMode);
             command.Parameters.AddWithValue("status", MfaRecoveryRequestedStatus);
             command.Parameters.AddWithValue("request_reason", reason);
@@ -574,7 +574,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     public Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
-        Guid userId,
+        UserId userId,
         string newEmail,
         CancellationToken cancellationToken) =>
         RequestVerificationAsync(
@@ -586,7 +586,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             cancellationToken);
 
     public Task<PlatformProfileChangeRequestResult?> RequestPasswordChangeAsync(
-        Guid userId,
+        UserId userId,
         string newPasswordHash,
         CancellationToken cancellationToken) =>
         RequestVerificationAsync(
@@ -599,7 +599,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             newPasswordHash);
 
     public async Task<PlatformProfileChangeConfirmationResult?> ConfirmEmailChangeAsync(
-        Guid userId,
+        UserId userId,
         string verificationCode,
         CancellationToken cancellationToken)
     {
@@ -641,7 +641,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                     updated_at = now()
                 where id = @user_id;
                 """;
-            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("user_id", userId.Value);
             command.Parameters.AddWithValue("email", newEmail);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -679,7 +679,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     public async Task<PlatformProfileChangeConfirmationResult?> ConfirmPasswordChangeAsync(
-        Guid userId,
+        UserId userId,
         string verificationCode,
         CancellationToken cancellationToken)
     {
@@ -718,7 +718,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                     updated_at = now()
                 where id = @user_id;
                 """;
-            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("user_id", userId.Value);
             command.Parameters.AddWithValue("password_hash", newPasswordHash);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -751,7 +751,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     private async Task<PlatformProfileChangeRequestResult?> RequestVerificationAsync(
-        Guid userId,
+        UserId userId,
         string purpose,
         string? destinationOverride,
         string payloadSql,
@@ -820,7 +820,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                 );
                 """;
             insertVerification.Parameters.AddWithValue("id", verificationCodeId);
-            insertVerification.Parameters.AddWithValue("user_id", userId);
+            insertVerification.Parameters.AddWithValue("user_id", userId.Value);
             insertVerification.Parameters.AddWithValue("purpose", purpose);
             insertVerification.Parameters.AddWithValue("destination", destination);
             insertVerification.Parameters.AddWithValue("code_hash", verificationCodeHash);
@@ -858,7 +858,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             insertDispatch.Parameters.AddWithValue("id", dispatchId);
             insertDispatch.Parameters.AddWithValue("notification_type", notificationType);
             insertDispatch.Parameters.AddWithValue("destination", destination);
-            insertDispatch.Parameters.AddWithValue("account_id", userId);
+            insertDispatch.Parameters.AddWithValue("account_id", userId.Value);
             insertDispatch.Parameters.AddWithValue("verification_code_id", verificationCodeId);
             insertDispatch.Parameters.AddWithValue("purpose", purpose);
             insertDispatch.Parameters.AddWithValue("masked_destination", maskedDestination);
@@ -965,7 +965,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               add column if not exists mfa_mode text not null default 'none';
 
             create table if not exists sysadmin_accounts (
-              id uuid primary key default gen_random_uuid(),
+              id char(7) primary key,
               email text not null unique,
               display_name text not null default '',
               password_hash text not null,
@@ -977,18 +977,18 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
 
             create table if not exists account_mfa_recovery_requests (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
-              requested_by_user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
+              requested_by_user_id char(7) not null references users(id) on delete cascade,
               current_mfa_mode text not null,
               status text not null default 'requested',
               request_reason text not null,
               requested_at timestamptz not null default now(),
               review_reason text,
               reviewed_at timestamptz,
-              reviewed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              reviewed_by_sysadmin_account_id char(7),
               execution_reason text,
               executed_at timestamptz,
-              executed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              executed_by_sysadmin_account_id char(7),
               constraint account_mfa_recovery_requests_status_chk check (status in ('requested', 'approved', 'rejected', 'executed'))
             );
 
@@ -1001,7 +1001,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
 
             create table if not exists account_mfa_totp_enrollments (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               status text not null,
               secret_base32 text not null,
               created_at timestamptz not null default now(),
@@ -1015,7 +1015,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
 
             create table if not exists account_verification_codes (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               purpose text not null,
               destination text,
               code_hash text not null,
@@ -1046,9 +1046,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
 
             create table if not exists audit_logs (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid null,
+              company_id char(7) null,
               actor_type text not null,
-              actor_id uuid null,
+              actor_id char(7) null,
               entity_type text not null,
               entity_id uuid not null,
               action text not null,
@@ -1111,7 +1111,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private async Task<PlatformAccountProfileSummary?> BuildSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var record = await ReadProfileRecordAsync(connection, transaction, userId, cancellationToken);
@@ -1169,7 +1169,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task InsertAuditAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid actorUserId,
+        UserId actorUserId,
         string action,
         string payloadSql,
         Action<NpgsqlCommand> configureParameters,
@@ -1204,8 +1204,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             );
             """;
         command.Parameters.AddWithValue("id", auditId ?? Guid.NewGuid());
-        command.Parameters.AddWithValue("actor_id", actorUserId);
-        command.Parameters.AddWithValue("entity_id", actorUserId);
+        command.Parameters.AddWithValue("actor_id", actorUserId.Value);
+        command.Parameters.AddWithValue("entity_id", actorUserId.Value);
         command.Parameters.AddWithValue("action", action);
         configureParameters(command);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1215,7 +1215,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         NpgsqlConnection connection,
         Guid dispatchId,
         Guid requestAuditId,
-        Guid actorUserId,
+        UserId actorUserId,
         string action,
         string destination,
         PlatformNotificationSendResult sendResult,
@@ -1270,7 +1270,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         NpgsqlConnection connection,
         Guid dispatchId,
         Guid requestAuditId,
-        Guid actorUserId,
+        UserId actorUserId,
         string action,
         string destination,
         PlatformNotificationSendResult sendResult,
@@ -1319,7 +1319,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task AppendVerificationDeliveryAuditAsync(
         NpgsqlConnection connection,
         Guid requestAuditId,
-        Guid actorUserId,
+        UserId actorUserId,
         string action,
         string destination,
         PlatformNotificationSendResult sendResult,
@@ -1358,8 +1358,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("actor_id", actorUserId);
-        command.Parameters.AddWithValue("entity_id", actorUserId);
+        command.Parameters.AddWithValue("actor_id", actorUserId.Value);
+        command.Parameters.AddWithValue("entity_id", actorUserId.Value);
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("request_audit_id", requestAuditId);
         command.Parameters.AddWithValue("provider_key", sendResult.ProviderKey);
@@ -1373,7 +1373,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task EnsureEmailAvailableAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         string email,
         CancellationToken cancellationToken)
     {
@@ -1388,7 +1388,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             limit 1;
             """;
         command.Parameters.AddWithValue("email", email);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         var existing = await command.ExecuteScalarAsync(cancellationToken);
         if (existing is not null)
         {
@@ -1399,7 +1399,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task InvalidateActiveVerificationsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         string purpose,
         CancellationToken cancellationToken)
     {
@@ -1413,7 +1413,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               and purpose = @purpose
               and consumed_at is null;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("purpose", purpose);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1479,7 +1479,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task<AccountRecord?> ReadAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1497,7 +1497,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             from users
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1506,7 +1506,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         }
 
         return new AccountRecord(
-            reader.GetGuid(reader.GetOrdinal("id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("username")).Trim(),
             reader.GetString(reader.GetOrdinal("display_name")).Trim(),
@@ -1520,7 +1520,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task<Guid?> ReadActiveMfaRecoveryRequestAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1534,7 +1534,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             order by requested_at desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         return await command.ExecuteScalarAsync(cancellationToken) switch
         {
@@ -1546,7 +1546,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private async Task<TotpEnrollmentRecord?> ReadTotpEnrollmentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         Guid enrollmentId,
         CancellationToken cancellationToken)
     {
@@ -1569,7 +1569,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             for update;
             """;
         command.Parameters.AddWithValue("id", enrollmentId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1596,7 +1596,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task RevokePendingTotpEnrollmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1609,7 +1609,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             where user_id = @user_id
               and status = @pending_status;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("pending_status", TotpPendingEnrollmentStatus);
         command.Parameters.AddWithValue("revoked_status", TotpRevokedEnrollmentStatus);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1618,7 +1618,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task RevokeActiveTotpEnrollmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         Guid keepEnrollmentId,
         CancellationToken cancellationToken)
     {
@@ -1633,7 +1633,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               and id <> @keep_enrollment_id
               and status in (@pending_status, @active_status);
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("keep_enrollment_id", keepEnrollmentId);
         command.Parameters.AddWithValue("pending_status", TotpPendingEnrollmentStatus);
         command.Parameters.AddWithValue("active_status", TotpActiveEnrollmentStatus);
@@ -1644,7 +1644,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task RevokeAllTotpEnrollmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1657,7 +1657,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             where user_id = @user_id
               and status in (@pending_status, @active_status);
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("pending_status", TotpPendingEnrollmentStatus);
         command.Parameters.AddWithValue("active_status", TotpActiveEnrollmentStatus);
         command.Parameters.AddWithValue("revoked_status", TotpRevokedEnrollmentStatus);
@@ -1687,7 +1687,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task<ProfileRecord?> ReadProfileRecordAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1798,7 +1798,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             ) password_change on true
             where u.id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1807,7 +1807,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         }
 
         return new ProfileRecord(
-            reader.GetGuid(reader.GetOrdinal("id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("username")).Trim(),
             reader.GetString(reader.GetOrdinal("display_name")).Trim(),
@@ -1878,7 +1878,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private static async Task<VerificationRecord?> ReadActiveVerificationAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         string purpose,
         CancellationToken cancellationToken)
     {
@@ -1901,7 +1901,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             limit 1
             for update;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("purpose", purpose);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2114,7 +2114,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     }
 
     private sealed record AccountRecord(
-        Guid Id,
+        UserId Id,
         string Email,
         string Username,
         string DisplayName,
@@ -2123,7 +2123,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string MfaMode);
 
     private sealed record ProfileRecord(
-        Guid Id,
+        UserId Id,
         string Email,
         string Username,
         string DisplayName,

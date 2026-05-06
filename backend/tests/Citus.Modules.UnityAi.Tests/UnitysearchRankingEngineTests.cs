@@ -8,9 +8,9 @@ namespace Citus.Modules.UnityAi.Tests;
 
 public sealed class UnitysearchRankingEngineTests
 {
-    private static readonly Guid CompanyA = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid CompanyB = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private static readonly Guid UserA = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private static readonly CompanyId CompanyA = CompanyId.FromOrdinal(1);
+    private static readonly CompanyId CompanyB = CompanyId.FromOrdinal(2);
+    private static readonly UserId UserA = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task ExactMatch_RanksFirst()

@@ -28,7 +28,7 @@ public sealed class PayBillDraftPreparationWorkflow : IPayBillDraftPreparationWo
     }
 
     public async Task<IReadOnlyList<PayBillOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -109,7 +109,7 @@ public sealed class PayBillDraftPreparationWorkflow : IPayBillDraftPreparationWo
     }
 
     private async Task EnsurePhaseOneSameCurrencySettlementAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string documentCurrencyCode,
         IReadOnlyList<PayBillDraftLine> lines,
@@ -140,8 +140,8 @@ public sealed class PayBillDraftPreparationWorkflow : IPayBillDraftPreparationWo
     }
 
     private async Task<FxRateResolution> ResolveFxAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string baseCurrencyCode,
         string documentCurrencyCode,
         DateOnly paymentDate,

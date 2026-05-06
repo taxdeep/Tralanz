@@ -9,9 +9,9 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
     [Fact]
     public async Task SavePermissionsAsync_AppendsMembershipPermissionAuditLog()
     {
-        var companyId = Guid.NewGuid();
-        var ownerUserId = Guid.NewGuid();
-        var targetUserId = Guid.NewGuid();
+        var companyId = CompanyId.FromOrdinal(101);
+        var ownerUserId = UserId.FromOrdinal(101);
+        var targetUserId = UserId.FromOrdinal(102);
         var ownerMembershipId = Guid.NewGuid();
         var targetMembershipId = Guid.NewGuid();
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -63,9 +63,9 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
 
     private static async Task SeedAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid ownerUserId,
-        Guid targetUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
+        UserId targetUserId,
         Guid ownerMembershipId,
         Guid targetMembershipId,
         CancellationToken cancellationToken)
@@ -79,7 +79,7 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
 
             create table if not exists audit_logs (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               actor_type text not null,
               actor_id uuid null,
               entity_type text not null,
@@ -106,10 +106,10 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
               'active'
             );
 
-            insert into users (id, email, username, password_hash, is_active)
+            insert into users (id, email, username, password_hash, status)
             values
-              (@owner_user_id, @owner_email, 'owner.audit', 'hashed-password', true),
-              (@target_user_id, @target_email, 'member.audit', 'hashed-password', true);
+              (@owner_user_id, @owner_email, 'owner.audit', 'hashed-password', 'active'),
+              (@target_user_id, @target_email, 'member.audit', 'hashed-password', 'active');
 
             insert into company_memberships (
               id,
@@ -123,10 +123,10 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
               (@owner_membership_id, @company_id, @owner_user_id, 'owner', '[]'::jsonb, true),
               (@target_membership_id, @company_id, @target_user_id, 'user', '["reports"]'::jsonb, true);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", BuildEntityNumber());
-        command.Parameters.AddWithValue("owner_user_id", ownerUserId);
-        command.Parameters.AddWithValue("target_user_id", targetUserId);
+        command.Parameters.AddWithValue("owner_user_id", ownerUserId.Value);
+        command.Parameters.AddWithValue("target_user_id", targetUserId.Value);
         command.Parameters.AddWithValue("owner_membership_id", ownerMembershipId);
         command.Parameters.AddWithValue("target_membership_id", targetMembershipId);
         command.Parameters.AddWithValue("owner_email", $"{ownerUserId:N}@example.test");
@@ -136,9 +136,9 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
 
     private static async Task CleanupAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid ownerUserId,
-        Guid targetUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
+        UserId targetUserId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
@@ -157,14 +157,14 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
             delete from users
             where id = any(@user_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_ids", new[] { ownerUserId, targetUserId });
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_ids", new[] { ownerUserId.Value, targetUserId.Value });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string BuildEntityNumber()
     {
-        var numeric = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 100_000_000;
-        return $"EN2099{numeric:D8}";
+        var ordinal = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 60_466_176;
+        return EntityNumber.Create(2099, ordinal).Value;
     }
 }

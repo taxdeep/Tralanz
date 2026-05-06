@@ -597,7 +597,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 GetOptionalGuid(payload, "OriginalApplicationCreatedByUserId"),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
                 reader.GetString(reader.GetOrdinal("actor_type")),
-                reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+                reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : (UserId?)UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
                 GetRequiredString(payload, "ReversalMode")));
         }
 
@@ -752,7 +752,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         CompanyId companyId,
         string sourceType,
         Guid documentId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var preview = await GetLifecycleActionPreviewAsync(
@@ -876,7 +876,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             command.Parameters.AddWithValue("id", requestId);
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
-            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
             command.Parameters.AddWithValue("entity_type", "source_document_reverse_request");
             command.Parameters.AddWithValue("entity_id", requestId);
             command.Parameters.AddWithValue("action", "reverse_requested");
@@ -970,7 +970,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
@@ -1047,7 +1047,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
@@ -1192,7 +1192,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
@@ -1359,7 +1359,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         Guid compensationJournalEntryId,
         string compensationJournalEntryDisplayNumber,
         string compensationSourceType,
@@ -1633,7 +1633,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
@@ -1684,7 +1684,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                     reader.IsDBNull(reader.GetOrdinal("settlement_fx_rate")) ? null : reader.GetDecimal(reader.GetOrdinal("settlement_fx_rate")),
                     reader.IsDBNull(reader.GetOrdinal("realized_fx_amount")) ? null : reader.GetDecimal(reader.GetOrdinal("realized_fx_amount")),
                     reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
-                    reader.IsDBNull(reader.GetOrdinal("created_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("created_by_user_id"))));
+                    reader.IsDBNull(reader.GetOrdinal("created_by_user_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id")))));
             }
         }
 
@@ -1748,7 +1748,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         SettlementApplicationSnapshot application,
         CancellationToken cancellationToken)
     {
@@ -1779,7 +1779,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
-        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", application.Id);
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(new
         {
@@ -2157,7 +2157,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         return new ReverseRequestTransitionEvent(
             reader.GetString(reader.GetOrdinal("actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : (UserId?)UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")));
     }
 
@@ -2197,7 +2197,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         return new ReverseRequestCompletionEvent(
             reader.GetString(reader.GetOrdinal("actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : (UserId?)UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
             GetRequiredGuid(payload, "CompensationJournalEntryId"),
             GetRequiredString(payload, "CompensationJournalEntryDisplayNumber"),
@@ -2213,7 +2213,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         return new ReverseRequestRequestedEvent(
             requestId,
-            new CompanyId(reader.GetGuid(reader.GetOrdinal("company_id"))),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             GetRequiredString(payload, "SourceType"),
             documentId,
             GetRequiredString(payload, "EntityNumber"),
@@ -2229,7 +2229,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             GetRequiredBoolean(payload, "IsAvailable"),
             GetRequiredString(payload, "Reason"),
             reader.GetString(reader.GetOrdinal("actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : (UserId?)UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")));
     }
 
@@ -2237,7 +2237,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         string action,
         object payload,
         CancellationToken cancellationToken)
@@ -2269,7 +2269,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
-        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_type", "source_document_reverse_request");
         command.Parameters.AddWithValue("entity_id", requestId);
         command.Parameters.AddWithValue("action", action);
@@ -3230,7 +3230,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
             scope,
-            companyId.Value,
+            companyId,
             controlRole,
             transactionCurrencyCode,
             baseCurrencyCode,
@@ -3319,7 +3319,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
             scope,
-            companyId.Value,
+            companyId,
             controlRole,
             transactionCurrencyCode,
             baseCurrencyCode,
@@ -3679,17 +3679,17 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         bool IsAvailable,
         string Reason,
         string ActorType,
-        Guid? ActorId,
+        UserId? ActorId,
         DateTimeOffset RequestedAt);
 
     private sealed record ReverseRequestTransitionEvent(
         string ActorType,
-        Guid? ActorId,
+        UserId? ActorId,
         DateTimeOffset OccurredAt);
 
     private sealed record ReverseRequestCompletionEvent(
         string ActorType,
-        Guid? ActorId,
+        UserId? ActorId,
         DateTimeOffset OccurredAt,
         Guid CompensationJournalEntryId,
         string CompensationJournalEntryDisplayNumber,
@@ -3707,7 +3707,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         decimal? SettlementFxRate,
         decimal? RealizedFxAmount,
         DateTimeOffset CreatedAt,
-        Guid? CreatedByUserId);
+        UserId? CreatedByUserId);
 
     private sealed record SettlementUnapplyResult(
         int ApplicationCount,

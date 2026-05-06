@@ -18,7 +18,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
     }
 
     public async Task<InventoryAvailabilityDashboard> GetAvailabilityDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter filter,
         CancellationToken cancellationToken)
     {
@@ -58,7 +58,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -68,7 +68,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var value = await command.ExecuteScalarAsync(cancellationToken);
         if (value is not string code || string.IsNullOrWhiteSpace(code))
@@ -81,7 +81,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -112,7 +112,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
               and manage_inventory_method = 'manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -120,7 +120,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -147,7 +147,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -166,7 +166,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -174,7 +174,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -187,7 +187,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryItemAvailabilitySummary>> LoadAvailabilityRowsAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -245,7 +245,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
             where b.company_id = @company_id
             order by i.item_code asc, w.warehouse_code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var rows = new List<InventoryItemAvailabilitySummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -274,7 +274,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryLedgerEntrySummary>> LoadRecentLedgerEntriesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter? filter,
         CancellationToken cancellationToken)
     {
@@ -314,7 +314,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
             order by l.posting_date desc, l.created_at desc
             limit @limit;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", filter?.ItemId ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("warehouse_id", filter?.WarehouseId ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("limit", filter is null ? 50 : 200);
@@ -348,7 +348,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static Task<InventoryAvailabilityLedgerDrillDown?> BuildDrillDownAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter filter,
         IReadOnlyList<InventoryManagedItemSummary> activeItems,
         IReadOnlyList<InventoryManagedWarehouseSummary> activeWarehouses,
@@ -388,7 +388,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<InventoryAvailabilityLedgerDrillDown?> BuildDrillDownAsyncCore(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter filter,
         string? itemDisplayText,
         string? warehouseDisplayText,

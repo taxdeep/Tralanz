@@ -10,8 +10,8 @@ public sealed class BusinessRequestContractGuardTests
         var guard = new BusinessRequestContractGuard();
         var session = new BusinessSessionContext
         {
-            UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d"),
-            ActiveCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc")
+            UserId = UserId.FromOrdinal(1),
+            ActiveCompanyId = CompanyId.FromOrdinal(1)
         };
 
         var result = guard.Validate(
@@ -34,15 +34,15 @@ public sealed class BusinessRequestContractGuardTests
         var guard = new BusinessRequestContractGuard();
         var session = new BusinessSessionContext
         {
-            UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d"),
-            ActiveCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc")
+            UserId = UserId.FromOrdinal(1),
+            ActiveCompanyId = CompanyId.FromOrdinal(1)
         };
 
         var result = guard.Validate(
         [
             new GuardProbeRequest
             {
-                CompanyId = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6"),
+                CompanyId = CompanyId.FromOrdinal(2),
                 UserId = session.UserId
             }
         ],
@@ -59,8 +59,8 @@ public sealed class BusinessRequestContractGuardTests
         var guard = new BusinessRequestContractGuard();
         var session = new BusinessSessionContext
         {
-            UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d"),
-            ActiveCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc")
+            UserId = UserId.FromOrdinal(1),
+            ActiveCompanyId = CompanyId.FromOrdinal(1)
         };
 
         var result = guard.Validate(
@@ -68,7 +68,7 @@ public sealed class BusinessRequestContractGuardTests
             new GuardProbeRequest
             {
                 CompanyId = session.ActiveCompanyId,
-                UserId = Guid.Parse("64f5186b-b854-49ec-a473-2f14554ecf77")
+                UserId = UserId.FromOrdinal(2)
             }
         ],
         session);
@@ -80,8 +80,8 @@ public sealed class BusinessRequestContractGuardTests
 
     public sealed class GuardProbeRequest
     {
-        public Guid CompanyId { get; init; }
+        public CompanyId CompanyId { get; init; }
 
-        public Guid UserId { get; init; }
+        public UserId UserId { get; init; }
     }
 }

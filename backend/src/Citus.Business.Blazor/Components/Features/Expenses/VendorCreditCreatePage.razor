@@ -55,7 +55,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">Vendor</label>
                     <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                       UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                       UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search vendors…"
                                        Take="8"
                                        SourceRoute="/vendor-credits/new"
@@ -141,7 +141,7 @@
                             <td>
                                 @* Same expense filter as ExpenseCreatePage line-Category — never surface revenue accounts on a vendor credit. *@
                                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                Context="vendor_credit.line.category"
                                                AllowedRootTypes="expense,asset,cost_of_sales"
                                                SelectedId="@line.AccountId"
@@ -182,7 +182,7 @@
             <h2 class="citus-panel__title">Summary</h2>
             <table class="citus-keyvalue">
                 <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
+                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
                     <tr><th>Lines</th><td>@_lines.Count</td></tr>
                     <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
                     <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>

@@ -12,7 +12,7 @@ namespace Tests.AR;
 
 public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
 
     [Fact]
@@ -22,9 +22,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var creditNoteRepository = new PostgresCreditNoteDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid creditNoteId = Guid.Empty;
         var createdUser = false;
@@ -38,8 +38,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var invoiceResult = await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -59,8 +59,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var updatedInvoiceResult = await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     invoiceId,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 20),
@@ -76,7 +76,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
             Assert.Equal(invoiceId, updatedInvoiceResult.DocumentId);
 
-            var invoice = await invoiceRepository.GetForPostingAsync(new CompanyId(CompanyId), invoiceId, CancellationToken.None);
+            var invoice = await invoiceRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), invoiceId, CancellationToken.None);
             Assert.NotNull(invoice);
             Assert.Equal("draft", invoice!.Status);
             Assert.Equal(75m, invoice.TotalAmount);
@@ -85,8 +85,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var creditNoteResult = await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 15),
                     new DateOnly(2026, 5, 15),
@@ -103,7 +103,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = creditNoteResult.DocumentId;
             Assert.StartsWith("CN-", creditNoteResult.DisplayNumber, StringComparison.Ordinal);
 
-            var creditNote = await creditNoteRepository.GetForPostingAsync(new CompanyId(CompanyId), creditNoteId, CancellationToken.None);
+            var creditNote = await creditNoteRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), creditNoteId, CancellationToken.None);
             Assert.NotNull(creditNote);
             Assert.Equal("draft", creditNote!.Status);
             Assert.Equal(30m, creditNote.TotalAmount);
@@ -125,9 +125,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var creditNoteRepository = new PostgresCreditNoteDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid creditNoteId = Guid.Empty;
         var createdUser = false;
@@ -141,8 +141,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -162,8 +162,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 invoiceRepository.SaveDraftAsync(
                     new InvoiceDraftSaveModel(
                         invoiceId,
-                        new CompanyId(CompanyId),
-                        new UserId(userId),
+                        CompanyId.FromOrdinal(1),
+                        UserId.FromOrdinal(1),
                         CustomerId,
                         new DateOnly(2026, 4, 14),
                         new DateOnly(2026, 5, 20),
@@ -181,8 +181,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = (await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 15),
                     new DateOnly(2026, 5, 15),
@@ -202,8 +202,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 creditNoteRepository.SaveDraftAsync(
                     new CreditNoteDraftSaveModel(
                         creditNoteId,
-                        new CompanyId(CompanyId),
-                        new UserId(userId),
+                        CompanyId.FromOrdinal(1),
+                        UserId.FromOrdinal(1),
                         CustomerId,
                         new DateOnly(2026, 4, 15),
                         new DateOnly(2026, 5, 21),
@@ -235,9 +235,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -251,8 +251,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -277,7 +277,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var review = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -312,9 +312,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid fxSnapshotId = Guid.Empty;
@@ -339,8 +339,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -375,7 +375,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 fxSnapshotId: fxSnapshotId);
 
             var sourceReview = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -434,9 +434,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.NewGuid();
         Guid openItemId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
@@ -494,7 +494,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var sourceReview = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -549,9 +549,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.NewGuid();
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -623,7 +623,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -648,7 +648,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("header-only", originalReviewBeforeReverse.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -658,7 +658,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId!.Value,
@@ -669,7 +669,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -689,7 +689,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -710,7 +710,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "receive_payments", receivePaymentId, CancellationToken.None);
             var openItem = await GetArOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -733,7 +733,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 receivePaymentId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -807,9 +807,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -823,8 +823,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -849,7 +849,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var review = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -880,9 +880,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -896,8 +896,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -922,7 +922,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var preview = await reviewRepository.GetLifecyclePreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -949,9 +949,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -965,8 +965,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -991,7 +991,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var preview = await reviewRepository.GetLifecycleActionPreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 "void_document",
@@ -1021,9 +1021,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -1037,8 +1037,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1063,7 +1063,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptVoidAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1092,9 +1092,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -1108,8 +1108,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1134,7 +1134,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1150,7 +1150,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt.OutcomeCode);
 
             var request = await reviewRepository.GetLatestReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1162,10 +1162,10 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("reverse_document", request.ActionCode);
             Assert.Equal("draft", request.RequestStatus);
             Assert.Equal("user", request.RequestedByActorType);
-            Assert.Equal(userId, request.RequestedByActorId);
+            Assert.Equal((object?)userId, (object?)request.RequestedByActorId);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1176,11 +1176,11 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
             Assert.Equal("submitted", submitResult.Request.RequestStatus);
             Assert.Equal("user", submitResult.Request.SubmittedByActorType);
-            Assert.Equal(userId, submitResult.Request.SubmittedByActorId);
+            Assert.Equal((object?)userId, (object?)submitResult.Request.SubmittedByActorId);
             Assert.NotNull(submitResult.Request.SubmittedAt);
 
             var readiness = await reviewRepository.GetReverseRequestApplyReadinessAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1193,7 +1193,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recording_only", readiness.ExecutionMode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1208,7 +1208,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("execution_request_recorded", executeResult.OutcomeCode);
             Assert.Equal("execution_requested", executeResult.Request.ExecutionStatus);
             Assert.Equal("user", executeResult.Request.ExecutionRequestedByActorType);
-            Assert.Equal(userId, executeResult.Request.ExecutionRequestedByActorId);
+            Assert.Equal((object?)userId, (object?)executeResult.Request.ExecutionRequestedByActorId);
             Assert.NotNull(executeResult.Request.ExecutionRequestedAt);
         }
         finally
@@ -1229,9 +1229,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -1248,8 +1248,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1301,7 +1301,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var blockerReverseAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -1312,7 +1312,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(blockerReverseAttempt.RequestId);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1323,7 +1323,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(attempt.RequestId);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1334,7 +1334,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1350,7 +1350,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("AR settlement/application trail", executeResult.Message);
 
             var plan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1364,7 +1364,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked", plan.Steps[2].StepStatus);
 
             var blockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1409,9 +1409,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid compensationJournalEntryId = Guid.Empty;
@@ -1427,8 +1427,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1464,7 +1464,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1474,7 +1474,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1485,7 +1485,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1506,7 +1506,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1564,9 +1564,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid compensationJournalEntryId = Guid.Empty;
@@ -1593,8 +1593,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1641,7 +1641,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 baseCurrencyCode: "USD");
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1667,7 +1667,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("snapshot", originalReviewBeforeReverse.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1677,7 +1677,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1688,7 +1688,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1709,7 +1709,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1734,7 +1734,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "invoices", invoiceId, CancellationToken.None);
             var openItemStatus = await GetArOpenItemStatusAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1807,9 +1807,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.NewGuid();
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -1864,7 +1864,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -1882,7 +1882,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("posted", originalReviewBeforeReverse.Status);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -1892,7 +1892,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId!.Value,
@@ -1903,7 +1903,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -1923,7 +1923,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -1944,7 +1944,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "receive_payments", receivePaymentId, CancellationToken.None);
             var openItem = await GetArOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -1967,7 +1967,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 receivePaymentId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -2038,9 +2038,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2060,8 +2060,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2128,7 +2128,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var invoiceAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -2138,7 +2138,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", invoiceAttempt!.OutcomeCode);
 
             var invoiceSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId!.Value,
@@ -2149,7 +2149,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", invoiceSubmit!.OutcomeCode);
 
             var blockedInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2161,14 +2161,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedInvoiceExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None));
             Assert.Equal(receivePaymentId, initialBlocker.SettlementSourceId);
 
             var paymentAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -2176,7 +2176,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(paymentAttempt);
 
             var paymentSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt!.RequestId!.Value,
@@ -2186,7 +2186,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", paymentSubmit!.OutcomeCode);
 
             var paymentExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2205,7 +2205,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             receivePaymentCompensationJournalEntryId = paymentLifecycle.CompensationJournalEntryId;
 
             var paymentCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2221,14 +2221,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             settlementApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyInvoicePlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2239,7 +2239,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyInvoicePlan.OverallStatus);
 
             var readyInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2258,7 +2258,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceCompensationJournalEntryId = invoiceLifecycle.CompensationJournalEntryId;
 
             var invoiceCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2315,9 +2315,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2348,8 +2348,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2441,7 +2441,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var invoiceAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -2451,7 +2451,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", invoiceAttempt!.OutcomeCode);
 
             var invoiceSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId!.Value,
@@ -2462,7 +2462,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", invoiceSubmit!.OutcomeCode);
 
             var blockedInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2474,14 +2474,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedInvoiceExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None));
             Assert.Equal(receivePaymentId, initialBlocker.SettlementSourceId);
 
             var paymentAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -2489,7 +2489,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(paymentAttempt);
 
             var paymentSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt!.RequestId!.Value,
@@ -2499,7 +2499,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", paymentSubmit!.OutcomeCode);
 
             var paymentExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2518,7 +2518,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             receivePaymentCompensationJournalEntryId = paymentLifecycle.CompensationJournalEntryId;
 
             var paymentCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2534,14 +2534,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             settlementApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyInvoicePlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2552,7 +2552,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyInvoicePlan.OverallStatus);
 
             var readyInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2571,7 +2571,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceCompensationJournalEntryId = invoiceLifecycle.CompensationJournalEntryId;
 
             var invoiceCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2596,8 +2596,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var invoiceCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, invoiceCompensationJournalEntryId, CancellationToken.None);
             var paymentReview = await journalEntryReviewStore.GetAsync(CompanyId, receivePaymentJournalEntryId, CancellationToken.None);
             var paymentCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, receivePaymentCompensationJournalEntryId, CancellationToken.None);
-            var invoiceSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "invoice", invoiceId, CancellationToken.None);
-            var paymentSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "receive_payment", receivePaymentId, CancellationToken.None);
+            var invoiceSourceReview = await reviewRepository.GetSourceDocumentAsync(CompanyId.FromOrdinal(1), "invoice", invoiceId, CancellationToken.None);
+            var paymentSourceReview = await reviewRepository.GetSourceDocumentAsync(CompanyId.FromOrdinal(1), "receive_payment", receivePaymentId, CancellationToken.None);
 
             Assert.Equal("reversed", invoiceStatus);
             Assert.Equal("reversed", receivePaymentStatus);
@@ -2662,9 +2662,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid creditNoteId = Guid.Empty;
         Guid invoiceId = Guid.NewGuid();
         Guid creditApplicationId = Guid.Empty;
@@ -2687,8 +2687,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = (await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2774,7 +2774,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var creditNoteAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 userId,
@@ -2783,7 +2783,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", creditNoteAttempt!.OutcomeCode);
 
             var creditNoteSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId!.Value,
@@ -2793,7 +2793,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditNoteSubmit!.OutcomeCode);
 
             var blockedCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2804,7 +2804,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedCreditNoteExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None));
@@ -2812,7 +2812,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal(sourceCreditOpenItemId, initialBlocker.TargetOpenItemId);
 
             var creditApplicationAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 userId,
@@ -2820,7 +2820,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(creditApplicationAttempt);
 
             var creditApplicationSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt!.RequestId!.Value,
@@ -2830,7 +2830,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditApplicationSubmit!.OutcomeCode);
 
             var creditApplicationExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -2848,7 +2848,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditApplicationCompensationJournalEntryId = creditApplicationLifecycle.CompensationJournalEntryId;
 
             var creditApplicationCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -2864,14 +2864,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             targetApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyCreditNotePlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2882,7 +2882,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyCreditNotePlan.OverallStatus);
 
             var readyCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2900,7 +2900,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteCompensationJournalEntryId = creditNoteLifecycle.CompensationJournalEntryId;
 
             var creditNoteCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2961,9 +2961,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid creditNoteId = Guid.Empty;
         Guid invoiceId = Guid.NewGuid();
         Guid creditApplicationId = Guid.Empty;
@@ -2997,8 +2997,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = (await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -3114,7 +3114,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var creditNoteAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 userId,
@@ -3123,7 +3123,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", creditNoteAttempt!.OutcomeCode);
 
             var creditNoteSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId!.Value,
@@ -3133,7 +3133,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditNoteSubmit!.OutcomeCode);
 
             var blockedCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -3144,14 +3144,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedCreditNoteExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None));
             Assert.Equal(creditApplicationId, initialBlocker.SettlementSourceId);
 
             var creditApplicationAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 userId,
@@ -3159,7 +3159,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(creditApplicationAttempt);
 
             var creditApplicationSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt!.RequestId!.Value,
@@ -3169,7 +3169,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditApplicationSubmit!.OutcomeCode);
 
             var creditApplicationExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -3187,7 +3187,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditApplicationCompensationJournalEntryId = creditApplicationLifecycle.CompensationJournalEntryId;
 
             var creditApplicationCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -3203,14 +3203,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             targetApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -3228,7 +3228,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteCompensationJournalEntryId = creditNoteLifecycle.CompensationJournalEntryId;
 
             var creditNoteCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -3314,9 +3314,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid revenueAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
         Guid creditNoteId = Guid.NewGuid();
         Guid invoiceId = Guid.NewGuid();
         Guid creditApplicationId = Guid.Empty;
@@ -3391,7 +3391,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 userId,
@@ -3401,7 +3401,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 attempt.RequestId!.Value,
@@ -3412,7 +3412,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 attempt.RequestId.Value,
@@ -3432,7 +3432,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 attempt.RequestId.Value,
@@ -3464,7 +3464,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 creditApplicationId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 CancellationToken.None);
@@ -3533,10 +3533,10 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             postingEngine,
             new PostgresUnitOfWork(connectionFactory, executionContextAccessor));
 
-        Guid revenueAccountId = Guid.Empty;
-        Guid writeOffAccountId = Guid.Empty;
-        Guid receivableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid revenueAccountId = default;
+        Guid writeOffAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid openItemId = Guid.Empty;
         Guid adjustmentJournalEntryId = Guid.Empty;
@@ -3552,8 +3552,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -3578,12 +3578,12 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 amount: 55m);
 
             var before = await openItemRepository.GetDrillDownAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 
             var preview = await openItemRepository.GetAdjustmentPreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "write_off",
                 new DateOnly(2026, 4, 15),
@@ -3591,7 +3591,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await openItemRepository.RequestAdjustmentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "write_off",
                 new DateOnly(2026, 4, 15),
@@ -3601,26 +3601,26 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var latestDraft = await openItemRepository.GetLatestAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 
             var submitResult = await openItemRepository.SubmitAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt!.Request!.RequestId,
                 userId,
                 CancellationToken.None);
 
             var readiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
                 CancellationToken.None);
 
             var executionPlan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
@@ -3629,10 +3629,10 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var invalidAdjustmentAccount = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => adjustmentHandler.HandleAsync(
                     new PostArOpenItemAdjustmentCommand(
-                        new CompanyId(CompanyId),
+                        CompanyId.FromOrdinal(1),
                         openItemId,
                         attempt.Request.RequestId,
-                        new UserId(userId),
+                        UserId.FromOrdinal(1),
                         receivableControlAccountId,
                         new DateOnly(2026, 4, 15),
                         null),
@@ -3640,10 +3640,10 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
             var executionResult = await adjustmentHandler.HandleAsync(
                 new PostArOpenItemAdjustmentCommand(
-                    new CompanyId(CompanyId),
+                    CompanyId.FromOrdinal(1),
                     openItemId,
                     attempt.Request.RequestId,
-                    new UserId(userId),
+                    UserId.FromOrdinal(1),
                     writeOffAccountId,
                     new DateOnly(2026, 4, 15),
                     null),
@@ -3651,7 +3651,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             adjustmentJournalEntryId = executionResult.JournalEntryId ?? Guid.Empty;
 
             var followUpAttempt = await openItemRepository.RequestAdjustmentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "write_off",
                 new DateOnly(2026, 4, 15),
@@ -3661,7 +3661,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var after = await openItemRepository.GetDrillDownAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 
@@ -3733,7 +3733,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateReceivableControlAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var accountId = Guid.NewGuid();
@@ -3777,7 +3777,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", $"AR-{entityNumber[^6..]}");
         command.Parameters.AddWithValue("name", $"Smoke Accounts Receivable {entityNumber[^6..]}");
@@ -3791,7 +3791,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateRevenueAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var accountId = Guid.NewGuid();
@@ -3833,7 +3833,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", $"REV-{entityNumber[^6..]}");
         command.Parameters.AddWithValue("name", "Smoke Revenue");
@@ -3843,7 +3843,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateExpenseAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var accountId = Guid.NewGuid();
@@ -3885,7 +3885,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", $"EXP-{entityNumber[^6..]}");
         command.Parameters.AddWithValue("name", "Smoke Write-Off Expense");
@@ -3893,7 +3893,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         return accountId;
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgresConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -3901,21 +3901,21 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         await using var findCommand = connection.CreateCommand();
         findCommand.CommandText = "select id from users order by created_at limit 1;";
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is string userIdString && UserId.TryParse(userIdString, out var userId))
         {
             return (userId, false);
         }
 
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """
-            insert into users (id, email, username, password_hash, is_active)
-            values (@id, @email, @username, @password_hash, true);
+            insert into users (id, email, username, password_hash, status)
+            values (@id, @email, @username, @password_hash, 'active');
             """;
-        insertCommand.Parameters.AddWithValue("id", newUserId);
-        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId:N}@citus.local");
-        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId:N}");
+        insertCommand.Parameters.AddWithValue("id", newUserId.Value);
+        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId.Value}@citus.local");
+        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId.Value}");
         insertCommand.Parameters.AddWithValue("password_hash", "smoke-hash");
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         return (newUserId, true);
@@ -3928,8 +3928,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var year = DateTime.UtcNow.Year;
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            var seed = Random.Shared.Next(0, 100_000_000);
-            var candidate = $"EN{year}{seed:00000000}";
+            var seed = Random.Shared.Next(0, 60_466_176);
+            var candidate = EntityNumber.Create(year, seed).Value;
             if (!await EntityNumberExistsAsync(connectionFactory, candidate, cancellationToken))
             {
                 return candidate;
@@ -4027,8 +4027,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> InsertJournalEntryAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string sourceType,
         Guid sourceId,
         string status,
@@ -4091,22 +4091,22 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", journalEntryId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
         command.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
         command.Parameters.AddWithValue("idempotency_key", $"smoke-je:{sourceType}:{sourceId:D}");
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return journalEntryId;
     }
 
     private static async Task<Guid> InsertJournalEntryWithBalancedLinesAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string sourceType,
         Guid sourceId,
         Guid debitAccountId,
@@ -4185,7 +4185,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 );
                 """;
             headerCommand.Parameters.AddWithValue("id", journalEntryId);
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("display_number", displayNumber);
             headerCommand.Parameters.AddWithValue("source_type", sourceType);
@@ -4199,7 +4199,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("transaction_amount", totalTransactionAmount);
             headerCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             headerCommand.Parameters.AddWithValue("idempotency_key", $"smoke-je-balanced:{sourceType}:{sourceId:D}");
-            headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            headerCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             var snapshotParameter = headerCommand.Parameters.Add("fx_rate_snapshot_id", NpgsqlTypes.NpgsqlDbType.Uuid);
             snapshotParameter.Value = (object?)fxSnapshotId ?? DBNull.Value;
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -4347,7 +4347,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
     private static async Task InsertJournalEntryLineAsync(
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         Guid lineId,
         int lineNumber,
@@ -4391,7 +4391,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", lineId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
         command.Parameters.AddWithValue("line_number", lineNumber);
         command.Parameters.AddWithValue("account_id", accountId);
@@ -4406,7 +4406,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
     private static async Task InsertLedgerEntryAsync(
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         Guid journalEntryLineId,
         Guid accountId,
@@ -4451,7 +4451,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
         command.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
         command.Parameters.AddWithValue("account_id", accountId);
@@ -4467,7 +4467,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         PostgresConnectionFactory connectionFactory,
         string baseCurrencyCode,
         string quoteCurrencyCode,
-        Guid userId,
+        UserId userId,
         DateOnly requestedDate,
         decimal rate,
         CancellationToken cancellationToken)
@@ -4520,14 +4520,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", snapshotId);
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);
         command.Parameters.AddWithValue("effective_date", requestedDate);
         command.Parameters.AddWithValue("rate", rate);
         command.Parameters.AddWithValue("provider_key", $"smoke-{quoteCurrencyCode.ToLowerInvariant()}-{snapshotId:N}");
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         return snapshotId;
@@ -4576,7 +4576,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
               and requested_date = @requested_date
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);
@@ -4645,7 +4645,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateArOpenItemForSourceAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string sourceType,
         Guid sourceId,
@@ -4703,7 +4703,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", openItemId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -4736,8 +4736,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> InsertReceivePaymentAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid customerId,
         Guid bankAccountId,
         Guid targetArOpenItemId,
@@ -4804,7 +4804,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 );
                 """;
             headerCommand.Parameters.AddWithValue("id", receivePaymentId);
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("payment_number", $"RP-{entityNumber[^6..]}");
             headerCommand.Parameters.AddWithValue("customer_id", customerId);
@@ -4815,7 +4815,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("fx_rate", fxRate);
             headerCommand.Parameters.AddWithValue("fx_source", fxSource);
             headerCommand.Parameters.AddWithValue("total_amount", totalAmount);
-            headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            headerCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -4839,7 +4839,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                   @applied_amount_tx
                 );
                 """;
-            lineCommand.Parameters.AddWithValue("company_id", companyId);
+            lineCommand.Parameters.AddWithValue("company_id", companyId.Value);
             lineCommand.Parameters.AddWithValue("receive_payment_id", receivePaymentId);
             lineCommand.Parameters.AddWithValue("target_ar_open_item_id", targetArOpenItemId);
             lineCommand.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
@@ -4852,8 +4852,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> InsertCreditApplicationAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid customerId,
         Guid sourceCreditArOpenItemId,
         Guid targetInvoiceArOpenItemId,
@@ -4908,7 +4908,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 );
                 """;
             headerCommand.Parameters.AddWithValue("id", creditApplicationId);
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("application_number", $"CA-{entityNumber[^6..]}");
             headerCommand.Parameters.AddWithValue("customer_id", customerId);
@@ -4916,7 +4916,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
             headerCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
             headerCommand.Parameters.AddWithValue("total_amount", totalAmount);
-            headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            headerCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -4942,7 +4942,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                   @applied_amount_tx
                 );
                 """;
-            lineCommand.Parameters.AddWithValue("company_id", companyId);
+            lineCommand.Parameters.AddWithValue("company_id", companyId.Value);
             lineCommand.Parameters.AddWithValue("credit_application_id", creditApplicationId);
             lineCommand.Parameters.AddWithValue("source_credit_ar_open_item_id", sourceCreditArOpenItemId);
             lineCommand.Parameters.AddWithValue("target_invoice_ar_open_item_id", targetInvoiceArOpenItemId);
@@ -4956,12 +4956,12 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateSettlementApplicationForOpenItemAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         string targetOpenItemType,
         Guid targetOpenItemId,
         string sourceType,
         Guid sourceId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken,
         decimal appliedAmountTx = 1m,
         decimal appliedAmountBase = 1m)
@@ -4998,7 +4998,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", applicationId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("application_type", sourceType);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -5006,19 +5006,19 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
         command.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
         command.Parameters.AddWithValue("applied_amount_base", appliedAmountBase);
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return applicationId;
     }
 
     private static async Task<Guid> ApplySettlementApplicationForOpenItemAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         string targetOpenItemType,
         Guid targetOpenItemId,
         string sourceType,
         Guid sourceId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken,
         decimal appliedAmountTx = 1m,
         decimal appliedAmountBase = 1m)
@@ -5049,7 +5049,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             where company_id = @company_id
               and id = @target_open_item_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
         command.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
         command.Parameters.AddWithValue("applied_amount_base", appliedAmountBase);
@@ -5181,11 +5181,11 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool createdUser,
         CancellationToken cancellationToken)
     {
-        if (!createdUser || userId == Guid.Empty)
+        if (!createdUser || userId.Value is null)
         {
             return;
         }
@@ -5193,7 +5193,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "delete from users where id = @user_id;";
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

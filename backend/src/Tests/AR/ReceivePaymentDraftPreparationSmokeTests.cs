@@ -13,7 +13,7 @@ namespace Tests.AR;
 
 public sealed class ReceivePaymentDraftPreparationSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
 
     [Fact]
@@ -32,8 +32,8 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
             new StubFxRateStore());
 
         Guid documentId = Guid.Empty;
-        Guid bankAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        Guid bankAccountId = default;
+        UserId userId = default;
         var createdUser = false;
         var originalLock = await ReadCustomerLockAsync(connectionFactory, CustomerId, CancellationToken.None);
 
@@ -119,7 +119,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
 
     private static async Task<Guid> CreateBankAccountAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var accountId = Guid.NewGuid();
@@ -161,7 +161,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", $"BANK-{entityNumber[^6..]}");
         command.Parameters.AddWithValue("name", "Smoke Test Bank");
@@ -169,7 +169,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
         return accountId;
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -183,12 +183,12 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
             limit 1;
             """;
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is string userIdString && UserId.TryParse(userIdString, out var userId))
         {
             return (userId, false);
         }
 
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """
@@ -197,19 +197,19 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
               email,
               username,
               password_hash,
-              is_active
+              status
             )
             values (
               @id,
               @email,
               @username,
               @password_hash,
-              true
+              'active'
             );
             """;
-        insertCommand.Parameters.AddWithValue("id", newUserId);
-        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId:N}@citus.local");
-        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId:N}");
+        insertCommand.Parameters.AddWithValue("id", newUserId.Value);
+        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId.Value}@citus.local");
+        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId.Value}");
         insertCommand.Parameters.AddWithValue("password_hash", "smoke-hash");
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         return (newUserId, true);
@@ -222,8 +222,8 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
         var year = DateTime.UtcNow.Year;
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            var seed = Random.Shared.Next(0, 100_000_000);
-            var candidate = $"EN{year}{seed:00000000}";
+            var seed = Random.Shared.Next(0, 60_466_176);
+            var candidate = EntityNumber.Create(year, seed).Value;
             if (!await EntityNumberExistsAsync(connectionFactory, candidate, cancellationToken))
             {
                 return candidate;
@@ -373,11 +373,11 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool created,
         CancellationToken cancellationToken)
     {
-        if (!created || userId == Guid.Empty)
+        if (!created || userId.Value is null)
         {
             return;
         }
@@ -389,7 +389,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
             delete from users
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -404,7 +404,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
     private sealed class StubFxRateStore : IFxRateStore
     {
         public Task<IReadOnlyList<FxSnapshotRecord>> ListCompanySnapshotsAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -420,7 +420,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FxMarketRateRecord>>([]);
 
         public Task<FxSnapshotRecord?> FindCompanySnapshotByIdAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid snapshotId,
             CancellationToken cancellationToken) => Task.FromResult<FxSnapshotRecord?>(null);
 
@@ -429,7 +429,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
             CancellationToken cancellationToken) => Task.FromResult<FxMarketRateRecord?>(null);
 
         public Task<FxSnapshotRecord?> FindLatestCompanySnapshotAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -455,8 +455,8 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
             CancellationToken cancellationToken) => Task.FromResult(marketRates);
 
         public Task<FxSnapshotRecord> UpsertCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -486,8 +486,8 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
                 DateTimeOffset.UtcNow));
 
         public Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,

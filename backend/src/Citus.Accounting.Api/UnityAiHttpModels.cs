@@ -2,7 +2,7 @@ namespace Citus.Accounting.Api;
 
 public sealed record UnitysearchUsageHttpRequest
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
     public string? SessionId { get; init; }
     public string Context { get; init; } = string.Empty;
     public string EntityType { get; init; } = string.Empty;

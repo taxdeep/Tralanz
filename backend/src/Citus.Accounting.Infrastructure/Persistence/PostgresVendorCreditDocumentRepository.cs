@@ -204,7 +204,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
         return new VendorCreditDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(vendorCreditNumber),
             status,
             vendorCreditDate,
@@ -289,24 +289,24 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
-                8,
+                5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken),
                 cancellationToken);
 
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "vendor-credit-display",
                 "VC-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "vendor_credits",
                     "vendor_credit_number",
                     "^VC-[0-9]+$",
@@ -374,7 +374,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
         }
         else
         {
-            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
@@ -570,7 +570,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -584,7 +584,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

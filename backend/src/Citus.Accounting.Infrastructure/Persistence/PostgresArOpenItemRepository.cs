@@ -29,7 +29,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         ArgumentNullException.ThrowIfNull(document);
 
         await EnsureOpenItemAsync(
-            companyId: document.CompanyId.Value,
+            companyId: document.CompanyId,
             partyId: document.PartyId,
             sourceType: "invoice",
             sourceId: document.Id,
@@ -50,7 +50,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         ArgumentNullException.ThrowIfNull(document);
 
         await EnsureOpenItemAsync(
-            companyId: document.CompanyId.Value,
+            companyId: document.CompanyId,
             partyId: document.PartyId,
             sourceType: "credit_note",
             sourceId: document.Id,
@@ -175,7 +175,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         string adjustmentType,
         DateOnly adjustmentDate,
         decimal? adjustmentAmountTx,
-        Guid? actorId,
+        UserId? actorId,
         string? reason,
         CancellationToken cancellationToken)
     {
@@ -277,7 +277,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
             request.RequestId,
             request.OpenItemId,
             request.OpenItemType,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.AdjustmentType,
             request.AdjustmentDate,
             request.RequestStatus,
@@ -335,7 +335,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
             command.Parameters.AddWithValue("id", requestId);
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("actor_type", request.RequestedByActorType);
-            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
             command.Parameters.AddWithValue("entity_type", "open_item_adjustment_request");
             command.Parameters.AddWithValue("entity_id", requestId);
             command.Parameters.AddWithValue("action", "open_item_adjustment_requested");
@@ -375,7 +375,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -447,7 +447,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -519,7 +519,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -615,7 +615,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -824,7 +824,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
 
         var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
             scope,
-            companyId.Value,
+            companyId,
             "accounts_receivable",
             snapshot.DocumentCurrencyCode,
             snapshot.BaseCurrencyCode,
@@ -864,7 +864,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         Guid journalEntryId,
         string journalEntryDisplayNumber,
         DateTimeOffset executedAt,
@@ -996,7 +996,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
     }
 
     private async Task EnsureOpenItemAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid partyId,
         string sourceType,
         Guid sourceId,
@@ -1025,7 +1025,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
                          limit 1;
                          """))
         {
-            existingCommand.Parameters.AddWithValue("company_id", companyId);
+            existingCommand.Parameters.AddWithValue("company_id", companyId.Value);
             existingCommand.Parameters.AddWithValue("source_type", sourceType);
             existingCommand.Parameters.AddWithValue("source_id", sourceId);
 
@@ -1077,7 +1077,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
             """);
 
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", partyId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -1528,21 +1528,21 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
             requiresApproval,
             approvalStatus,
             reader.IsDBNull(reader.GetOrdinal("approved_actor_type")) ? null : reader.GetString(reader.GetOrdinal("approved_actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("approved_actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("approved_actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("approved_actor_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("approved_actor_id"))),
             approvedAt,
             reader.IsDBNull(reader.GetOrdinal("rejected_actor_type")) ? null : reader.GetString(reader.GetOrdinal("rejected_actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("rejected_actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("rejected_actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("rejected_actor_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("rejected_actor_id"))),
             rejectedAt,
             requestStatus,
             executionStatus,
             reader.GetString(reader.GetOrdinal("requested_actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("requested_actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("requested_actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("requested_actor_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("requested_actor_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("requested_at")),
             reader.IsDBNull(reader.GetOrdinal("submitted_actor_type")) ? null : reader.GetString(reader.GetOrdinal("submitted_actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("submitted_actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("submitted_actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("submitted_actor_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("submitted_actor_id"))),
             submittedAt,
             reader.IsDBNull(reader.GetOrdinal("cancelled_actor_type")) ? null : reader.GetString(reader.GetOrdinal("cancelled_actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("cancelled_actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("cancelled_actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("cancelled_actor_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("cancelled_actor_id"))),
             cancelledAt,
             root.TryGetProperty("Reason", out var reasonProperty) && reasonProperty.ValueKind == JsonValueKind.String
                 ? reasonProperty.GetString()
@@ -1553,7 +1553,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         string action,
         object payload,
         CancellationToken cancellationToken)
@@ -1585,7 +1585,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
-        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_type", "open_item_adjustment_request");
         command.Parameters.AddWithValue("entity_id", requestId);
         command.Parameters.AddWithValue("action", action);
@@ -1595,7 +1595,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
 
     private static OpenItemAdjustmentRequestTransitionResult? ValidateAdjustmentApprovalAuthority(
         OpenItemAdjustmentRequestRecord request,
-        Guid? actorId,
+        UserId? actorId,
         string transitionCode,
         string openItemLabel)
     {
@@ -1956,7 +1956,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         DateOnly asOfDate)
     {
         var suffix = BitConverter.ToUInt32(request.RequestId.ToByteArray(), 0) % 100_000_000;
-        var entityNumber = new EntityNumber($"EN{asOfDate.Year}{suffix:00000000}");
+        var entityNumber = EntityNumber.Parse($"EN{asOfDate.Year}{suffix:00000000}");
         var displayNumber = new DocumentNumber($"AR-ADJ-{request.RequestId:N}"[..19]);
 
         return new OpenItemAdjustmentDocument(

@@ -1,8 +1,8 @@
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryPurchaseReceiptPostRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     DateOnly PostingDate,
     string TransactionCurrencyCode,

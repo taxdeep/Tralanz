@@ -3,18 +3,18 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IReceiptInventoryValuationStore
 {
     Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken);
 
     Task<ReceiptInventoryValuationSummary?> GetReceiptValuationSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> GetReceiptValuationSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken);
 }

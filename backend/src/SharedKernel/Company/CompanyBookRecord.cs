@@ -1,8 +1,10 @@
+using SharedKernel.Identity;
+
 namespace SharedKernel.Company;
 
 public sealed record class CompanyBookRecord(
     Guid BookId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string BookCode,
     string BookName,
     string BookRole,

@@ -3,7 +3,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IInventoryAdjustmentStore
 {
     Task<InventoryAdjustmentDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InventoryAdjustmentSummary> RequestWriteOffAsync(

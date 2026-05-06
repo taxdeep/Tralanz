@@ -20,7 +20,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     }
 
     public async Task<InventoryAdjustmentDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var summary = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -115,12 +115,12 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_type", documentType);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", now);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -266,11 +266,11 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -344,9 +344,9 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                   and company_id = @company_id;
                 """;
             command.Parameters.AddWithValue("id", request.DocumentId);
-            command.Parameters.AddWithValue("company_id", request.CompanyId);
+            command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             command.Parameters.AddWithValue("approved_at", DateTimeOffset.UtcNow);
-            command.Parameters.AddWithValue("approved_by_user_id", request.UserId);
+            command.Parameters.AddWithValue("approved_by_user_id", request.UserId.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -492,9 +492,9 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                       and company_id = @company_id;
                     """;
                 command.Parameters.AddWithValue("id", request.DocumentId);
-                command.Parameters.AddWithValue("company_id", request.CompanyId);
+                command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 command.Parameters.AddWithValue("posted_at", now);
-                command.Parameters.AddWithValue("posted_by_user_id", request.UserId);
+                command.Parameters.AddWithValue("posted_by_user_id", request.UserId.Value);
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -513,7 +513,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -524,7 +524,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is string baseCurrencyCode && !string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -538,7 +538,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -570,7 +570,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and manage_inventory_method = 'manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -578,7 +578,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -618,7 +618,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<Dictionary<Guid, InventoryManagedItemSummary>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken)
     {
@@ -654,7 +654,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and is_active = true
               and id = any(@item_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -663,7 +663,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             var item = new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -704,7 +704,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -724,7 +724,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -732,7 +732,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -748,7 +748,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<InventoryManagedWarehouseSummary?> LoadWarehouseAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid warehouseId,
         CancellationToken cancellationToken)
     {
@@ -769,7 +769,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and is_active = true
               and id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -780,7 +780,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
         return new InventoryManagedWarehouseSummary(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("warehouse_code")),
             reader.GetString(reader.GetOrdinal("name")),
             reader.IsDBNull(reader.GetOrdinal("description"))
@@ -793,7 +793,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<InventoryAdjustmentSummary>> LoadRecentAdjustmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -843,7 +843,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             order by d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var results = new List<InventoryAdjustmentSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -851,7 +851,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             results.Add(new InventoryAdjustmentSummary(
                 reader.GetGuid(reader.GetOrdinal("document_id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 ParseAdjustmentKind(reader.GetString(reader.GetOrdinal("document_type"))),
@@ -880,7 +880,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<InventoryAdjustmentSummary?> LoadAdjustmentSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -930,7 +930,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               d.posted_at,
               d.memo;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -941,7 +941,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
         return new InventoryAdjustmentSummary(
             reader.GetGuid(reader.GetOrdinal("document_id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("document_number")),
             reader.GetString(reader.GetOrdinal("status")),
             ParseAdjustmentKind(reader.GetString(reader.GetOrdinal("document_type"))),
@@ -967,7 +967,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<AdjustmentDocumentSnapshot?> LoadAdjustmentDocumentForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -989,7 +989,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and id = @document_id
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1000,7 +1000,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
         return new AdjustmentDocumentSnapshot(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("document_number")),
             ParseAdjustmentKind(reader.GetString(reader.GetOrdinal("document_type"))),
             reader.GetString(reader.GetOrdinal("status")),
@@ -1016,7 +1016,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<PendingWriteOffLine>> LoadPendingWriteOffLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -1038,7 +1038,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and document_id = @document_id
             order by line_no asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         var lines = new List<PendingWriteOffLine>();
@@ -1066,7 +1066,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<ItemWarehouseBalanceSnapshot> LoadCurrentBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1083,7 +1083,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1101,7 +1101,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<decimal> LoadCurrentCostBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1116,7 +1116,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1127,7 +1127,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<OpenCostLayer>> LoadOpenCostLayersAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1150,7 +1150,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and remaining_qty > 0
             order by layer_date asc, created_at asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1173,7 +1173,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task InsertDocumentLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid lineDocumentId,
         Guid documentId,
         InventoryAdjustmentLineInput line,
@@ -1195,7 +1195,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             );
             """;
         command.Parameters.AddWithValue("id", lineDocumentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
         command.Parameters.AddWithValue("line_no", line.LineNo);
         command.Parameters.AddWithValue("item_id", line.ItemId);
@@ -1240,7 +1240,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid ledgerEntryId,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         Guid documentId,
@@ -1267,7 +1267,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             );
             """;
         command.Parameters.AddWithValue("id", ledgerEntryId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("document_id", documentId);
@@ -1286,7 +1286,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task InsertCostLayerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         Guid sourceLedgerEntryId,
@@ -1309,7 +1309,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               gen_random_uuid(), @company_id, @item_id, @warehouse_id, @source_ledger_entry_id, @source_document_id, @layer_date, @original_qty, @remaining_qty, @unit_cost_base, @remaining_cost_base, @created_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("source_ledger_entry_id", sourceLedgerEntryId);
@@ -1326,7 +1326,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task AdjustOnHandAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         decimal quantityDelta,
@@ -1347,7 +1347,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               set on_hand_qty = item_warehouse_balances.on_hand_qty + excluded.on_hand_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("quantity_delta", quantityDelta);
@@ -1378,7 +1378,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task InsertLayerConsumptionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid issueLedgerEntryId,
         IssueLayerConsumption consumption,
         DateTimeOffset createdAt,
@@ -1395,7 +1395,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               gen_random_uuid(), @company_id, @issue_ledger_entry_id, @cost_layer_id, @consumed_qty, @consumed_cost_base, @created_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("issue_ledger_entry_id", issueLedgerEntryId);
         command.Parameters.AddWithValue("cost_layer_id", consumption.CostLayerId);
         command.Parameters.AddWithValue("consumed_qty", consumption.ConsumedQty);
@@ -1644,10 +1644,10 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                   add column if not exists approved_at timestamptz null;
 
                 alter table inventory_documents
-                  add column if not exists approved_by_user_id uuid null;
+                  add column if not exists approved_by_user_id char(7) null;
 
                 alter table inventory_documents
-                  add column if not exists posted_by_user_id uuid null;
+                  add column if not exists posted_by_user_id char(7) null;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
             _schemaEnsured = true;
@@ -1664,7 +1664,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
     private sealed record AdjustmentDocumentSnapshot(
         Guid DocumentId,
-        Guid CompanyId,
+        CompanyId CompanyId,
         string DocumentNumber,
         InventoryAdjustmentKind AdjustmentKind,
         string StoredStatus,

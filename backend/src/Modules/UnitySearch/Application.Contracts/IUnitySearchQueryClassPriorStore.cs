@@ -20,8 +20,8 @@ public interface IUnitySearchQueryClassPriorStore
     /// prior (existing rank_boost already encodes a sensible default).
     /// </summary>
     Task RecordSelectAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string queryClassTag,
         string entityType,
         CancellationToken cancellationToken);

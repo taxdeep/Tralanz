@@ -11,7 +11,7 @@ public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogge
     /// interop createObjectURL + click).
     /// </summary>
     public async Task<InvoicePdfDownload?> GetInvoicePdfAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceId,
         CancellationToken cancellationToken = default)
     {
@@ -45,7 +45,7 @@ public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogge
     }
 
     public async Task<InvoiceSendOutcome> SendInvoiceAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceId,
         InvoiceSendRequest request,
         CancellationToken cancellationToken = default)
@@ -74,7 +74,7 @@ public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogge
     }
 
     public async Task<IReadOnlyList<InvoiceSendHistoryEntry>> GetInvoiceSendHistoryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceId,
         CancellationToken cancellationToken = default)
     {
@@ -92,7 +92,7 @@ public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogge
     }
 
     public async Task<AccountingDocumentReviewSummary?> GetDocumentAsync(
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid documentId,
         CancellationToken cancellationToken = default)

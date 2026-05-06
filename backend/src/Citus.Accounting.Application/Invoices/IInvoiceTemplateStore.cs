@@ -16,25 +16,25 @@ public interface IInvoiceTemplateStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<InvoiceTemplate>> ListByCompanyAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InvoiceTemplate?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         CancellationToken cancellationToken);
 
     Task<InvoiceTemplate?> GetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InvoiceTemplate> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         InvoiceTemplateUpsertRequest request,
         CancellationToken cancellationToken);
 
     Task<InvoiceTemplate?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         InvoiceTemplateUpsertRequest request,
         CancellationToken cancellationToken);
@@ -46,14 +46,14 @@ public interface IInvoiceTemplateStore
     /// id wasn't found in the company.
     /// </summary>
     Task<InvoiceTemplate?> SetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         CancellationToken cancellationToken);
 }
 
 public sealed record InvoiceTemplate(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string Name,
     bool IsDefault,
     InvoiceTemplateConfig Config,

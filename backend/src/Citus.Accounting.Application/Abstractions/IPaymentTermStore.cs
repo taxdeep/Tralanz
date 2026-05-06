@@ -10,7 +10,7 @@ namespace Citus.Accounting.Application.Abstractions;
 /// </summary>
 public sealed record PaymentTermRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string Code,
     string Name,
     int NetDays,
@@ -29,28 +29,28 @@ public interface IPaymentTermStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PaymentTermRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken);
 
     Task<PaymentTermRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         CancellationToken cancellationToken);
 
     Task<PaymentTermRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         PaymentTermUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<PaymentTermRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         PaymentTermUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<PaymentTermRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         bool isActive,
         CancellationToken cancellationToken);

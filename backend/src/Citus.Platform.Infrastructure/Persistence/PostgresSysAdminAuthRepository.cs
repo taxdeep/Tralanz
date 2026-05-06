@@ -20,7 +20,7 @@ public sealed class PostgresSysAdminAuthRepository(
             create extension if not exists pgcrypto;
 
             create table if not exists sysadmin_accounts (
-              id uuid primary key default gen_random_uuid(),
+              id char(7) primary key,
               email text not null unique,
               display_name text not null default '',
               password_hash text not null,
@@ -36,7 +36,7 @@ public sealed class PostgresSysAdminAuthRepository(
 
             create table if not exists sysadmin_sessions (
               id uuid primary key default gen_random_uuid(),
-              sysadmin_account_id uuid not null references sysadmin_accounts(id) on delete cascade,
+              sysadmin_account_id char(7) not null references sysadmin_accounts(id) on delete cascade,
               session_token_hash text not null unique,
               expires_at timestamptz not null,
               last_seen_at timestamptz not null default now(),
@@ -201,7 +201,7 @@ public sealed class PostgresSysAdminAuthRepository(
                 "The first SysAdmin account has already been provisioned.");
         }
 
-        var accountId = Guid.NewGuid();
+        var accountId = UserId.FromOrdinal(1);
         var provisionedAtUtc = DateTimeOffset.UtcNow;
 
         await using (var insertCommand = connection.CreateCommand())
@@ -228,7 +228,7 @@ public sealed class PostgresSysAdminAuthRepository(
                   @updated_at
                 );
                 """;
-            insertCommand.Parameters.AddWithValue("id", accountId);
+            insertCommand.Parameters.AddWithValue("id", accountId.Value);
             insertCommand.Parameters.AddWithValue("email", normalizedEmail);
             insertCommand.Parameters.AddWithValue("display_name", normalizedDisplayName);
             insertCommand.Parameters.AddWithValue("password_hash", passwordHasher.HashPassword(password));
@@ -350,7 +350,7 @@ public sealed class PostgresSysAdminAuthRepository(
                   @user_agent
                 );
                 """;
-            insertSession.Parameters.AddWithValue("sysadmin_account_id", account.Id);
+            insertSession.Parameters.AddWithValue("sysadmin_account_id", account.Id.Value);
             insertSession.Parameters.AddWithValue("session_token_hash", sessionTokenHash);
             insertSession.Parameters.AddWithValue("expires_at", expiresAtUtc);
             insertSession.Parameters.AddWithValue("remote_ip", (object?)NormalizeOptional(remoteIp) ?? DBNull.Value);
@@ -368,7 +368,7 @@ public sealed class PostgresSysAdminAuthRepository(
                     updated_at = now()
                 where id = @id;
                 """;
-            updateAccount.Parameters.AddWithValue("id", account.Id);
+            updateAccount.Parameters.AddWithValue("id", account.Id.Value);
             await updateAccount.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -482,12 +482,12 @@ public sealed class PostgresSysAdminAuthRepository(
     }
 
     public async Task<SysAdminSecretRotationResult> RotateSecretAsync(
-        Guid sysAdminAccountId,
+        UserId sysAdminAccountId,
         string currentPassword,
         string newPassword,
         CancellationToken cancellationToken)
     {
-        if (sysAdminAccountId == Guid.Empty)
+        if (sysAdminAccountId.Value is null)
         {
             return FailedRotation("missing_account", "SysAdmin account id is required.");
         }
@@ -539,7 +539,7 @@ public sealed class PostgresSysAdminAuthRepository(
                     updated_at = @updated_at
                 where id = @id;
                 """;
-            updateAccount.Parameters.AddWithValue("id", sysAdminAccountId);
+            updateAccount.Parameters.AddWithValue("id", sysAdminAccountId.Value);
             updateAccount.Parameters.AddWithValue("password_hash", passwordHasher.HashPassword(newPassword));
             updateAccount.Parameters.AddWithValue("updated_at", rotatedAtUtc);
             await updateAccount.ExecuteNonQueryAsync(cancellationToken);
@@ -555,7 +555,7 @@ public sealed class PostgresSysAdminAuthRepository(
                 where sysadmin_account_id = @sysadmin_account_id
                   and revoked_at is null;
                 """;
-            revokeSessions.Parameters.AddWithValue("sysadmin_account_id", sysAdminAccountId);
+            revokeSessions.Parameters.AddWithValue("sysadmin_account_id", sysAdminAccountId.Value);
             await revokeSessions.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -663,7 +663,7 @@ public sealed class PostgresSysAdminAuthRepository(
         }
 
         return new SysAdminAccountRecord(
-            reader.GetGuid(reader.GetOrdinal("id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("display_name")).Trim(),
             reader.GetString(reader.GetOrdinal("password_hash")).Trim(),
@@ -673,7 +673,7 @@ public sealed class PostgresSysAdminAuthRepository(
     private static async Task<SysAdminAccountRecord?> ReadAccountByIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid sysAdminAccountId,
+        UserId sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -689,7 +689,7 @@ public sealed class PostgresSysAdminAuthRepository(
             where id = @id
             for update;
             """;
-        command.Parameters.AddWithValue("id", sysAdminAccountId);
+        command.Parameters.AddWithValue("id", sysAdminAccountId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -698,7 +698,7 @@ public sealed class PostgresSysAdminAuthRepository(
         }
 
         return new SysAdminAccountRecord(
-            reader.GetGuid(reader.GetOrdinal("id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("display_name")).Trim(),
             reader.GetString(reader.GetOrdinal("password_hash")).Trim(),
@@ -760,7 +760,7 @@ public sealed class PostgresSysAdminAuthRepository(
 
         return new SysAdminSessionRecord(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("account_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("account_id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("display_name")).Trim(),
             reader.GetString(reader.GetOrdinal("account_status")).Trim().ToLowerInvariant(),
@@ -771,7 +771,7 @@ public sealed class PostgresSysAdminAuthRepository(
     }
 
     private sealed record SysAdminAccountRecord(
-        Guid Id,
+        UserId Id,
         string Email,
         string DisplayName,
         string PasswordHash,
@@ -779,7 +779,7 @@ public sealed class PostgresSysAdminAuthRepository(
 
     private sealed record SysAdminSessionRecord(
         Guid SessionId,
-        Guid AccountId,
+        UserId AccountId,
         string Email,
         string DisplayName,
         string AccountStatus,
@@ -812,9 +812,9 @@ public sealed class PostgresSysAdminAuthRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string actorType,
-        Guid? actorId,
+        UserId? actorId,
         string entityType,
-        Guid entityId,
+        UserId entityId,
         string action,
         string payload,
         CancellationToken cancellationToken)
@@ -857,9 +857,9 @@ public sealed class PostgresSysAdminAuthRepository(
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("actor_type", actorType);
-        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value.Value : (object)DBNull.Value);
         command.Parameters.AddWithValue("entity_type", entityType);
-        command.Parameters.AddWithValue("entity_id", entityId);
+        command.Parameters.AddWithValue("entity_id", entityId.Value);
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("payload", payload);
         await command.ExecuteNonQueryAsync(cancellationToken);

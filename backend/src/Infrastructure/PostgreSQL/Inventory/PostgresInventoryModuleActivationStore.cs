@@ -24,11 +24,11 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
     }
 
     public async Task<InventoryModuleActivationStateRecord> MarkEnabledAsync(
-        Guid companyId,
+        CompanyId companyId,
         string profileTag,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("companyId is required.", nameof(companyId));
         }
@@ -52,7 +52,7 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
                       inventory_module_enabled_at, inventory_module_locked_at,
                       inventory_profile_tag;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("profile_tag", profileTag ?? string.Empty);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -65,10 +65,10 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
     }
 
     public async Task<InventoryModuleActivationStateRecord?> GetStateAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             return null;
         }
@@ -83,7 +83,7 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -95,7 +95,7 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
 
     private static InventoryModuleActivationStateRecord ReadState(NpgsqlDataReader reader) =>
         new(
-            CompanyId: reader.GetGuid(reader.GetOrdinal("id")),
+            CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             ModuleEnabled: reader.GetBoolean(reader.GetOrdinal("inventory_module_enabled")),
             EnabledAt: reader.IsDBNull(reader.GetOrdinal("inventory_module_enabled_at"))
                 ? null

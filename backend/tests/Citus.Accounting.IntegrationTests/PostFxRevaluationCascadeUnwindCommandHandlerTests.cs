@@ -15,8 +15,8 @@ public sealed class PostFxRevaluationCascadeUnwindCommandHandlerTests
     [Fact]
     public async Task HandleAsync_WhenRequestedBatchHasDescendants_PostsEntireChainTailFirst()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var requestedBatchId = Guid.NewGuid();
         var descendantBatchId = Guid.NewGuid();
         var repository = new FakeFxRevaluationDocumentRepository(
@@ -70,8 +70,8 @@ public sealed class PostFxRevaluationCascadeUnwindCommandHandlerTests
     [Fact]
     public async Task HandleAsync_WhenRequestedBatchIsTail_PostsSingleUnwind()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var requestedBatchId = Guid.NewGuid();
         var repository = new FakeFxRevaluationDocumentRepository(
             companyId,
@@ -207,7 +207,7 @@ public sealed class PostFxRevaluationCascadeUnwindCommandHandlerTests
             new(
                 draftId,
                 companyId,
-                new EntityNumber("EN2026000009"),
+                EntityNumber.FromLegacy("EN-LEGACY-TEST"),
                 new DocumentNumber(displayNumber),
                 "draft",
                 new DateOnly(2026, 6, 1),

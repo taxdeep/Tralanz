@@ -15,7 +15,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
     }
 
     public async Task<IReadOnlyList<PayBillOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string documentCurrencyCode,
         CancellationToken cancellationToken)
@@ -120,7 +120,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             preparation.Context.CompanyId,
             $"entity-number:pay-bill:{year}",
             $"EN{year}",
-            8,
+            5,
             entityNumberSeed,
             cancellationToken);
 
@@ -173,7 +173,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
     private static async Task<IReadOnlyList<PayBillOpenItemCandidate>> LoadCandidatesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string documentCurrencyCode,
         Guid[]? openItemIds,
@@ -218,7 +218,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
 
@@ -255,7 +255,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
     private static async Task EnsureActiveVendorAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -270,7 +270,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
               and is_active = true
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -283,7 +283,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
     private static async Task EnsureActiveBankAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid bankAccountId,
         CancellationToken cancellationToken)
     {
@@ -300,7 +300,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
               and detail_type = 'bank'
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", bankAccountId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -314,7 +314,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
     private static async Task<string> LoadCompanyBaseCurrencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -326,7 +326,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         if (scalar is null || scalar == DBNull.Value)
         {
@@ -392,7 +392,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             );
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId);
+        command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("payment_number", paymentNumber);
         command.Parameters.AddWithValue("vendor_id", preparation.Context.VendorId);
@@ -411,7 +411,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo",
             string.IsNullOrWhiteSpace(preparation.Context.Memo) ? (object)DBNull.Value : preparation.Context.Memo.Trim());
-        command.Parameters.AddWithValue("created_by_user_id", preparation.Context.UserId);
+        command.Parameters.AddWithValue("created_by_user_id", preparation.Context.UserId.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -445,7 +445,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
                   @applied_amount_tx
                 );
                 """;
-            command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId);
+            command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId.Value);
             command.Parameters.AddWithValue("pay_bill_id", documentId);
             command.Parameters.AddWithValue("line_number", index + 1);
             command.Parameters.AddWithValue("target_ap_open_item_id", line.TargetOpenItemId);
@@ -457,7 +457,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
     private static async Task<long> FindPaymentSeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -477,7 +477,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             from pay_bills
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 

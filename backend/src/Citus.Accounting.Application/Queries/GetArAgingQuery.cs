@@ -220,7 +220,7 @@ public sealed record class ArAgingCustomerBalance
 
 public sealed record class ArAgingReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly AsOfDate { get; init; }
 
@@ -249,7 +249,7 @@ public sealed record class ArAgingReport
     public IReadOnlyList<ArAgingOpenItemAmount> DetailRows { get; init; } = Array.Empty<ArAgingOpenItemAmount>();
 
     public static ArAgingReport Create(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         string baseCurrencyCode,
         IEnumerable<ArAgingOpenItemAmount> rows)

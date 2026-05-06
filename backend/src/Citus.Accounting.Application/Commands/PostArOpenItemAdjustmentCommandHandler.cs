@@ -63,7 +63,7 @@ public sealed class PostArOpenItemAdjustmentCommandHandler
                 command.CompanyId,
                 command.OpenItemId,
                 command.RequestId,
-                command.UserId.Value,
+                command.UserId,
                 postingResult.JournalEntryId,
                 postingResult.JournalEntryDisplayNumber,
                 postingResult.PostedAt,

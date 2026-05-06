@@ -14,7 +14,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class CreditMemoClient(HttpClient httpClient, ILogger<CreditMemoClient> logger)
 {
     public async Task<IReadOnlyList<CreditMemoSummaryDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeDrafts = true,
         CancellationToken cancellationToken = default)
     {
@@ -33,7 +33,7 @@ public sealed class CreditMemoClient(HttpClient httpClient, ILogger<CreditMemoCl
 
     public async Task<CreditMemoRecordDto?> GetByIdAsync(
         Guid documentId,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -67,7 +67,7 @@ public sealed record CreditMemoSummaryDto(
 
 public sealed record CreditMemoRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

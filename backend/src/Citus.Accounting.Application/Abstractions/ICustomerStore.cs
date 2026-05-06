@@ -13,22 +13,22 @@ public interface ICustomerStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<CustomerRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken);
 
     Task<CustomerRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken);
 
     Task<CustomerRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         CustomerUpsertRequest request,
         CancellationToken cancellationToken);
 
     Task<CustomerRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CustomerUpsertRequest request,
         CancellationToken cancellationToken);
@@ -43,7 +43,7 @@ public interface ICustomerStore
     /// (no separate address-book table needed).
     /// </summary>
     Task<IReadOnlyList<CustomerShippingAddressRecord>> ListShippingAddressHistoryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         int limit,
         CancellationToken cancellationToken);
@@ -60,7 +60,7 @@ public sealed record CustomerShippingAddressRecord(
 
 public sealed record CustomerRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayName,
     string DefaultCurrencyCode,

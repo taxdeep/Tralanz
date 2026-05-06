@@ -24,7 +24,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<UserProfileOverrideRecord?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<UserProfileOverrideRecord?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
@@ -34,7 +34,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
             WHERE user_id = @user_id
             LIMIT 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -43,14 +43,14 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
         }
 
         return new UserProfileOverrideRecord(
-            UserId: reader.GetGuid(0),
+            UserId: UserId.Parse(reader.GetString(0)),
             DisplayName: reader.IsDBNull(1) ? null : reader.GetString(1),
             CreatedAt: reader.GetFieldValue<DateTimeOffset>(2),
             UpdatedAt: reader.GetFieldValue<DateTimeOffset>(3));
     }
 
     public async Task<UserProfileOverrideRecord> UpsertDisplayNameAsync(
-        Guid userId,
+        UserId userId,
         string displayName,
         CancellationToken cancellationToken)
     {
@@ -72,7 +72,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
                 updated_at   = EXCLUDED.updated_at
             RETURNING user_id, display_name, created_at, updated_at;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("display_name", trimmed);
         command.Parameters.AddWithValue("now", now);
 
@@ -85,7 +85,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
         }
 
         return new UserProfileOverrideRecord(
-            UserId: reader.GetGuid(0),
+            UserId: UserId.Parse(reader.GetString(0)),
             DisplayName: reader.IsDBNull(1) ? null : reader.GetString(1),
             CreatedAt: reader.GetFieldValue<DateTimeOffset>(2),
             UpdatedAt: reader.GetFieldValue<DateTimeOffset>(3));

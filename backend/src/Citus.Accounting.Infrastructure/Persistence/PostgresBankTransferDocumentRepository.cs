@@ -112,7 +112,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
         return new BankTransferDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(transferNumber),
             status,
             transferDate,
@@ -200,10 +200,10 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
-                8,
+                5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
                     connection, transaction, year, cancellationToken),
                 cancellationToken);
@@ -211,14 +211,14 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
             transferNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "bank-transfer-display",
                 "BT-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "bank_transfers",
                     "transfer_number",
                     "^BT-[0-9]+$",
@@ -277,7 +277,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
         else
         {
             (entityNumber, transferNumber) = await LoadIdentityAsync(
-                connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+                connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
@@ -380,7 +380,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
     private static async Task<(string EntityNumber, string TransferNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -394,7 +394,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
             limit 1;
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

@@ -6,7 +6,7 @@ public sealed class SysAdminControlOptions
 
     public SysAdminOperatorOptions Operator { get; set; } = new();
 
-    public Guid? DefaultActiveCompanyId { get; set; }
+    public CompanyId? DefaultActiveCompanyId { get; set; }
 
     public MaintenanceOptions Maintenance { get; set; } = new();
 
@@ -35,7 +35,7 @@ public sealed class MaintenanceOptions
 
 public sealed class CompanyWorkspaceOptions
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
+    public CompanyId Id { get; set; } = CompanyId.FromOrdinal(1);
 
     public string CompanyCode { get; set; } = string.Empty;
 
@@ -50,7 +50,7 @@ public sealed class CompanyWorkspaceOptions
 
 public sealed class ManagedUserOptions
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
+    public UserId Id { get; set; } = UserId.FromOrdinal(1);
 
     public string DisplayName { get; set; } = string.Empty;
 
@@ -64,5 +64,5 @@ public sealed class ManagedUserOptions
 
     public List<string> Roles { get; set; } = [];
 
-    public List<Guid> CompanyIds { get; set; } = [];
+    public List<CompanyId> CompanyIds { get; set; } = [];
 }

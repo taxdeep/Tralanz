@@ -1,8 +1,10 @@
+using SharedKernel.Identity;
+
 namespace SharedKernel.FX;
 
 public sealed record class FxSnapshotRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string BaseCurrencyCode,
     string QuoteCurrencyCode,
     DateOnly RequestedDate,

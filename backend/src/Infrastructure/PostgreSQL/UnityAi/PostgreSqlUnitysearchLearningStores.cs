@@ -21,7 +21,7 @@ public sealed class PostgreSqlUnitysearchEventStore(PostgreSqlConnectionFactory 
                 @event_type, @selected_entity_id, @rank_position, @result_count, @source_route,
                 @anchor_context, @anchor_entity_type, @anchor_entity_id, @metadata_json::jsonb);
             """;
-        command.Parameters.AddWithValue("company_id", input.CompanyId);
+        command.Parameters.AddWithValue("company_id", input.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)input.UserId ?? DBNull.Value);
         command.Parameters.AddWithValue("session_id", (object?)input.SessionId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", input.Context);
@@ -45,7 +45,7 @@ public sealed class PostgreSqlUnitysearchEventStore(PostgreSqlConnectionFactory 
 public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFactory connections) : IUnitysearchUsageStatStore
 {
     public async Task UpsertOnSelectAsync(
-        Guid companyId, Guid? userId, string context, string entityType, Guid entityId,
+        CompanyId companyId, UserId? userId, string context, string entityType, Guid entityId,
         int? rankPosition, string? query, DateTimeOffset selectedAt, CancellationToken cancellationToken)
     {
         // Upsert two rows: company-scope and (when user provided) user-scope.
@@ -60,7 +60,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
 
     private static async Task UpsertOneAsync(
         NpgsqlConnection connection,
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string context, string entityType, Guid entityId,
         int? rankPosition, string? query, DateTimeOffset selectedAt,
         CancellationToken cancellationToken)
@@ -86,7 +86,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
                 END,
                 updated_at = EXCLUDED.updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
@@ -100,7 +100,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
     }
 
     public async Task<IReadOnlyDictionary<Guid, UnitysearchUsageStatRecord>> GetForCandidatesAsync(
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string context, string entityType,
         IReadOnlyCollection<Guid> entityIds,
         CancellationToken cancellationToken)
@@ -124,7 +124,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
               AND entity_type = @entity_type
               AND entity_id = ANY(@entity_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
@@ -138,9 +138,9 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
             var entityId = reader.GetGuid(6);
             dict[entityId] = new UnitysearchUsageStatRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 ScopeType: reader.GetString(2),
-                UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                UserId: reader.IsDBNull(3) ? null : UserId.Parse(reader.GetString(3)),
                 Context: reader.GetString(4),
                 EntityType: reader.GetString(5),
                 EntityId: entityId,
@@ -157,7 +157,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
     }
 
     public async Task<IReadOnlyList<UnitysearchUsageStatRecord>> GetTopByCompanyScopeAsync(
-        Guid companyId,
+        CompanyId companyId,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -180,7 +180,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
                      last_selected_at DESC NULLS LAST
             LIMIT @lim;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", UnitysearchScopeType.Company);
         command.Parameters.AddWithValue("lim", Math.Clamp(limit, 1, 500));
 
@@ -190,9 +190,9 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
         {
             results.Add(new UnitysearchUsageStatRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 ScopeType: reader.GetString(2),
-                UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                UserId: reader.IsDBNull(3) ? null : UserId.Parse(reader.GetString(3)),
                 Context: reader.GetString(4),
                 EntityType: reader.GetString(5),
                 EntityId: reader.GetGuid(6),
@@ -212,7 +212,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
 public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFactory connections) : IUnitysearchPairStatStore
 {
     public async Task UpsertOnSelectAsync(
-        Guid companyId, Guid? userId,
+        CompanyId companyId, UserId? userId,
         string sourceContext, string anchorEntityType, Guid anchorEntityId,
         string targetContext, string targetEntityType, Guid targetEntityId,
         DateTimeOffset selectedAt, CancellationToken cancellationToken)
@@ -228,7 +228,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
 
     private static async Task UpsertOneAsync(
         NpgsqlConnection connection,
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string sourceContext, string anchorEntityType, Guid anchorEntityId,
         string targetContext, string targetEntityType, Guid targetEntityId,
         DateTimeOffset selectedAt, CancellationToken cancellationToken)
@@ -252,7 +252,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
                 last_selected_at = EXCLUDED.last_selected_at,
                 updated_at = EXCLUDED.updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("source_context", sourceContext);
@@ -266,7 +266,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
     }
 
     public async Task<IReadOnlyList<UnitysearchPairStatRecord>> GetForAnchorAsync(
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string sourceContext, string anchorEntityType, Guid anchorEntityId,
         string targetContext, string targetEntityType,
         CancellationToken cancellationToken)
@@ -289,7 +289,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
               AND target_context = @target_context
               AND target_entity_type = @target_entity_type;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("source_context", sourceContext);
@@ -303,9 +303,9 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
         {
             items.Add(new UnitysearchPairStatRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 ScopeType: reader.GetString(2),
-                UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                UserId: reader.IsDBNull(3) ? null : UserId.Parse(reader.GetString(3)),
                 SourceContext: reader.GetString(4),
                 AnchorEntityType: reader.GetString(5),
                 AnchorEntityId: reader.GetGuid(6),
@@ -325,7 +325,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
 public sealed class PostgreSqlUnitysearchRecentQueryStore(PostgreSqlConnectionFactory connections) : IUnitysearchRecentQueryStore
 {
     public async Task RecordAsync(
-        Guid companyId, Guid? userId, string context, string query, string normalizedQuery,
+        CompanyId companyId, UserId? userId, string context, string query, string normalizedQuery,
         bool resultClicked, string? clickedEntityType, Guid? clickedEntityId, int? resultCount,
         DateTimeOffset createdAt, CancellationToken cancellationToken)
     {
@@ -339,7 +339,7 @@ public sealed class PostgreSqlUnitysearchRecentQueryStore(PostgreSqlConnectionFa
                 @company_id, @user_id, @context, @query, @normalized_query,
                 @result_clicked, @clicked_entity_type, @clicked_entity_id, @result_count, @created_at);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("query", query);
@@ -356,7 +356,7 @@ public sealed class PostgreSqlUnitysearchRecentQueryStore(PostgreSqlConnectionFa
 public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFactory connections) : IUnitysearchRankingHintStore
 {
     public async Task<IReadOnlyList<UnitysearchRankingHintRecord>> GetActiveAsync(
-        Guid companyId, Guid? userId, string context, string entityType,
+        CompanyId companyId, UserId? userId, string context, string entityType,
         IReadOnlyCollection<Guid>? entityIds, CancellationToken cancellationToken)
     {
         var items = new List<UnitysearchRankingHintRecord>();
@@ -386,7 +386,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
                 AND validation_status = 'valid'
                 AND (expires_at IS NULL OR expires_at > NOW());
               """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);
         if (entityIds is not null && entityIds.Count > 0)
@@ -399,8 +399,8 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
         {
             items.Add(new UnitysearchRankingHintRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
-                UserId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
+                UserId: reader.IsDBNull(2) ? null : UserId.Parse(reader.GetString(2)),
                 Context: reader.GetString(3),
                 EntityType: reader.GetString(4),
                 EntityId: reader.GetGuid(5),
@@ -429,7 +429,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
             ON CONFLICT DO NOTHING;
             """;
         command.Parameters.AddWithValue("id", record.Id == Guid.Empty ? Guid.NewGuid() : record.Id);
-        command.Parameters.AddWithValue("company_id", record.CompanyId);
+        command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)record.UserId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", record.Context);
         command.Parameters.AddWithValue("entity_type", record.EntityType);
@@ -448,7 +448,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
 public sealed class PostgreSqlUnitysearchDecisionTraceStore(PostgreSqlConnectionFactory connections) : IUnitysearchDecisionTraceStore
 {
     public async Task<Guid> WriteAsync(
-        Guid companyId, Guid? userId, string context, string entityType,
+        CompanyId companyId, UserId? userId, string context, string entityType,
         string? query, string? normalizedQuery, int? returnedCount, string traceJson,
         CancellationToken cancellationToken)
     {
@@ -462,7 +462,7 @@ public sealed class PostgreSqlUnitysearchDecisionTraceStore(PostgreSqlConnection
                 @id, @company_id, @user_id, @context, @entity_type, @query, @normalized_query, @returned_count, @trace_json::jsonb);
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);

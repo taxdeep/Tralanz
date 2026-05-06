@@ -21,22 +21,22 @@ public interface IQuoteStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<QuoteSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         QuoteListFilter filter,
         CancellationToken cancellationToken);
 
     Task<QuoteRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         CancellationToken cancellationToken);
 
     Task<QuoteRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         QuoteUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<QuoteRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         QuoteUpsertInput input,
         CancellationToken cancellationToken);
@@ -48,7 +48,7 @@ public interface IQuoteStore
     /// the transition is not allowed from the current state.
     /// </summary>
     Task<QuoteRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         string newStatus,
         CancellationToken cancellationToken);
@@ -59,7 +59,7 @@ public interface IQuoteStore
     /// just closes the loop on the quote side.
     /// </summary>
     Task<QuoteRecord?> MarkConvertedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         Guid salesOrderId,
         CancellationToken cancellationToken);
@@ -74,7 +74,7 @@ public sealed record QuoteListFilter(
 
 public sealed record QuoteSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string QuoteNumber,
     Guid CustomerId,
     string CustomerName,
@@ -89,7 +89,7 @@ public sealed record QuoteSummary(
 
 public sealed record QuoteRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string QuoteNumber,
     string Status,
     Guid CustomerId,

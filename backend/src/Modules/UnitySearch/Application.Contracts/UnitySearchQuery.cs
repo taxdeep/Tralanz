@@ -2,9 +2,9 @@ namespace Citus.Modules.UnitySearch.Application.Contracts;
 
 public sealed record class UnitySearchQuery
 {
-    public required Guid CompanyId { get; init; }
+    public required CompanyId CompanyId { get; init; }
 
-    public Guid? UserId { get; init; }
+    public UserId? UserId { get; init; }
 
     public string Context { get; init; } = string.Empty;
 

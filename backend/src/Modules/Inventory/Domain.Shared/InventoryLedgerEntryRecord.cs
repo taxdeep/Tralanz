@@ -2,7 +2,7 @@ namespace Citus.Modules.Inventory.Domain.Shared;
 
 public sealed record class InventoryLedgerEntryRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid ItemId,
     Guid WarehouseId,
     Guid? DocumentId,
@@ -20,5 +20,5 @@ public sealed record class InventoryLedgerEntryRecord(
     decimal InTransitInDelta,
     decimal InTransitInAfter,
     string Message,
-    Guid? CreatedByUserId,
+    UserId? CreatedByUserId,
     DateTimeOffset CreatedAt);

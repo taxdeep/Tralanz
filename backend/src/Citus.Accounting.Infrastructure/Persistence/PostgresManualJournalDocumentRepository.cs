@@ -145,7 +145,7 @@ public sealed class PostgresManualJournalDocumentRepository : IManualJournalDocu
         return new ManualJournalDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(displayNumber),
             status,
             entryDate,

@@ -16,7 +16,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
 
     public async Task<JournalEntryDraftSaveResult> SaveAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -36,7 +36,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
                 draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
-                8,
+                5,
                 await FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken),
                 cancellationToken);
 
@@ -138,7 +138,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
                 where company_id = @company_id
                   and manual_journal_document_id = @document_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             deleteCommand.Parameters.AddWithValue("document_id", documentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -175,7 +175,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("manual_journal_document_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("account_id", line.Account!.AccountId);
@@ -200,16 +200,16 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
         Guid documentId,
         string documentNumber,
         string entityNumber,
-        Guid userId,
+        UserId userId,
         bool includeIdentity = true)
     {
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("display_number", documentNumber);
-            command.Parameters.AddWithValue("created_by_user_id", userId);
+            command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         }
         command.Parameters.AddWithValue("entry_date", draft.JournalDate);
         command.Parameters.AddWithValue("transaction_currency_code", draft.CurrencyCode);
@@ -228,7 +228,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
     private static async Task<long> FindManualJournalSeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -248,7 +248,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
             from manual_journal_documents
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 
