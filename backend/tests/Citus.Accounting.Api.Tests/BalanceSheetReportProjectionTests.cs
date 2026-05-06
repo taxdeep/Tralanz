@@ -40,7 +40,7 @@ public sealed class BalanceSheetReportProjectionTests
     public void ReportCreate_IncludesCurrentEarningsAndBalances()
     {
         var report = BalanceSheetReport.Create(
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
             new DateOnly(2026, 4, 30),
             "usd",
             includeZeroBalanceAccounts: false,

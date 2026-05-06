@@ -59,7 +59,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">Customer</label>
                     <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                       UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                       UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search customers…"
                                        Take="8"
                                        SourceRoute="/invoices/new"
@@ -156,7 +156,7 @@
                                    line's revenue account from it — sales lines have no separate
                                    Account column; the Item is the single source of truth. *@
                                 <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                    Placeholder="Search items…"
                                                    Take="6"
                                                    SourceRoute="/invoices/new"

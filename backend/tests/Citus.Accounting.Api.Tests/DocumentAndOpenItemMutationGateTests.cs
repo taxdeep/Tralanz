@@ -7,7 +7,7 @@ namespace Citus.Accounting.Api.Tests;
 
 public sealed class DocumentAndOpenItemMutationGateTests
 {
-    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid DocumentId = Guid.Parse("b5e93d57-d503-4585-b444-40a0018fe100");
     private static readonly Guid OpenItemId = Guid.Parse("fd5ff873-4fd9-4b10-b35d-8bdb378e6505");

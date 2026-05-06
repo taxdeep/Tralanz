@@ -7,7 +7,7 @@ public sealed class ReportCsvExporterTests
     [Fact]
     public void ExportTrialBalance_WritesMetadataAndAccountRows()
     {
-        var companyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+        var companyId = CompanyId.FromOrdinal(1);
         var report = new TrialBalanceReportSummary
         {
             CompanyId = companyId,
@@ -54,7 +54,7 @@ public sealed class ReportCsvExporterTests
     {
         var report = new IncomeStatementReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             DateFrom = new DateOnly(2026, 4, 1),
             DateTo = new DateOnly(2026, 4, 30),
             BaseCurrencyCode = "USD",
@@ -115,7 +115,7 @@ public sealed class ReportCsvExporterTests
     {
         var report = new BalanceSheetReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             AsOfDate = new DateOnly(2026, 4, 30),
             BaseCurrencyCode = "USD",
             AccountCount = 2,
@@ -178,7 +178,7 @@ public sealed class ReportCsvExporterTests
         var customerId = Guid.NewGuid();
         var report = new ArAgingReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             AsOfDate = new DateOnly(2026, 4, 13),
             BaseCurrencyCode = "USD",
             CustomerCount = 1,
@@ -245,7 +245,7 @@ public sealed class ReportCsvExporterTests
         var vendorId = Guid.NewGuid();
         var report = new ApAgingReportSummary
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             AsOfDate = new DateOnly(2026, 4, 13),
             BaseCurrencyCode = "USD",
             VendorCount = 1,

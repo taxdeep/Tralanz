@@ -12,7 +12,7 @@ public interface ICompanyProfileQuery
 }
 
 public sealed record CompanyProfileSnapshot(
-    Guid Id,
+    CompanyId Id,
     string EntityNumber,
     string LegalName,
     string? Email,

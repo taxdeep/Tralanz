@@ -35,7 +35,7 @@ public sealed class BusinessSessionHeaderHandlerTests
         var northwind = state.ActiveCompany;
         var blueHarbor = new BusinessCompanySummary
         {
-            Id = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6"),
+            Id = CompanyId.FromOrdinal(2),
             CompanyCode = "BLUEHARBOR",
             CompanyName = "Blue Harbor Trading Co.",
             BaseCurrencyCode = "CAD",
@@ -102,9 +102,9 @@ public sealed class BusinessSessionHeaderHandlerTests
     private static BusinessShellState CreateState()
     {
         // Test-local identity. The handler under test only inspects the
-        // active user / company GUIDs, so any non-empty fixture works.
-        var userId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
-        var companyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+        // active user / company ids, so any non-empty fixture works.
+        var userId = UserId.FromOrdinal(1);
+        var companyId = CompanyId.FromOrdinal(1);
 
         var state = new BusinessShellState();
         state.ApplyAuthenticatedSession(

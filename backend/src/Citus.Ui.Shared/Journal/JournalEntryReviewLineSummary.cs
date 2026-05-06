@@ -6,7 +6,7 @@ public sealed record class JournalEntryReviewLineSummary
 
     public int LineNumber { get; init; }
 
-    public UserId AccountId { get; init; }
+    public Guid AccountId { get; init; }
 
     public string AccountCode { get; init; } = string.Empty;
 

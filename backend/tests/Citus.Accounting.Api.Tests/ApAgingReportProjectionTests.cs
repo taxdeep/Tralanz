@@ -68,7 +68,7 @@ public sealed class ApAgingReportProjectionTests
         var vendorId = Guid.NewGuid();
 
         var report = ApAgingReport.Create(
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
             new DateOnly(2026, 4, 30),
             "usd",
             [

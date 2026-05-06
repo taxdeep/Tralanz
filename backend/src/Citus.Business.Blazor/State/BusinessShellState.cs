@@ -136,7 +136,7 @@ public sealed class BusinessShellState
         }
     ];
 
-    public Guid CurrentUserId => User.Id;
+    public UserId CurrentUserId => User.Id;
 
     public bool TrySetActiveCompany(CompanyId companyId)
     {
@@ -201,7 +201,7 @@ public sealed class BusinessShellState
 
     private BusinessUserSummary BuildSignedOutUser() => new()
     {
-        Id = Guid.Empty,
+        Id = default,
         DisplayName = "Guest",
         Email = string.Empty,
         Username = string.Empty,
@@ -210,7 +210,7 @@ public sealed class BusinessShellState
 
     private BusinessCompanySummary BuildSignedOutCompany() => new()
     {
-        Id = Guid.Empty,
+        Id = default,
         CompanyCode = string.Empty,
         CompanyName = string.Empty,
         BaseCurrencyCode = string.Empty,

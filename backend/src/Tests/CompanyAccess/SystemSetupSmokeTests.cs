@@ -8,7 +8,7 @@ namespace Tests.CompanyAccess;
 
 public sealed class SystemSetupSmokeTests
 {
-    private static readonly Guid DemoUserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly UserId DemoUserId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task SaveNumberDisplayModeAsync_PersistsUserPreference()
@@ -30,7 +30,7 @@ public sealed class SystemSetupSmokeTests
                 from user_preferences
                 where user_id = @user_id;
                 """;
-            command.Parameters.AddWithValue("user_id", DemoUserId);
+            command.Parameters.AddWithValue("user_id", DemoUserId.Value);
 
             var storedMode = Convert.ToString(await command.ExecuteScalarAsync(CancellationToken.None));
             Assert.Equal("space-comma", storedMode);

@@ -33,7 +33,7 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
         }
 
         return new CompanyProfileSnapshot(
-            Id: reader.GetGuid(0),
+            Id: CompanyId.Parse(reader.GetString(0)),
             EntityNumber: reader.GetString(1),
             LegalName: reader.GetString(2),
             Email: reader.IsDBNull(3) ? null : reader.GetString(3),

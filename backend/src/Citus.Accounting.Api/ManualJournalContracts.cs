@@ -161,7 +161,7 @@ public sealed record OpenItemAdjustmentPreviewLookupQuery(
 
 public sealed record RequestOpenItemAdjustmentHttpRequest(
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string AdjustmentType,
     DateOnly? AdjustmentDate,
     decimal? AdjustmentAmountTx,
@@ -169,11 +169,11 @@ public sealed record RequestOpenItemAdjustmentHttpRequest(
 
 public sealed record TransitionOpenItemAdjustmentRequestHttpRequest(
     CompanyId CompanyId,
-    Guid? UserId);
+    UserId? UserId);
 
 public sealed record GovernOpenItemAdjustmentApprovalHttpRequest(
     CompanyId CompanyId,
-    Guid? UserId);
+    UserId? UserId);
 
 public sealed record OpenItemAdjustmentRequestReadinessQuery(
     CompanyId CompanyId,
@@ -181,7 +181,7 @@ public sealed record OpenItemAdjustmentRequestReadinessQuery(
 
 public sealed record ExecuteOpenItemAdjustmentRequestHttpRequest(
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     Guid AdjustmentAccountId,
     DateOnly? AsOfDate,
     string? IdempotencyKey);
@@ -198,7 +198,7 @@ public sealed record OpenItemAdjustmentAccountMappingLookupQuery(
 
 public sealed record SaveOpenItemAdjustmentAccountMappingHttpRequest(
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     Guid? BookId,
     string OpenItemType,
     string AdjustmentType,
@@ -206,7 +206,7 @@ public sealed record SaveOpenItemAdjustmentAccountMappingHttpRequest(
 
 public sealed record DeactivateOpenItemAdjustmentAccountMappingHttpRequest(
     CompanyId CompanyId,
-    Guid? UserId);
+    UserId? UserId);
 
 public sealed record SourceDocumentBrowserLookupQuery(
     CompanyId CompanyId,

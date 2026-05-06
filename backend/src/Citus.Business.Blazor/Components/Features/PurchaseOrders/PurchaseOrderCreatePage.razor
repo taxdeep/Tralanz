@@ -136,7 +136,7 @@ else
                                 <td>@(index + 1)</td>
                                 <td>
                                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                    Context="purchase_order.line.category"
                                                    SelectedId="@line.ExpenseAccountId"
                                                    SelectedDisplayText="@GetAccountLabel(line.ExpenseAccountId)"

@@ -60,7 +60,7 @@
                     @* Source account — credited (money leaves). Asset
                        only: bank / cash / credit-card / wallet. *@
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="bank_transfer.from"
                                    AllowedRootTypes="asset"
                                    SelectedId="@_fromAccountId"
@@ -75,7 +75,7 @@
                        blocks picking the same account on both sides
                        (clientside validation only — backend re-checks). *@
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="bank_transfer.to"
                                    AllowedRootTypes="asset"
                                    SelectedId="@_toAccountId"

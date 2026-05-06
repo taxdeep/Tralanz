@@ -21,15 +21,15 @@ public sealed class BusinessSessionRequestReader
             return false;
         }
 
-        if (!Guid.TryParse(userIdValue, out var userId))
+        if (!UserId.TryParse(userIdValue, out var userId))
         {
-            error = $"Header '{BusinessSessionHeaders.UserId}' must be a valid GUID.";
+            error = $"Header '{BusinessSessionHeaders.UserId}' must be a valid user id.";
             return false;
         }
 
-        if (!Guid.TryParse(companyIdValue, out var activeCompanyId))
+        if (!CompanyId.TryParse(companyIdValue, out var activeCompanyId))
         {
-            error = $"Header '{BusinessSessionHeaders.ActiveCompanyId}' must be a valid GUID.";
+            error = $"Header '{BusinessSessionHeaders.ActiveCompanyId}' must be a valid company id.";
             return false;
         }
 

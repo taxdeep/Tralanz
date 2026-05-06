@@ -69,7 +69,7 @@
                     @* Real bank account that the slip lands in. Asset
                        only — usually a chequing / operating row. *@
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="bank_deposit.deposit_to"
                                    AllowedRootTypes="asset"
                                    SelectedId="@_depositToAccountId"

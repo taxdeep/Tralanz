@@ -716,7 +716,7 @@ public sealed class CompanyBookPolicyWorkflowTests
             CancellationToken cancellationToken)
         {
             var draft = new CompanyBookGovernedChangeRequestDraft(
-                UserId.FromOrdinal(1),
+                Guid.NewGuid(),
                 preview.Book.CompanyId,
                 preview.Book.BookId,
                 "draft",
@@ -825,7 +825,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 new DateOnly(2026, 4, 14),
                 true),
             new CompanyBookRemeasurementPolicy(
-                UserId.FromOrdinal(1),
+                Guid.NewGuid(),
                 CompanyId,
                 bookId,
                 "closing",

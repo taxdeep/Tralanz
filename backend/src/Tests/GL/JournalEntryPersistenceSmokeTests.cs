@@ -18,7 +18,7 @@ namespace Tests.GL;
 public sealed class JournalEntryPersistenceSmokeTests
 {
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
-    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task SaveDraftAndPost_PersistsManualJournalAndLedgerTruth()
@@ -405,7 +405,7 @@ public sealed class JournalEntryPersistenceSmokeTests
             connection,
             transaction,
             "delete from companies where id = @id;",
-            companyId,
+            companyId.Value,
             cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
@@ -415,7 +415,7 @@ public sealed class JournalEntryPersistenceSmokeTests
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
-        Guid id,
+        object id,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

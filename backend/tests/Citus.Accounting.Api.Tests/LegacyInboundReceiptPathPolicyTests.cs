@@ -97,8 +97,8 @@ public sealed class LegacyInboundReceiptPathPolicyTests
                 : sourceDocumentId ?? Guid.NewGuid();
 
         return new InventoryPurchaseReceiptPostRequest(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
+            UserId.FromOrdinal(1),
             Guid.NewGuid(),
             new DateOnly(2026, 4, 19),
             "CAD",

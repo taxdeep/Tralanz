@@ -15,10 +15,10 @@ public sealed class UnitySearchPickerService(HttpClient httpClient, ILogger<Unit
         CancellationToken cancellationToken = default)
     {
         var requestUri =
-            $"accounting/unity-search?companyId={companyId:D}&context={Uri.EscapeDataString(context)}&query={Uri.EscapeDataString(searchText)}&take={Math.Clamp(take, 1, 20)}";
-        if (userId.HasValue && userId.Value != Guid.Empty)
+            $"accounting/unity-search?companyId={companyId}&context={Uri.EscapeDataString(context)}&query={Uri.EscapeDataString(searchText)}&take={Math.Clamp(take, 1, 20)}";
+        if (userId.HasValue)
         {
-            requestUri += $"&userId={userId.Value:D}";
+            requestUri += $"&userId={userId.Value}";
         }
 
         try

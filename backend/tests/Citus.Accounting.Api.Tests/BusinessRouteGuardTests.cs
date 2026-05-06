@@ -7,7 +7,7 @@ namespace Citus.Accounting.Api.Tests;
 
 public sealed class BusinessRouteGuardTests
 {
-    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class BusinessRouteGuardTests
 
         var result = guard.Evaluate(
             HttpMethods.Get,
-            CreateHeaders(UserId, Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6")),
+            CreateHeaders(UserId, CompanyId.FromOrdinal(2)),
             Array.Empty<object?>(),
             maintenanceState: null);
 
@@ -302,7 +302,7 @@ public sealed class BusinessRouteGuardTests
             },
             new BusinessSessionCompanyOptions
             {
-                Id = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6"),
+                Id = CompanyId.FromOrdinal(2),
                 CompanyCode = "BLUEHARBOR",
                 CompanyName = "Blue Harbor Trading Co.",
                 BaseCurrencyCode = "CAD",

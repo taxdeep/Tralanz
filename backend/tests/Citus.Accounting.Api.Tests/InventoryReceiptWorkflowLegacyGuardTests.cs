@@ -97,8 +97,8 @@ public sealed class InventoryReceiptWorkflowLegacyGuardTests
 
     private static InventoryPurchaseReceiptPostRequest BuildRequest(string? sourceModule, decimal quantity = 1m) =>
         new(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
+            UserId.FromOrdinal(1),
             Guid.NewGuid(),
             new DateOnly(2026, 4, 19),
             "CAD",

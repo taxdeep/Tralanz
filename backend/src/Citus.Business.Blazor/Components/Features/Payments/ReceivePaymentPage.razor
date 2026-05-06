@@ -44,7 +44,7 @@
             <div>
                 <label class="citus-form-field__label">Customer *</label>
                 <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Placeholder="Search customers…"
                                    Take="8"
                                    SourceRoute="/receive-payment"

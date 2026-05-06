@@ -185,7 +185,7 @@ else
                                 <td>@(index + 1)</td>
                                 <td>
                                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                    Context="expense.line.category"
                                                    AllowedRootTypes="expense,asset,cost_of_sales"
                                                    SelectedId="@line.ExpenseAccountId"

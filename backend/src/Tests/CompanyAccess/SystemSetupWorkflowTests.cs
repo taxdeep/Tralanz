@@ -30,7 +30,7 @@ public sealed class SystemSetupWorkflowTests
     private sealed class StubStore : ISystemSetupStore
     {
         public SystemSetupPreference Preference { get; private set; } =
-            new(Guid.Empty, NumberDisplayModeDefaults.Default, DateTimeOffset.UtcNow);
+            new(UserId.FromOrdinal(0), NumberDisplayModeDefaults.Default, DateTimeOffset.UtcNow);
 
         public Task<SystemSetupPreference> GetAsync(UserId userId, CancellationToken cancellationToken) =>
             Task.FromResult(Preference with { UserId = userId });

@@ -15,15 +15,15 @@ public sealed class BusinessRequestContractGuard
 
             var type = argument.GetType();
 
-            if (TryReadGuidProperty(type, argument, "CompanyId", out var companyId) &&
-                companyId != session.ActiveCompanyId)
+            if (TryReadCompanyIdProperty(type, argument, "CompanyId", out var companyId) &&
+                !companyId.Equals(session.ActiveCompanyId))
             {
                 return BusinessRequestGuardResult.Reject(
                     $"Request company '{companyId}' does not match the active company context '{session.ActiveCompanyId}'.");
             }
 
-            if (TryReadGuidProperty(type, argument, "UserId", out var userId) &&
-                userId != session.UserId)
+            if (TryReadUserIdProperty(type, argument, "UserId", out var userId) &&
+                !userId.Equals(session.UserId))
             {
                 return BusinessRequestGuardResult.Reject(
                     $"Request user '{userId}' does not match the authenticated business session '{session.UserId}'.");
@@ -33,23 +33,43 @@ public sealed class BusinessRequestContractGuard
         return BusinessRequestGuardResult.Allow();
     }
 
-    private static bool TryReadGuidProperty(Type type, object instance, string propertyName, out Guid value)
+    private static bool TryReadCompanyIdProperty(Type type, object instance, string propertyName, out CompanyId value)
     {
-        value = Guid.Empty;
+        value = default;
 
         var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
-        if (property?.PropertyType != typeof(Guid))
+        if (property?.PropertyType != typeof(CompanyId))
         {
             return false;
         }
 
         var rawValue = property.GetValue(instance);
-        if (rawValue is not Guid guidValue)
+        if (rawValue is not CompanyId typedValue)
         {
             return false;
         }
 
-        value = guidValue;
+        value = typedValue;
+        return true;
+    }
+
+    private static bool TryReadUserIdProperty(Type type, object instance, string propertyName, out UserId value)
+    {
+        value = default;
+
+        var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        if (property?.PropertyType != typeof(UserId))
+        {
+            return false;
+        }
+
+        var rawValue = property.GetValue(instance);
+        if (rawValue is not UserId typedValue)
+        {
+            return false;
+        }
+
+        value = typedValue;
         return true;
     }
 }

@@ -4,10 +4,10 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanyMembershipGovernanceWorkflowTests
 {
-    private static readonly CompanyId CompanyId = Guid.NewGuid();
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid MembershipId = Guid.NewGuid();
-    private static readonly UserId AccountId = Guid.NewGuid();
-    private static readonly UserId SysAdminAccountId = Guid.NewGuid();
+    private static readonly UserId AccountId = UserId.FromOrdinal(1);
+    private static readonly UserId SysAdminAccountId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task ChangeRoleFromSysAdminAsync_NormalizesRoleAndDelegatesToCompanyAccessStore()
@@ -86,7 +86,7 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
 
         public string SavedReason { get; private set; } = string.Empty;
 
-        public Guid? SavedSysAdminAccountId { get; private set; }
+        public UserId? SavedSysAdminAccountId { get; private set; }
 
         public Task<CompanyMembershipRoleChangeResult?> ChangeRoleFromSysAdminAsync(
             CompanyId companyId,

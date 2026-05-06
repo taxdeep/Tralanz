@@ -105,10 +105,15 @@
         new("Maintenance", ShellState.MaintenanceState.Enabled ? ShellState.MaintenanceState.Message : "Disabled")
     ];
 
-    private static string FormatGuid(Guid value) =>
-        value == Guid.Empty
-            ? "(empty — Guid.Empty, not hydrated)"
-            : value.ToString("D");
+    private static string FormatGuid(CompanyId value) =>
+        string.IsNullOrEmpty(value.Value)
+            ? "(empty — not hydrated)"
+            : value.Value;
+
+    private static string FormatGuid(UserId value) =>
+        string.IsNullOrEmpty(value.Value)
+            ? "(empty — not hydrated)"
+            : value.Value;
 
     private sealed record class FactRow(string Label, string Value);
 }

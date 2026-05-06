@@ -142,7 +142,7 @@ else
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Deposit to (bank / cash)</label>
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="customer_deposit.deposit_to"
                                    AllowedRootTypes="asset"
                                    SelectedId="@_depositBankAccountId"

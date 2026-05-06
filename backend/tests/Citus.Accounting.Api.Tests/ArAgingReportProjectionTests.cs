@@ -68,7 +68,7 @@ public sealed class ArAgingReportProjectionTests
         var customerId = Guid.NewGuid();
 
         var report = ArAgingReport.Create(
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
             new DateOnly(2026, 4, 30),
             "usd",
             [

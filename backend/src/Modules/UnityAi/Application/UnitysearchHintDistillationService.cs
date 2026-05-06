@@ -22,7 +22,7 @@ public interface IUnitysearchHintDistillationService
 {
     Task<UnitysearchHintDistillationResult> DistillForCompanyAsync(
         CompanyId companyId,
-        Guid? triggeredByUserId,
+        UserId? triggeredByUserId,
         string triggerType,
         CancellationToken cancellationToken);
 }
@@ -87,7 +87,7 @@ public sealed class UnitysearchHintDistillationService : IUnitysearchHintDistill
 
     public async Task<UnitysearchHintDistillationResult> DistillForCompanyAsync(
         CompanyId companyId,
-        Guid? triggeredByUserId,
+        UserId? triggeredByUserId,
         string triggerType,
         CancellationToken cancellationToken)
     {
@@ -174,7 +174,7 @@ public sealed class UnitysearchHintDistillationService : IUnitysearchHintDistill
             ? UnitysearchHintStatus.Active
             : UnitysearchHintStatus.Pending;
         var expiresAt = DateTimeOffset.UtcNow.Add(HintTtl);
-        var companyLabel = "company-" + companyId.ToString("N").AsSpan(0, 8).ToString();
+        var companyLabel = "company-" + companyId.Value;
 
         foreach (var bucket in buckets)
         {

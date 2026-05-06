@@ -13,8 +13,7 @@ namespace Tests.GL;
 
 public sealed class FxRevaluationWorkflowSmokeTests
 {
-    private static readonly Guid CompanyGuid = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly CompanyId CompanyId = new(CompanyGuid);
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
 
     [Fact]
@@ -302,7 +301,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         var companyCurrencyStore = new PostgreSqlCompanyCurrencyProvisioningStore(legacyConnectionFactory);
         var companyCurrencyWorkflow = new CompanyCurrencyGovernanceWorkflow(companyCurrencyStore);
         var (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
-        var governance = await companyCurrencyWorkflow.EnableCurrencyAsync(CompanyGuid, "EUR", userId, CancellationToken.None);
+        var governance = await companyCurrencyWorkflow.EnableCurrencyAsync(CompanyId, "EUR", userId, CancellationToken.None);
         var createdUnrealizedFxAccountIds = await EnsureUnrealizedFxAccountsAsync(
             legacyConnectionFactory,
             CancellationToken.None);
@@ -415,7 +414,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", snapshotId);
-        command.Parameters.AddWithValue("company_id", CompanyGuid);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);
         command.Parameters.AddWithValue("effective_date", requestedDate);
@@ -479,7 +478,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", openItemId);
-        command.Parameters.AddWithValue("company_id", CompanyGuid);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("customer_id", CustomerId);
         command.Parameters.AddWithValue("source_id", Guid.NewGuid());
         command.Parameters.AddWithValue("due_date", dueDate);
@@ -507,7 +506,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             where company_id = @company_id
               and id = @open_item_id;
             """;
-        command.Parameters.AddWithValue("company_id", CompanyGuid);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("open_item_id", openItemId);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         Assert.NotNull(scalar);
@@ -528,7 +527,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             where company_id = @company_id
               and id = @document_id;
             """;
-        command.Parameters.AddWithValue("company_id", CompanyGuid);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -638,7 +637,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                   and (system_role = @system_role or system_key = @system_key)
                 limit 1;
                 """;
-            existingCommand.Parameters.AddWithValue("company_id", CompanyGuid);
+            existingCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
             existingCommand.Parameters.AddWithValue("system_role", systemRole);
             existingCommand.Parameters.AddWithValue("system_key", systemKey);
             var existing = await existingCommand.ExecuteScalarAsync(cancellationToken);
@@ -691,7 +690,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             );
             """;
         insertCommand.Parameters.AddWithValue("id", accountId);
-        insertCommand.Parameters.AddWithValue("company_id", CompanyGuid);
+        insertCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
         insertCommand.Parameters.AddWithValue("entity_number", entityNumber);
         insertCommand.Parameters.AddWithValue("code", $"{codePrefix}-{entityNumber[^6..]}");
         insertCommand.Parameters.AddWithValue("name", name);
@@ -798,7 +797,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                     select id
                     from batch_chain;
                     """;
-                expandCommand.Parameters.AddWithValue("company_id", CompanyGuid);
+                expandCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
                 expandCommand.Parameters.AddWithValue("document_ids", documentIds);
 
                 await using var reader = await expandCommand.ExecuteReaderAsync(cancellationToken);
@@ -823,7 +822,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                       and source_type = 'fx_revaluation'
                       and source_id = any(@document_ids);
                     """;
-                journalQuery.Parameters.AddWithValue("company_id", CompanyGuid);
+                journalQuery.Parameters.AddWithValue("company_id", CompanyId.Value);
                 journalQuery.Parameters.AddWithValue("document_ids", documentIds);
 
                 var journalEntryIds = new List<Guid>();
@@ -850,7 +849,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                     where company_id = @company_id
                       and fx_revaluation_batch_id = any(@document_ids);
                     """;
-                deleteLinesCommand.Parameters.AddWithValue("company_id", CompanyGuid);
+                deleteLinesCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
                 deleteLinesCommand.Parameters.AddWithValue("document_ids", documentIds);
                 await deleteLinesCommand.ExecuteNonQueryAsync(cancellationToken);
 
@@ -862,7 +861,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                     where company_id = @company_id
                       and id = any(@document_ids);
                     """;
-                deleteBatchCommand.Parameters.AddWithValue("company_id", CompanyGuid);
+                deleteBatchCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
                 deleteBatchCommand.Parameters.AddWithValue("document_ids", documentIds);
                 await deleteBatchCommand.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -952,7 +951,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", CompanyGuid);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

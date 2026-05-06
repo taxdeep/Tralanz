@@ -816,7 +816,7 @@ public sealed record ManualJournalLineDraft
     /// looks up each line's account by id (not code) so a tampered request
     /// can't reference rows from another company by guessing codes.
     /// </summary>
-    public UserId AccountId { get; init; }
+    public Guid AccountId { get; init; }
     public string AccountCode { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public decimal Debit { get; init; }

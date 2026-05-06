@@ -49,9 +49,9 @@ public sealed record class CompanyBookGovernedChangeRequestDraft(
     DateOnly EffectiveFrom,
     UserId CreatedByUserId,
     DateTimeOffset CreatedAt,
-    Guid? SubmittedByUserId,
+    UserId? SubmittedByUserId,
     DateTimeOffset? SubmittedAt,
-    Guid? CancelledByUserId,
+    UserId? CancelledByUserId,
     DateTimeOffset? CancelledAt,
     DateTimeOffset? AppliedAt,
     CompanyBookGovernedChangePreview Preview);

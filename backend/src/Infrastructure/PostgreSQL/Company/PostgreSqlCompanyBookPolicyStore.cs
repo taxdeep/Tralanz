@@ -1198,13 +1198,13 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
             reader.IsDBNull(reader.GetOrdinal("submitted_by_user_id"))
                 ? null
-                : reader.GetGuid(reader.GetOrdinal("submitted_by_user_id")),
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("submitted_by_user_id"))),
             reader.IsDBNull(reader.GetOrdinal("submitted_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("submitted_at")),
             reader.IsDBNull(reader.GetOrdinal("cancelled_by_user_id"))
                 ? null
-                : reader.GetGuid(reader.GetOrdinal("cancelled_by_user_id")),
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("cancelled_by_user_id"))),
             reader.IsDBNull(reader.GetOrdinal("cancelled_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("cancelled_at")),

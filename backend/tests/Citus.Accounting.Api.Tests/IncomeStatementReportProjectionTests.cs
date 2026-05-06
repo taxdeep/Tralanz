@@ -45,7 +45,7 @@ public sealed class IncomeStatementReportProjectionTests
     public void ReportCreate_ComputesGrossProfitAndNetIncome()
     {
         var report = IncomeStatementReport.Create(
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
             new DateOnly(2026, 4, 1),
             new DateOnly(2026, 4, 30),
             "usd",

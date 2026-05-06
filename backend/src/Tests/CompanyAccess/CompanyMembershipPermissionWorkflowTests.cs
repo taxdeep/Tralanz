@@ -4,9 +4,9 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanyMembershipPermissionWorkflowTests
 {
-    private static readonly CompanyId CompanyId = Guid.NewGuid();
-    private static readonly UserId OwnerUserId = Guid.NewGuid();
-    private static readonly UserId UserId = Guid.NewGuid();
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
+    private static readonly UserId OwnerUserId = UserId.FromOrdinal(1);
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
     private static readonly Guid MembershipId = Guid.NewGuid();
 
     [Fact]

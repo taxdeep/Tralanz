@@ -13,7 +13,7 @@ namespace Tests.GL;
 public sealed class JournalEntryReviewStoreSmokeTests
 {
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
-    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task GetAsync_LoadsPostedJournalReviewWithPersistedManualSnapshot()

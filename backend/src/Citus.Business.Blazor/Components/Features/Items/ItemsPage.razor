@@ -139,7 +139,7 @@
             <div>
                 <label class="text-sm font-medium block mb-1">Sales / revenue account <span class="text-error">*</span></label>
                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                Context="items.sales_revenue"
                                DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                SelectedId="@_draft.DefaultSalesRevenueAccountId"
@@ -154,7 +154,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">Inventory asset account</label>
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.inventory_asset"
                                    DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                    SelectedId="@_draft.DefaultInventoryAssetAccountId"
@@ -165,7 +165,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">COGS account</label>
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.cogs"
                                    DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                    SelectedId="@_draft.DefaultCogsAccountId"
@@ -176,7 +176,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">Write-off account</label>
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.writeoff"
                                    DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                    SelectedId="@_draft.DefaultWriteOffAccountId"
@@ -187,7 +187,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">Purchase-variance account</label>
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.purchase_variance"
                                    DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                    SelectedId="@_draft.DefaultPurchaseVarianceAccountId"
@@ -208,7 +208,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">Drop-ship clearing account</label>
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.drop_ship_clearing"
                                    DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                    SelectedId="@_draft.DefaultDropShipClearingAccountId"

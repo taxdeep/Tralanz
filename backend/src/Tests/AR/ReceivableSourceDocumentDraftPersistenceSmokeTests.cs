@@ -4409,7 +4409,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         CompanyId companyId,
         Guid journalEntryId,
         Guid journalEntryLineId,
-        UserId accountId,
+        Guid accountId,
         decimal debit,
         decimal credit,
         CancellationToken cancellationToken,

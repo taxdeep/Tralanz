@@ -81,7 +81,7 @@
 
 @code {
     [Parameter, EditorRequired] public CompanyId CompanyId { get; set; }
-    [Parameter] public Guid? UserId { get; set; }
+    [Parameter] public UserId? UserId { get; set; }
     [Parameter] public Guid? SelectedId { get; set; }
     [Parameter] public string? SelectedDisplayText { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Search customers...";
@@ -195,7 +195,7 @@
         _visibleRows = localRows;
         _highlightedIndex = _visibleRows.Count > 0 ? 0 : -1;
 
-        if (trimmed.Length < 2 || CompanyId == Guid.Empty)
+        if (trimmed.Length < 2 || string.IsNullOrEmpty(CompanyId.Value))
         {
             return;
         }

@@ -20,7 +20,7 @@ public sealed class UnitySearchEngine(
             var recentQueries = query.UserId.HasValue
                 ? await statsStore.ListRecentQueriesAsync(
                     query.CompanyId,
-                    query.UserId,
+                    query.UserId.Value,
                     query.Context,
                     Math.Clamp(query.Take, 1, 10),
                     cancellationToken)
@@ -28,7 +28,7 @@ public sealed class UnitySearchEngine(
             var recentSelections = query.UserId.HasValue
                 ? await ListRecentSelectionsAsync(
                     query.CompanyId,
-                    query.UserId,
+                    query.UserId.Value,
                     query.Context,
                     Math.Clamp(query.Take, 1, 8),
                     cancellationToken)
@@ -70,7 +70,7 @@ public sealed class UnitySearchEngine(
         var documents = await queryService.SearchDocumentsAsync(query, policy, normalizedQuery, hints, cancellationToken);
         if (query.UserId.HasValue)
         {
-            await statsStore.RecordQueryAsync(query.CompanyId, query.UserId, query.Context, normalizedQuery, cancellationToken);
+            await statsStore.RecordQueryAsync(query.CompanyId, query.UserId.Value, query.Context, normalizedQuery, cancellationToken);
         }
 
         var grouped = BuildGroups(documents);

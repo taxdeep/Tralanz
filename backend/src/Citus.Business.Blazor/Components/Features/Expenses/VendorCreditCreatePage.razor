@@ -55,7 +55,7 @@
                 <div>
                     <label class="text-sm font-medium block mb-1">Vendor</label>
                     <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                       UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                       UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search vendors…"
                                        Take="8"
                                        SourceRoute="/vendor-credits/new"
@@ -141,7 +141,7 @@
                             <td>
                                 @* Same expense filter as ExpenseCreatePage line-Category — never surface revenue accounts on a vendor credit. *@
                                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                Context="vendor_credit.line.category"
                                                AllowedRootTypes="expense,asset,cost_of_sales"
                                                SelectedId="@line.AccountId"

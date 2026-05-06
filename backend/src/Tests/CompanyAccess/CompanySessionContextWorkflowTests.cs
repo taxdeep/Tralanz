@@ -287,7 +287,7 @@ public sealed class CompanySessionContextWorkflowTests
         PostgreSqlConnectionFactory connectionFactory,
         UserId userId,
         CompanyId firstCompanyId,
-        Guid? secondCompanyId,
+        CompanyId? secondCompanyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
@@ -305,8 +305,8 @@ public sealed class CompanySessionContextWorkflowTests
             """;
         command.Parameters.AddWithValue("user_id", userId.Value);
         var companyIds = secondCompanyId.HasValue
-            ? new[] { firstCompanyId, secondCompanyId.Value }
-            : new[] { firstCompanyId };
+            ? new[] { firstCompanyId.Value, secondCompanyId.Value.Value }
+            : new[] { firstCompanyId.Value };
         command.Parameters.AddWithValue("company_ids", companyIds);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

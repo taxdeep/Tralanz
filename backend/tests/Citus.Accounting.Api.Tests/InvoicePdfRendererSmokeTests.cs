@@ -71,7 +71,7 @@ public sealed class InvoicePdfRendererSmokeTests
             ]);
 
         var company = new CompanyProfileSnapshot(
-            Id: Guid.NewGuid(),
+            Id: CompanyId.FromOrdinal(1),
             EntityNumber: "EN20260000000001",
             LegalName: "Tralanz Studio Ltd.",
             Email: "ops@tralanz.com",

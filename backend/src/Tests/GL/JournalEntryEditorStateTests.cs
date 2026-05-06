@@ -127,7 +127,7 @@ public sealed class JournalEntryEditorStateTests
         var state = JournalEntryEditorState.CreateDarkModeDemo();
 
         state.ApplyCompanyCurrencyProfile(new CompanyCurrencyProfile(
-            Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"),
+            CompanyId.FromOrdinal(1),
             "Northwind Studio Ltd.",
             "USD",
             true,

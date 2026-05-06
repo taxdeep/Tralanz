@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Reports;
 
 public sealed record class TrialBalanceAccountSummary
 {
-    public UserId AccountId { get; init; }
+    public Guid AccountId { get; init; }
 
     public string EntityNumber { get; init; } = string.Empty;
 

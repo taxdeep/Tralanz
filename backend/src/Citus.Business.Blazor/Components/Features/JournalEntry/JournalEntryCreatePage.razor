@@ -182,7 +182,7 @@
                             </td>
                             <td>
                                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                Context="journal_entry.account_picker"
                                                DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
                                                SelectedId="@line.AccountId"
@@ -222,7 +222,7 @@
                             </td>
                             <td>
                                 <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                    Context="@SearchScopeContext.JournalEntryNamePicker"
                                                    Take="6"
                                                    Placeholder="Customer / vendor"

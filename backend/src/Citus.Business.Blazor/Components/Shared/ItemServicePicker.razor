@@ -20,7 +20,7 @@
 
 @code {
     [Parameter, EditorRequired] public CompanyId CompanyId { get; set; }
-    [Parameter] public Guid? UserId { get; set; }
+    [Parameter] public UserId? UserId { get; set; }
     [Parameter] public Guid? SelectedId { get; set; }
     [Parameter] public string? SelectedDisplayText { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Search items...";

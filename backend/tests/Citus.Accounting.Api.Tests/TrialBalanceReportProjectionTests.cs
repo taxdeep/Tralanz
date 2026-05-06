@@ -51,7 +51,7 @@ public sealed class TrialBalanceReportProjectionTests
     public void ReportCreate_FiltersZeroBalanceAccounts_WhenRequested()
     {
         var report = TrialBalanceReport.Create(
-            Guid.NewGuid(),
+            CompanyId.FromOrdinal(1),
             new DateOnly(2026, 4, 13),
             "usd",
             includeZeroBalanceAccounts: false,
