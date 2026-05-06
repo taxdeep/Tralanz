@@ -10,7 +10,7 @@ public sealed class ApAgingReportProjectionTests
         var row = ApAgingOpenItemAmount.Create(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "EN20260000U",
+            "EN20260000A",
             "North Harbor Supply",
             vendorIsActive: true,
             "bill",
@@ -39,7 +39,7 @@ public sealed class ApAgingReportProjectionTests
         var row = ApAgingOpenItemAmount.Create(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "EN20260000U",
+            "EN20260000A",
             "North Harbor Supply",
             vendorIsActive: true,
             "vendor_credit",
@@ -75,7 +75,7 @@ public sealed class ApAgingReportProjectionTests
                 ApAgingOpenItemAmount.Create(
                     Guid.NewGuid(),
                     vendorId,
-                    "EN20260000U",
+                    "EN20260000A",
                     "North Harbor Supply",
                     vendorIsActive: true,
                     "bill",
@@ -95,7 +95,7 @@ public sealed class ApAgingReportProjectionTests
                 ApAgingOpenItemAmount.Create(
                     Guid.NewGuid(),
                     vendorId,
-                    "EN20260000U",
+                    "EN20260000A",
                     "North Harbor Supply",
                     vendorIsActive: true,
                     "bill",
@@ -115,7 +115,7 @@ public sealed class ApAgingReportProjectionTests
                 ApAgingOpenItemAmount.Create(
                     Guid.NewGuid(),
                     vendorId,
-                    "EN20260000U",
+                    "EN20260000A",
                     "North Harbor Supply",
                     vendorIsActive: true,
                     "vendor_credit",

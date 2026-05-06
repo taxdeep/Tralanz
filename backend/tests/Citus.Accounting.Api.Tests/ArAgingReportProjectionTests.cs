@@ -10,7 +10,7 @@ public sealed class ArAgingReportProjectionTests
         var row = ArAgingOpenItemAmount.Create(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "EN20260000U",
+            "EN20260000A",
             "Acme Retail",
             customerIsActive: true,
             "invoice",
@@ -39,7 +39,7 @@ public sealed class ArAgingReportProjectionTests
         var row = ArAgingOpenItemAmount.Create(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "EN20260000U",
+            "EN20260000A",
             "Acme Retail",
             customerIsActive: true,
             "credit_note",
@@ -75,7 +75,7 @@ public sealed class ArAgingReportProjectionTests
                 ArAgingOpenItemAmount.Create(
                     Guid.NewGuid(),
                     customerId,
-                    "EN20260000U",
+                    "EN20260000A",
                     "Acme Retail",
                     customerIsActive: true,
                     "invoice",
@@ -95,7 +95,7 @@ public sealed class ArAgingReportProjectionTests
                 ArAgingOpenItemAmount.Create(
                     Guid.NewGuid(),
                     customerId,
-                    "EN20260000U",
+                    "EN20260000A",
                     "Acme Retail",
                     customerIsActive: true,
                     "invoice",
@@ -115,7 +115,7 @@ public sealed class ArAgingReportProjectionTests
                 ArAgingOpenItemAmount.Create(
                     Guid.NewGuid(),
                     customerId,
-                    "EN20260000U",
+                    "EN20260000A",
                     "Acme Retail",
                     customerIsActive: true,
                     "credit_note",

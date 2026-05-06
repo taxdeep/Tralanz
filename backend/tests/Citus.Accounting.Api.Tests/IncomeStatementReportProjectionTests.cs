@@ -9,7 +9,7 @@ public sealed class IncomeStatementReportProjectionTests
     {
         var row = IncomeStatementAccountAmount.Create(
             Guid.NewGuid(),
-            "EN20260000U",
+            "EN20260000A",
             "4100",
             "Service Revenue",
             "revenue",
@@ -28,7 +28,7 @@ public sealed class IncomeStatementReportProjectionTests
     {
         var row = IncomeStatementAccountAmount.Create(
             Guid.NewGuid(),
-            "EN20260000U",
+            "EN20260000A",
             "6100",
             "Office Expense",
             "expense",
@@ -53,7 +53,7 @@ public sealed class IncomeStatementReportProjectionTests
             [
                 IncomeStatementAccountAmount.Create(
                     Guid.NewGuid(),
-                    "EN20260000U",
+                    "EN20260000A",
                     "4100",
                     "Service Revenue",
                     "revenue",
@@ -64,7 +64,7 @@ public sealed class IncomeStatementReportProjectionTests
                     postedCreditTotal: 900m),
                 IncomeStatementAccountAmount.Create(
                     Guid.NewGuid(),
-                    "EN20260000U",
+                    "EN20260000A",
                     "5100",
                     "Cost Of Sales",
                     "cost_of_sales",
@@ -75,7 +75,7 @@ public sealed class IncomeStatementReportProjectionTests
                     postedCreditTotal: 0m),
                 IncomeStatementAccountAmount.Create(
                     Guid.NewGuid(),
-                    "EN20260000U",
+                    "EN20260000A",
                     "6100",
                     "Office Expense",
                     "expense",
@@ -86,7 +86,7 @@ public sealed class IncomeStatementReportProjectionTests
                     postedCreditTotal: 0m),
                 IncomeStatementAccountAmount.Create(
                     Guid.NewGuid(),
-                    "EN20260000U",
+                    "EN20260000A",
                     "6999",
                     "Unused",
                     "expense",

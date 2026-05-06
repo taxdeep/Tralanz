@@ -9,7 +9,7 @@ public sealed class BalanceSheetReportProjectionTests
     {
         var row = BalanceSheetAccountAmount.Create(
             Guid.NewGuid(),
-            "EN20260000U",
+            "EN20260000A",
             "1010",
             "Cash",
             "asset",
@@ -47,7 +47,7 @@ public sealed class BalanceSheetReportProjectionTests
             [
                 BalanceSheetAccountAmount.Create(
                     Guid.NewGuid(),
-                    "EN20260000U",
+                    "EN20260000A",
                     "1010",
                     "Cash",
                     "asset",
@@ -58,7 +58,7 @@ public sealed class BalanceSheetReportProjectionTests
                     postedCreditTotal: 0m),
                 BalanceSheetAccountAmount.Create(
                     Guid.NewGuid(),
-                    "EN20260000U",
+                    "EN20260000A",
                     "3100",
                     "Owner Capital",
                     "equity",
@@ -69,7 +69,7 @@ public sealed class BalanceSheetReportProjectionTests
                     postedCreditTotal: 1750m),
                 BalanceSheetAccountAmount.Create(
                     Guid.NewGuid(),
-                    "EN20260000U",
+                    "EN20260000A",
                     "2999",
                     "Unused Liability",
                     "liability",
