@@ -1955,8 +1955,13 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         Guid adjustmentAccountId,
         DateOnly asOfDate)
     {
-        var suffix = BitConverter.ToUInt32(request.RequestId.ToByteArray(), 0) % 100_000_000;
-        var entityNumber = EntityNumber.Parse($"EN{asOfDate.Year}{suffix:00000000}");
+        // Adjustment-doc entity number derives deterministically from the
+        // request GUID so the same draft re-prepared from the same request
+        // always reuses the same number. New EN format is EN+YYYY+5base36;
+        // map the GUID-derived suffix into the [0, MaxOrdinal] range so it
+        // round-trips through Create() instead of the legacy 8-digit width.
+        var suffix = BitConverter.ToUInt32(request.RequestId.ToByteArray(), 0) % (EntityNumber.MaxOrdinal + 1);
+        var entityNumber = EntityNumber.Create(asOfDate.Year, suffix);
         var displayNumber = new DocumentNumber($"AR-ADJ-{request.RequestId:N}"[..19]);
 
         return new OpenItemAdjustmentDocument(

@@ -468,8 +468,11 @@ public sealed class JournalEntryLifecycleSmokeTests
                   company_id,
                   book_code,
                   book_name,
+                  book_role,
                   accounting_standard,
-                  base_currency_code,
+                  book_base_currency_code,
+                  functional_currency_code,
+                  presentation_currency_code,
                   is_active,
                   is_primary,
                   effective_from,
@@ -481,7 +484,10 @@ public sealed class JournalEntryLifecycleSmokeTests
                   @company_id,
                   'PRIMARY',
                   'Primary Book',
+                  'primary',
                   'IFRS',
+                  'USD',
+                  'USD',
                   'USD',
                   true,
                   true,
@@ -493,7 +499,7 @@ public sealed class JournalEntryLifecycleSmokeTests
             bookCommand.Parameters.AddWithValue("id", bookId);
             bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             bookCommand.Parameters.AddWithValue("effective_from", journalDate.AddDays(-30));
-            bookCommand.Parameters.AddWithValue("created_by_user_id", UserId);
+            bookCommand.Parameters.AddWithValue("created_by_user_id", UserId.Value);
             await bookCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -527,7 +533,7 @@ public sealed class JournalEntryLifecycleSmokeTests
             signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("book_id", bookId);
             signalCommand.Parameters.AddWithValue("signal_date", journalDate.AddDays(5));
-            signalCommand.Parameters.AddWithValue("created_by_user_id", UserId);
+            signalCommand.Parameters.AddWithValue("created_by_user_id", UserId.Value);
             await signalCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 

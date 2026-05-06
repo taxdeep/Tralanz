@@ -137,7 +137,7 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             request.CompanyId,
             $"entity-number:pay-bill:{request.PaymentDate:yyyy}",
             $"EN{request.PaymentDate:yyyy}",
-            padding: 8,
+            padding: EntityNumber.OrdinalWidth,
             cancellationToken);
         var paymentNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,

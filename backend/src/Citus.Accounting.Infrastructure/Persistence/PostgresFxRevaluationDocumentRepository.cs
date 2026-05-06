@@ -712,7 +712,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             request.CompanyId,
             $"entity-number:fx-revaluation:{request.RevaluationDate:yyyy}",
             $"EN{request.RevaluationDate:yyyy}",
-            padding: 8,
+            padding: EntityNumber.OrdinalWidth,
             cancellationToken);
         var displayNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
@@ -816,7 +816,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             request.CompanyId,
             $"entity-number:fx-revaluation:{request.UnwindDate:yyyy}",
             $"EN{request.UnwindDate:yyyy}",
-            padding: 8,
+            padding: EntityNumber.OrdinalWidth,
             cancellationToken);
         var displayNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,

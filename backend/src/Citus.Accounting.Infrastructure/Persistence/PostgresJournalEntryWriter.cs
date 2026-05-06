@@ -100,7 +100,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             context.CompanyId,
             $"entity-number:journal-entry:{postedAt:yyyy}",
             $"EN{postedAt:yyyy}",
-            padding: 8,
+            padding: EntityNumber.OrdinalWidth,
             cancellationToken);
 
         var displayNumber = await PostgresNumberingSequences.ReserveAsync(

@@ -35,7 +35,10 @@ public sealed class SysAdminAuditTests
     {
         var actual = PlatformAuditEvent.BuildScopeLabel("Northwind Studio Ltd.", "EN20260000A");
 
-        Assert.Equal("Northwind Studio Ltd. (EN202600000001)", actual);
+        // Entity number format is EN+YYYY+5-base36; expected label echoes the
+        // raw entity number passed in, so the assertion must match the new
+        // 11-char width, not the legacy 14-char (8-digit ordinal) format.
+        Assert.Equal("Northwind Studio Ltd. (EN20260000A)", actual);
     }
 
     [Fact]

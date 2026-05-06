@@ -137,7 +137,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             request.CompanyId,
             $"entity-number:receive-payment:{request.PaymentDate:yyyy}",
             $"EN{request.PaymentDate:yyyy}",
-            padding: 8,
+            padding: EntityNumber.OrdinalWidth,
             cancellationToken);
         var paymentNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,

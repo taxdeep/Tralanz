@@ -3861,7 +3861,11 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         PostgresConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
-        var newUserId = UserId.FromOrdinal(1);
+        // Must NOT collide with the seed user that GetOrCreateUserAsync
+        // returns (which is FromOrdinal(1) = U000001). Use ordinal 2 for
+        // the secondary "approval" user so the two helpers can be invoked
+        // back-to-back without a users_pkey duplicate.
+        var newUserId = UserId.FromOrdinal(2);
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
