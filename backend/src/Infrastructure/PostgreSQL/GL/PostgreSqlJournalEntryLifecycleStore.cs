@@ -815,7 +815,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
 
     private sealed record class LifecycleLine(
         int LineNumber,
-        UserId AccountId,
+        Guid AccountId,
         string? Description,
         decimal TransactionDebit,
         decimal TransactionCredit,

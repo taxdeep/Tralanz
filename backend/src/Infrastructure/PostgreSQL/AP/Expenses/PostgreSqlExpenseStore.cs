@@ -423,7 +423,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
     private static async Task<(string CurrencyCode, string? DetailType)> ReadPaymentAccountAsync(
         NpgsqlConnection connection,
         CompanyId companyId,
-        UserId accountId,
+        Guid accountId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

@@ -1671,7 +1671,7 @@ public sealed record OpenItemAdjustmentAccountMappingSaveRequest(
     string OpenItemType,
     string AdjustmentType,
     Guid AdjustmentAccountId,
-    Guid? ActorId);
+    UserId? ActorId);
 
 public sealed record OpenItemAdjustmentAccountMappingSaveResult(
     OpenItemAdjustmentAccountMappingRecord Mapping,
@@ -1933,21 +1933,21 @@ public sealed record OpenItemAdjustmentRequestRecord(
     bool RequiresApproval,
     string ApprovalStatus,
     string? ApprovedByActorType,
-    Guid? ApprovedByActorId,
+    UserId? ApprovedByActorId,
     DateTimeOffset? ApprovedAt,
     string? RejectedByActorType,
-    Guid? RejectedByActorId,
+    UserId? RejectedByActorId,
     DateTimeOffset? RejectedAt,
     string RequestStatus,
     string ExecutionStatus,
     string RequestedByActorType,
-    Guid? RequestedByActorId,
+    UserId? RequestedByActorId,
     DateTimeOffset RequestedAt,
     string? SubmittedByActorType,
-    Guid? SubmittedByActorId,
+    UserId? SubmittedByActorId,
     DateTimeOffset? SubmittedAt,
     string? CancelledByActorType,
-    Guid? CancelledByActorId,
+    UserId? CancelledByActorId,
     DateTimeOffset? CancelledAt,
     string? Reason);
 

@@ -248,8 +248,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
             await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
             await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 grIrClearingAccountId,
                 CancellationToken.None);
             await foundationStore.EnsureCompanyFoundationAsync(
@@ -293,10 +293,10 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
 
             var first = await handler.HandleAsync(
-                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                new PostReceiptGrIrCommand(companyId, userId, receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
                 CancellationToken.None);
             var second = await handler.HandleAsync(
-                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                new PostReceiptGrIrCommand(companyId, userId, receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
                 CancellationToken.None);
             var bridgeSummary = await grIrBridgeStore.GetReceiptGrIrBridgeSummaryAsync(
                 companyId,
@@ -350,8 +350,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 repository.SaveDefaultGrIrClearingAccountAsync(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     assetAccountId,
                     CancellationToken.None));
 
@@ -423,8 +423,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
             await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
             await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 grIrClearingAccountId,
                 CancellationToken.None);
             await foundationStore.EnsureCompanyFoundationAsync(
@@ -468,22 +468,22 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await handler.HandleAsync(
-                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                new PostReceiptGrIrCommand(companyId, userId, receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
                 CancellationToken.None);
 
             var eligible = await settlementStore.RefreshReceiptSettlementControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             await SetSettlementProgressAsync(schemaConnectionString, companyId, receiptId, settledQuantity: 2.5m, settledAmountBase: 25m);
             var partial = await settlementStore.RefreshReceiptSettlementControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             var billSummary = await settlementStore.GetBillSettlementSummaryAsync(
-                new(companyId),
+                companyId,
                 billId,
                 CancellationToken.None);
 
@@ -567,8 +567,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
             await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
             await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 grIrClearingAccountId,
                 CancellationToken.None);
             await foundationStore.EnsureCompanyFoundationAsync(
@@ -612,26 +612,26 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await postingHandler.HandleAsync(
-                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                new PostReceiptGrIrCommand(companyId, userId, receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
                 CancellationToken.None);
             _ = await settlementStore.RefreshReceiptSettlementControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
 
             var firstPartial = await settlementHandler.HandleAsync(
                 new ExecuteReceiptGrIrSettlementCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     SettlementAmountBase: 25m,
                     IdempotencyKey: "h15-partial"),
                 CancellationToken.None);
             var retryPartial = await settlementHandler.HandleAsync(
                 new ExecuteReceiptGrIrSettlementCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     SettlementAmountBase: 25m,
                     IdempotencyKey: "h15-partial"),
@@ -639,16 +639,16 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var overSettlementError = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 settlementHandler.HandleAsync(
                     new ExecuteReceiptGrIrSettlementCommand(
-                        new(companyId),
-                        new(userId),
+                        companyId,
+                        userId,
                         receiptId,
                         SettlementAmountBase: 30m,
                         IdempotencyKey: "h15-over"),
                     CancellationToken.None));
             var finalSettlement = await settlementHandler.HandleAsync(
                 new ExecuteReceiptGrIrSettlementCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     SettlementAmountBase: null,
                     IdempotencyKey: "h15-final"),
@@ -748,8 +748,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
             await SeedAccountAsync(schemaConnectionString, companyId, billOffsetAccountId, "5100", "Bill Goods Offset", "expense");
             await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 grIrClearingAccountId,
                 CancellationToken.None);
             await foundationStore.EnsureCompanyFoundationAsync(
@@ -794,17 +794,17 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrPostingHandler.HandleAsync(
-                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                new PostReceiptGrIrCommand(companyId, userId, receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
                 CancellationToken.None);
             _ = await settlementStore.RefreshReceiptSettlementControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             var settlement = await settlementHandler.HandleAsync(
                 new ExecuteReceiptGrIrSettlementCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     SettlementAmountBase: null,
                     IdempotencyKey: "h16-settlement"),
@@ -812,16 +812,16 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             var firstPost = await settlementPostingHandler.HandleAsync(
                 new PostReceiptGrIrSettlementJournalCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId,
                     IdempotencyKey: "h16-journal"),
                 CancellationToken.None);
             var retryPost = await settlementPostingHandler.HandleAsync(
                 new PostReceiptGrIrSettlementJournalCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId,
                     IdempotencyKey: "h16-journal"),
@@ -832,15 +832,15 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 companyId,
                 settlement.SettlementBatchId);
             var postedJournalSummary = await settlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
 
             await SetJournalStatusAsync(schemaConnectionString, firstPost.JournalEntryId, "void");
             var staleJournalSummary = await settlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             var staleSettlementBatchStatus = await GetSettlementBatchJournalStatusAsync(
@@ -850,8 +850,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var stale = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 settlementPostingHandler.HandleAsync(
                     new PostReceiptGrIrSettlementJournalCommand(
-                        new(companyId),
-                        new(userId),
+                        companyId,
+                        userId,
                         receiptId,
                         settlement.SettlementBatchId,
                         IdempotencyKey: "h16-journal-after-void"),
@@ -859,8 +859,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var staleClearing = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 settlementClearingHandler.HandleAsync(
                     new ClearReceiptGrIrSettlementOpenItemCommand(
-                        new(companyId),
-                        new(userId),
+                        companyId,
+                        userId,
                         receiptId,
                         settlement.SettlementBatchId),
                     CancellationToken.None));
@@ -961,8 +961,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
             await SeedAccountAsync(schemaConnectionString, companyId, billOffsetAccountId, "5100", "Bill Goods Offset", "expense");
             await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 grIrClearingAccountId,
                 CancellationToken.None);
             await foundationStore.EnsureCompanyFoundationAsync(
@@ -1007,25 +1007,25 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrPostingHandler.HandleAsync(
-                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                new PostReceiptGrIrCommand(companyId, userId, receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
                 CancellationToken.None);
             _ = await settlementStore.RefreshReceiptSettlementControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             var settlement = await settlementHandler.HandleAsync(
                 new ExecuteReceiptGrIrSettlementCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     SettlementAmountBase: null,
                     IdempotencyKey: "h18-settlement"),
                 CancellationToken.None);
             var settlementPost = await settlementPostingHandler.HandleAsync(
                 new PostReceiptGrIrSettlementJournalCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId,
                     IdempotencyKey: "h18-journal"),
@@ -1033,15 +1033,15 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             var firstClear = await settlementClearingHandler.HandleAsync(
                 new ClearReceiptGrIrSettlementOpenItemCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId),
                 CancellationToken.None);
             var retryClear = await settlementClearingHandler.HandleAsync(
                 new ClearReceiptGrIrSettlementOpenItemCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId),
                 CancellationToken.None);
@@ -1061,8 +1061,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared, firstClear.Summary.OpenItemClearingStatus);
             Assert.Equal(1, firstClear.Summary.OpenItemClearedBatchCount);
             var noVarianceSummary = await settlementStore.RefreshReceiptSettlementVarianceControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance, noVarianceSummary.PurchaseVarianceStatus);
@@ -1071,30 +1071,30 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             await SetJournalStatusAsync(schemaConnectionString, settlementPost.JournalEntryId, "void");
             var staleSummary = await settlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             var staleClear = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 settlementClearingHandler.HandleAsync(
                     new ClearReceiptGrIrSettlementOpenItemCommand(
-                        new(companyId),
-                        new(userId),
+                        companyId,
+                        userId,
                         receiptId,
                         settlement.SettlementBatchId),
                     CancellationToken.None));
 
             var firstReverse = await settlementClearingReversalHandler.HandleAsync(
                 new ReverseReceiptGrIrSettlementOpenItemClearingCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId),
                 CancellationToken.None);
             var retryReverse = await settlementClearingReversalHandler.HandleAsync(
                 new ReverseReceiptGrIrSettlementOpenItemClearingCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId),
                 CancellationToken.None);
@@ -1196,8 +1196,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
             await SeedAccountAsync(schemaConnectionString, companyId, billOffsetAccountId, "5100", "Bill Goods Offset", "expense");
             await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 grIrClearingAccountId,
                 CancellationToken.None);
             await foundationStore.EnsureCompanyFoundationAsync(
@@ -1249,44 +1249,44 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
             _ = await grIrPostingHandler.HandleAsync(
-                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                new PostReceiptGrIrCommand(companyId, userId, receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
                 CancellationToken.None);
             _ = await settlementStore.RefreshReceiptSettlementControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             var settlement = await settlementHandler.HandleAsync(
                 new ExecuteReceiptGrIrSettlementCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     SettlementAmountBase: null,
                     IdempotencyKey: "h19-settlement"),
                 CancellationToken.None);
             _ = await settlementPostingHandler.HandleAsync(
                 new PostReceiptGrIrSettlementJournalCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId,
                     IdempotencyKey: "h19-journal"),
                 CancellationToken.None);
             _ = await settlementClearingHandler.HandleAsync(
                 new ClearReceiptGrIrSettlementOpenItemCommand(
-                    new(companyId),
-                    new(userId),
+                    companyId,
+                    userId,
                     receiptId,
                     settlement.SettlementBatchId),
                 CancellationToken.None);
 
             var varianceSummary = await settlementStore.RefreshReceiptSettlementVarianceControlAsync(
-                new(companyId),
-                new(userId),
+                companyId,
+                userId,
                 receiptId,
                 CancellationToken.None);
             var billSummary = await settlementStore.GetBillSettlementSummaryAsync(
-                new(companyId),
+                companyId,
                 billId,
                 CancellationToken.None);
             var apOpenItem = await GetApOpenItemStateByBillAsync(schemaConnectionString, companyId, billId);

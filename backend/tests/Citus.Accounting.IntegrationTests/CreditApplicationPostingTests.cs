@@ -175,8 +175,8 @@ public sealed class CreditApplicationPostingTests
         Guid? lossAccountId = null) =>
         new(
             Guid.NewGuid(),
-            new CompanyId(Guid.NewGuid()),
-            new EntityNumber("EN2026000019"),
+            CompanyId.FromOrdinal(1),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("CAP-0001"),
             "draft",
             new DateOnly(2026, 4, 12),
@@ -219,8 +219,8 @@ public sealed class CreditApplicationPostingTests
         Guid? lossAccountId = null) =>
         new(
             Guid.NewGuid(),
-            new CompanyId(Guid.NewGuid()),
-            new EntityNumber("EN2026000020"),
+            CompanyId.FromOrdinal(1),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("VCA-0001"),
             "draft",
             new DateOnly(2026, 4, 12),

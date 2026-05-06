@@ -14,8 +14,8 @@ public sealed class PostReceiptGrIrCommandHandlerTests
     [Fact]
     public async Task HandleAsync_RefreshesBridgePostsThroughPostingEngineAndCompletesBatch()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var receiptId = Guid.NewGuid();
         var batchId = Guid.NewGuid();
         var grIrClearingAccountId = Guid.NewGuid();
@@ -48,8 +48,8 @@ public sealed class PostReceiptGrIrCommandHandlerTests
     [Fact]
     public async Task HandleAsync_UsesCompanyDefaultClearingAccountWhenRequestOmitsAccount()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var receiptId = Guid.NewGuid();
         var batchId = Guid.NewGuid();
         var grIrClearingAccountId = Guid.NewGuid();
@@ -77,7 +77,7 @@ public sealed class PostReceiptGrIrCommandHandlerTests
         new(
             batchId,
             companyId,
-            new EntityNumber("EN-GRIR-TEST"),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("GRIR-TEST"),
             "draft",
             receiptId,

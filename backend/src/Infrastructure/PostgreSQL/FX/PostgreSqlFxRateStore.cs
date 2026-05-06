@@ -653,9 +653,9 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         command.Parameters.AddWithValue("posting_reason", postingReason);
         command.Parameters.AddWithValue("provider_key", providerKey);
         command.Parameters.AddWithValue("notes", "Manual JE FX override");
-        command.Parameters.Add(new NpgsqlParameter<Guid?>("created_by_user_id", NpgsqlDbType.Uuid)
+        command.Parameters.Add(new NpgsqlParameter<string?>("created_by_user_id", NpgsqlDbType.Char)
         {
-            TypedValue = createdByUserId
+            TypedValue = createdByUserId?.Value
         });
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

@@ -188,7 +188,7 @@ public sealed class JournalEntryPersistenceSmokeTests
                     draft,
                     new PostingContext(
                         CompanyId.Parse(companyId.ToString()),
-                        new UserId(Guid.NewGuid()),
+                        UserId.FromOrdinal(1),
                         usd,
                         null,
                         $"closed-period:{sourceId:N}",

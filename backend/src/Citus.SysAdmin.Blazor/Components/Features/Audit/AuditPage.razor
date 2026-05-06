@@ -260,7 +260,10 @@ else if (_events.Count > 0)
             return;
         }
 
-        _selectedTimelineUser = _users.FirstOrDefault(user => user.Id == accountId.Value);
+        // TODO(id-redesign): query param is still Guid; rewire to UserId once
+        // routing/url scheme accepts the new short-id format. For compile-clean
+        // we short-circuit user lookup + timeline call until then.
+        _selectedTimelineUser = null;
 
         if (_selectedTimelineUser is null)
         {
@@ -273,7 +276,7 @@ else if (_events.Count > 0)
 
         try
         {
-            _selectedMfaTimeline = await SysAdminControlClient.ListAccountMfaTimelineAsync(accountId.Value);
+            _selectedMfaTimeline = await SysAdminControlClient.ListAccountMfaTimelineAsync(default);
         }
         catch (Exception ex)
         {

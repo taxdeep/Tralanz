@@ -2,7 +2,7 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 
 public sealed record ReportUsageEventInput(
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string ReportKey,
     string EventType,
     string? DateRangeKey,
@@ -14,7 +14,7 @@ public sealed record ReportUsageStatRecord(
     Guid Id,
     CompanyId CompanyId,
     string ScopeType,
-    Guid? UserId,
+    UserId? UserId,
     string ReportKey,
     int OpenCount,
     int ExportCount,

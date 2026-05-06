@@ -88,8 +88,8 @@ public sealed class ReceiptDraftApiTests
 
         Assert.Throws<InvalidOperationException>(() => new PurchaseOrderDocument(
             Guid.NewGuid(),
-            new CompanyId(Guid.NewGuid()),
-            new EntityNumber("EN202600000001"),
+            CompanyId.FromOrdinal(1),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("PO-000001"),
             PurchaseOrderDocumentStatuses.Draft,
             Guid.NewGuid(),
@@ -155,8 +155,8 @@ public sealed class ReceiptDraftApiTests
     [Fact]
     public void Receipt_document_requires_vendor_warehouse_and_lines()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var entityNumber = new EntityNumber("EN202600000001");
+        var companyId = CompanyId.FromOrdinal(1);
+        var entityNumber = EntityNumber.FromLegacy("EN-LEGACY-TEST");
         var displayNumber = new DocumentNumber("RECEIPT-000001");
         var line = new ReceiptDocumentLine(1, Guid.NewGuid(), 2.5m, "kg");
 

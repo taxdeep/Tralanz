@@ -925,7 +925,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             );
             """;
         command.Parameters.Add(new NpgsqlParameter<Guid>("id", NpgsqlDbType.Uuid));
-        command.Parameters.Add(new NpgsqlParameter<Guid>("company_id", NpgsqlDbType.Uuid) { TypedValue = companyId });
+        command.Parameters.Add(new NpgsqlParameter<string>("company_id", NpgsqlDbType.Char) { TypedValue = companyId.Value });
         command.Parameters.Add(new NpgsqlParameter<Guid>("vendor_id", NpgsqlDbType.Uuid));
         command.Parameters.Add(new NpgsqlParameter<Guid>("item_id", NpgsqlDbType.Uuid));
         command.Parameters.Add(new NpgsqlParameter<Guid>("warehouse_id", NpgsqlDbType.Uuid));
@@ -1190,7 +1190,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             );
             """;
         command.Parameters.Add(new NpgsqlParameter<Guid>("id", NpgsqlDbType.Uuid));
-        command.Parameters.Add(new NpgsqlParameter<Guid>("company_id", NpgsqlDbType.Uuid) { TypedValue = companyId });
+        command.Parameters.Add(new NpgsqlParameter<string>("company_id", NpgsqlDbType.Char) { TypedValue = companyId.Value });
         command.Parameters.Add(new NpgsqlParameter<Guid>("bill_id", NpgsqlDbType.Uuid));
         command.Parameters.Add(new NpgsqlParameter<int>("bill_line_number", NpgsqlDbType.Integer));
         command.Parameters.Add(new NpgsqlParameter<string>("discrepancy_type", NpgsqlDbType.Text));

@@ -49,7 +49,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             var prepared = await fixture.PrepareBatchHandler.HandleAsync(
                 new PrepareFxRevaluationBatchCommand(
                     CompanyId,
-                    new UserId(fixture.UserId),
+                    UserId.FromOrdinal(1),
                     BookId: null,
                     revaluationDate,
                     new CurrencyCode("EUR"),
@@ -68,7 +68,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                 new PostFxRevaluationBatchCommand(
                     CompanyId,
                     prepared.DocumentId,
-                    new UserId(fixture.UserId),
+                    UserId.FromOrdinal(1),
                     snapshotId,
                     IdempotencyKey: null),
                 CancellationToken.None);
@@ -117,7 +117,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                 new PrepareFxRevaluationUnwindBatchCommand(
                     CompanyId,
                     prepared.DocumentId,
-                    new UserId(fixture.UserId),
+                    UserId.FromOrdinal(1),
                     unwindDate,
                     "FX smoke unwind"),
                 CancellationToken.None);
@@ -212,7 +212,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                 new PostFxRevaluationCascadeUnwindCommand(
                     CompanyId,
                     firstDocumentId,
-                    new UserId(fixture.UserId),
+                    UserId.FromOrdinal(1),
                     unwindDate,
                     "FX smoke cascade unwind",
                     IdempotencyKey: null),
@@ -330,7 +330,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         var prepared = await fixture.PrepareBatchHandler.HandleAsync(
             new PrepareFxRevaluationBatchCommand(
                 CompanyId,
-                new UserId(fixture.UserId),
+                UserId.FromOrdinal(1),
                 BookId: null,
                 revaluationDate,
                 new CurrencyCode("EUR"),
@@ -344,7 +344,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             new PostFxRevaluationBatchCommand(
                 CompanyId,
                 prepared.DocumentId,
-                new UserId(fixture.UserId),
+                UserId.FromOrdinal(1),
                 snapshotId,
                 IdempotencyKey: null),
             cancellationToken);

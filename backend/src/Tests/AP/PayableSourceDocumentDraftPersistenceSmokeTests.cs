@@ -38,8 +38,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var billResult = await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -59,8 +59,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var updatedBillResult = await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     billId,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 21),
@@ -76,7 +76,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
             Assert.Equal(billId, updatedBillResult.DocumentId);
 
-            var bill = await billRepository.GetForPostingAsync(new CompanyId(CompanyId), billId, CancellationToken.None);
+            var bill = await billRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), billId, CancellationToken.None);
             Assert.NotNull(bill);
             Assert.Equal("draft", bill!.Status);
             Assert.Equal(55m, bill.TotalAmount);
@@ -85,8 +85,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var vendorCreditResult = await vendorCreditRepository.SaveDraftAsync(
                 new VendorCreditDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 15),
                     new DateOnly(2026, 5, 15),
@@ -103,7 +103,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditId = vendorCreditResult.DocumentId;
             Assert.StartsWith("VC-", vendorCreditResult.DisplayNumber, StringComparison.Ordinal);
 
-            var vendorCredit = await vendorCreditRepository.GetForPostingAsync(new CompanyId(CompanyId), vendorCreditId, CancellationToken.None);
+            var vendorCredit = await vendorCreditRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), vendorCreditId, CancellationToken.None);
             Assert.NotNull(vendorCredit);
             Assert.Equal("draft", vendorCredit!.Status);
             Assert.Equal(20m, vendorCredit.TotalAmount);
@@ -141,8 +141,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -162,8 +162,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 billRepository.SaveDraftAsync(
                     new BillDraftSaveModel(
                         billId,
-                        new CompanyId(CompanyId),
-                        new UserId(userId),
+                        CompanyId.FromOrdinal(1),
+                        UserId.FromOrdinal(1),
                         VendorId,
                         new DateOnly(2026, 4, 14),
                         new DateOnly(2026, 5, 20),
@@ -181,8 +181,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditId = (await vendorCreditRepository.SaveDraftAsync(
                 new VendorCreditDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 15),
                     new DateOnly(2026, 5, 15),
@@ -202,8 +202,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 vendorCreditRepository.SaveDraftAsync(
                     new VendorCreditDraftSaveModel(
                         vendorCreditId,
-                        new CompanyId(CompanyId),
-                        new UserId(userId),
+                        CompanyId.FromOrdinal(1),
+                        UserId.FromOrdinal(1),
                         VendorId,
                         new DateOnly(2026, 4, 15),
                         new DateOnly(2026, 5, 21),
@@ -251,8 +251,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -277,7 +277,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var review = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
@@ -338,8 +338,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -374,7 +374,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 fxSnapshotId: fxSnapshotId);
 
             var sourceReview = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
@@ -444,8 +444,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -470,7 +470,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var review = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
@@ -517,8 +517,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -543,7 +543,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var preview = await reviewRepository.GetLifecyclePreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
@@ -586,8 +586,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -612,7 +612,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var preview = await reviewRepository.GetLifecycleActionPreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 "reopen_document",
@@ -658,8 +658,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -684,7 +684,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptVoidAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
@@ -730,8 +730,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -756,7 +756,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -773,7 +773,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_linked_je_lifecycle", attempt.AvailabilityMode);
 
             var request = await reviewRepository.GetLatestReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
@@ -814,8 +814,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -840,7 +840,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -851,7 +851,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(attempt.RequestId);
 
             var cancelResult = await reviewRepository.CancelReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId!.Value,
@@ -899,8 +899,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -925,7 +925,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -936,7 +936,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(attempt.RequestId);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId!.Value,
@@ -988,8 +988,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1033,7 +1033,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -1044,7 +1044,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(attempt.RequestId);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId!.Value,
@@ -1055,7 +1055,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId.Value,
@@ -1071,7 +1071,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("AP settlement/application trail", executeResult.Message);
 
             var blockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
@@ -1123,8 +1123,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1149,7 +1149,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -1159,7 +1159,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId!.Value,
@@ -1170,7 +1170,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var plan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId.Value,
@@ -1231,8 +1231,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1268,7 +1268,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -1278,7 +1278,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId!.Value,
@@ -1289,7 +1289,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId.Value,
@@ -1310,7 +1310,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 attempt.RequestId.Value,
@@ -1423,7 +1423,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 CancellationToken.None);
@@ -1441,7 +1441,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("posted", originalReviewBeforeReverse.Status);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 userId,
@@ -1451,7 +1451,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 attempt.RequestId!.Value,
@@ -1462,7 +1462,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 attempt.RequestId.Value,
@@ -1482,7 +1482,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 attempt.RequestId.Value,
@@ -1503,7 +1503,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "pay_bills", payBillId, CancellationToken.None);
             var openItem = await GetApOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 CancellationToken.None);
@@ -1526,7 +1526,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 payBillId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 CancellationToken.None);
@@ -1673,7 +1673,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 CancellationToken.None);
@@ -1699,7 +1699,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("header-only", originalReviewBeforeReverse.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 userId,
@@ -1709,7 +1709,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 attempt.RequestId!.Value,
@@ -1720,7 +1720,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 attempt.RequestId.Value,
@@ -1740,7 +1740,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 attempt.RequestId.Value,
@@ -1761,7 +1761,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "pay_bills", payBillId, CancellationToken.None);
             var openItem = await GetApOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 CancellationToken.None);
@@ -1784,7 +1784,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 payBillId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 CancellationToken.None);
@@ -1881,8 +1881,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1949,7 +1949,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var billAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -1959,7 +1959,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", billAttempt!.OutcomeCode);
 
             var billSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId!.Value,
@@ -1970,7 +1970,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", billSubmit!.OutcomeCode);
 
             var blockedBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -1982,14 +1982,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedBillExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None));
             Assert.Equal(payBillId, initialBlocker.SettlementSourceId);
 
             var payBillAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 userId,
@@ -1997,7 +1997,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(payBillAttempt);
 
             var payBillSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 payBillAttempt!.RequestId!.Value,
@@ -2007,7 +2007,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", payBillSubmit!.OutcomeCode);
 
             var payBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 payBillAttempt.RequestId.Value,
@@ -2026,7 +2026,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             payBillCompensationJournalEntryId = payBillLifecycle.CompensationJournalEntryId;
 
             var payBillCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 payBillAttempt.RequestId.Value,
@@ -2042,14 +2042,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             settlementApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyBillPlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -2060,7 +2060,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyBillPlan.OverallStatus);
 
             var readyBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -2079,7 +2079,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billCompensationJournalEntryId = billLifecycle.CompensationJournalEntryId;
 
             var billCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -2169,8 +2169,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2263,7 +2263,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var billAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 userId,
@@ -2273,7 +2273,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", billAttempt!.OutcomeCode);
 
             var billSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId!.Value,
@@ -2284,7 +2284,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", billSubmit!.OutcomeCode);
 
             var blockedBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -2296,14 +2296,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedBillExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None));
             Assert.Equal(payBillId, initialBlocker.SettlementSourceId);
 
             var payBillAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 userId,
@@ -2311,7 +2311,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(payBillAttempt);
 
             var payBillSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 payBillAttempt!.RequestId!.Value,
@@ -2321,7 +2321,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", payBillSubmit!.OutcomeCode);
 
             var payBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 payBillAttempt.RequestId.Value,
@@ -2340,7 +2340,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             payBillCompensationJournalEntryId = payBillLifecycle.CompensationJournalEntryId;
 
             var payBillCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "pay_bill",
                 payBillId,
                 payBillAttempt.RequestId.Value,
@@ -2356,14 +2356,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             settlementApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyBillPlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -2374,7 +2374,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyBillPlan.OverallStatus);
 
             var readyBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -2393,7 +2393,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billCompensationJournalEntryId = billLifecycle.CompensationJournalEntryId;
 
             var billCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "bill",
                 billId,
                 billAttempt.RequestId.Value,
@@ -2418,8 +2418,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var billCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, billCompensationJournalEntryId, CancellationToken.None);
             var payBillReview = await journalEntryReviewStore.GetAsync(CompanyId, payBillJournalEntryId, CancellationToken.None);
             var payBillCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, payBillCompensationJournalEntryId, CancellationToken.None);
-            var billSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "bill", billId, CancellationToken.None);
-            var payBillSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "pay_bill", payBillId, CancellationToken.None);
+            var billSourceReview = await reviewRepository.GetSourceDocumentAsync(CompanyId.FromOrdinal(1), "bill", billId, CancellationToken.None);
+            var payBillSourceReview = await reviewRepository.GetSourceDocumentAsync(CompanyId.FromOrdinal(1), "pay_bill", payBillId, CancellationToken.None);
 
             Assert.Equal("reversed", billStatus);
             Assert.Equal("reversed", payBillStatus);
@@ -2522,8 +2522,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditId = (await vendorCreditRepository.SaveDraftAsync(
                 new VendorCreditDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2609,7 +2609,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var vendorCreditAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 userId,
@@ -2618,7 +2618,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", vendorCreditAttempt!.OutcomeCode);
 
             var vendorCreditSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId!.Value,
@@ -2628,7 +2628,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", vendorCreditSubmit!.OutcomeCode);
 
             var blockedVendorCreditExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId.Value,
@@ -2639,7 +2639,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedVendorCreditExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 CancellationToken.None));
@@ -2647,7 +2647,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal(sourceVendorCreditOpenItemId, initialBlocker.TargetOpenItemId);
 
             var vendorCreditApplicationAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 userId,
@@ -2655,7 +2655,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(vendorCreditApplicationAttempt);
 
             var vendorCreditApplicationSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 vendorCreditApplicationAttempt!.RequestId!.Value,
@@ -2665,7 +2665,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", vendorCreditApplicationSubmit!.OutcomeCode);
 
             var vendorCreditApplicationExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 vendorCreditApplicationAttempt.RequestId.Value,
@@ -2683,7 +2683,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditApplicationCompensationJournalEntryId = vendorCreditApplicationLifecycle.CompensationJournalEntryId;
 
             var vendorCreditApplicationCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 vendorCreditApplicationAttempt.RequestId.Value,
@@ -2699,14 +2699,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             targetApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyVendorCreditPlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId.Value,
@@ -2717,7 +2717,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyVendorCreditPlan.OverallStatus);
 
             var readyVendorCreditExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId.Value,
@@ -2735,7 +2735,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditCompensationJournalEntryId = vendorCreditLifecycle.CompensationJournalEntryId;
 
             var vendorCreditCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId.Value,
@@ -2832,8 +2832,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditId = (await vendorCreditRepository.SaveDraftAsync(
                 new VendorCreditDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2949,7 +2949,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var vendorCreditAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 userId,
@@ -2958,7 +2958,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", vendorCreditAttempt!.OutcomeCode);
 
             var vendorCreditSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId!.Value,
@@ -2968,7 +2968,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", vendorCreditSubmit!.OutcomeCode);
 
             var blockedVendorCreditExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId.Value,
@@ -2979,14 +2979,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedVendorCreditExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 CancellationToken.None));
             Assert.Equal(vendorCreditApplicationId, initialBlocker.SettlementSourceId);
 
             var vendorCreditApplicationAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 userId,
@@ -2994,7 +2994,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(vendorCreditApplicationAttempt);
 
             var vendorCreditApplicationSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 vendorCreditApplicationAttempt!.RequestId!.Value,
@@ -3004,7 +3004,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", vendorCreditApplicationSubmit!.OutcomeCode);
 
             var vendorCreditApplicationExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 vendorCreditApplicationAttempt.RequestId.Value,
@@ -3022,7 +3022,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditApplicationCompensationJournalEntryId = vendorCreditApplicationLifecycle.CompensationJournalEntryId;
 
             var vendorCreditApplicationCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 vendorCreditApplicationAttempt.RequestId.Value,
@@ -3038,14 +3038,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             targetApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyVendorCreditExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId.Value,
@@ -3063,7 +3063,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             vendorCreditCompensationJournalEntryId = vendorCreditLifecycle.CompensationJournalEntryId;
 
             var vendorCreditCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit",
                 vendorCreditId,
                 vendorCreditAttempt.RequestId.Value,
@@ -3226,7 +3226,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 userId,
@@ -3236,7 +3236,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 attempt.RequestId!.Value,
@@ -3247,7 +3247,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 attempt.RequestId.Value,
@@ -3267,7 +3267,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 attempt.RequestId.Value,
@@ -3299,7 +3299,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 vendorCreditApplicationId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "vendor_credit_application",
                 vendorCreditApplicationId,
                 CancellationToken.None);
@@ -3391,8 +3391,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             billId = (await billRepository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     VendorId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -3417,12 +3417,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 amount: 172m);
 
             var before = await openItemRepository.GetDrillDownAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 
             var approvalPreview = await openItemRepository.GetAdjustmentPreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "small_balance_adjustment",
                 new DateOnly(2026, 4, 15),
@@ -3430,7 +3430,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var approvalAttempt = await openItemRepository.RequestAdjustmentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "small_balance_adjustment",
                 new DateOnly(2026, 4, 15),
@@ -3440,56 +3440,56 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var approvalSubmitResult = await openItemRepository.SubmitAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 approvalAttempt!.Request!.RequestId,
                 userId,
                 CancellationToken.None);
 
             var approvalReadiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 approvalAttempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
                 CancellationToken.None);
 
             var selfApprovalResult = await openItemRepository.ApproveAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 approvalAttempt.Request.RequestId,
                 userId,
                 CancellationToken.None);
 
             var approvalApproveResult = await openItemRepository.ApproveAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 approvalAttempt.Request.RequestId,
                 approvalUserId,
                 CancellationToken.None);
 
             var approvedReadiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 approvalAttempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
                 CancellationToken.None);
 
             var approvedExecutionPlan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 approvalAttempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
                 CancellationToken.None);
 
             var approvalCancelResult = await openItemRepository.CancelAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 approvalAttempt.Request.RequestId,
                 userId,
                 CancellationToken.None);
 
             var preview = await openItemRepository.GetAdjustmentPreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "small_balance_adjustment",
                 new DateOnly(2026, 4, 15),
@@ -3497,7 +3497,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await openItemRepository.RequestAdjustmentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "small_balance_adjustment",
                 new DateOnly(2026, 4, 15),
@@ -3507,26 +3507,26 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var latestDraft = await openItemRepository.GetLatestAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 
             var submitResult = await openItemRepository.SubmitAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt!.Request!.RequestId,
                 userId,
                 CancellationToken.None);
 
             var readiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
                 CancellationToken.None);
 
             var executionPlan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
@@ -3535,10 +3535,10 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var invalidAdjustmentAccount = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => adjustmentHandler.HandleAsync(
                     new PostApOpenItemAdjustmentCommand(
-                        new CompanyId(CompanyId),
+                        CompanyId.FromOrdinal(1),
                         openItemId,
                         attempt.Request.RequestId,
-                        new UserId(userId),
+                        UserId.FromOrdinal(1),
                         payableControlAccountId,
                         new DateOnly(2026, 4, 15),
                         null),
@@ -3555,10 +3555,10 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var unmappedAdjustmentAccount = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => adjustmentHandler.HandleAsync(
                     new PostApOpenItemAdjustmentCommand(
-                        new CompanyId(CompanyId),
+                        CompanyId.FromOrdinal(1),
                         openItemId,
                         attempt.Request.RequestId,
-                        new UserId(userId),
+                        UserId.FromOrdinal(1),
                         unmappedExpenseAccountId,
                         new DateOnly(2026, 4, 15),
                         null),
@@ -3566,10 +3566,10 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
             var executionResult = await adjustmentHandler.HandleAsync(
                 new PostApOpenItemAdjustmentCommand(
-                    new CompanyId(CompanyId),
+                    CompanyId.FromOrdinal(1),
                     openItemId,
                     attempt.Request.RequestId,
-                    new UserId(userId),
+                    UserId.FromOrdinal(1),
                     expenseAccountId,
                     new DateOnly(2026, 4, 15),
                     null),
@@ -3577,7 +3577,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             adjustmentJournalEntryId = executionResult.JournalEntryId ?? Guid.Empty;
 
             var followUpAttempt = await openItemRepository.RequestAdjustmentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "small_balance_adjustment",
                 new DateOnly(2026, 4, 15),
@@ -3587,7 +3587,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var after = await openItemRepository.GetDrillDownAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 

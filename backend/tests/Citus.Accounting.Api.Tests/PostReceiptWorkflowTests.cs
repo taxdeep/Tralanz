@@ -11,8 +11,8 @@ public sealed class PostReceiptWorkflowTests
     [Fact]
     public async Task PostAsync_PreflightsPostsAndActivatesDraftReceipt()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var documentId = Guid.NewGuid();
         var repository = new FakeReceiptDocumentRepository(BuildReceipt(documentId, companyId, ReceiptDocumentStatuses.Draft));
         var activationStore = new FakeReceiptInventoryActivationStore();
@@ -33,8 +33,8 @@ public sealed class PostReceiptWorkflowTests
     [Fact]
     public async Task PostAsync_ReusesPostedReceiptForIdempotentActivationRetry()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var documentId = Guid.NewGuid();
         var repository = new FakeReceiptDocumentRepository(BuildReceipt(documentId, companyId, ReceiptDocumentStatuses.Posted));
         var activationStore = new FakeReceiptInventoryActivationStore();
@@ -55,8 +55,8 @@ public sealed class PostReceiptWorkflowTests
     [Fact]
     public async Task PostAsync_RejectsMissingReceipt()
     {
-        var companyId = new CompanyId(Guid.NewGuid());
-        var userId = new UserId(Guid.NewGuid());
+        var companyId = CompanyId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(1);
         var documentId = Guid.NewGuid();
         var repository = new FakeReceiptDocumentRepository(null);
         var activationStore = new FakeReceiptInventoryActivationStore();
@@ -78,7 +78,7 @@ public sealed class PostReceiptWorkflowTests
         new(
             documentId,
             companyId,
-            new EntityNumber("EN202600000001"),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("RECEIPT-000001"),
             status,
             Guid.NewGuid(),

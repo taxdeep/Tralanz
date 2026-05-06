@@ -388,11 +388,11 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             AuditId = reader.GetGuid(reader.GetOrdinal("id")),
             CompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             MembershipId = reader.GetGuid(reader.GetOrdinal("membership_id")),
-            ActorUserId = reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            ActorUserId = reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             ActorEmail = actorEmail,
             ActorDisplayName = !string.IsNullOrWhiteSpace(actorUsername) ? actorUsername : actorEmail,
             TargetUserId = reader.IsDBNull(reader.GetOrdinal("target_user_id"))
-                ? TryReadGuid(root, "TargetUserId")
+                ? TryReadUserId(root, "TargetUserId")
                 : UserId.Parse(reader.GetString(reader.GetOrdinal("target_user_id"))),
             TargetEmail = targetEmail,
             TargetDisplayName = !string.IsNullOrWhiteSpace(targetUsername) ? targetUsername : targetEmail,
@@ -522,6 +522,18 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         if (!root.TryGetProperty(propertyName, out var value) ||
             value.ValueKind != JsonValueKind.String ||
             !Guid.TryParse(value.GetString(), out var parsed))
+        {
+            return null;
+        }
+
+        return parsed;
+    }
+
+    private static UserId? TryReadUserId(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var value) ||
+            value.ValueKind != JsonValueKind.String ||
+            !UserId.TryParse(value.GetString(), out var parsed))
         {
             return null;
         }

@@ -16,8 +16,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(5);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _companyRefreshTimestamps = new();
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _companyLocks = new();
+    private readonly ConcurrentDictionary<CompanyId, DateTimeOffset> _companyRefreshTimestamps = new();
+    private readonly ConcurrentDictionary<CompanyId, SemaphoreSlim> _companyLocks = new();
     private int _schemaEnsured;
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)

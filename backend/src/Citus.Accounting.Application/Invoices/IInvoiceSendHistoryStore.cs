@@ -25,7 +25,7 @@ public interface IInvoiceSendHistoryStore
 public sealed record InvoiceSendHistoryDraft(
     CompanyId CompanyId,
     Guid InvoiceId,
-    Guid SentByUserId,
+    UserId SentByUserId,
     string ToEmail,
     string CcEmails,
     string BccEmails,
@@ -38,7 +38,7 @@ public sealed record InvoiceSendHistoryRecord(
     CompanyId CompanyId,
     Guid InvoiceId,
     DateTimeOffset SentAt,
-    Guid SentByUserId,
+    UserId SentByUserId,
     string ToEmail,
     string CcEmails,
     string BccEmails,

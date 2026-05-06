@@ -38,8 +38,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var invoiceResult = await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -59,8 +59,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var updatedInvoiceResult = await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     invoiceId,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 20),
@@ -76,7 +76,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
             Assert.Equal(invoiceId, updatedInvoiceResult.DocumentId);
 
-            var invoice = await invoiceRepository.GetForPostingAsync(new CompanyId(CompanyId), invoiceId, CancellationToken.None);
+            var invoice = await invoiceRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), invoiceId, CancellationToken.None);
             Assert.NotNull(invoice);
             Assert.Equal("draft", invoice!.Status);
             Assert.Equal(75m, invoice.TotalAmount);
@@ -85,8 +85,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var creditNoteResult = await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 15),
                     new DateOnly(2026, 5, 15),
@@ -103,7 +103,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = creditNoteResult.DocumentId;
             Assert.StartsWith("CN-", creditNoteResult.DisplayNumber, StringComparison.Ordinal);
 
-            var creditNote = await creditNoteRepository.GetForPostingAsync(new CompanyId(CompanyId), creditNoteId, CancellationToken.None);
+            var creditNote = await creditNoteRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), creditNoteId, CancellationToken.None);
             Assert.NotNull(creditNote);
             Assert.Equal("draft", creditNote!.Status);
             Assert.Equal(30m, creditNote.TotalAmount);
@@ -141,8 +141,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -162,8 +162,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 invoiceRepository.SaveDraftAsync(
                     new InvoiceDraftSaveModel(
                         invoiceId,
-                        new CompanyId(CompanyId),
-                        new UserId(userId),
+                        CompanyId.FromOrdinal(1),
+                        UserId.FromOrdinal(1),
                         CustomerId,
                         new DateOnly(2026, 4, 14),
                         new DateOnly(2026, 5, 20),
@@ -181,8 +181,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = (await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 15),
                     new DateOnly(2026, 5, 15),
@@ -202,8 +202,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 creditNoteRepository.SaveDraftAsync(
                     new CreditNoteDraftSaveModel(
                         creditNoteId,
-                        new CompanyId(CompanyId),
-                        new UserId(userId),
+                        CompanyId.FromOrdinal(1),
+                        UserId.FromOrdinal(1),
                         CustomerId,
                         new DateOnly(2026, 4, 15),
                         new DateOnly(2026, 5, 21),
@@ -251,8 +251,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -277,7 +277,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var review = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -339,8 +339,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -375,7 +375,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 fxSnapshotId: fxSnapshotId);
 
             var sourceReview = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -494,7 +494,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var sourceReview = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -623,7 +623,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -648,7 +648,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("header-only", originalReviewBeforeReverse.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -658,7 +658,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId!.Value,
@@ -669,7 +669,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -689,7 +689,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -710,7 +710,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "receive_payments", receivePaymentId, CancellationToken.None);
             var openItem = await GetArOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -733,7 +733,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 receivePaymentId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -823,8 +823,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -849,7 +849,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var review = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -896,8 +896,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -922,7 +922,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var preview = await reviewRepository.GetLifecyclePreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -965,8 +965,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -991,7 +991,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var preview = await reviewRepository.GetLifecycleActionPreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 "void_document",
@@ -1037,8 +1037,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1063,7 +1063,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptVoidAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1108,8 +1108,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1134,7 +1134,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1150,7 +1150,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt.OutcomeCode);
 
             var request = await reviewRepository.GetLatestReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1165,7 +1165,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal(userId, request.RequestedByActorId);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1180,7 +1180,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(submitResult.Request.SubmittedAt);
 
             var readiness = await reviewRepository.GetReverseRequestApplyReadinessAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1193,7 +1193,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recording_only", readiness.ExecutionMode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1248,8 +1248,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1301,7 +1301,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var blockerReverseAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -1312,7 +1312,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(blockerReverseAttempt.RequestId);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1323,7 +1323,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(attempt.RequestId);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1334,7 +1334,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1350,7 +1350,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("AR settlement/application trail", executeResult.Message);
 
             var plan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1364,7 +1364,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked", plan.Steps[2].StepStatus);
 
             var blockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1427,8 +1427,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1464,7 +1464,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1474,7 +1474,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1485,7 +1485,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1506,7 +1506,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1593,8 +1593,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -1641,7 +1641,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 baseCurrencyCode: "USD");
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1667,7 +1667,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Contains("snapshot", originalReviewBeforeReverse.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -1677,7 +1677,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId!.Value,
@@ -1688,7 +1688,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1709,7 +1709,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 attempt.RequestId.Value,
@@ -1734,7 +1734,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "invoices", invoiceId, CancellationToken.None);
             var openItemStatus = await GetArOpenItemStatusAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
@@ -1864,7 +1864,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -1882,7 +1882,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("posted", originalReviewBeforeReverse.Status);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -1892,7 +1892,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId!.Value,
@@ -1903,7 +1903,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -1923,7 +1923,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 attempt.RequestId.Value,
@@ -1944,7 +1944,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "receive_payments", receivePaymentId, CancellationToken.None);
             var openItem = await GetArOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
             var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -1967,7 +1967,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 receivePaymentId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 CancellationToken.None);
@@ -2060,8 +2060,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2128,7 +2128,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var invoiceAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -2138,7 +2138,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", invoiceAttempt!.OutcomeCode);
 
             var invoiceSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId!.Value,
@@ -2149,7 +2149,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", invoiceSubmit!.OutcomeCode);
 
             var blockedInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2161,14 +2161,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedInvoiceExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None));
             Assert.Equal(receivePaymentId, initialBlocker.SettlementSourceId);
 
             var paymentAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -2176,7 +2176,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(paymentAttempt);
 
             var paymentSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt!.RequestId!.Value,
@@ -2186,7 +2186,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", paymentSubmit!.OutcomeCode);
 
             var paymentExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2205,7 +2205,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             receivePaymentCompensationJournalEntryId = paymentLifecycle.CompensationJournalEntryId;
 
             var paymentCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2221,14 +2221,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             settlementApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyInvoicePlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2239,7 +2239,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyInvoicePlan.OverallStatus);
 
             var readyInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2258,7 +2258,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceCompensationJournalEntryId = invoiceLifecycle.CompensationJournalEntryId;
 
             var invoiceCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2348,8 +2348,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2441,7 +2441,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var invoiceAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 userId,
@@ -2451,7 +2451,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", invoiceAttempt!.OutcomeCode);
 
             var invoiceSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId!.Value,
@@ -2462,7 +2462,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", invoiceSubmit!.OutcomeCode);
 
             var blockedInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2474,14 +2474,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedInvoiceExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None));
             Assert.Equal(receivePaymentId, initialBlocker.SettlementSourceId);
 
             var paymentAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 userId,
@@ -2489,7 +2489,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(paymentAttempt);
 
             var paymentSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt!.RequestId!.Value,
@@ -2499,7 +2499,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", paymentSubmit!.OutcomeCode);
 
             var paymentExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2518,7 +2518,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             receivePaymentCompensationJournalEntryId = paymentLifecycle.CompensationJournalEntryId;
 
             var paymentCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "receive_payment",
                 receivePaymentId,
                 paymentAttempt.RequestId.Value,
@@ -2534,14 +2534,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             settlementApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyInvoicePlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2552,7 +2552,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyInvoicePlan.OverallStatus);
 
             var readyInvoiceExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2571,7 +2571,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceCompensationJournalEntryId = invoiceLifecycle.CompensationJournalEntryId;
 
             var invoiceCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "invoice",
                 invoiceId,
                 invoiceAttempt.RequestId.Value,
@@ -2596,8 +2596,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var invoiceCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, invoiceCompensationJournalEntryId, CancellationToken.None);
             var paymentReview = await journalEntryReviewStore.GetAsync(CompanyId, receivePaymentJournalEntryId, CancellationToken.None);
             var paymentCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, receivePaymentCompensationJournalEntryId, CancellationToken.None);
-            var invoiceSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "invoice", invoiceId, CancellationToken.None);
-            var paymentSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "receive_payment", receivePaymentId, CancellationToken.None);
+            var invoiceSourceReview = await reviewRepository.GetSourceDocumentAsync(CompanyId.FromOrdinal(1), "invoice", invoiceId, CancellationToken.None);
+            var paymentSourceReview = await reviewRepository.GetSourceDocumentAsync(CompanyId.FromOrdinal(1), "receive_payment", receivePaymentId, CancellationToken.None);
 
             Assert.Equal("reversed", invoiceStatus);
             Assert.Equal("reversed", receivePaymentStatus);
@@ -2687,8 +2687,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = (await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -2774,7 +2774,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var creditNoteAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 userId,
@@ -2783,7 +2783,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", creditNoteAttempt!.OutcomeCode);
 
             var creditNoteSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId!.Value,
@@ -2793,7 +2793,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditNoteSubmit!.OutcomeCode);
 
             var blockedCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2804,7 +2804,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedCreditNoteExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None));
@@ -2812,7 +2812,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal(sourceCreditOpenItemId, initialBlocker.TargetOpenItemId);
 
             var creditApplicationAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 userId,
@@ -2820,7 +2820,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(creditApplicationAttempt);
 
             var creditApplicationSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt!.RequestId!.Value,
@@ -2830,7 +2830,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditApplicationSubmit!.OutcomeCode);
 
             var creditApplicationExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -2848,7 +2848,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditApplicationCompensationJournalEntryId = creditApplicationLifecycle.CompensationJournalEntryId;
 
             var creditApplicationCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -2864,14 +2864,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             targetApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyCreditNotePlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2882,7 +2882,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("planned", readyCreditNotePlan.OverallStatus);
 
             var readyCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2900,7 +2900,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteCompensationJournalEntryId = creditNoteLifecycle.CompensationJournalEntryId;
 
             var creditNoteCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -2997,8 +2997,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteId = (await creditNoteRepository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -3114,7 +3114,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 exchangeRateSource: "manual");
 
             var creditNoteAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 userId,
@@ -3123,7 +3123,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", creditNoteAttempt!.OutcomeCode);
 
             var creditNoteSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId!.Value,
@@ -3133,7 +3133,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditNoteSubmit!.OutcomeCode);
 
             var blockedCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -3144,14 +3144,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("blocked_by_subledger_truth", blockedCreditNoteExecute!.OutcomeCode);
 
             var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None));
             Assert.Equal(creditApplicationId, initialBlocker.SettlementSourceId);
 
             var creditApplicationAttempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 userId,
@@ -3159,7 +3159,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(creditApplicationAttempt);
 
             var creditApplicationSubmit = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt!.RequestId!.Value,
@@ -3169,7 +3169,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", creditApplicationSubmit!.OutcomeCode);
 
             var creditApplicationExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -3187,7 +3187,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditApplicationCompensationJournalEntryId = creditApplicationLifecycle.CompensationJournalEntryId;
 
             var creditApplicationCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 creditApplicationAttempt.RequestId.Value,
@@ -3203,14 +3203,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             targetApplicationId = Guid.Empty;
 
             var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 CancellationToken.None);
             Assert.Empty(clearedBlockers);
 
             var readyCreditNoteExecute = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -3228,7 +3228,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             creditNoteCompensationJournalEntryId = creditNoteLifecycle.CompensationJournalEntryId;
 
             var creditNoteCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_note",
                 creditNoteId,
                 creditNoteAttempt.RequestId.Value,
@@ -3391,7 +3391,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 userId,
@@ -3401,7 +3401,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("request_recorded", attempt!.OutcomeCode);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 attempt.RequestId!.Value,
@@ -3412,7 +3412,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
 
             var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 attempt.RequestId.Value,
@@ -3432,7 +3432,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 attempt.RequestId.Value,
@@ -3464,7 +3464,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 creditApplicationId,
                 CancellationToken.None);
             var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 "credit_application",
                 creditApplicationId,
                 CancellationToken.None);
@@ -3552,8 +3552,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             invoiceId = (await invoiceRepository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
-                    new CompanyId(CompanyId),
-                    new UserId(userId),
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
                     CustomerId,
                     new DateOnly(2026, 4, 14),
                     new DateOnly(2026, 5, 14),
@@ -3578,12 +3578,12 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 amount: 55m);
 
             var before = await openItemRepository.GetDrillDownAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 
             var preview = await openItemRepository.GetAdjustmentPreviewAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "write_off",
                 new DateOnly(2026, 4, 15),
@@ -3591,7 +3591,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var attempt = await openItemRepository.RequestAdjustmentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "write_off",
                 new DateOnly(2026, 4, 15),
@@ -3601,26 +3601,26 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var latestDraft = await openItemRepository.GetLatestAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 
             var submitResult = await openItemRepository.SubmitAdjustmentRequestAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt!.Request!.RequestId,
                 userId,
                 CancellationToken.None);
 
             var readiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
                 CancellationToken.None);
 
             var executionPlan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 attempt.Request.RequestId,
                 new DateOnly(2026, 4, 15),
@@ -3629,10 +3629,10 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             var invalidAdjustmentAccount = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => adjustmentHandler.HandleAsync(
                     new PostArOpenItemAdjustmentCommand(
-                        new CompanyId(CompanyId),
+                        CompanyId.FromOrdinal(1),
                         openItemId,
                         attempt.Request.RequestId,
-                        new UserId(userId),
+                        UserId.FromOrdinal(1),
                         receivableControlAccountId,
                         new DateOnly(2026, 4, 15),
                         null),
@@ -3640,10 +3640,10 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
             var executionResult = await adjustmentHandler.HandleAsync(
                 new PostArOpenItemAdjustmentCommand(
-                    new CompanyId(CompanyId),
+                    CompanyId.FromOrdinal(1),
                     openItemId,
                     attempt.Request.RequestId,
-                    new UserId(userId),
+                    UserId.FromOrdinal(1),
                     writeOffAccountId,
                     new DateOnly(2026, 4, 15),
                     null),
@@ -3651,7 +3651,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             adjustmentJournalEntryId = executionResult.JournalEntryId ?? Guid.Empty;
 
             var followUpAttempt = await openItemRepository.RequestAdjustmentAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 "write_off",
                 new DateOnly(2026, 4, 15),
@@ -3661,7 +3661,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             var after = await openItemRepository.GetDrillDownAsync(
-                new CompanyId(CompanyId),
+                CompanyId.FromOrdinal(1),
                 openItemId,
                 CancellationToken.None);
 

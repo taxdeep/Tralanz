@@ -8,7 +8,7 @@ public sealed record class InventoryFoundationDashboard(
     IReadOnlyList<InventoryFoundationAccountOption> ExpenseAccountOptions);
 
 public sealed record class InventoryFoundationAccountOption(
-    UserId AccountId,
+    Guid AccountId,
     string Code,
     string Name,
     string RootType,

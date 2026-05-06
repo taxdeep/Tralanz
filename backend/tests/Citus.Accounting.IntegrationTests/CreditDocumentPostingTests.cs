@@ -17,8 +17,8 @@ public sealed class CreditDocumentPostingTests
         var taxAccountId = Guid.NewGuid();
         var document = new CreditNoteDocument(
             Guid.NewGuid(),
-            new CompanyId(Guid.NewGuid()),
-            new EntityNumber("EN2026000017"),
+            CompanyId.FromOrdinal(1),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("CN-0001"),
             "draft",
             new DateOnly(2026, 4, 12),
@@ -96,8 +96,8 @@ public sealed class CreditDocumentPostingTests
         var recoverableTaxAccountId = Guid.NewGuid();
         var document = new VendorCreditDocument(
             Guid.NewGuid(),
-            new CompanyId(Guid.NewGuid()),
-            new EntityNumber("EN2026000018"),
+            CompanyId.FromOrdinal(1),
+            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
             new DocumentNumber("VC-0001"),
             "draft",
             new DateOnly(2026, 4, 12),

@@ -125,7 +125,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
 
         return new CompanyAccessUserSummary
         {
-            Id = reader.GetGuid(reader.GetOrdinal("id")),
+            Id = UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             Email = email,
             Username = username,
             DisplayName = !string.IsNullOrWhiteSpace(displayName)
@@ -197,7 +197,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         {
             companies.Add(
                 new CompanyMembershipCompanyRecord(
-                    reader.GetGuid(reader.GetOrdinal("id")),
+                    CompanyId.Parse(reader.GetString(reader.GetOrdinal("id"))),
                     reader.GetString(reader.GetOrdinal("entity_number")).Trim().ToUpperInvariant(),
                     reader.GetString(reader.GetOrdinal("legal_name")).Trim(),
                     reader.GetString(reader.GetOrdinal("base_currency_code")).Trim().ToUpperInvariant(),
@@ -330,7 +330,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
     }
 
     private sealed record CompanyMembershipCompanyRecord(
-        Guid Id,
+        CompanyId Id,
         string CompanyCode,
         string CompanyName,
         string BaseCurrencyCode,
