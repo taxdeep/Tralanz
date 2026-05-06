@@ -559,12 +559,12 @@ public sealed class FxRevaluationWorkflowSmokeTests
             """;
 
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is UserId userId)
+        if (existing is string userIdString && UserId.TryParse(userIdString, out var userId))
         {
             return (userId, false);
         }
 
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """

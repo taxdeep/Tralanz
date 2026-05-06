@@ -53,11 +53,11 @@ public sealed class NullActionCenterTaskProvider : IActionCenterTaskProvider
 /// </summary>
 public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvider
 {
-    private readonly Func<Guid, CancellationToken, ValueTask<SystemSetupSnapshot>> _readSnapshotAsync;
+    private readonly Func<CompanyId, CancellationToken, ValueTask<SystemSetupSnapshot>> _readSnapshotAsync;
     private readonly ILogger<SystemSetupActionCenterTaskProvider> _logger;
 
     public SystemSetupActionCenterTaskProvider(
-        Func<Guid, CancellationToken, ValueTask<SystemSetupSnapshot>> readSnapshotAsync,
+        Func<CompanyId, CancellationToken, ValueTask<SystemSetupSnapshot>> readSnapshotAsync,
         ILogger<SystemSetupActionCenterTaskProvider> logger)
     {
         _readSnapshotAsync = readSnapshotAsync;

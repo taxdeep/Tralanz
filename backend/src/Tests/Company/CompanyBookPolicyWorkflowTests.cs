@@ -5,7 +5,7 @@ namespace Tests.Company;
 
 public sealed class CompanyBookPolicyWorkflowTests
 {
-    private static readonly CompanyId CompanyId = Guid.Parse("6ec42a06-eabf-47bc-8e56-8b2ee0f9a4b2");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
 
     [Fact]
     public async Task EnsureDefaultPrimaryBookPolicyAsync_SeedsGovernedDefaultsWhenMissing()

@@ -12,7 +12,7 @@ namespace Tests.AP;
 
 public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 {
-    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid VendorId = Guid.Parse("96000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -24,7 +24,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         var createdUser = false;
@@ -127,7 +127,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         var createdUser = false;
@@ -237,7 +237,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -313,7 +313,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid fxSnapshotId = Guid.Empty;
@@ -430,7 +430,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -503,7 +503,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -572,7 +572,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -644,7 +644,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -716,7 +716,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -800,7 +800,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -885,7 +885,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -972,7 +972,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -1109,7 +1109,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -1215,7 +1215,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid compensationJournalEntryId = Guid.Empty;
@@ -1368,7 +1368,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.NewGuid();
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -1599,7 +1599,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.NewGuid();
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -1861,7 +1861,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2138,7 +2138,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid billId = Guid.Empty;
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2499,7 +2499,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid vendorCreditId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid vendorCreditApplicationId = Guid.Empty;
@@ -2798,7 +2798,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid vendorCreditId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid vendorCreditApplicationId = Guid.Empty;
@@ -3151,7 +3151,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid vendorCreditId = Guid.NewGuid();
         Guid billId = Guid.NewGuid();
         Guid vendorCreditApplicationId = Guid.Empty;
@@ -3371,7 +3371,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid expenseAccountId = default;
         Guid unmappedExpenseAccountId = default;
         Guid payableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         UserId approvalUserId = default;
         Guid billId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -3837,12 +3837,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         await using var findCommand = connection.CreateCommand();
         findCommand.CommandText = "select id from users order by created_at limit 1;";
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is UserId userId)
+        if (existing is string userIdString && UserId.TryParse(userIdString, out var userId))
         {
             return (userId, false);
         }
 
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """
@@ -3861,7 +3861,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         PostgresConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =

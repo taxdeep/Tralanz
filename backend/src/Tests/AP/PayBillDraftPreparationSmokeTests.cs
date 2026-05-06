@@ -13,7 +13,7 @@ namespace Tests.AP;
 
 public sealed class PayBillDraftPreparationSmokeTests
 {
-    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid VendorId = Guid.Parse("96000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -33,7 +33,7 @@ public sealed class PayBillDraftPreparationSmokeTests
 
         Guid documentId = Guid.Empty;
         Guid bankAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         var createdUser = false;
         var originalLock = await ReadVendorLockAsync(connectionFactory, VendorId, CancellationToken.None);
 
@@ -183,12 +183,12 @@ public sealed class PayBillDraftPreparationSmokeTests
             limit 1;
             """;
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is UserId userId)
+        if (existing is string userIdString && UserId.TryParse(userIdString, out var userId))
         {
             return (userId, false);
         }
 
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """

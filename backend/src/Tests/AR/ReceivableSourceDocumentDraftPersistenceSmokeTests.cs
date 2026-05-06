@@ -12,7 +12,7 @@ namespace Tests.AR;
 
 public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 {
-    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
 
     [Fact]
@@ -24,7 +24,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid creditNoteId = Guid.Empty;
         var createdUser = false;
@@ -127,7 +127,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid creditNoteId = Guid.Empty;
         var createdUser = false;
@@ -237,7 +237,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -314,7 +314,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid fxSnapshotId = Guid.Empty;
@@ -436,7 +436,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.NewGuid();
         Guid openItemId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
@@ -551,7 +551,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.NewGuid();
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -809,7 +809,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -882,7 +882,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -951,7 +951,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -1023,7 +1023,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -1094,7 +1094,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -1231,7 +1231,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -1411,7 +1411,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid compensationJournalEntryId = Guid.Empty;
@@ -1566,7 +1566,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid compensationJournalEntryId = Guid.Empty;
@@ -1809,7 +1809,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.NewGuid();
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2040,7 +2040,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2317,7 +2317,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid receivePaymentId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2664,7 +2664,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid creditNoteId = Guid.Empty;
         Guid invoiceId = Guid.NewGuid();
         Guid creditApplicationId = Guid.Empty;
@@ -2963,7 +2963,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid creditNoteId = Guid.Empty;
         Guid invoiceId = Guid.NewGuid();
         Guid creditApplicationId = Guid.Empty;
@@ -3316,7 +3316,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid creditNoteId = Guid.NewGuid();
         Guid invoiceId = Guid.NewGuid();
         Guid creditApplicationId = Guid.Empty;
@@ -3536,7 +3536,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         Guid revenueAccountId = default;
         Guid writeOffAccountId = default;
         Guid receivableControlAccountId = default;
-        UserId userId = Guid.Empty;
+        UserId userId = default;
         Guid invoiceId = Guid.Empty;
         Guid openItemId = Guid.Empty;
         Guid adjustmentJournalEntryId = Guid.Empty;
@@ -3901,12 +3901,12 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         await using var findCommand = connection.CreateCommand();
         findCommand.CommandText = "select id from users order by created_at limit 1;";
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is UserId userId)
+        if (existing is string userIdString && UserId.TryParse(userIdString, out var userId))
         {
             return (userId, false);
         }
 
-        var newUserId = Guid.NewGuid();
+        var newUserId = UserId.FromOrdinal(1);
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """

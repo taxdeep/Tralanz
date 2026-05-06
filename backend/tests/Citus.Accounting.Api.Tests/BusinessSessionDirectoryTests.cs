@@ -6,7 +6,7 @@ namespace Citus.Accounting.Api.Tests;
 public sealed class BusinessSessionDirectoryTests
 {
     private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
-    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid OtherCompanyId = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6");
 
     [Fact]
