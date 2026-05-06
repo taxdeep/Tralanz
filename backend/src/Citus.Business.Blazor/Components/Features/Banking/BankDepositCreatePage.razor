@@ -158,7 +158,7 @@
             <h2 class="citus-panel__title">Summary</h2>
             <table class="citus-keyvalue">
                 <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
+                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
                     <tr><th>Items</th><td>@_items.Count(i => i.HasContent)</td></tr>
                     <tr><th>Deposit to</th><td>@(string.IsNullOrEmpty(_depositToAccountDisplay) ? "—" : _depositToAccountDisplay)</td></tr>
                     <tr><th>Total</th><td>@FormatAmount(_total)</td></tr>

@@ -34,3 +34,5 @@ backend/src/Citus.SysAdmin.Blazor/wwwroot/app.css.map
 **/bin
 **/obj
 TestResults
+
+.deploy_helper.py

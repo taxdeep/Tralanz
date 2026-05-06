@@ -301,7 +301,7 @@
                 Title = "Journal Entry review",
                 Subtitle = "The requested journal entry was not found in the active company context."
             };
-            _error = $"Journal entry {JournalEntryId:D} could not be found for company {ShellState.ActiveCompany.CompanyCode}.";
+            _error = $"Journal entry {JournalEntryId:D} could not be found for company {ShellState.ActiveCompany.CompanyName}.";
             _isLoading = false;
             return;
         }
