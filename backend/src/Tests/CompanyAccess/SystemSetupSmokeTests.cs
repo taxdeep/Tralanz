@@ -56,7 +56,7 @@ public sealed class SystemSetupSmokeTests
             delete from user_preferences
             where user_id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", DemoUserId);
+        command.Parameters.AddWithValue("user_id", DemoUserId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

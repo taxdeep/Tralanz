@@ -209,7 +209,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("display_number", documentNumber);
-            command.Parameters.AddWithValue("created_by_user_id", userId);
+            command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         }
         command.Parameters.AddWithValue("entry_date", draft.JournalDate);
         command.Parameters.AddWithValue("transaction_currency_code", draft.CurrencyCode);

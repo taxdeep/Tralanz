@@ -4054,7 +4054,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("source_id", sourceId);
         command.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
         command.Parameters.AddWithValue("idempotency_key", $"smoke-je:{sourceType}:{sourceId:D}");
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return journalEntryId;
     }
@@ -4157,7 +4157,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("amount", amount);
             headerCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             headerCommand.Parameters.AddWithValue("idempotency_key", $"smoke-je-balanced:{sourceType}:{sourceId:D}");
-            headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            headerCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -4369,7 +4369,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("fx_rate", fxRate);
             headerCommand.Parameters.AddWithValue("fx_source", fxSource);
             headerCommand.Parameters.AddWithValue("total_amount", totalAmount);
-            headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            headerCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -4470,7 +4470,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
             headerCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
             headerCommand.Parameters.AddWithValue("total_amount", totalAmount);
-            headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            headerCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -4572,7 +4572,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
         command.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
         command.Parameters.AddWithValue("applied_amount_base", appliedAmountBase);
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return applicationId;
     }
@@ -4950,7 +4950,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("effective_date", requestedDate);
         command.Parameters.AddWithValue("rate", rate);
         command.Parameters.AddWithValue("provider_key", $"smoke-{quoteCurrencyCode.ToLowerInvariant()}-{snapshotId:N}");
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         return snapshotId;

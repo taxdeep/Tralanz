@@ -24,7 +24,7 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

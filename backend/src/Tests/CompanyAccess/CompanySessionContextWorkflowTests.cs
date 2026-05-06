@@ -164,8 +164,8 @@ public sealed class CompanySessionContextWorkflowTests
             insert into users (id, email, username, password_hash, is_active)
             values (@id, @email, @username, @password_hash, true);
             """;
-        command.Parameters.AddWithValue("id", userId);
-        command.Parameters.AddWithValue("email", $"{userId:N}@example.test");
+        command.Parameters.AddWithValue("id", userId.Value);
+        command.Parameters.AddWithValue("email", $"{userId.Value}@example.test");
         command.Parameters.AddWithValue("username", "alice.session");
         command.Parameters.AddWithValue("password_hash", "hashed-password");
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -200,7 +200,7 @@ public sealed class CompanySessionContextWorkflowTests
               'active'
             );
             """;
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("legal_name", legalName);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);

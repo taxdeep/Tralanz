@@ -282,7 +282,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             command.Parameters.AddWithValue("id", transferId);
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("submitted_at", DateTimeOffset.UtcNow);
-            command.Parameters.AddWithValue("submitted_by_user_id", userId);
+            command.Parameters.AddWithValue("submitted_by_user_id", userId.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -1153,7 +1153,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", transferId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", transfer.TransferNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(transfer.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", movementTimestamp);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -1293,7 +1293,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 updateTransferCommand.Parameters.AddWithValue("id", transferId);
                 updateTransferCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 updateTransferCommand.Parameters.AddWithValue("shipped_at", movementTimestamp);
-                updateTransferCommand.Parameters.AddWithValue("shipped_by_user_id", userId);
+                updateTransferCommand.Parameters.AddWithValue("shipped_by_user_id", userId.Value);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -1355,7 +1355,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", transferId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", transfer.TransferNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(transfer.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", movementTimestamp);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -1456,7 +1456,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 updateTransferCommand.Parameters.AddWithValue("id", transferId);
                 updateTransferCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 updateTransferCommand.Parameters.AddWithValue("received_at", movementTimestamp);
-                updateTransferCommand.Parameters.AddWithValue("received_by_user_id", userId);
+                updateTransferCommand.Parameters.AddWithValue("received_by_user_id", userId.Value);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 

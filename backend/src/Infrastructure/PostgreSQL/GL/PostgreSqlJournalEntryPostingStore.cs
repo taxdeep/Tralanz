@@ -159,7 +159,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             insertEntryCommand.Parameters.AddWithValue("idempotency_key", $"manual_journal:{draft.DocumentId.Value}");
             insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
-            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 

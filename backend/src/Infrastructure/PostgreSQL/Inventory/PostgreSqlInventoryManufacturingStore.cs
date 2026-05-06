@@ -1446,7 +1446,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
         command.Parameters.AddWithValue("source_document_id", runId);
         command.Parameters.AddWithValue("source_document_number", runNumber);
         command.Parameters.AddWithValue("memo", ToDbValue(BuildDocumentMemo(memo, runNumber)));
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         command.Parameters.AddWithValue("created_at", createdAt);
         command.Parameters.AddWithValue("posted_at", createdAt);
         await command.ExecuteNonQueryAsync(cancellationToken);

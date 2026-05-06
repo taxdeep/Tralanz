@@ -297,7 +297,7 @@ public sealed class JournalEntryPersistenceSmokeTests
                   'active'
                 );
                 """;
-            companyCommand.Parameters.AddWithValue("id", companyId);
+            companyCommand.Parameters.AddWithValue("id", companyId.Value);
             companyCommand.Parameters.AddWithValue("entity_number", $"EN{DateTime.UtcNow:yyyy}{Random.Shared.Next(1, 999999):D6}");
             await companyCommand.ExecuteNonQueryAsync(cancellationToken);
         }

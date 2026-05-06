@@ -121,7 +121,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "select pg_advisory_xact_lock(hashtext(@lock_key));";
-        command.Parameters.AddWithValue("lock_key", $"receipt-grir-bridge:{companyId:N}:{receiptDocumentId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-bridge:{companyId.Value}:{receiptDocumentId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

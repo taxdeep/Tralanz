@@ -186,7 +186,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "select pg_advisory_xact_lock(hashtext(@lock_key));";
-        command.Parameters.AddWithValue("lock_key", $"receipt-cost-layer-emission:{companyId:N}:{receiptDocumentId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-cost-layer-emission:{companyId.Value}:{receiptDocumentId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

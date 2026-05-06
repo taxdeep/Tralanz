@@ -528,7 +528,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                 """;
             command.Parameters.AddWithValue("id", requestId);
             command.Parameters.AddWithValue("user_id", userId.Value);
-            command.Parameters.AddWithValue("requested_by_user_id", userId);
+            command.Parameters.AddWithValue("requested_by_user_id", userId.Value);
             command.Parameters.AddWithValue("current_mfa_mode", current.MfaMode);
             command.Parameters.AddWithValue("status", MfaRecoveryRequestedStatus);
             command.Parameters.AddWithValue("request_reason", reason);
@@ -858,7 +858,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             insertDispatch.Parameters.AddWithValue("id", dispatchId);
             insertDispatch.Parameters.AddWithValue("notification_type", notificationType);
             insertDispatch.Parameters.AddWithValue("destination", destination);
-            insertDispatch.Parameters.AddWithValue("account_id", userId);
+            insertDispatch.Parameters.AddWithValue("account_id", userId.Value);
             insertDispatch.Parameters.AddWithValue("verification_code_id", verificationCodeId);
             insertDispatch.Parameters.AddWithValue("purpose", purpose);
             insertDispatch.Parameters.AddWithValue("masked_destination", maskedDestination);

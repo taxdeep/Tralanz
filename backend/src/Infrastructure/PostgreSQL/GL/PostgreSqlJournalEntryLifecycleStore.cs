@@ -203,7 +203,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             command.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             command.Parameters.AddWithValue("idempotency_key", $"{original.SourceType}:{original.SourceId:D}:{lifecycleBehavior.CompensationSourceType}");
             command.Parameters.AddWithValue("posted_at", lifecycleAt);
-            command.Parameters.AddWithValue("created_by_user_id", userId);
+            command.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 

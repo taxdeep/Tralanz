@@ -30,7 +30,7 @@ $$;
 -- actor-reference FK in the baseline. Semantically, this is Platform
 -- Identity / Account storage, not a Business App Users module.
 CREATE TABLE users (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id char(7) PRIMARY KEY,
   email text NOT NULL UNIQUE,
   username text UNIQUE,
   display_name text,
@@ -64,7 +64,7 @@ CREATE TABLE account_verification_codes (
 -- SysAdmin is an independent PlatformOps identity realm. SysAdmin accounts are
 -- not company members and must never become business posting actors.
 CREATE TABLE sysadmin_accounts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id char(7) PRIMARY KEY,
   email text NOT NULL UNIQUE,
   display_name text NOT NULL DEFAULT '',
   password_hash text NOT NULL,
@@ -77,7 +77,7 @@ CREATE TABLE sysadmin_accounts (
 
 CREATE TABLE sysadmin_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  sysadmin_account_id uuid NOT NULL REFERENCES sysadmin_accounts(id) ON DELETE CASCADE,
+  sysadmin_account_id char(7) NOT NULL REFERENCES sysadmin_accounts(id) ON DELETE CASCADE,
   session_token_hash text NOT NULL UNIQUE,
   expires_at timestamptz NOT NULL,
   last_seen_at timestamptz NOT NULL DEFAULT NOW(),
@@ -105,7 +105,7 @@ CREATE TABLE platform_notification_dispatches (
 CREATE TABLE platform_runtime_state (
   state_key text PRIMARY KEY,
   json jsonb NOT NULL,
-  updated_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  updated_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   updated_at timestamptz NOT NULL DEFAULT NOW()
 );
 
@@ -118,7 +118,7 @@ VALUES ('notification_readiness', '{"configPresent": false, "testStatus": "untes
 ON CONFLICT (state_key) DO NOTHING;
 
 CREATE TABLE companies (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id char(7) PRIMARY KEY,
   entity_number char(11) NOT NULL UNIQUE,
   legal_name text NOT NULL,
   entity_type text NOT NULL DEFAULT 'corporation',
@@ -214,10 +214,10 @@ CREATE TABLE account_mfa_recovery_requests (
   requested_at timestamptz NOT NULL DEFAULT NOW(),
   review_reason text,
   reviewed_at timestamptz,
-  reviewed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  reviewed_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   execution_reason text,
   executed_at timestamptz,
-  executed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  executed_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   CONSTRAINT account_mfa_recovery_requests_current_mode_chk CHECK (current_mfa_mode IN ('none', 'email_code', 'totp_app')),
   CONSTRAINT account_mfa_recovery_requests_status_chk CHECK (status IN ('requested', 'approved', 'rejected', 'executed'))
 );
@@ -368,7 +368,7 @@ CREATE TABLE company_chart_template_bindings (
   industry text NOT NULL,
   reserved_ranges jsonb NOT NULL DEFAULT '[]'::jsonb,
   mandatory_system_roles jsonb NOT NULL DEFAULT '[]'::jsonb,
-  applied_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  applied_by_sysadmin_account_id char(7) REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
   applied_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_chart_template_bindings_reserved_ranges_array_chk CHECK (jsonb_typeof(reserved_ranges) = 'array'),
   CONSTRAINT company_chart_template_bindings_mandatory_roles_array_chk CHECK (jsonb_typeof(mandatory_system_roles) = 'array')

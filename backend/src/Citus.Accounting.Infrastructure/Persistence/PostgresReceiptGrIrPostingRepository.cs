@@ -257,7 +257,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand("select pg_advisory_xact_lock(hashtext(@lock_key));");
-        command.Parameters.AddWithValue("lock_key", $"receipt-grir-posting:{companyId:N}:{receiptDocumentId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-posting:{companyId.Value}:{receiptDocumentId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -426,7 +426,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("display_number", displayNumber);
         command.Parameters.AddWithValue("grir_clearing_account_id", grIrClearingAccountId);
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
         {

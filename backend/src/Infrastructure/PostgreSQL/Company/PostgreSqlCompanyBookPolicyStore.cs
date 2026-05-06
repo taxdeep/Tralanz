@@ -246,7 +246,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
         command.Parameters.AddWithValue("signal_date", signalDate);
         command.Parameters.AddWithValue("reference_label", referenceLabel is null ? DBNull.Value : referenceLabel);
         command.Parameters.AddWithValue("notes", notes is null ? DBNull.Value : notes);
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
 
         try
         {
@@ -460,7 +460,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
         command.Parameters.AddWithValue("changed_fields", preview.ChangeImpact.ChangedFields.ToArray());
         command.Parameters.AddWithValue("change_categories", preview.ChangeImpact.ChangeCategories.ToArray());
         command.Parameters.AddWithValue("reason", preview.ChangeImpact.Reason);
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         return (await GetGovernedChangeRequestDraftAsync(connection, preview.Book.CompanyId, requestId, cancellationToken))!;
@@ -790,7 +790,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
         insertCommand.Parameters.AddWithValue("functional_currency_code", baseCurrencyCode);
         insertCommand.Parameters.AddWithValue("presentation_currency_code", DBNull.Value);
         insertCommand.Parameters.AddWithValue("effective_from", effectiveFrom);
-        insertCommand.Parameters.AddWithValue("created_by_user_id", userId);
+        insertCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         return bookId;
     }
@@ -875,7 +875,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
         insertCommand.Parameters.AddWithValue("revaluation_profile", DefaultRevaluationProfile);
         insertCommand.Parameters.AddWithValue("fx_rounding_policy", DefaultFxRoundingPolicy);
         insertCommand.Parameters.AddWithValue("effective_from", effectiveFrom);
-        insertCommand.Parameters.AddWithValue("created_by_user_id", userId);
+        insertCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 

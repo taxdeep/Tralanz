@@ -410,7 +410,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
     {
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT base_currency_code FROM companies WHERE id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         if (result is null || result is DBNull)
         {

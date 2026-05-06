@@ -1061,7 +1061,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", companyEntityNumber);
         command.Parameters.AddWithValue("legal_name", normalized.CompanyName);
         command.Parameters.AddWithValue("base_currency_code", normalized.BaseCurrencyCode);
@@ -1584,7 +1584,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
-        command.Parameters.AddWithValue("entity_id", companyId);
+        command.Parameters.AddWithValue("entity_id", companyId.Value);
         command.Parameters.AddWithValue("payload", payload);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

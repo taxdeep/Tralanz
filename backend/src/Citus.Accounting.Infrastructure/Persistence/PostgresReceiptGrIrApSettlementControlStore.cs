@@ -619,7 +619,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         var amountKey = requestedAmountBase.HasValue
             ? requestedAmountBase.Value.ToString("0.000000", CultureInfo.InvariantCulture)
             : "remaining";
-        return $"receipt-grir-ap-settlement:{companyId:N}:{receiptDocumentId:N}:{amountKey}";
+        return $"receipt-grir-ap-settlement:{companyId.Value}:{receiptDocumentId:N}:{amountKey}";
     }
 
     private static async Task AcquireSettlementLockAsync(
@@ -629,7 +629,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand("select pg_advisory_xact_lock(hashtext(@lock_key));");
-        command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement:{companyId:N}:{receiptDocumentId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement:{companyId.Value}:{receiptDocumentId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1300,7 +1300,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         command.Parameters.AddWithValue("settled_quantity", Round6(allocations.Sum(static allocation => allocation.SettledQuantity)));
         command.Parameters.AddWithValue("settled_amount_base", Round6(allocations.Sum(static allocation => allocation.SettledAmountBase)));
         command.Parameters.AddWithValue("line_count", allocations.Count);
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1593,7 +1593,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             insertCommand.Parameters.AddWithValue("ap_open_item_id", allocation.ApOpenItemId);
             insertCommand.Parameters.AddWithValue("applied_amount_tx", allocation.AmountBase);
             insertCommand.Parameters.AddWithValue("applied_amount_base", allocation.AmountBase);
-            insertCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            insertCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -1644,7 +1644,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             """);
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
-        command.Parameters.AddWithValue("cleared_by_user_id", userId);
+        command.Parameters.AddWithValue("cleared_by_user_id", userId.Value);
         if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
         {
             throw new InvalidOperationException("GR/IR settlement batch AP open-item clearing state changed before clearing could complete.");
@@ -1852,7 +1852,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             """);
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
-        command.Parameters.AddWithValue("reversed_by_user_id", userId);
+        command.Parameters.AddWithValue("reversed_by_user_id", userId.Value);
         command.Parameters.AddWithValue("application_count", applicationCount);
         command.Parameters.AddWithValue("restored_amount_tx", restoredAmountTx);
         command.Parameters.AddWithValue("restored_amount_base", restoredAmountBase);

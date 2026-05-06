@@ -420,7 +420,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         command.Parameters.AddWithValue("effective_date", requestedDate);
         command.Parameters.AddWithValue("rate", rate);
         command.Parameters.AddWithValue("provider_key", $"smoke-eur-{snapshotId:N}");
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         return snapshotId;

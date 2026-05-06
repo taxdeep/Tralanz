@@ -419,7 +419,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         await using var command = connection.CreateCommand();
         if (transaction is not null) command.Transaction = transaction;
         command.CommandText = "SELECT base_currency_code FROM companies WHERE id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("id", companyId);
+        command.Parameters.AddWithValue("id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         if (result is null || result is DBNull)
         {

@@ -101,7 +101,7 @@ public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvi
                 Priority: ActionCenterTaskPriority.Medium,
                 DueDate: null,
                 ActionUrl: "/settings/notifications",
-                Fingerprint: $"sys-setup:smtp:{companyId:N}"));
+                Fingerprint: $"sys-setup:smtp:{companyId.Value}"));
         }
 
         if (!snapshot.CompanyProfileComplete)
@@ -120,7 +120,7 @@ public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvi
                 Priority: ActionCenterTaskPriority.Medium,
                 DueDate: null,
                 ActionUrl: "/settings/profile",
-                Fingerprint: $"sys-setup:profile:{companyId:N}"));
+                Fingerprint: $"sys-setup:profile:{companyId.Value}"));
         }
 
         return drafts;

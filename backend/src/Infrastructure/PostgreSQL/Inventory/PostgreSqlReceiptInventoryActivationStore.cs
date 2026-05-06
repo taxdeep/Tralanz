@@ -187,7 +187,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("failure_message", string.IsNullOrWhiteSpace(failureMessage) ? "Receipt activation failed." : failureMessage.Trim());
-        command.Parameters.AddWithValue("recorded_by_user_id", userId);
+        command.Parameters.AddWithValue("recorded_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -332,7 +332,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         command.Parameters.AddWithValue("source_document_number", receipt.DisplayNumber);
         command.Parameters.AddWithValue("counterparty_id", receipt.VendorId);
         command.Parameters.AddWithValue("memo", ToDbValue(BuildActivationMemo(receipt)));
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         command.Parameters.AddWithValue("created_at", activatedAt);
         command.Parameters.AddWithValue("posted_at", activatedAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -578,7 +578,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         command.Parameters.AddWithValue("warehouse_id", receipt.WarehouseId);
         command.Parameters.AddWithValue("uom_code", line.UomCode);
         command.Parameters.AddWithValue("activated_quantity", line.Quantity);
-        command.Parameters.AddWithValue("activated_by_user_id", userId);
+        command.Parameters.AddWithValue("activated_by_user_id", userId.Value);
         command.Parameters.AddWithValue("activated_at", activatedAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

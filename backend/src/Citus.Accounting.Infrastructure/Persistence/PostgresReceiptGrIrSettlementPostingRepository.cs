@@ -144,7 +144,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand("select pg_advisory_xact_lock(hashtext(@lock_key));");
-        command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement-posting:{companyId:N}:{settlementBatchId:N}");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement-posting:{companyId.Value}:{settlementBatchId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

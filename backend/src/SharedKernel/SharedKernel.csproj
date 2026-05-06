@@ -6,4 +6,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Required by NpgsqlParameterExtensions so call sites everywhere
+         can do AddWithValue(name, CompanyId/UserId/EntityNumber) without
+         remembering to unwrap to .Value. -->
+    <PackageReference Include="Npgsql" Version="10.0.2" />
+  </ItemGroup>
+
 </Project>

@@ -2101,7 +2101,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         insertBookCommand.Parameters.AddWithValue("book_base_currency_code", companyBaseCurrencyCode);
         insertBookCommand.Parameters.AddWithValue("functional_currency_code", companyBaseCurrencyCode);
         insertBookCommand.Parameters.AddWithValue("effective_from", asOfDate);
-        insertBookCommand.Parameters.AddWithValue("created_by_user_id", userId);
+        insertBookCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await insertBookCommand.ExecuteNonQueryAsync(cancellationToken);
 
         await using var insertPolicyCommand = scope.CreateCommand(
@@ -2153,7 +2153,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             """);
         insertPolicyCommand.Parameters.AddWithValue("company_id", companyId.Value);
         insertPolicyCommand.Parameters.AddWithValue("effective_from", asOfDate);
-        insertPolicyCommand.Parameters.AddWithValue("created_by_user_id", userId);
+        insertPolicyCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await insertPolicyCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 

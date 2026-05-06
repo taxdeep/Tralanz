@@ -628,7 +628,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         command.Parameters.AddWithValue("fx_source", fxSnapshot.SourceSemantics);
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(memo) ? DBNull.Value : memo.Trim());
-        command.Parameters.AddWithValue("created_by_user_id", userId);
+        command.Parameters.AddWithValue("created_by_user_id", userId.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
