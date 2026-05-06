@@ -473,7 +473,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
 
     private static ExpenseSummary MapSummary(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         ExpenseNumber: reader.GetString(2),
         Status: reader.GetString(3),
         PayeeKind: reader.GetString(4),

@@ -356,7 +356,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
 
         return new InvoiceTemplate(
             Id: reader.GetGuid(0),
-            CompanyId: reader.GetGuid(1),
+            CompanyId: CompanyId.Parse(reader.GetString(1)),
             Name: reader.GetString(2),
             IsDefault: reader.GetBoolean(3),
             Config: config,

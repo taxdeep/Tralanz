@@ -120,7 +120,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
         {
             items.Add(new ReportUsageStatRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 ScopeType: reader.GetString(2),
                 UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
                 ReportKey: reader.GetString(4),
@@ -163,7 +163,7 @@ public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFacto
         {
             items.Add(new DashboardUserWidgetRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 UserId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
                 WidgetKey: reader.GetString(3),
                 Title: reader.IsDBNull(4) ? null : reader.GetString(4),
@@ -342,7 +342,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
 
     private static DashboardWidgetSuggestionRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         UserId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
         WidgetKey: reader.GetString(3),
         Title: reader.GetString(4),
@@ -487,7 +487,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
 
     private static ActionCenterTaskRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         AssignedUserId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
         TaskType: reader.GetString(3),
         SourceEngine: reader.GetString(4),

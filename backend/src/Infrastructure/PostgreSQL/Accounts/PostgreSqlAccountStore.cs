@@ -281,7 +281,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
 
     private static AccountRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         EntityNumber: reader.GetString(2),
         Code: reader.GetString(3),
         Name: reader.GetString(4),

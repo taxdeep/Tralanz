@@ -475,7 +475,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
 
     private static BillSummary MapSummary(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         EntityNumber: reader.GetString(2),
         BillNumber: reader.GetString(3),
         VendorId: reader.GetGuid(4),

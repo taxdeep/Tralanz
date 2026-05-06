@@ -43,7 +43,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
         }
 
         return new UserProfileOverrideRecord(
-            UserId: reader.GetGuid(0),
+            UserId: UserId.Parse(reader.GetString(0)),
             DisplayName: reader.IsDBNull(1) ? null : reader.GetString(1),
             CreatedAt: reader.GetFieldValue<DateTimeOffset>(2),
             UpdatedAt: reader.GetFieldValue<DateTimeOffset>(3));
@@ -85,7 +85,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
         }
 
         return new UserProfileOverrideRecord(
-            UserId: reader.GetGuid(0),
+            UserId: UserId.Parse(reader.GetString(0)),
             DisplayName: reader.IsDBNull(1) ? null : reader.GetString(1),
             CreatedAt: reader.GetFieldValue<DateTimeOffset>(2),
             UpdatedAt: reader.GetFieldValue<DateTimeOffset>(3));

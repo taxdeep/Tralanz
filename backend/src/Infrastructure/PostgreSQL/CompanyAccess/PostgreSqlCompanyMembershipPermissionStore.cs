@@ -207,7 +207,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
                 return null;
             }
 
-            targetUserId = previousReader.GetGuid(previousReader.GetOrdinal("user_id"));
+            targetUserId = UserId.Parse(previousReader.GetString(previousReader.GetOrdinal("user_id")));
             targetRole = previousReader.GetString(previousReader.GetOrdinal("role")).Trim().ToLowerInvariant();
             previousTokens = ParsePermissionTokens(previousReader.GetString(previousReader.GetOrdinal("permissions")));
         }
@@ -235,8 +235,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         command.Parameters.AddWithValue("permissions", JsonSerializer.Serialize(permissionTokens));
 
         Guid? savedMembershipId = null;
-        Guid? savedCompanyId = null;
-        Guid? savedUserId = null;
+        CompanyId? savedCompanyId = null;
+        UserId? savedUserId = null;
         string? savedRole = null;
         string? savedPermissions = null;
         bool savedIsActive = false;
@@ -280,7 +280,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             where id = @user_id
             limit 1;
             """;
-        userCommand.Parameters.AddWithValue("user_id", savedUserId.Value);
+        userCommand.Parameters.AddWithValue("user_id", savedUserId.Value.Value);
 
         await using var userReader = await userCommand.ExecuteReaderAsync(cancellationToken);
         if (!await userReader.ReadAsync(cancellationToken))

@@ -95,7 +95,7 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
 
     private static InventoryModuleActivationStateRecord ReadState(NpgsqlDataReader reader) =>
         new(
-            CompanyId: reader.GetGuid(reader.GetOrdinal("id")),
+            CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             ModuleEnabled: reader.GetBoolean(reader.GetOrdinal("inventory_module_enabled")),
             EnabledAt: reader.IsDBNull(reader.GetOrdinal("inventory_module_enabled_at"))
                 ? null

@@ -138,7 +138,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
             var entityId = reader.GetGuid(6);
             dict[entityId] = new UnitysearchUsageStatRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 ScopeType: reader.GetString(2),
                 UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
                 Context: reader.GetString(4),
@@ -190,7 +190,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
         {
             results.Add(new UnitysearchUsageStatRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 ScopeType: reader.GetString(2),
                 UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
                 Context: reader.GetString(4),
@@ -303,7 +303,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
         {
             items.Add(new UnitysearchPairStatRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 ScopeType: reader.GetString(2),
                 UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
                 SourceContext: reader.GetString(4),
@@ -399,7 +399,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
         {
             items.Add(new UnitysearchRankingHintRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.GetGuid(1),
+                CompanyId: CompanyId.Parse(reader.GetString(1)),
                 UserId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
                 Context: reader.GetString(3),
                 EntityType: reader.GetString(4),

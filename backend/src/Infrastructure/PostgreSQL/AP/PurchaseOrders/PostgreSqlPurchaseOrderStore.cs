@@ -527,7 +527,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
 
     private static PurchaseOrderSummary MapSummary(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         PurchaseOrderNumber: reader.GetString(2),
         VendorId: reader.GetGuid(3),
         VendorName: reader.GetString(4),

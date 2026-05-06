@@ -168,7 +168,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
 
     private static PaymentTermRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         Code: reader.GetString(2),
         Name: reader.GetString(3),
         NetDays: reader.GetInt32(4),

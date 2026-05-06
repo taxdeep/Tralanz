@@ -310,7 +310,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
 
     private static VendorShippingAddressBookEntry Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
-        CompanyId: reader.GetGuid(1),
+        CompanyId: CompanyId.Parse(reader.GetString(1)),
         VendorId: reader.GetGuid(2),
         Label: reader.IsDBNull(3) ? null : NullIfEmpty(reader.GetString(3)),
         AddressLine: NullIfEmpty(reader.GetString(4)),

@@ -8,13 +8,13 @@ public sealed record class CompanyMembershipPermissionAuditRecord
 
     public Guid MembershipId { get; init; }
 
-    public Guid? ActorUserId { get; init; }
+    public UserId? ActorUserId { get; init; }
 
     public string ActorDisplayName { get; init; } = string.Empty;
 
     public string ActorEmail { get; init; } = string.Empty;
 
-    public Guid? TargetUserId { get; init; }
+    public UserId? TargetUserId { get; init; }
 
     public string TargetDisplayName { get; init; } = string.Empty;
 
