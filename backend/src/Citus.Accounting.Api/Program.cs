@@ -521,19 +521,13 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
     var v1WriteFlowSchema = startupScope.ServiceProvider.GetRequiredService<PostgresV1WriteFlowSchemaBootstrap>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
-    await customerDepositSchema.EnsureSchemaAsync(CancellationToken.None);
-    await v1WriteFlowSchema.EnsureSchemaAsync(CancellationToken.None);
-    await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
-    await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
-    await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
-    await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
     // Platform tables (currency_catalog, companies, users, company_memberships,
-    // company_books, etc.) must exist before any accountStore / taxCodeStore
-    // insert that FKs into them. The Accounting API used to assume the
-    // SysAdmin First-Company Wizard had run first to create those tables and
-    // seed the catalog; this initializer runs the same idempotent schema
-    // setup directly so the API works end-to-end without external bootstrapping.
+    // company_books, etc.) must exist FIRST because the master entity tables
+    // below (customers, vendors, accounts) and v1WriteFlow all FK to companies.
+    // On a fresh DB the earlier ordering blew up with 42P01: relation "companies"
+    // does not exist.
     await platformSchema.EnsureAsync(CancellationToken.None);
+    // Master entities: must exist before v1WriteFlow which FKs / indexes them.
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
     await customerStore.EnsureSchemaAsync(CancellationToken.None);
@@ -541,12 +535,22 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await vendorStore.EnsureSchemaAsync(CancellationToken.None);
     await vendorShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
     await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
+    // fxRateCache creates `company_fx_rate_snapshots` which v1WriteFlow indexes.
+    await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
+    // Transactional tables in v1WriteFlow (invoices, bills, receive_payments,
+    // credit_notes, etc.) FK back to customers / vendors / accounts. Then
+    // customerDepositSchema ALTERs receive_payments to add extra_deposit_amount.
+    await v1WriteFlowSchema.EnsureSchemaAsync(CancellationToken.None);
+    await customerDepositSchema.EnsureSchemaAsync(CancellationToken.None);
+    await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
+    await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
+    await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
+    await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
     await quoteStore.EnsureSchemaAsync(CancellationToken.None);
     await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
     await billStore.EnsureSchemaAsync(CancellationToken.None);
     await purchaseOrderStore.EnsureSchemaAsync(CancellationToken.None);
     await expenseStore.EnsureSchemaAsync(CancellationToken.None);
-    await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     await invoiceSendHistoryStore.EnsureSchemaAsync(CancellationToken.None);
     await invoiceTemplateStore.EnsureSchemaAsync(CancellationToken.None);
     await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);

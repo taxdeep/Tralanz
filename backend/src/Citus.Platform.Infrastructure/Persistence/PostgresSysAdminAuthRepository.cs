@@ -20,7 +20,7 @@ public sealed class PostgresSysAdminAuthRepository(
             create extension if not exists pgcrypto;
 
             create table if not exists sysadmin_accounts (
-              id uuid primary key default gen_random_uuid(),
+              id char(7) primary key,
               email text not null unique,
               display_name text not null default '',
               password_hash text not null,

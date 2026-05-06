@@ -251,7 +251,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               industry text not null,
               reserved_ranges jsonb not null default '[]'::jsonb,
               mandatory_system_roles jsonb not null default '[]'::jsonb,
-              applied_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              applied_by_sysadmin_account_id char(7),
               applied_at timestamptz not null default now()
             );
 

@@ -69,7 +69,7 @@ public sealed class PostgresPlatformGovernanceRepository(
               add column if not exists mfa_mode text not null default 'none';
 
             create table if not exists sysadmin_accounts (
-              id uuid primary key default gen_random_uuid(),
+              id char(7) primary key,
               email text not null unique,
               display_name text not null default '',
               password_hash text not null,
@@ -89,10 +89,10 @@ public sealed class PostgresPlatformGovernanceRepository(
               requested_at timestamptz not null default now(),
               review_reason text,
               reviewed_at timestamptz,
-              reviewed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              reviewed_by_sysadmin_account_id char(7),
               execution_reason text,
               executed_at timestamptz,
-              executed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              executed_by_sysadmin_account_id char(7),
               constraint account_mfa_recovery_requests_status_chk check (status in ('requested', 'approved', 'rejected', 'executed'))
             );
 
