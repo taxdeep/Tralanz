@@ -2,7 +2,7 @@ namespace Citus.Platform.Core.Runtime;
 
 public sealed record class PlatformFirstCompanyProvisioningCommand
 {
-    public Guid? SysAdminAccountId { get; init; }
+    public UserId? SysAdminAccountId { get; init; }
 
     public string OwnerDisplayName { get; init; } = string.Empty;
 

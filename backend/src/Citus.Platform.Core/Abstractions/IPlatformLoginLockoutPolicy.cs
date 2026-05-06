@@ -55,7 +55,7 @@ public interface IPlatformLoginLockoutPolicy
     /// </summary>
     Task<LockoutLiftResult> LiftLockoutAsync(
         Guid lockoutId,
-        Guid sysAdminAccountId,
+        UserId sysAdminAccountId,
         string reason,
         CancellationToken cancellationToken);
 }
@@ -63,7 +63,7 @@ public interface IPlatformLoginLockoutPolicy
 public sealed record class LoginAttempt(
     string Realm,
     string Email,
-    Guid? AccountId,
+    UserId? AccountId,
     string? RemoteIp,
     string? UserAgent,
     bool Succeeded);
@@ -78,7 +78,7 @@ public sealed record class LockoutSummary(
     Guid Id,
     string Realm,
     string MaskedEmail,
-    Guid? AccountId,
+    UserId? AccountId,
     string LockoutKind,
     DateTimeOffset LockedAt,
     DateTimeOffset? LockedUntil,

@@ -292,7 +292,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
         var document = new CustomerDepositApplicationDocument(
             id: Guid.NewGuid(),
             companyId: companyId,
-            entityNumber: new EntityNumber(entityNumber),
+            entityNumber: EntityNumber.Parse(entityNumber),
             displayNumber: new DocumentNumber(displayNumber),
             documentDate: documentDate,
             customerId: context.CustomerId,
@@ -335,7 +335,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
                   null, null,
                   now(), @user_id);
                 """;
-            insertApp.Parameters.AddWithValue("company_id", companyId);
+            insertApp.Parameters.AddWithValue("company_id", companyId.Value);
             insertApp.Parameters.AddWithValue("application_type", SettlementApplicationType);
             insertApp.Parameters.AddWithValue("source_type", SettlementSourceType);
             insertApp.Parameters.AddWithValue("source_id", deposit.DepositId);
@@ -343,7 +343,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
             insertApp.Parameters.AddWithValue("target_open_item_id", invoiceOpenItemId);
             insertApp.Parameters.AddWithValue("applied_amount_tx", applyAmount);
             insertApp.Parameters.AddWithValue("applied_amount_base", applyAmount);
-            insertApp.Parameters.AddWithValue("user_id", userId);
+            insertApp.Parameters.AddWithValue("user_id", userId.Value);
             await insertApp.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -362,7 +362,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
                       updated_at = now()
                 where company_id = @company_id and id = @id;
                 """;
-            updateDepositOi.Parameters.AddWithValue("company_id", companyId);
+            updateDepositOi.Parameters.AddWithValue("company_id", companyId.Value);
             updateDepositOi.Parameters.AddWithValue("id", deposit.OpenItemId);
             updateDepositOi.Parameters.AddWithValue("open_amount", depositRemaining);
             updateDepositOi.Parameters.AddWithValue("status", depositStatus);
@@ -378,7 +378,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
                   set status = @status, updated_at = now()
                 where company_id = @company_id and id = @id;
                 """;
-            updateDeposit.Parameters.AddWithValue("company_id", companyId);
+            updateDeposit.Parameters.AddWithValue("company_id", companyId.Value);
             updateDeposit.Parameters.AddWithValue("id", deposit.DepositId);
             updateDeposit.Parameters.AddWithValue("status", depositStatus);
             await updateDeposit.ExecuteNonQueryAsync(cancellationToken);
@@ -398,7 +398,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
                       updated_at = now()
                 where company_id = @company_id and id = @id;
                 """;
-            updateInvoiceOi.Parameters.AddWithValue("company_id", companyId);
+            updateInvoiceOi.Parameters.AddWithValue("company_id", companyId.Value);
             updateInvoiceOi.Parameters.AddWithValue("id", invoiceOpenItemId);
             updateInvoiceOi.Parameters.AddWithValue("open_amount", invoiceRemaining);
             updateInvoiceOi.Parameters.AddWithValue("status", invoiceStatus);

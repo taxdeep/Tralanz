@@ -156,7 +156,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
         // identifier derived from the invoice id so the GL display ties
         // back to the source document.
         var idShort = invoiceDocumentId.ToString("N")[..12].ToUpperInvariant();
-        var entityNumber = new EntityNumber($"EN-DSCOGS-{idShort}");
+        var entityNumber = EntityNumber.FromLegacy($"EN-DSCOGS-{idShort}");
         var displayNumber = new DocumentNumber($"DSCOGS-{idShort}");
         var baseCurrency = new CurrencyCode(header.Value.BaseCurrencyCode);
 
@@ -192,7 +192,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
               and source_id = @source_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_type", DropShipCogsSourceType);
         command.Parameters.AddWithValue("source_id", invoiceDocumentId);
 
@@ -217,7 +217,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
             where i.company_id = @company_id
               and i.id = @invoice_id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_id", invoiceDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -261,7 +261,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
             having sum(l.quantity) > 0
             order by i.item_code;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_id", invoiceDocumentId);
 
         var rows = new List<LineCandidateRow>();

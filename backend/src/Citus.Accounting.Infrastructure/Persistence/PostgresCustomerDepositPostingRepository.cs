@@ -185,7 +185,7 @@ public sealed class PostgresCustomerDepositPostingRepository : ICustomerDepositP
         var document = new CustomerDepositPostingDocument(
             id: depositId,
             companyId: companyId,
-            entityNumber: new EntityNumber(entityNumber),
+            entityNumber: EntityNumber.Parse(entityNumber),
             displayNumber: new DocumentNumber(displayNumber),
             documentDate: request.DocumentDate,
             customerId: request.CustomerId,
@@ -231,7 +231,7 @@ public sealed class PostgresCustomerDepositPostingRepository : ICustomerDepositP
             where so.company_id = @company_id and so.id = @so_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("so_id", salesOrderId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;

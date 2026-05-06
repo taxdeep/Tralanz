@@ -108,7 +108,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
                 and company.status = 'active'
             );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", accountId);
 
         if (await command.ExecuteScalarAsync(cancellationToken) is not true)

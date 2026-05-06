@@ -155,7 +155,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", openItemId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -297,7 +297,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             delete from users
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

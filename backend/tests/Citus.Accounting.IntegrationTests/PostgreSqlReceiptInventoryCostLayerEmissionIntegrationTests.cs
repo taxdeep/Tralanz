@@ -1390,7 +1390,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             insert into companies (id, entity_number, legal_name, base_currency_code)
             values (@company_id, 'EN-H10-001', 'H10 Integration Company', 'USD');
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -1514,7 +1514,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
     private static async Task SeedAccountAsync(
         string connectionString,
         CompanyId companyId,
-        Guid accountId,
+        UserId accountId,
         string code,
         string name,
         string rootType)
@@ -1546,7 +1546,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             );
             """;
         command.Parameters.AddWithValue("account_id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", $"EN-{code}");
         command.Parameters.AddWithValue("code", code);
         command.Parameters.AddWithValue("name", name);
@@ -1598,7 +1598,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               '2026-04-19'
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_id", billId);
         command.Parameters.AddWithValue("amount", amount);
         await command.ExecuteNonQueryAsync();
@@ -1659,7 +1659,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               false
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_id", billId);
         command.Parameters.AddWithValue("expense_account_id", expenseAccountId);
         command.Parameters.AddWithValue("quantity", quantity);
@@ -1885,8 +1885,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               0
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptId);
         command.Parameters.AddWithValue("bill_id", billId);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -1981,8 +1981,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               @user_id
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptId);
         command.Parameters.AddWithValue("bill_id", billId);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -2008,7 +2008,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             where company_id = @company_id
               and id = @item_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("inventory_asset_account_id", inventoryAssetAccountId);
         await command.ExecuteNonQueryAsync();
@@ -2033,7 +2033,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             where company_id = @company_id
               and receipt_id = @receipt_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptId);
         command.Parameters.AddWithValue("settled_quantity", settledQuantity);
         command.Parameters.AddWithValue("settled_amount_base", settledAmountBase);
@@ -2083,7 +2083,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             where company_id = @company_id
               and id = @settlement_batch_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
         await using var reader = await command.ExecuteReaderAsync();
@@ -2116,7 +2116,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               and source_id = @bill_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_id", billId);
 
         await using var reader = await command.ExecuteReaderAsync();

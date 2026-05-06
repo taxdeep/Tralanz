@@ -67,7 +67,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -98,7 +98,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("id", addressId);
 
@@ -221,7 +221,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("id", addressId);
 
@@ -255,7 +255,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("id", addressId);
 
@@ -291,7 +291,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("exclude_id", (object?)excludeId ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -299,7 +299,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
 
     private static void BindUpsert(NpgsqlCommand command, CompanyId companyId, Guid customerId, CustomerShippingAddressBookUpsertRequest request)
     {
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("label", (object?)NormalizeOptional(request.Label) ?? DBNull.Value);
         command.Parameters.AddWithValue("address_line", request.AddressLine?.Trim() ?? string.Empty);

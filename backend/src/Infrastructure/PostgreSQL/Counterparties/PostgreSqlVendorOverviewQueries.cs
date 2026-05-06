@@ -57,7 +57,7 @@ public sealed class PostgreSqlVendorOverviewQueries(PostgreSqlConnectionFactory 
                 coalesce((select overdue_count from ap_summary), 0) as overdue_count,
                 coalesce((select open_po_count from po_summary), 0) as open_po_count;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -152,7 +152,7 @@ public sealed class PostgreSqlVendorOverviewQueries(PostgreSqlConnectionFactory 
               and (@to_date is null or date <= @to_date)
             order by date desc, display_number desc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.Add(new NpgsqlParameter("type", NpgsqlDbType.Text)
         {

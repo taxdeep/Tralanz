@@ -119,7 +119,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
               and b.effective_from <= @as_of_date
             order by b.is_primary desc, b.effective_from desc, b.book_code asc, b.id asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("as_of_date", asOfDate);
 
         var pending = new List<(CompanyBookRecord Book, CompanyBookRemeasurementPolicy? Policy, bool HasCompanyPostedHistory, bool HasBookSpecificRevaluationHistory, bool HasClosedPeriods, bool HasIssuedReports, bool HasFiledTax)>();
@@ -240,7 +240,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             );
             """;
         command.Parameters.AddWithValue("id", signalId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("company_book_id", bookId);
         command.Parameters.AddWithValue("signal_type", signalType);
         command.Parameters.AddWithValue("signal_date", signalDate);
@@ -536,7 +536,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             where company_id = @company_id
             order by created_at desc, id desc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var results = new List<CompanyBookGovernedChangeRequestDraft>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -567,9 +567,9 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
               and id = @id
               and status = 'draft';
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", requestId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);
         if (affected != 1)
@@ -600,9 +600,9 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
               and id = @id
               and status in ('draft', 'submitted');
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", requestId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);
         if (affected != 1)
@@ -729,7 +729,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
                 limit 1
                 for update;
                 """;
-            existingCommand.Parameters.AddWithValue("company_id", companyId);
+            existingCommand.Parameters.AddWithValue("company_id", companyId.Value);
 
             var existing = await existingCommand.ExecuteScalarAsync(cancellationToken);
             if (existing is Guid existingBookId)
@@ -781,7 +781,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             );
             """;
         insertCommand.Parameters.AddWithValue("id", bookId);
-        insertCommand.Parameters.AddWithValue("company_id", companyId);
+        insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
         insertCommand.Parameters.AddWithValue("book_code", DefaultBookCode);
         insertCommand.Parameters.AddWithValue("book_name", DefaultBookName);
         insertCommand.Parameters.AddWithValue("book_role", DefaultBookRole);
@@ -818,7 +818,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
                 limit 1
                 for update;
                 """;
-            existingCommand.Parameters.AddWithValue("company_id", companyId);
+            existingCommand.Parameters.AddWithValue("company_id", companyId.Value);
             existingCommand.Parameters.AddWithValue("company_book_id", bookId);
 
             var existing = await existingCommand.ExecuteScalarAsync(cancellationToken);
@@ -866,7 +866,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             );
             """;
         insertCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-        insertCommand.Parameters.AddWithValue("company_id", companyId);
+        insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
         insertCommand.Parameters.AddWithValue("company_book_id", bookId);
         insertCommand.Parameters.AddWithValue("rate_type", DefaultRateType);
         insertCommand.Parameters.AddWithValue("quote_basis", DefaultQuoteBasis);
@@ -895,7 +895,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             limit 1
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -970,7 +970,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
               b.id desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("book_id", bookId.HasValue ? bookId.Value : DBNull.Value);
         command.Parameters.AddWithValue("require_primary", requirePrimaryBook);
         command.Parameters.AddWithValue("as_of_date", asOfDate);
@@ -1078,7 +1078,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             limit 1;
             """;
         command.Parameters.AddWithValue("id", requestId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1262,7 +1262,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
               and signal_date <= @as_of_date
             order by signal_date desc, created_at desc, id desc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("company_book_id", bookId);
         command.Parameters.AddWithValue("as_of_date", asOfDate);
 

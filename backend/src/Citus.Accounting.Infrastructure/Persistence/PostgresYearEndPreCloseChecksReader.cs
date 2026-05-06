@@ -141,7 +141,7 @@ public sealed class PostgresYearEndPreCloseChecksReader : IYearEndPreCloseChecks
                and abs(coalesce(b.billed_base, 0) - coalesce(inv.invoiced_base, 0)) > 0.005
                and least(b.oldest_bill_date, inv.oldest_invoice_date) < (current_date - interval '90 days');
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is null ? 0 : Convert.ToInt32(result);

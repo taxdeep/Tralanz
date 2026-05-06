@@ -190,7 +190,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
                    and entity_type = @entity_type
                    and source_id = ANY(@ids);
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("entity_type", entityType);
             command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid)
             {
@@ -315,7 +315,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "delete from search_documents where company_id = @company_id;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1065,7 +1065,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = commandText;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

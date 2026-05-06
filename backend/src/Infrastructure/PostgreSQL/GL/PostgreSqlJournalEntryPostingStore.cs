@@ -355,7 +355,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             order by s.signal_date asc, s.created_at asc, s.id asc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("posting_date", postingDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -405,7 +405,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
               and id = @source_id
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -440,7 +440,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             order by created_at desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

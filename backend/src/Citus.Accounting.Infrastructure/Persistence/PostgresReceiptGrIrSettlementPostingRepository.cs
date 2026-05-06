@@ -182,7 +182,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               and batch.id = @settlement_batch_id
               and batch.journal_entry_id is not null;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -215,7 +215,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               and batch.receipt_id = @receipt_id
             limit 1;
             """);
-        headerCommand.Parameters.AddWithValue("company_id", companyId);
+        headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
         headerCommand.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
         headerCommand.Parameters.AddWithValue("receipt_id", receiptDocumentId);
 
@@ -270,8 +270,8 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
         return new ReceiptGrIrSettlementPostingDocument(
             batchId,
-            new CompanyId(companyId),
-            new EntityNumber($"EN-{displayNumber}"),
+            CompanyId.Parse(companyId.ToString()),
+            EntityNumber.FromLegacy($"EN-{displayNumber}"),
             new DocumentNumber(displayNumber),
             documentStatus,
             receiptDocumentId,
@@ -337,7 +337,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               and posting_batch.status = 'posted'
             order by settlement_line.receipt_line_number, settlement_line.bill_line_number, batch_line.id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
         var lines = new List<ReceiptGrIrSettlementPostingDocumentLine>();

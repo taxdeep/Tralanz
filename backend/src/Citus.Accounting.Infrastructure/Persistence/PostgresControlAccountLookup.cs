@@ -51,7 +51,7 @@ internal static class PostgresControlAccountLookup
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("system_role", systemRole);
         command.Parameters.AddWithValue("fallback_code", fallbackCode);
 

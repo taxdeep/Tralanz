@@ -7,6 +7,6 @@ public interface ICompanyMembershipGovernanceWorkflow
         Guid membershipId,
         string role,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
 }

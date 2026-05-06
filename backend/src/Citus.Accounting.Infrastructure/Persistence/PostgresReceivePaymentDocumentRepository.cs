@@ -432,7 +432,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         return new ReceivePaymentDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(paymentNumber),
             status,
             paymentDate,
@@ -492,7 +492,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             """;
 
         await using var command = scope.CreateCommand(sql);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
 
         if (openItemIds is not null)
@@ -541,7 +541,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -613,7 +613,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             """);
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("payment_number", paymentNumber);
         command.Parameters.AddWithValue("customer_id", customerId);
@@ -661,7 +661,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
                 );
                 """);
 
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("receive_payment_id", documentId);
             command.Parameters.AddWithValue("line_number", index + 1);
             command.Parameters.AddWithValue("target_ar_open_item_id", line.TargetOpenItemId);
@@ -691,7 +691,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             for update;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("open_item_id", openItemId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

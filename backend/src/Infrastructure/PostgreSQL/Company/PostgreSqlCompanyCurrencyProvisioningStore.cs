@@ -48,7 +48,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var raw = await command.ExecuteScalarAsync(cancellationToken);
         if (raw is null || raw is DBNull)
         {
@@ -104,7 +104,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
               and code like @prefix_pattern
               and code <> @base_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("prefix_len", familyPrefix.Length);
         command.Parameters.AddWithValue("code_length", accountCodeLength);
         command.Parameters.AddWithValue("prefix_pattern", familyPrefix + "%");
@@ -172,7 +172,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
                 updated_at = now()
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -228,7 +228,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
             do update
               set is_enabled = true;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("currency_code", currencyCode);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -267,7 +267,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
                   end
                 limit 1;
                 """;
-            existingCommand.Parameters.AddWithValue("company_id", companyId);
+            existingCommand.Parameters.AddWithValue("company_id", companyId.Value);
             existingCommand.Parameters.AddWithValue("system_role", request.SystemRole);
             existingCommand.Parameters.AddWithValue("system_key", request.SystemKey);
             existingCommand.Parameters.AddWithValue("code", request.Code);
@@ -351,7 +351,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", accountId);
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.AddWithValue("entity_number", entityNumber);
             insertCommand.Parameters.AddWithValue("code", request.Code);
             insertCommand.Parameters.AddWithValue("name", request.Name);
@@ -410,7 +410,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
               end,
               catalog.code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("base_currency_code", companyRow.BaseCurrencyCode);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -446,7 +446,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

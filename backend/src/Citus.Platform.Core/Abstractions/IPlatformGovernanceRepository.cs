@@ -11,7 +11,7 @@ public interface IPlatformGovernanceRepository
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PlatformAuditEvent>> ListAccountMfaTimelineAsync(
-        Guid accountId,
+        UserId accountId,
         int limit,
         CancellationToken cancellationToken);
 
@@ -22,7 +22,7 @@ public interface IPlatformGovernanceRepository
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
-        Guid accountId,
+        UserId accountId,
         int limit,
         CancellationToken cancellationToken);
 
@@ -30,39 +30,39 @@ public interface IPlatformGovernanceRepository
         CompanyId companyId,
         string status,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
 
     Task<AccountStatusGovernanceResult?> SetAccountStatusAsync(
-        Guid accountId,
+        UserId accountId,
         string status,
         DateTimeOffset? lockedUntilUtc,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
 
     Task<PasswordResetGovernanceResult?> RequestPasswordResetAsync(
-        Guid accountId,
+        UserId accountId,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
 
     Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
-        Guid accountId,
+        UserId accountId,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
 
     Task<MfaRecoveryReviewResult?> ReviewMfaRecoveryRequestAsync(
         Guid requestId,
         string decision,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
 
     Task<MfaRecoveryExecutionResult?> ExecuteMfaRecoveryRequestAsync(
         Guid requestId,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
 }

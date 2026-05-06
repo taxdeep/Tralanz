@@ -1568,7 +1568,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             Task.CompletedTask;
 
         public Task<SysAdminSecretRotationResult> RotateSecretAsync(
-            Guid sysAdminAccountId,
+            UserId sysAdminAccountId,
             string currentPassword,
             string newPassword,
             CancellationToken cancellationToken) =>
@@ -1688,7 +1688,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<IReadOnlyList<PlatformAuditEvent>> ListAccountMfaTimelineAsync(
-            Guid accountId,
+            UserId accountId,
             int limit,
             CancellationToken cancellationToken)
         {
@@ -1698,7 +1698,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
-            Guid accountId,
+            UserId accountId,
             int limit,
             CancellationToken cancellationToken)
         {
@@ -1711,7 +1711,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             CompanyId companyId,
             string status,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastCompanyStatusCompanyId = companyId;
@@ -1722,11 +1722,11 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<AccountStatusGovernanceResult?> SetAccountStatusAsync(
-            Guid accountId,
+            UserId accountId,
             string status,
             DateTimeOffset? lockedUntilUtc,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastAccountStatusAccountId = accountId;
@@ -1738,9 +1738,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<PasswordResetGovernanceResult?> RequestPasswordResetAsync(
-            Guid accountId,
+            UserId accountId,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastPasswordResetAccountId = accountId;
@@ -1750,9 +1750,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
-            Guid accountId,
+            UserId accountId,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastMfaResetAccountId = accountId;
@@ -1772,7 +1772,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             Guid requestId,
             string decision,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastReviewedMfaRecoveryRequestId = requestId;
@@ -1785,7 +1785,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public Task<MfaRecoveryExecutionResult?> ExecuteMfaRecoveryRequestAsync(
             Guid requestId,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastExecutedMfaRecoveryRequestId = requestId;
@@ -1804,7 +1804,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                     {
                         CompanyId = companyId,
                         MembershipId = membershipId,
-                        AccountId = Guid.Empty,
+                        AccountId = default,
                         Email = string.Empty,
                         Username = string.Empty,
                         PreviousRole = "user",
@@ -1828,7 +1828,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             Guid membershipId,
             string role,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             LastCompanyId = companyId;

@@ -22,8 +22,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var vendorCreditRepository = new PostgresVendorCreditDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
@@ -125,8 +125,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var vendorCreditRepository = new PostgresVendorCreditDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
@@ -235,8 +235,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -311,8 +311,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -428,8 +428,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -501,8 +501,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -570,8 +570,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -642,8 +642,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -714,8 +714,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -798,8 +798,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -883,8 +883,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -970,8 +970,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -1107,8 +1107,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -1213,8 +1213,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
@@ -1366,8 +1366,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid payableControlAccountId = Guid.Empty;
-        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = default;
+        Guid expenseAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid payBillId = Guid.Empty;
@@ -1597,8 +1597,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid payableControlAccountId = Guid.Empty;
-        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = default;
+        Guid expenseAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid payBillId = Guid.Empty;
@@ -1859,8 +1859,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid payableControlAccountId = Guid.Empty;
-        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = default;
+        Guid expenseAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid payBillId = Guid.Empty;
@@ -2136,8 +2136,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid payableControlAccountId = Guid.Empty;
-        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = default;
+        Guid expenseAccountId = default;
         UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid payBillId = Guid.Empty;
@@ -2497,8 +2497,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid payableControlAccountId = Guid.Empty;
-        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = default;
+        Guid expenseAccountId = default;
         UserId userId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         Guid billId = Guid.NewGuid();
@@ -2796,8 +2796,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid payableControlAccountId = Guid.Empty;
-        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = default;
+        Guid expenseAccountId = default;
         UserId userId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         Guid billId = Guid.NewGuid();
@@ -3149,8 +3149,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
-        Guid payableControlAccountId = Guid.Empty;
-        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = default;
+        Guid expenseAccountId = default;
         UserId userId = Guid.Empty;
         Guid vendorCreditId = Guid.NewGuid();
         Guid billId = Guid.NewGuid();
@@ -3368,11 +3368,11 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             postingEngine,
             new PostgresUnitOfWork(connectionFactory, executionContextAccessor));
 
-        Guid expenseAccountId = Guid.Empty;
-        Guid unmappedExpenseAccountId = Guid.Empty;
-        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = default;
+        Guid unmappedExpenseAccountId = default;
+        Guid payableControlAccountId = default;
         UserId userId = Guid.Empty;
-        UserId approvalUserId = Guid.Empty;
+        UserId approvalUserId = default;
         Guid billId = Guid.Empty;
         Guid openItemId = Guid.Empty;
         Guid adjustmentAccountMappingId = Guid.Empty;
@@ -3741,7 +3741,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", $"AP-{suffix}");
         command.Parameters.AddWithValue("name", $"Smoke Accounts Payable {suffix}");
@@ -3797,7 +3797,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", $"EXP-{entityNumber[^6..]}");
         command.Parameters.AddWithValue("name", "Smoke Expense");
@@ -3818,7 +3818,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             new PostgresExecutionContextAccessor());
         var result = await repository.SaveAsync(
             new OpenItemAdjustmentAccountMappingSaveRequest(
-                new CompanyId(companyId),
+                CompanyId.Parse(companyId.ToString()),
                 null,
                 openItemType,
                 adjustmentType,
@@ -4047,7 +4047,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", journalEntryId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("source_type", sourceType);
@@ -4142,7 +4142,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 );
                 """;
             headerCommand.Parameters.AddWithValue("id", journalEntryId);
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("display_number", displayNumber);
             headerCommand.Parameters.AddWithValue("source_type", sourceType);
@@ -4257,7 +4257,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", openItemId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -4358,7 +4358,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 );
                 """;
             headerCommand.Parameters.AddWithValue("id", payBillId);
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("payment_number", $"PB-{entityNumber[^6..]}");
             headerCommand.Parameters.AddWithValue("vendor_id", vendorId);
@@ -4393,7 +4393,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   @applied_amount_tx
                 );
                 """;
-            lineCommand.Parameters.AddWithValue("company_id", companyId);
+            lineCommand.Parameters.AddWithValue("company_id", companyId.Value);
             lineCommand.Parameters.AddWithValue("pay_bill_id", payBillId);
             lineCommand.Parameters.AddWithValue("target_ap_open_item_id", targetApOpenItemId);
             lineCommand.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
@@ -4462,7 +4462,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 );
                 """;
             headerCommand.Parameters.AddWithValue("id", vendorCreditApplicationId);
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("application_number", $"VCA-{entityNumber[^6..]}");
             headerCommand.Parameters.AddWithValue("vendor_id", vendorId);
@@ -4496,7 +4496,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   @applied_amount_tx
                 );
                 """;
-            lineCommand.Parameters.AddWithValue("company_id", companyId);
+            lineCommand.Parameters.AddWithValue("company_id", companyId.Value);
             lineCommand.Parameters.AddWithValue("vendor_credit_application_id", vendorCreditApplicationId);
             lineCommand.Parameters.AddWithValue("source_vendor_credit_ap_open_item_id", sourceVendorCreditApOpenItemId);
             lineCommand.Parameters.AddWithValue("target_bill_ap_open_item_id", targetBillApOpenItemId);
@@ -4564,7 +4564,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", applicationId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("application_type", sourceType);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -4615,7 +4615,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             where company_id = @company_id
               and id = @target_open_item_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
         command.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
         command.Parameters.AddWithValue("applied_amount_base", appliedAmountBase);
@@ -4776,7 +4776,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid journalEntryId,
         Guid lineId,
         int lineNumber,
-        Guid accountId,
+        UserId accountId,
         decimal txDebit,
         decimal txCredit,
         string description,
@@ -4816,7 +4816,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", lineId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
         command.Parameters.AddWithValue("line_number", lineNumber);
         command.Parameters.AddWithValue("account_id", accountId);
@@ -4834,7 +4834,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         CompanyId companyId,
         Guid journalEntryId,
         Guid journalEntryLineId,
-        Guid accountId,
+        UserId accountId,
         decimal debit,
         decimal credit,
         CancellationToken cancellationToken,
@@ -4876,7 +4876,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
         command.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
         command.Parameters.AddWithValue("account_id", accountId);
@@ -5068,7 +5068,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task CleanupAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid accountId,
+        UserId accountId,
         CancellationToken cancellationToken)
     {
         if (accountId == Guid.Empty)
@@ -5118,7 +5118,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "delete from users where id = @user_id;";
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

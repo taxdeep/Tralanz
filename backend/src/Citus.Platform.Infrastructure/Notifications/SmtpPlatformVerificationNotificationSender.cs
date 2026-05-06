@@ -45,7 +45,7 @@ public sealed class SmtpPlatformVerificationNotificationSender(
             new PlatformVerificationNotificationMessage
             {
                 DispatchId = message.DispatchId,
-                UserId = Guid.Empty,
+                UserId = default,
                 Purpose = "password_reset",
                 Destination = message.Destination,
                 RecipientDisplayName = message.RecipientDisplayName,

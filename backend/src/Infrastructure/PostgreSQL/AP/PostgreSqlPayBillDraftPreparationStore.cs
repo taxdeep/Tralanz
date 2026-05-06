@@ -218,7 +218,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
         command.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
 
@@ -270,7 +270,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
               and is_active = true
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -300,7 +300,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
               and detail_type = 'bank'
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", bankAccountId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -326,7 +326,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         if (scalar is null || scalar == DBNull.Value)
         {
@@ -477,7 +477,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             from pay_bills
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 

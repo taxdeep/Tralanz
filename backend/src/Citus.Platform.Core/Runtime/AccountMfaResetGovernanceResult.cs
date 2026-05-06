@@ -2,7 +2,7 @@ namespace Citus.Platform.Core.Runtime;
 
 public sealed record class AccountMfaResetGovernanceResult
 {
-    public Guid AccountId { get; init; }
+    public UserId AccountId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

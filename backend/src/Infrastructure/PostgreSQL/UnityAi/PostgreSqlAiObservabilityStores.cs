@@ -97,7 +97,7 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
               FROM ai_job_runs WHERE company_id = @company_id AND job_type = @job_type
               ORDER BY created_at DESC LIMIT @limit;
               """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         if (jobType is not null) command.Parameters.AddWithValue("job_type", jobType);
         command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 200));
 
@@ -237,7 +237,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
               FROM ai_request_logs WHERE company_id = @company_id AND task_type = @task_type
               ORDER BY created_at DESC LIMIT @limit;
               """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         if (taskType is not null) command.Parameters.AddWithValue("task_type", taskType);
         command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 500));
 

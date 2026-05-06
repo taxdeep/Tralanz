@@ -1025,7 +1025,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
                          limit 1;
                          """))
         {
-            existingCommand.Parameters.AddWithValue("company_id", companyId);
+            existingCommand.Parameters.AddWithValue("company_id", companyId.Value);
             existingCommand.Parameters.AddWithValue("source_type", sourceType);
             existingCommand.Parameters.AddWithValue("source_id", sourceId);
 
@@ -1077,7 +1077,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
             """);
 
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", partyId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
@@ -1956,7 +1956,7 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
         DateOnly asOfDate)
     {
         var suffix = BitConverter.ToUInt32(request.RequestId.ToByteArray(), 0) % 100_000_000;
-        var entityNumber = new EntityNumber($"EN{asOfDate.Year}{suffix:00000000}");
+        var entityNumber = EntityNumber.Parse($"EN{asOfDate.Year}{suffix:00000000}");
         var displayNumber = new DocumentNumber($"AR-ADJ-{request.RequestId:N}"[..19]);
 
         return new OpenItemAdjustmentDocument(

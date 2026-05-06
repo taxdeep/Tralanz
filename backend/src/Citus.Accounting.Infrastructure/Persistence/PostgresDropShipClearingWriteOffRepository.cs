@@ -95,7 +95,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
         var documentDate = DateOnly.FromDateTime(DateTime.UtcNow);
         var docId = Guid.NewGuid();
         var idShort = docId.ToString("N")[..12].ToUpperInvariant();
-        var entityNumber = new EntityNumber($"EN-DSWO-{idShort}");
+        var entityNumber = EntityNumber.FromLegacy($"EN-DSWO-{idShort}");
         var displayNumber = new DocumentNumber($"DSWO-{idShort}");
 
         return new DropShipClearingWriteOffDocument(
@@ -126,7 +126,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
             where company_id = @company_id and id = @item_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -168,7 +168,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
             select
               (select billed_base from bill_side) - (select invoiced_base from invoice_side) as net_clearing_base;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -183,7 +183,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
     {
         await using var command = scope.CreateCommand(
             "select base_currency_code from companies where id = @company_id limit 1;");
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is string s ? s.Trim().ToUpperInvariant() : "USD";
     }

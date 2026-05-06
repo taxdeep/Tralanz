@@ -169,7 +169,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         {
             TypedValue = invoiceDocumentIds.Distinct().ToArray()
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var snapshots = new Dictionary<Guid, InventoryInvoiceIssuePostingGateSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -655,7 +655,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string baseCurrencyCode || string.IsNullOrWhiteSpace(baseCurrencyCode))
         {
@@ -684,7 +684,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
             limit 1;
             """;
         command.Parameters.AddWithValue("customer_id", customerId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string displayName || string.IsNullOrWhiteSpace(displayName))
@@ -734,7 +734,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and is_active = true
               and id = any(@item_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -810,7 +810,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and is_active = true
               and id = any(@warehouse_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_ids", warehouseIds.ToArray());
 
         var warehouses = new Dictionary<Guid, InventoryManagedWarehouseSummary>();
@@ -854,7 +854,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and warehouse_id = @warehouse_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -887,7 +887,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         return Convert.ToDecimal(await command.ExecuteScalarAsync(cancellationToken) ?? 0m);
@@ -919,7 +919,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and remaining_qty > 0
             order by layer_date asc, created_at asc, id asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1095,7 +1095,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               set on_hand_qty = item_warehouse_balances.on_hand_qty + excluded.on_hand_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("quantity_delta", quantityDelta);
@@ -1137,7 +1137,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and manage_inventory_method = 'manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1205,7 +1205,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1247,7 +1247,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
               and l.warehouse_id is not null
               and l.uom_code is not null;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1344,7 +1344,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
              and s.uom_code = i.uom_code
             order by i.item_code, i.warehouse_code, i.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         var rows = new List<InventoryInvoiceIssueHandoffLineSummary>();
@@ -1430,7 +1430,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
 
         var issues = new List<InventorySalesIssueSummary>();
@@ -1506,7 +1506,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var issues = new List<InventorySalesIssueSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

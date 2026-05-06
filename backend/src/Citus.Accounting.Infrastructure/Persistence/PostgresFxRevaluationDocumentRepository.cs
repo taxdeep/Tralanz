@@ -328,7 +328,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         return new FxRevaluationDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(displayNumber),
             status,
             revaluationDate,
@@ -977,7 +977,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             """);
 
         headerCommand.Parameters.AddWithValue("id", batchId);
-        headerCommand.Parameters.AddWithValue("company_id", companyId);
+        headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
         headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
         headerCommand.Parameters.AddWithValue("display_number", displayNumber);
         headerCommand.Parameters.AddWithValue("batch_kind", batchKind);
@@ -1003,7 +1003,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             string.IsNullOrWhiteSpace(memo)
                 ? DBNull.Value
                 : (object)memo.Trim());
-        headerCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+        headerCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
         if (hasBatchGovernanceColumns)
         {
             headerCommand.Parameters.AddWithValue("company_book_id", bookPolicy.BookId == Guid.Empty ? DBNull.Value : (object)bookPolicy.BookId);
@@ -1076,7 +1076,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 """);
 
             lineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            lineCommand.Parameters.AddWithValue("company_id", companyId);
+            lineCommand.Parameters.AddWithValue("company_id", companyId.Value);
             lineCommand.Parameters.AddWithValue("fx_revaluation_batch_id", batchId);
             lineCommand.Parameters.AddWithValue("line_number", index + 1);
             lineCommand.Parameters.AddWithValue("target_open_item_type", line.TargetOpenItemType);
@@ -1107,7 +1107,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var value = await command.ExecuteScalarAsync(cancellationToken);
         if (value is not string baseCurrencyCode)
         {
@@ -1180,7 +1180,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               """;
 
         await using var command = scope.CreateCommand(sql);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
         command.Parameters.AddWithValue("rate_type", bookPolicy.RateType);
@@ -1274,7 +1274,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             for update;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1348,7 +1348,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_batch_id", sourceBatchId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1407,7 +1407,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             order by descendant.posted_at desc, descendant.created_at desc, descendant.id desc;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_batch_id", sourceBatch.Id);
         command.Parameters.AddWithValue("source_posted_at", postedAt);
 
@@ -1453,7 +1453,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("batch_id", descendantBatch.DocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1499,7 +1499,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             order by l.line_number asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", sourceBatch.Id);
 
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
@@ -1633,7 +1633,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             order by created_at asc, id asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("target_open_item_type", targetOpenItemType);
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
         command.Parameters.AddWithValue("posted_at", postedAt);
@@ -1691,7 +1691,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             order by due_date asc nulls first, created_at asc, id asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
 
@@ -1776,7 +1776,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             order by due_date asc nulls first, created_at asc, id asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
 
@@ -1846,7 +1846,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             for update;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2097,7 +2097,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 and b.is_primary = true
             );
             """);
-        insertBookCommand.Parameters.AddWithValue("company_id", companyId);
+        insertBookCommand.Parameters.AddWithValue("company_id", companyId.Value);
         insertBookCommand.Parameters.AddWithValue("book_base_currency_code", companyBaseCurrencyCode);
         insertBookCommand.Parameters.AddWithValue("functional_currency_code", companyBaseCurrencyCode);
         insertBookCommand.Parameters.AddWithValue("effective_from", asOfDate);
@@ -2151,7 +2151,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             order by b.effective_from desc, b.created_at desc, b.id desc
             limit 1;
             """);
-        insertPolicyCommand.Parameters.AddWithValue("company_id", companyId);
+        insertPolicyCommand.Parameters.AddWithValue("company_id", companyId.Value);
         insertPolicyCommand.Parameters.AddWithValue("effective_from", asOfDate);
         insertPolicyCommand.Parameters.AddWithValue("created_by_user_id", userId);
         await insertPolicyCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -2198,7 +2198,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               b.id desc
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("book_id", bookId.HasValue ? bookId.Value : DBNull.Value);
         command.Parameters.AddWithValue("as_of_date", asOfDate);
 

@@ -106,7 +106,7 @@ else if (_companies.Count > 0)
 
     private bool _isLoading = true;
     private IReadOnlyList<CompanyWorkspaceSummary> _companies = Array.Empty<CompanyWorkspaceSummary>();
-    private readonly HashSet<Guid> _statusUpdates = [];
+    private readonly HashSet<CompanyId> _statusUpdates = [];
 
     protected override async Task OnInitializedAsync()
     {

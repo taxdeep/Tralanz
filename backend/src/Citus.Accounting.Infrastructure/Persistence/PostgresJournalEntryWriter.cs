@@ -363,7 +363,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -396,7 +396,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
 
@@ -440,7 +440,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             order by s.signal_date asc, s.created_at asc, s.id asc
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("posting_date", postingDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -689,7 +689,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
         await using var command = scope.CreateCommand(sql);
 
         command.Parameters.AddWithValue("posted_at", postedAt);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("claim_id", Guid.NewGuid());

@@ -80,7 +80,7 @@ public sealed class PostgresPlatformSmtpConfigStore : IPlatformSmtpConfigStore
             Username: reader.GetString(6),
             HasPassword: !string.IsNullOrWhiteSpace(passwordProtected),
             UpdatedAt: reader.GetFieldValue<DateTimeOffset>(8),
-            UpdatedByUserId: reader.IsDBNull(9) ? null : reader.GetGuid(9));
+            UpdatedByUserId: reader.IsDBNull(9) ? null : UserId.Parse(reader.GetString(9)));
     }
 
     public async Task<PlatformSmtpConfigSnapshot> UpsertAsync(

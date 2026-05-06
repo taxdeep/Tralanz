@@ -224,7 +224,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         return new InvoiceDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(invoiceNumber),
             status,
             invoiceDate,
@@ -715,7 +715,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

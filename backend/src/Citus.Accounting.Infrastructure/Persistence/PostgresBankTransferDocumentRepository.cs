@@ -112,7 +112,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
         return new BankTransferDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(transferNumber),
             status,
             transferDate,
@@ -394,7 +394,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
             limit 1;
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

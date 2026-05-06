@@ -86,7 +86,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
                 END,
                 updated_at = EXCLUDED.updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
@@ -124,7 +124,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
               AND entity_type = @entity_type
               AND entity_id = ANY(@entity_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
@@ -180,7 +180,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
                      last_selected_at DESC NULLS LAST
             LIMIT @lim;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", UnitysearchScopeType.Company);
         command.Parameters.AddWithValue("lim", Math.Clamp(limit, 1, 500));
 
@@ -252,7 +252,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
                 last_selected_at = EXCLUDED.last_selected_at,
                 updated_at = EXCLUDED.updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("source_context", sourceContext);
@@ -289,7 +289,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
               AND target_context = @target_context
               AND target_entity_type = @target_entity_type;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("source_context", sourceContext);
@@ -339,7 +339,7 @@ public sealed class PostgreSqlUnitysearchRecentQueryStore(PostgreSqlConnectionFa
                 @company_id, @user_id, @context, @query, @normalized_query,
                 @result_clicked, @clicked_entity_type, @clicked_entity_id, @result_count, @created_at);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("query", query);
@@ -386,7 +386,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
                 AND validation_status = 'valid'
                 AND (expires_at IS NULL OR expires_at > NOW());
               """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);
         if (entityIds is not null && entityIds.Count > 0)
@@ -462,7 +462,7 @@ public sealed class PostgreSqlUnitysearchDecisionTraceStore(PostgreSqlConnection
                 @id, @company_id, @user_id, @context, @entity_type, @query, @normalized_query, @returned_count, @trace_json::jsonb);
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);

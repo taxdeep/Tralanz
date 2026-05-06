@@ -636,7 +636,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             );
             """;
         command.Parameters.AddWithValue("receipt_id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("line_number", lineNumber);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -708,7 +708,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """;
         var billId = Guid.NewGuid();
         command.Parameters.AddWithValue("bill_id", billId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", vendorId ?? Guid.NewGuid());
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("line_number", lineNumber);
@@ -759,7 +759,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
               and entity_id = @purchase_order_id
             order by created_at asc, action asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
 
         var actions = new List<string>();

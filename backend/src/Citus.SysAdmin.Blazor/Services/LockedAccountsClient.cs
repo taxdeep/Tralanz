@@ -87,7 +87,7 @@ public sealed record LockoutSummaryDto(
     Guid Id,
     string Realm,
     string MaskedEmail,
-    Guid? AccountId,
+    UserId? AccountId,
     string LockoutKind,
     DateTimeOffset LockedAt,
     DateTimeOffset? LockedUntil,

@@ -224,9 +224,9 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
             on conflict (company_id, receipt_id, receipt_line_number, bill_id, bill_line_number)
             do nothing;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -346,7 +346,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         {
             TypedValue = receiptDocumentIds
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var summaries = new Dictionary<Guid, ReceiptInventoryValuationSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

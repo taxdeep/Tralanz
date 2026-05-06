@@ -1637,7 +1637,7 @@ public sealed record OpenItemAdjustmentAccountMappingRecord(
     string AdjustmentAccountRootType,
     bool IsActive,
     UserId? CreatedByUserId,
-    Guid? UpdatedByUserId,
+    UserId? UpdatedByUserId,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? DeactivatedAt);

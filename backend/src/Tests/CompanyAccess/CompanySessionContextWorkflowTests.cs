@@ -252,8 +252,8 @@ public sealed class CompanySessionContextWorkflowTests
               @is_active
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("role", role);
         if (hasPermissionsColumn)
         {
@@ -303,7 +303,7 @@ public sealed class CompanySessionContextWorkflowTests
             delete from users
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         var companyIds = secondCompanyId.HasValue
             ? new[] { firstCompanyId, secondCompanyId.Value }
             : new[] { firstCompanyId };

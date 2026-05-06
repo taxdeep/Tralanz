@@ -54,7 +54,7 @@ public sealed class PostgreSqlCustomerOverviewQueries(PostgreSqlConnectionFactor
                 coalesce((select open_balance_base from ar_summary), 0) as open_balance_base,
                 coalesce((select overdue_count from ar_summary), 0) as overdue_count;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -160,7 +160,7 @@ public sealed class PostgreSqlCustomerOverviewQueries(PostgreSqlConnectionFactor
               and (@to_date is null or date <= @to_date)
             order by date desc, display_number desc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.Add(new NpgsqlParameter("type", NpgsqlDbType.Text)
         {

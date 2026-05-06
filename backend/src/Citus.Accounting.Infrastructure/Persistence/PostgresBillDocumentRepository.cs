@@ -233,7 +233,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         return new BillDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(billNumber),
             status,
             billDate,
@@ -614,7 +614,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                            and id = any(@item_ids);
                          """))
         {
-            itemsCommand.Parameters.AddWithValue("company_id", companyId);
+            itemsCommand.Parameters.AddWithValue("company_id", companyId.Value);
             itemsCommand.Parameters.Add(new NpgsqlParameter("item_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
             {
                 Value = distinctItemIds
@@ -883,7 +883,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   and po.id = @purchase_order_id
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("bill_id", billDocumentId);
             command.Parameters.AddWithValue("purchase_order_id", candidate.PurchaseOrderId);
             command.Parameters.AddWithValue("purchase_order_line_number", candidate.PurchaseOrderLineNumber);
@@ -975,7 +975,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

@@ -140,7 +140,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
                   updated_at = now()
             returning prefix, next_number, padding, suggestion_enabled;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", definition.ScopeKey);
         command.Parameters.AddWithValue("prefix", request.Prefix.Trim().ToUpperInvariant());
         command.Parameters.AddWithValue("next_number", request.NextNumber);
@@ -220,7 +220,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
                 )
                 on conflict (company_id, scope_key) do nothing;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("scope_key", definition.ScopeKey);
             command.Parameters.AddWithValue("prefix", definition.DefaultPrefix);
             command.Parameters.AddWithValue("padding", definition.DefaultPadding);
@@ -241,7 +241,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
             where company_id = @company_id
             order by scope_key;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var rows = new List<NumberingRow>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

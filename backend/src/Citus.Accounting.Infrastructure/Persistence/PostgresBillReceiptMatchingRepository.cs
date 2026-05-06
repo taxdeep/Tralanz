@@ -149,7 +149,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             left join discrepancy_groups dg
               on dg.bill_document_id = rb.bill_document_id;
             """;
-        headerCommand.Parameters.AddWithValue("company_id", companyId);
+        headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
         headerCommand.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         int billInboundLineCount;
@@ -268,7 +268,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
         {
             TypedValue = billDocumentIds
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var snapshots = new Dictionary<Guid, BillReceiptPostingGateSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -348,7 +348,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
               r.posted_at
             order by r.receipt_date desc, r.posted_at desc nulls last, r.receipt_number desc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var receipts = new List<BillReceiptMatchingReceiptSummary>();
@@ -434,7 +434,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
               on a.bill_line_number = l.line_number
             order by l.line_number asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var rows = new List<BillReceiptMatchingLineSummary>();
@@ -505,7 +505,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
               and d.bill_id = @bill_document_id
             order by d.bill_line_number asc, d.last_detected_at desc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var rows = new List<BillReceiptMatchingDiscrepancySummary>();
@@ -614,7 +614,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
               and l.quantity is not null
               and l.unit_cost is not null;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = billDocumentIds
@@ -643,7 +643,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             where company_id = @company_id
               and bill_id = any(@bill_document_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = billDocumentIds
@@ -685,7 +685,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             where company_id = @company_id
               and bill_id = any(@bill_document_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = billDocumentIds
@@ -708,7 +708,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             where company_id = @company_id
               and bill_id = any(@bill_document_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = billDocumentIds
@@ -745,7 +745,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
               and allocation.uom_code = g.uom_code;
             """;
         BindGroups(command, groups);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -798,7 +798,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
               and l.unit_cost is not null;
             """;
         BindGroups(command, groups);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var candidates = new List<BillReceiptMatchBillLineCandidate>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -863,7 +863,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
               and r.status = 'posted';
             """;
         BindGroups(command, groups);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var candidates = new List<BillReceiptMatchReceiptLineCandidate>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1009,7 +1009,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             where company_id = @company_id
               and bill_id = any(@bill_document_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = billDocumentIds
@@ -1092,7 +1092,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
              and a.bill_line_number = l.line_number
             order by l.bill_id asc, l.line_number asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = billDocumentIds

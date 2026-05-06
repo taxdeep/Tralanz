@@ -518,10 +518,10 @@ else if (_users.Count > 0)
     private MfaRecoveryRequestSummary? _selectedRecoveryRequest;
     private bool _isSelectedTimelineLoading;
     private bool _isSelectedRecoveryHistoryLoading;
-    private readonly HashSet<Guid> _accountUpdates = [];
+    private readonly HashSet<UserId> _accountUpdates = [];
     private readonly HashSet<Guid> _mfaRecoveryUpdates = [];
     private readonly HashSet<Guid> _membershipUpdates = [];
-    private readonly HashSet<Guid> _mfaTimelineLoads = [];
+    private readonly HashSet<UserId> _mfaTimelineLoads = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -556,19 +556,19 @@ else if (_users.Count > 0)
         _memberships = await SysAdminControlClient.ListCompanyMembershipsAsync(ShellState.ActiveCompany.CompanyId.Value);
     }
 
-    private bool IsAccountUpdating(Guid accountId) => _accountUpdates.Contains(accountId);
+    private bool IsAccountUpdating(UserId accountId) => _accountUpdates.Contains(accountId);
 
     private bool IsMfaRecoveryUpdating(Guid requestId) => _mfaRecoveryUpdates.Contains(requestId);
 
-    private bool IsMfaTimelineLoading(Guid accountId) => _mfaTimelineLoads.Contains(accountId);
+    private bool IsMfaTimelineLoading(UserId accountId) => _mfaTimelineLoads.Contains(accountId);
 
     private bool IsMembershipUpdating(Guid membershipId) => _membershipUpdates.Contains(membershipId);
 
-    private bool HasOpenMfaRecoveryRequest(Guid accountId) =>
+    private bool HasOpenMfaRecoveryRequest(UserId accountId) =>
         _users.FirstOrDefault(user => user.Id == accountId)?.HasActiveMfaRecoveryRequest == true ||
         _mfaRecoveryRequests.Any(request => request.AccountId == accountId);
 
-    private void OpenAuditForAccount(Guid accountId) =>
+    private void OpenAuditForAccount(UserId accountId) =>
         NavigationManager.NavigateTo($"audit?accountId={accountId}");
 
     private async Task SelectRecoveryRequestAsync(MfaRecoveryRequestSummary request)

@@ -439,7 +439,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and company_book_id = @book_id;
                 """;
-            deleteSignals.Parameters.AddWithValue("company_id", companyId);
+            deleteSignals.Parameters.AddWithValue("company_id", companyId.Value);
             deleteSignals.Parameters.AddWithValue("book_id", bookId);
             await deleteSignals.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -453,7 +453,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and id = @book_id;
                 """;
-            deleteBook.Parameters.AddWithValue("company_id", companyId);
+            deleteBook.Parameters.AddWithValue("company_id", companyId.Value);
             deleteBook.Parameters.AddWithValue("book_id", bookId);
             await deleteBook.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -491,7 +491,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 );
                 """;
             bookCommand.Parameters.AddWithValue("id", bookId);
-            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             bookCommand.Parameters.AddWithValue("effective_from", journalDate.AddDays(-30));
             bookCommand.Parameters.AddWithValue("created_by_user_id", UserId);
             await bookCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -524,7 +524,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 );
                 """;
             signalCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("book_id", bookId);
             signalCommand.Parameters.AddWithValue("signal_date", journalDate.AddDays(5));
             signalCommand.Parameters.AddWithValue("created_by_user_id", UserId);
@@ -557,7 +557,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and company_book_id = @book_id;
                 """;
-            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("book_id", bookId);
             await signalCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -571,7 +571,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and id = @book_id;
                 """;
-            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             bookCommand.Parameters.AddWithValue("book_id", bookId);
             await bookCommand.ExecuteNonQueryAsync(cancellationToken);
         }

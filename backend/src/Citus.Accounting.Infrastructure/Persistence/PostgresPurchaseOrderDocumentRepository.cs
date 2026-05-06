@@ -123,7 +123,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         return new PurchaseOrderDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(purchaseOrderNumber),
             status,
             vendorId,
@@ -1902,7 +1902,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             );
             """);
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_id", actorId);
         command.Parameters.AddWithValue("entity_id", requestId);
         command.Parameters.AddWithValue("action", action);
@@ -2125,7 +2125,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             order by created_at desc, id desc
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("request_id", requestId);
         command.Parameters.AddWithValue("action", action);
 
@@ -2157,7 +2157,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               and id = @document_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         return await command.ExecuteScalarAsync(cancellationToken) as string;
@@ -2178,7 +2178,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             where company_id = @company_id
               and purchase_order_id = @document_id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2268,7 +2268,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               and purchase_order_id = @document_id
             order by line_number asc;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2356,7 +2356,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 and investigation_status in ('open', 'override_authorized')
             );
             """;
-        discrepancyCommand.Parameters.AddWithValue("company_id", companyId);
+        discrepancyCommand.Parameters.AddWithValue("company_id", companyId.Value);
         discrepancyCommand.Parameters.AddWithValue("document_id", documentId);
 
         if (await discrepancyCommand.ExecuteScalarAsync(cancellationToken) is true)
@@ -2389,7 +2389,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 and purchase_order_id = @document_id
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         return await command.ExecuteScalarAsync(cancellationToken) is true;
@@ -2442,7 +2442,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_id", actorId);
         command.Parameters.AddWithValue("entity_id", documentId);
         command.Parameters.AddWithValue("action", action);
@@ -2513,7 +2513,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               and investigation_status in ('open', 'override_authorized')
             order by purchase_order_id, purchase_order_line_number, discrepancy_type;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("purchase_order_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = purchaseOrderIds.Where(static id => id != Guid.Empty).Distinct().ToArray()
@@ -2566,7 +2566,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             where company_id = @company_id
               and purchase_order_id = @purchase_order_id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
 
         var rows = new Dictionary<(int LineNumber, string DiscrepancyType), ExistingQuantityDiscrepancyReviewState>();
@@ -2685,7 +2685,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

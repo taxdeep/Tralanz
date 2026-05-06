@@ -111,7 +111,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
               AND scope_type = @scope_type
               AND COALESCE(user_id, '00000000-0000-0000-0000-000000000000') = COALESCE(@user_id, '00000000-0000-0000-0000-000000000000');
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
 
@@ -155,7 +155,7 @@ public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFacto
               AND active = TRUE
             ORDER BY position NULLS LAST, created_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -218,7 +218,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", suggestionId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -234,7 +234,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
         var where = "company_id = @company_id AND COALESCE(user_id, '00000000-0000-0000-0000-000000000000') = COALESCE(@user_id, '00000000-0000-0000-0000-000000000000')";
         if (statusFilter is not null) where += " AND status = @status";
         command.CommandText = SelectColumns + " WHERE " + where + " ORDER BY created_at DESC;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         if (statusFilter is not null) command.Parameters.AddWithValue("status", statusFilter);
 
@@ -261,7 +261,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
             " WHERE company_id = @company_id" +
             " AND COALESCE(user_id, '00000000-0000-0000-0000-000000000000') = COALESCE(@user_id, '00000000-0000-0000-0000-000000000000')" +
             " AND widget_key = ANY(@widget_keys);";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.Add(new NpgsqlParameter("widget_keys", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = widgetKeys.ToArray() });
 
@@ -366,7 +366,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", taskId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
@@ -377,7 +377,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND fingerprint = @fingerprint LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("fingerprint", fingerprint);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
@@ -394,7 +394,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
         if (assignedUserId is not null) where.Add("(assigned_user_id = @user_id OR assigned_user_id IS NULL)");
         if (statuses is not null && statuses.Count > 0) where.Add("status = ANY(@statuses)");
         command.CommandText = SelectColumns + " WHERE " + string.Join(" AND ", where) + " ORDER BY priority, due_date NULLS LAST, created_at DESC;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         if (assignedUserId is not null) command.Parameters.AddWithValue("user_id", assignedUserId);
         if (statuses is not null && statuses.Count > 0)
             command.Parameters.Add(new NpgsqlParameter("statuses", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = statuses.ToArray() });
@@ -467,7 +467,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
                    updated_at = @updated_at
              WHERE company_id = @company_id AND id = @id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", taskId);
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("completed_at", (object?)completedAt ?? DBNull.Value);
@@ -523,7 +523,7 @@ public sealed class PostgreSqlActionCenterTaskEventStore(PostgreSqlConnectionFac
             INSERT INTO action_center_task_events (company_id, task_id, user_id, event_type, metadata_json, created_at)
             VALUES (@company_id, @task_id, @user_id, @event_type, @metadata_json::jsonb, @created_at);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("task_id", taskId);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("event_type", eventType);

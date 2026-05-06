@@ -1147,7 +1147,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         return scalar is string value ? value.Trim() : null;
@@ -1176,7 +1176,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
               and a.root_type in ('revenue', 'cost_of_sales', 'expense');
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("as_of_date", asOfDate);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);

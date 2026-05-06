@@ -217,7 +217,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             TypedValue = billDocumentIds.Distinct().ToArray()
         });
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var snapshots = new Dictionary<Guid, InventoryBillReceiptPostingGateSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -702,7 +702,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string baseCurrencyCode || string.IsNullOrWhiteSpace(baseCurrencyCode))
         {
@@ -743,7 +743,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and movement_direction = 'outbound'
               and posting_date >= @posting_date;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter("item_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             Value = itemIds,
@@ -781,7 +781,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             limit 1;
             """;
         command.Parameters.AddWithValue("vendor_id", vendorId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string displayName || string.IsNullOrWhiteSpace(displayName))
@@ -831,7 +831,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and is_active = true
               and id = any(@item_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -907,7 +907,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and is_active = true
               and id = any(@warehouse_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_ids", warehouseIds.ToArray());
 
         var warehouses = new Dictionary<Guid, InventoryManagedWarehouseSummary>();
@@ -949,7 +949,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and warehouse_id = @warehouse_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         return Convert.ToDecimal(await command.ExecuteScalarAsync(cancellationToken) ?? 0m);
@@ -973,7 +973,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         return Convert.ToDecimal(await command.ExecuteScalarAsync(cancellationToken) ?? 0m);
@@ -1019,7 +1019,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               set on_hand_qty = item_warehouse_balances.on_hand_qty + excluded.on_hand_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("quantity_delta", quantityDelta);
@@ -1061,7 +1061,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and manage_inventory_method <> 'dont_manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1129,7 +1129,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1202,7 +1202,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var receipts = new List<InventoryPurchaseReceiptSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1294,7 +1294,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               bg.warehouse_id,
               bg.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var rows = new List<LegacyInboundReceiptCoverageRow>();
@@ -1350,7 +1350,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
               and l.quantity is not null
               and l.unit_cost is not null;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1449,7 +1449,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
              and r.uom_code = b.uom_code
             order by b.item_code, b.warehouse_code, b.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var rows = new List<InventoryBillReceiptHandoffLineSummary>();
@@ -1541,7 +1541,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             order by d.posting_date desc, d.created_at desc
             limit 5;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_document_id", billDocumentId);
 
         var receipts = new List<InventoryPurchaseReceiptSummary>();

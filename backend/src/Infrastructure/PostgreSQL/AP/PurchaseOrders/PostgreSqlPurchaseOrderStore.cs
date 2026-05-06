@@ -130,7 +130,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         }
         sql += " ORDER BY p.order_date DESC, p.created_at DESC;";
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -151,7 +151,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = SelectColumns + " WHERE p.company_id = @company_id AND p.id = @id LIMIT 1;";
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("id", purchaseOrderId);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -232,7 +232,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         {
             statusCmd.Transaction = transaction;
             statusCmd.CommandText = "SELECT status FROM ap_purchase_orders WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCmd.Parameters.AddWithValue("company_id", companyId);
+            statusCmd.Parameters.AddWithValue("company_id", companyId.Value);
             statusCmd.Parameters.AddWithValue("id", purchaseOrderId);
             var statusObj = await statusCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null) return null;
@@ -321,7 +321,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", purchaseOrderId);
         command.Parameters.AddWithValue("new_status", newStatus);
 
@@ -346,7 +346,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
                AND status IN ('open', 'draft', 'closed')
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", purchaseOrderId);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -466,7 +466,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         decimal tax,
         decimal total)
     {
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("vendor_id", input.VendorId);
         command.Parameters.Add("order_date", NpgsqlDbType.Date).Value = input.OrderDate.ToDateTime(TimeOnly.MinValue);
         command.Parameters.Add("expected_delivery_date", NpgsqlDbType.Date).Value =

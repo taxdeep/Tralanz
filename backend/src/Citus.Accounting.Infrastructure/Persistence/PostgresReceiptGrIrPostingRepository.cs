@@ -278,7 +278,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
                 and is_active = true
             );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", accountId);
         var exists = await command.ExecuteScalarAsync(cancellationToken);
         if (exists is not true)
@@ -307,7 +307,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
                   and batch_line.bridge_line_id = bridge.id
               );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
@@ -336,7 +336,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
                   and batch_line.bridge_line_id = bridge.id
               );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         var missingCount = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
         if (missingCount > 0)
@@ -420,7 +420,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               and r.id = @receipt_id
               and r.status = 'posted';
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("posting_batch_id", postingBatchId);
         command.Parameters.AddWithValue("entity_number", entityNumber);
@@ -475,7 +475,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             on conflict (company_id, bridge_line_id)
             do nothing;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("posting_batch_id", postingBatchId);
 
@@ -504,7 +504,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             order by created_at desc
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("grir_clearing_account_id", grIrClearingAccountId);
         command.Parameters.AddWithValue("status", status);
@@ -556,14 +556,14 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               and batch.id = @posting_batch_id
             order by bridge.receipt_line_number, bridge.id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("posting_batch_id", postingBatchId);
 
         Guid receiptDocumentId = Guid.Empty;
         string status = "draft";
         DateOnly documentDate = default;
         string baseCurrencyCode = string.Empty;
-        Guid grIrClearingAccountId = Guid.Empty;
+        Guid grIrClearingAccountId = default;
         var lines = new List<ReceiptGrIrPostingDocumentLine>();
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -595,8 +595,8 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
         return new ReceiptGrIrPostingDocument(
             postingBatchId,
-            new CompanyId(companyId),
-            new EntityNumber(entityNumber),
+            CompanyId.Parse(companyId.ToString()),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(displayNumber),
             status,
             receiptDocumentId,

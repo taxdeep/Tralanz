@@ -33,7 +33,7 @@ public sealed record PlatformAiProviderConfigSnapshot(
     double Temperature,
     bool HasApiKey,
     DateTimeOffset UpdatedAt,
-    Guid? UpdatedByUserId);
+    UserId? UpdatedByUserId);
 
 public sealed record PlatformAiProviderConfigUpsertRequest(
     string Provider,

@@ -34,7 +34,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
             WHERE user_id = @user_id
             LIMIT 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -72,7 +72,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
                 updated_at   = EXCLUDED.updated_at
             RETURNING user_id, display_name, created_at, updated_at;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("display_name", trimmed);
         command.Parameters.AddWithValue("now", now);
 

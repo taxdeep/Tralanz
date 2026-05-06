@@ -280,7 +280,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                   and company_id = @company_id;
                 """;
             command.Parameters.AddWithValue("id", transferId);
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("submitted_at", DateTimeOffset.UtcNow);
             command.Parameters.AddWithValue("submitted_by_user_id", userId);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -377,7 +377,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is string baseCurrencyCode && !string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -427,7 +427,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and is_active = true
               and id = any(@item_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -509,7 +509,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and manage_inventory_method = 'manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -583,7 +583,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and is_active = true
               and id = any(@warehouse_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_ids", warehouseIds.ToArray());
 
         var warehouses = new Dictionary<Guid, InventoryManagedWarehouseSummary>();
@@ -629,7 +629,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -679,7 +679,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and id = @transfer_id
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transfer_id", transferId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -734,7 +734,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and transfer_id = @transfer_id
             order by line_no asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transfer_id", transferId);
 
         var lines = new List<InventoryTransferLineRow>();
@@ -776,7 +776,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and d.document_type = 'transfer_ship'
               and d.source_document_id = @source_document_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_document_id", transferId);
 
         var costs = new Dictionary<int, decimal>();
@@ -844,7 +844,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               t.received_at,
               t.memo;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("transfer_id", transferId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -936,7 +936,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             order by t.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var transfers = new List<InventoryTransferSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -995,7 +995,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1030,7 +1030,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1064,7 +1064,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
               and remaining_qty > 0
             order by layer_date asc, created_at asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1148,7 +1148,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", shipDocumentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", postingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", transferId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", transfer.TransferNumber);
@@ -1268,7 +1268,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                           gen_random_uuid(), @company_id, @issue_ledger_entry_id, @cost_layer_id, @consumed_qty, @consumed_cost_base, @created_at
                         );
                         """;
-                    insertConsumptionCommand.Parameters.AddWithValue("company_id", companyId);
+                    insertConsumptionCommand.Parameters.AddWithValue("company_id", companyId.Value);
                     insertConsumptionCommand.Parameters.AddWithValue("issue_ledger_entry_id", shipLedgerEntryId);
                     insertConsumptionCommand.Parameters.AddWithValue("cost_layer_id", consumption.CostLayerId);
                     insertConsumptionCommand.Parameters.AddWithValue("consumed_qty", consumption.ConsumedQty);
@@ -1291,7 +1291,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       and company_id = @company_id;
                     """;
                 updateTransferCommand.Parameters.AddWithValue("id", transferId);
-                updateTransferCommand.Parameters.AddWithValue("company_id", companyId);
+                updateTransferCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 updateTransferCommand.Parameters.AddWithValue("shipped_at", movementTimestamp);
                 updateTransferCommand.Parameters.AddWithValue("shipped_by_user_id", userId);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -1350,7 +1350,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", receiveDocumentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", postingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", transferId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", transfer.TransferNumber);
@@ -1427,7 +1427,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       gen_random_uuid(), @company_id, @item_id, @warehouse_id, @source_ledger_entry_id, @source_document_id, @layer_date, @original_qty, @remaining_qty, @unit_cost_base, @remaining_cost_base, @created_at
                     );
                     """;
-                insertLayerCommand.Parameters.AddWithValue("company_id", companyId);
+                insertLayerCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 insertLayerCommand.Parameters.AddWithValue("item_id", line.ItemId);
                 insertLayerCommand.Parameters.AddWithValue("warehouse_id", transfer.DestinationWarehouseId);
                 insertLayerCommand.Parameters.AddWithValue("source_ledger_entry_id", receiveLedgerEntryId);
@@ -1454,7 +1454,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       and company_id = @company_id;
                     """;
                 updateTransferCommand.Parameters.AddWithValue("id", transferId);
-                updateTransferCommand.Parameters.AddWithValue("company_id", companyId);
+                updateTransferCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 updateTransferCommand.Parameters.AddWithValue("received_at", movementTimestamp);
                 updateTransferCommand.Parameters.AddWithValue("received_by_user_id", userId);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -1502,7 +1502,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             );
             """;
         command.Parameters.AddWithValue("id", lineDocumentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
         command.Parameters.AddWithValue("line_no", lineNo);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -1549,7 +1549,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             );
             """;
         command.Parameters.AddWithValue("id", ledgerEntryId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("document_id", documentId);
@@ -1595,7 +1595,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                   in_transit_in_qty = item_warehouse_balances.in_transit_in_qty + excluded.in_transit_in_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("on_hand_delta", onHandDelta);

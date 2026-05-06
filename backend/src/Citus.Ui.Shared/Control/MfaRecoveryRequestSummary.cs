@@ -4,7 +4,7 @@ public sealed record class MfaRecoveryRequestSummary
 {
     public Guid RequestId { get; init; }
 
-    public Guid AccountId { get; init; }
+    public UserId AccountId { get; init; }
 
     public string DisplayName { get; init; } = string.Empty;
 

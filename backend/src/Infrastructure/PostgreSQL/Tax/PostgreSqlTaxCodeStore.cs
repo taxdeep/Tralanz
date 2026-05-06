@@ -69,7 +69,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         command.CommandText = includeInactive
             ? SelectColumns + " WHERE company_id = @company_id ORDER BY is_active DESC, code;"
             : SelectColumns + " WHERE company_id = @company_id AND is_active = TRUE ORDER BY code;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -87,7 +87,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", taxCodeId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -116,7 +116,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                       applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
@@ -159,7 +159,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                       applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", taxCodeId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("rate_percent", input.RatePercent);
@@ -192,7 +192,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                       applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", taxCodeId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
         command.Parameters.AddWithValue("now", now);
 

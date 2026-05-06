@@ -570,7 +570,7 @@ control.MapGet(
 control.MapGet(
     "/accounts/{accountId:guid}/mfa-recovery-history",
     async (
-        Guid accountId,
+        UserId accountId,
         IPlatformGovernanceRepository governanceRepository,
         int? limit,
         CancellationToken cancellationToken) =>
@@ -599,7 +599,7 @@ control.MapGet(
 control.MapGet(
     "/accounts/{accountId:guid}/mfa-timeline",
     async (
-        Guid accountId,
+        UserId accountId,
         IPlatformGovernanceRepository governanceRepository,
         int? limit,
         CancellationToken cancellationToken) =>
@@ -787,7 +787,7 @@ control.MapPut(
 control.MapPut(
     "/accounts/{accountId:guid}/status",
     async (
-        Guid accountId,
+        UserId accountId,
         HttpContext httpContext,
         AccountStatusUpdateRequest request,
         IPlatformGovernanceRepository governanceRepository,
@@ -822,7 +822,7 @@ control.MapPut(
 control.MapPost(
     "/accounts/{accountId:guid}/password-reset-requests",
     async (
-        Guid accountId,
+        UserId accountId,
         HttpContext httpContext,
         PasswordResetRequestCommand request,
         IPlatformGovernanceRepository governanceRepository,
@@ -862,7 +862,7 @@ control.MapPost(
 control.MapPost(
     "/accounts/{accountId:guid}/mfa-reset",
     async (
-        Guid accountId,
+        UserId accountId,
         HttpContext httpContext,
         AccountMfaResetRequest request,
         IPlatformGovernanceRepository governanceRepository,
@@ -1293,7 +1293,7 @@ control.MapPost(
             new PlatformVerificationNotificationMessage
             {
                 DispatchId = Guid.NewGuid(),
-                UserId = Guid.Empty,
+                UserId = default,
                 Purpose = "notification_test",
                 Destination = request.ToEmail.Trim(),
                 RecipientDisplayName = "SMTP test recipient",

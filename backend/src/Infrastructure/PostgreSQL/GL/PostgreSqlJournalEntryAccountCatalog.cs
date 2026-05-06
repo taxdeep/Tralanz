@@ -33,7 +33,7 @@ public sealed class PostgreSqlJournalEntryAccountCatalog : IJournalEntryAccountC
               and allow_manual_posting = true
             order by code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var options = new List<JournalEntryAccountOption>();
 

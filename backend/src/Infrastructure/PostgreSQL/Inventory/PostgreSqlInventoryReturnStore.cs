@@ -312,7 +312,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
               c.display_name
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -406,7 +406,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
              and r.uom_code = s.uom_code
             order by s.item_code, s.warehouse_code, s.uom_code;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         var rows = new List<InventoryReturnReceiveHandoffLineSummary>();
@@ -485,7 +485,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var shipments = new List<InventoryShipmentSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -616,7 +616,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             order by d.posting_date desc, d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         return await ReadReturnSummariesAsync(command, cancellationToken);
     }
@@ -696,7 +696,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             order by d.posting_date desc, d.created_at desc
             limit 5;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
 
         return await ReadReturnSummariesAsync(command, cancellationToken);
@@ -796,7 +796,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
         command.Parameters.AddWithValue("line_no", line.LineNo);
         command.Parameters.AddWithValue("item_id", line.ItemId);

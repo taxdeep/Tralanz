@@ -107,7 +107,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               and {accountStatusPredicate}
             limit 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -189,7 +189,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               and c.status in ('active', 'inactive')
             order by c.entity_number, c.legal_name;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         var companies = new List<CompanyMembershipCompanyRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

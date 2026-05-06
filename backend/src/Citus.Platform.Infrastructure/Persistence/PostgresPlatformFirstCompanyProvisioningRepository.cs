@@ -1133,7 +1133,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
             """;
         command.Parameters.AddWithValue("id", membershipId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_id", ownerUserId);
         command.Parameters.AddWithValue("permissions", permissionsJson);
         command.Parameters.AddWithValue("created_at", provisionedAtUtc);
@@ -1170,7 +1170,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             do update
               set is_enabled = true;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("currency_code", baseCurrencyCode);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1255,7 +1255,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
                   currency = excluded.currency,
                   updated_at = excluded.updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("profile", profileJson);
         command.Parameters.AddWithValue("currency", currencyJson);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
@@ -1316,7 +1316,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
             """;
         command.Parameters.AddWithValue("id", companyBookId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("accounting_standard", accountingStandard);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("effective_from", effectiveFrom);
@@ -1373,7 +1373,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("company_book_id", companyBookId);
         command.Parameters.AddWithValue("effective_from", effectiveFrom);
         command.Parameters.AddWithValue("created_by_user_id", ownerUserId);
@@ -1436,7 +1436,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", formattedCode);
         command.Parameters.AddWithValue("name", account.Name);
@@ -1504,7 +1504,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @applied_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("template_key", template.TemplateKey);
         command.Parameters.AddWithValue("template_version", template.TemplateVersion);
         command.Parameters.AddWithValue("account_code_length", normalized.AccountCodeLength);
@@ -1524,7 +1524,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertAuditLogIfAvailableAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CompanyId companyId,
         PlatformFirstCompanyProvisioningCommand normalized,
         TemplateDefinition template,
@@ -1582,7 +1582,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", companyId);
         command.Parameters.AddWithValue("payload", payload);

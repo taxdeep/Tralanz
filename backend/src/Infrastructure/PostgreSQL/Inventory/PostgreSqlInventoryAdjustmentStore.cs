@@ -524,7 +524,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is string baseCurrencyCode && !string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -570,7 +570,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and manage_inventory_method = 'manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -654,7 +654,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and is_active = true
               and id = any(@item_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -724,7 +724,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -769,7 +769,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and is_active = true
               and id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -843,7 +843,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             order by d.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var results = new List<InventoryAdjustmentSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -930,7 +930,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               d.posted_at,
               d.memo;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -989,7 +989,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and id = @document_id
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1038,7 +1038,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and document_id = @document_id
             order by line_no asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         var lines = new List<PendingWriteOffLine>();
@@ -1083,7 +1083,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1116,7 +1116,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1150,7 +1150,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               and remaining_qty > 0
             order by layer_date asc, created_at asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1195,7 +1195,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             );
             """;
         command.Parameters.AddWithValue("id", lineDocumentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
         command.Parameters.AddWithValue("line_no", line.LineNo);
         command.Parameters.AddWithValue("item_id", line.ItemId);
@@ -1267,7 +1267,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             );
             """;
         command.Parameters.AddWithValue("id", ledgerEntryId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("document_id", documentId);
@@ -1309,7 +1309,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               gen_random_uuid(), @company_id, @item_id, @warehouse_id, @source_ledger_entry_id, @source_document_id, @layer_date, @original_qty, @remaining_qty, @unit_cost_base, @remaining_cost_base, @created_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("source_ledger_entry_id", sourceLedgerEntryId);
@@ -1347,7 +1347,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               set on_hand_qty = item_warehouse_balances.on_hand_qty + excluded.on_hand_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("quantity_delta", quantityDelta);
@@ -1395,7 +1395,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               gen_random_uuid(), @company_id, @issue_ledger_entry_id, @cost_layer_id, @consumed_qty, @consumed_cost_base, @created_at
             );
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("issue_ledger_entry_id", issueLedgerEntryId);
         command.Parameters.AddWithValue("cost_layer_id", consumption.CostLayerId);
         command.Parameters.AddWithValue("consumed_qty", consumption.ConsumedQty);

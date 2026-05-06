@@ -140,7 +140,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         }
         sql += " ORDER BY e.payment_date DESC, e.created_at DESC;";
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -161,7 +161,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = SelectColumns + " WHERE e.company_id = @company_id AND e.id = @id LIMIT 1;";
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("id", expenseId);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -235,7 +235,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 )
                 RETURNING id;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("expense_number", entityNumber);
             command.Parameters.AddWithValue("payee_kind", input.PayeeKind);
             command.Parameters.AddWithValue("payee_id", (object?)input.PayeeId ?? DBNull.Value);
@@ -260,7 +260,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             command.Parameters.AddWithValue("total_amount", total);
             command.Parameters.AddWithValue("memo", (object?)input.Memo ?? DBNull.Value);
             command.Parameters.AddWithValue("internal_note", (object?)input.InternalNote ?? DBNull.Value);
-            command.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+            command.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
 
             expenseId = (Guid)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         }
@@ -287,7 +287,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
              WHERE company_id = @company_id AND id = @id AND status = 'posted'
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", expenseId);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -295,7 +295,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         {
             await using var checkCmd = connection.CreateCommand();
             checkCmd.CommandText = "SELECT status FROM expenses WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            checkCmd.Parameters.AddWithValue("company_id", companyId);
+            checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
             checkCmd.Parameters.AddWithValue("id", expenseId);
             var status = (string?)await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (status is null) return null;
@@ -423,7 +423,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
     private static async Task<(string CurrencyCode, string? DetailType)> ReadPaymentAccountAsync(
         NpgsqlConnection connection,
         CompanyId companyId,
-        Guid accountId,
+        UserId accountId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -433,7 +433,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
              WHERE company_id = @company_id AND id = @id AND is_active = TRUE
              LIMIT 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", accountId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

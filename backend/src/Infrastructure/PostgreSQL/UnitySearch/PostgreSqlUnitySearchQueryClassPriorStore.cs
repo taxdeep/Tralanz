@@ -60,8 +60,8 @@ public sealed class PostgreSqlUnitySearchQueryClassPriorStore(PostgreSqlConnecti
             set click_count = search_query_class_priors.click_count + 1,
                 last_clicked_at_utc = excluded.last_clicked_at_utc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("query_class", queryClassTag);
         command.Parameters.AddWithValue("entity_type", entityType);
         await command.ExecuteNonQueryAsync(cancellationToken);

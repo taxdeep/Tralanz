@@ -136,7 +136,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         }
         sql += " ORDER BY q.document_date DESC, q.created_at DESC;";
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -157,7 +157,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = SelectQuoteColumns + " WHERE q.company_id = @company_id AND q.id = @id LIMIT 1;";
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("id", quoteId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -239,7 +239,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         {
             statusCommand.Transaction = transaction;
             statusCommand.CommandText = "SELECT status FROM quotes WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCommand.Parameters.AddWithValue("company_id", companyId);
+            statusCommand.Parameters.AddWithValue("company_id", companyId.Value);
             statusCommand.Parameters.AddWithValue("id", quoteId);
             var statusObj = await statusCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null)
@@ -331,7 +331,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", quoteId);
         command.Parameters.AddWithValue("new_status", newStatus);
 
@@ -357,7 +357,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", quoteId);
         command.Parameters.AddWithValue("sales_order_id", salesOrderId);
 
@@ -485,7 +485,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         decimal tax,
         decimal total)
     {
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", input.CustomerId);
         command.Parameters.Add("document_date", NpgsqlDbType.Date).Value = input.DocumentDate.ToDateTime(TimeOnly.MinValue);
         command.Parameters.Add("expiration_date", NpgsqlDbType.Date).Value =

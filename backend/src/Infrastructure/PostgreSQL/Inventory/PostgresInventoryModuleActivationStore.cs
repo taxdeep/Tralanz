@@ -52,7 +52,7 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
                       inventory_module_enabled_at, inventory_module_locked_at,
                       inventory_profile_tag;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("profile_tag", profileTag ?? string.Empty);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -83,7 +83,7 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

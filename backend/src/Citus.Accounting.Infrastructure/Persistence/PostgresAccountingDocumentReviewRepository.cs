@@ -2213,7 +2213,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         return new ReverseRequestRequestedEvent(
             requestId,
-            new CompanyId(CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")))),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             GetRequiredString(payload, "SourceType"),
             documentId,
             GetRequiredString(payload, "EntityNumber"),

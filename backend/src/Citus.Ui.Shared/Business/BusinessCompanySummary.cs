@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Business;
 
 public sealed record class BusinessCompanySummary
 {
-    public Guid Id { get; init; }
+    public CompanyId Id { get; init; }
 
     public string CompanyCode { get; init; } = string.Empty;
 

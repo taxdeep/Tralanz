@@ -41,7 +41,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               u.email,
               u.username;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var memberships = new List<CompanyMembershipPermissionListItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -88,7 +88,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             order by al.created_at desc
             limit @limit;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("limit", limit);
 
         var records = new List<CompanyMembershipPermissionAuditRecord>();
@@ -128,7 +128,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               and m.id = @membership_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("membership_id", membershipId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -155,8 +155,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               and is_active = true
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("actor_user_id", actorUserId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("actor_user_id", actorUserId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -197,7 +197,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
                   and id = @membership_id
                 for update;
                 """;
-            previousCommand.Parameters.AddWithValue("company_id", companyId);
+            previousCommand.Parameters.AddWithValue("company_id", companyId.Value);
             previousCommand.Parameters.AddWithValue("membership_id", membershipId);
 
             await using var previousReader = await previousCommand.ExecuteReaderAsync(cancellationToken);
@@ -230,7 +230,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               is_active,
               updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("membership_id", membershipId);
         command.Parameters.AddWithValue("permissions", JsonSerializer.Serialize(permissionTokens));
 
@@ -359,7 +359,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             );
             """;
         auditCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-        auditCommand.Parameters.AddWithValue("company_id", companyId);
+        auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
         auditCommand.Parameters.AddWithValue("actor_id", actorUserId);
         auditCommand.Parameters.AddWithValue("entity_id", membershipId);
         auditCommand.Parameters.AddWithValue("payload", payload);

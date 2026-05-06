@@ -6,7 +6,7 @@ public sealed record class CompanyMembershipRoleChangeResult
 
     public Guid MembershipId { get; init; }
 
-    public Guid AccountId { get; init; }
+    public UserId AccountId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

@@ -95,7 +95,7 @@ public sealed record EnableCompanyCurrencyResponse(
     IReadOnlyList<ProvisionedControlAccountSummary> ProvisionedControlAccounts);
 
 public sealed record ProvisionedControlAccountSummary(
-    Guid AccountId,
+    UserId AccountId,
     string Code,
     string Name,
     string CurrencyCode,

@@ -72,7 +72,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             order by coalesce(je.posted_at, je.created_at) desc, je.display_number desc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("take", effectiveTake);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -126,7 +126,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                 or coalesce(sum(le.credit), 0) <> 0
             order by a.code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("through_date", throughDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -193,7 +193,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             order by le.posting_date desc, le.created_at desc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("account_id", accountId);
         command.Parameters.AddWithValue("take", effectiveTake);
 
@@ -308,7 +308,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   je.created_by_user_id
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -411,7 +411,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   and jel.journal_entry_id = @journal_entry_id
                 order by jel.line_number asc;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -536,7 +536,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             group by le.account_id, coalesce(nullif(le.transaction_currency_code, ''), 'BASE')
             order by currency_code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("through_date", throughDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -577,7 +577,7 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
               and source_id = @source_id
             order by coalesce(posted_at, created_at) asc, display_number asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

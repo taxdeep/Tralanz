@@ -48,7 +48,7 @@ internal static class PostgresSourceDocumentDraftNumbering
               and scope_key = @scope_key
             returning prefix, greatest(next_number - 1, @seed_number) as issued_number, padding;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", scopeKey);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
@@ -208,7 +208,7 @@ internal static class PostgresSourceDocumentDraftNumbering
             from {tableName}
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("prefix_pattern", prefixPattern);
         command.Parameters.AddWithValue("prefix_length", prefixLength);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
@@ -249,7 +249,7 @@ internal static class PostgresSourceDocumentDraftNumbering
                 )
                 on conflict (company_id, scope_key) do nothing;
                 """;
-            seedCommand.Parameters.AddWithValue("company_id", companyId);
+            seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
             seedCommand.Parameters.AddWithValue("scope_key", scopeKey);
             seedCommand.Parameters.AddWithValue("prefix", prefix);
             seedCommand.Parameters.AddWithValue("next_number", seedNumber);
@@ -267,7 +267,7 @@ internal static class PostgresSourceDocumentDraftNumbering
             where company_id = @company_id
               and scope_key = @scope_key;
             """;
-        alignCommand.Parameters.AddWithValue("company_id", companyId);
+        alignCommand.Parameters.AddWithValue("company_id", companyId.Value);
         alignCommand.Parameters.AddWithValue("scope_key", scopeKey);
         alignCommand.Parameters.AddWithValue("seed_number", seedNumber);
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);

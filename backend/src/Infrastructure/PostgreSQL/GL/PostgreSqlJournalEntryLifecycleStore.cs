@@ -182,7 +182,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                 );
                 """;
             command.Parameters.AddWithValue("id", compensationJournalEntryId);
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("entity_number", compensationEntityNumber);
             command.Parameters.AddWithValue("display_number", compensationDisplayNumber);
             command.Parameters.AddWithValue("source_type", lifecycleBehavior.CompensationSourceType);
@@ -261,7 +261,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                     );
                     """;
                 lineCommand.Parameters.AddWithValue("id", compensationLineId);
-                lineCommand.Parameters.AddWithValue("company_id", companyId);
+                lineCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 lineCommand.Parameters.AddWithValue("journal_entry_id", compensationJournalEntryId);
                 lineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
                 lineCommand.Parameters.AddWithValue("account_id", line.AccountId);
@@ -315,7 +315,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                 );
                 """;
             ledgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            ledgerCommand.Parameters.AddWithValue("company_id", companyId);
+            ledgerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             ledgerCommand.Parameters.AddWithValue("journal_entry_id", compensationJournalEntryId);
             ledgerCommand.Parameters.AddWithValue("journal_entry_line_id", compensationLineId);
             ledgerCommand.Parameters.AddWithValue("posting_date", original.EntryDate);
@@ -345,7 +345,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             updateJournalCommand.Parameters.AddWithValue("status", originalStatus);
             updateJournalCommand.Parameters.AddWithValue("lifecycle_at", lifecycleAt);
             updateJournalCommand.Parameters.AddWithValue("id", original.Id);
-            updateJournalCommand.Parameters.AddWithValue("company_id", companyId);
+            updateJournalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             var affectedRows = await updateJournalCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
@@ -370,7 +370,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                 """;
             updateSourceCommand.Parameters.AddWithValue("status", originalStatus);
             updateSourceCommand.Parameters.AddWithValue("id", original.SourceId);
-            updateSourceCommand.Parameters.AddWithValue("company_id", companyId);
+            updateSourceCommand.Parameters.AddWithValue("company_id", companyId.Value);
             var affectedRows = await updateSourceCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
@@ -535,7 +535,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
               and je.id = @journal_entry_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -592,7 +592,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
               and journal_entry_id = @journal_entry_id
             order by line_number asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -665,7 +665,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             order by s.signal_date asc, s.created_at asc, s.id asc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("posting_date", postingDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -723,7 +723,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             order by coalesce(posted_at, created_at) desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
         command.Parameters.AddWithValue("source_type", compensationSourceType);
 
@@ -815,7 +815,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
 
     private sealed record class LifecycleLine(
         int LineNumber,
-        Guid AccountId,
+        UserId AccountId,
         string? Description,
         decimal TransactionDebit,
         decimal TransactionCredit,

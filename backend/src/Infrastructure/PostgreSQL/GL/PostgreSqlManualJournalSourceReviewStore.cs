@@ -58,7 +58,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                   and mj.id = @document_id
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("document_id", documentId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -128,7 +128,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                   and mjl.manual_journal_document_id = @document_id
                 order by mjl.line_number asc;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("document_id", documentId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -183,7 +183,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
               and source_id = @source_id
             order by coalesce(posted_at, created_at) asc, display_number asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

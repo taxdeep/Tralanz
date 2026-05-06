@@ -141,7 +141,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         return new ReceiptDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(receiptNumber),
             status,
             vendorId,
@@ -655,7 +655,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                   and po.id = @purchase_order_id
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
             command.Parameters.AddWithValue("purchase_order_id", candidate.PurchaseOrderId);
             command.Parameters.AddWithValue("purchase_order_line_number", candidate.PurchaseOrderLineNumber);
@@ -726,7 +726,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               line.item_id,
               line.uom_code;
             """;
-        loadCommand.Parameters.AddWithValue("company_id", companyId);
+        loadCommand.Parameters.AddWithValue("company_id", companyId.Value);
         loadCommand.Parameters.AddWithValue("receipt_id", receiptDocumentId);
 
         var candidates = new List<PurchaseOrderReceiptAnchorCandidate>();
@@ -791,7 +791,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

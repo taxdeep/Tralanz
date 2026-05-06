@@ -116,7 +116,7 @@ public sealed record AiProviderConfigDto(
     double Temperature,
     bool HasApiKey,
     DateTimeOffset UpdatedAt,
-    Guid? UpdatedByUserId);
+    UserId? UpdatedByUserId);
 
 public sealed record AiProviderConfigUpsertDto(
     string Provider,

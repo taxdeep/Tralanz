@@ -356,7 +356,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               and company_id = @company_id;
             """;
         command.Parameters.AddWithValue("item_id", itemId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
@@ -409,7 +409,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               item_kind asc,
               item_code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("include_inactive", includeInactive);
 
         var rows = new List<InventoryItemListRow>();
@@ -572,7 +572,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               and company_id = @company_id;
             """;
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
@@ -608,7 +608,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               case when is_active then 0 else 1 end,
               warehouse_code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("include_inactive", includeInactive);
 
         var rows = new List<InventoryWarehouseListRow>();
@@ -1133,7 +1133,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
         if (count == 0)
         {
@@ -1254,7 +1254,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               item.item_code asc,
               item.name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1323,7 +1323,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               and root_type in ('asset', 'expense', 'cost_of_sales')
             order by code asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var inventoryAssetAccountOptions = new List<InventoryFoundationAccountOption>();
         var expenseAccountOptions = new List<InventoryFoundationAccountOption>();
@@ -1379,7 +1379,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               warehouse_code asc,
               name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1422,7 +1422,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             where company_id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1460,7 +1460,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             where company_id = @company_id
             {extraPredicate};
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 

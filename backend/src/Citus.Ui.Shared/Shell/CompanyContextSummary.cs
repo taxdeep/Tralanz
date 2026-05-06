@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Shell;
 
 public sealed record class CompanyContextSummary
 {
-    public Guid? CompanyId { get; init; }
+    public CompanyId? CompanyId { get; init; }
 
     public string CompanyCode { get; init; } = string.Empty;
 

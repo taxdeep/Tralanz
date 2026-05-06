@@ -47,7 +47,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
         command.CommandText = includeInactive
             ? SelectColumns + " WHERE company_id = @company_id ORDER BY is_active DESC, net_days, code;"
             : SelectColumns + " WHERE company_id = @company_id AND is_active = TRUE ORDER BY net_days, code;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -65,7 +65,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", paymentTermId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -88,7 +88,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
                 @company_id, @code, @name, @net_days, @is_active, @now, @now)
             RETURNING id, company_id, code, name, net_days, is_active, created_at, updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("net_days", input.NetDays);
@@ -124,7 +124,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
             RETURNING id, company_id, code, name, net_days, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", paymentTermId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("code", input.Code.Trim());
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("net_days", input.NetDays);
@@ -153,7 +153,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
             RETURNING id, company_id, code, name, net_days, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", paymentTermId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("is_active", isActive);
         command.Parameters.AddWithValue("now", now);
 

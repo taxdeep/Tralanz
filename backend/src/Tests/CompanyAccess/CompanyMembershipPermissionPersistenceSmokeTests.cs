@@ -123,10 +123,10 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
               (@owner_membership_id, @company_id, @owner_user_id, 'owner', '[]'::jsonb, true),
               (@target_membership_id, @company_id, @target_user_id, 'user', '["reports"]'::jsonb, true);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", BuildEntityNumber());
-        command.Parameters.AddWithValue("owner_user_id", ownerUserId);
-        command.Parameters.AddWithValue("target_user_id", targetUserId);
+        command.Parameters.AddWithValue("owner_user_id", ownerUserId.Value);
+        command.Parameters.AddWithValue("target_user_id", targetUserId.Value);
         command.Parameters.AddWithValue("owner_membership_id", ownerMembershipId);
         command.Parameters.AddWithValue("target_membership_id", targetMembershipId);
         command.Parameters.AddWithValue("owner_email", $"{ownerUserId:N}@example.test");
@@ -157,7 +157,7 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
             delete from users
             where id = any(@user_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("user_ids", new[] { ownerUserId, targetUserId });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

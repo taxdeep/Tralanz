@@ -66,7 +66,7 @@ public sealed class PostgreSqlJournalEntryNumberLookup : IJournalEntryNumberLook
             from journal_entries
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(value ?? 1L);
     }

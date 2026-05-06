@@ -103,7 +103,7 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_id", invoiceId);
         command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 200));
 

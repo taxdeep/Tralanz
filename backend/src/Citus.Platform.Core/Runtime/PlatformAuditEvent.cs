@@ -4,7 +4,7 @@ public sealed record class PlatformAuditEvent
 {
     public Guid AuditId { get; init; }
 
-    public Guid? CompanyId { get; init; }
+    public CompanyId? CompanyId { get; init; }
 
     public string CompanyCode { get; init; } = string.Empty;
 
@@ -14,7 +14,7 @@ public sealed record class PlatformAuditEvent
 
     public string ActorType { get; init; } = string.Empty;
 
-    public Guid? ActorId { get; init; }
+    public UserId? ActorId { get; init; }
 
     public string ActorDisplayName { get; init; } = string.Empty;
 

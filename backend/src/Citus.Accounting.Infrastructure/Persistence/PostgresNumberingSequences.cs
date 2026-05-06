@@ -39,7 +39,7 @@ internal static class PostgresNumberingSequences
                          on conflict (company_id, scope_key) do nothing;
                          """))
         {
-            seedCommand.Parameters.AddWithValue("company_id", companyId);
+            seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
             seedCommand.Parameters.AddWithValue("scope_key", scopeKey);
             seedCommand.Parameters.AddWithValue("prefix", prefix);
             seedCommand.Parameters.AddWithValue("padding", padding);
@@ -56,7 +56,7 @@ internal static class PostgresNumberingSequences
             returning prefix, next_number - 1 as issued_number, padding;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", scopeKey);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

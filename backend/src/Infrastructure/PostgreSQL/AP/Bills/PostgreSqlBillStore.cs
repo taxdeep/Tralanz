@@ -83,7 +83,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         }
         sql += " ORDER BY b.bill_date DESC, b.created_at DESC;";
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -104,7 +104,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = SelectBillColumns + " WHERE b.company_id = @company_id AND b.id = @id LIMIT 1;";
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("id", billId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -160,7 +160,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                 """;
             BindUpsertParameters(command, companyId, input, baseCurrencyCode);
             command.Parameters.AddWithValue("entity_number", entityNumber);
-            command.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+            command.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
             billId = (Guid)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         }
 
@@ -185,7 +185,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         {
             statusCmd.Transaction = transaction;
             statusCmd.CommandText = "SELECT status FROM bills WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCmd.Parameters.AddWithValue("company_id", companyId);
+            statusCmd.Parameters.AddWithValue("company_id", companyId.Value);
             statusCmd.Parameters.AddWithValue("id", billId);
             var statusObj = await statusCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null) return null;
@@ -259,7 +259,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
              WHERE company_id = @company_id AND id = @id AND status = 'draft'
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", billId);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -268,7 +268,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
             // Either not found or not in draft state — distinguish so the API can return the right code.
             await using var checkCmd = connection.CreateCommand();
             checkCmd.CommandText = "SELECT status FROM bills WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            checkCmd.Parameters.AddWithValue("company_id", companyId);
+            checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
             checkCmd.Parameters.AddWithValue("id", billId);
             var status = (string?)await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (status is null) return null;
@@ -295,7 +295,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                AND status IN ('draft', 'posted')
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", billId);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -303,7 +303,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         {
             await using var checkCmd = connection.CreateCommand();
             checkCmd.CommandText = "SELECT status FROM bills WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            checkCmd.Parameters.AddWithValue("company_id", companyId);
+            checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
             checkCmd.Parameters.AddWithValue("id", billId);
             var status = (string?)await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (status is null) return null;
@@ -366,7 +366,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                     @company_id, @bill_id, @line_number, @expense_account_id, @description,
                     @line_amount, @tax_code_id, @tax_amount, FALSE);
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("bill_id", billId);
             command.Parameters.AddWithValue("line_number", line.LineNumber);
             command.Parameters.AddWithValue("expense_account_id", line.ExpenseAccountId);
@@ -390,7 +390,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         var fxSource = sameCurrency ? "identity" : "manual";
 
         var (subtotal, tax, total) = ComputeTotals(input);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bill_number", input.BillNumber.Trim());
         command.Parameters.AddWithValue("vendor_id", input.VendorId);
         command.Parameters.Add("bill_date", NpgsqlDbType.Date).Value = input.BillDate.ToDateTime(TimeOnly.MinValue);

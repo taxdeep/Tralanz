@@ -122,7 +122,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
         }
 
         var idShort = salesIssueDocumentId.ToString("N")[..12].ToUpperInvariant();
-        var entityNumber = new EntityNumber($"EN-COGS-{idShort}");
+        var entityNumber = EntityNumber.FromLegacy($"EN-COGS-{idShort}");
         var displayNumber = new DocumentNumber($"COGS-{idShort}");
         var baseCurrency = new CurrencyCode(header.Value.BaseCurrencyCode);
 
@@ -158,7 +158,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
               and source_id = @source_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_type", CogsSourceType);
         command.Parameters.AddWithValue("source_id", salesIssueDocumentId);
 
@@ -185,7 +185,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
               and d.id = @sales_issue_id
               and d.document_type = 'sales_issue';
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -223,7 +223,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
             having sum(c.consumed_cost_base) > 0
             order by i.item_code;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
 
         var rows = new List<LineCandidateRow>();

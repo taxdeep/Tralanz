@@ -7,7 +7,7 @@ namespace Citus.Platform.Core.Tests;
 
 public sealed class PlatformAccountProfileWorkflowTests
 {
-    private static readonly UserId UserId = Guid.Parse("f3fbb642-60c1-4a33-b14b-f633a95d7ee9");
+    private static readonly UserId UserId = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task SaveDisplayNameTrimsBeforePersisting()

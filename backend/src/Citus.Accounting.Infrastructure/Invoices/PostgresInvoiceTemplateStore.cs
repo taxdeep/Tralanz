@@ -79,7 +79,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", templateId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -105,7 +105,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (await reader.ReadAsync(cancellationToken))
@@ -122,7 +122,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         await using var retryConn = await _connections.OpenConnectionAsync(cancellationToken);
         await using var retryCmd = retryConn.CreateCommand();
         retryCmd.CommandText = sql;
-        retryCmd.Parameters.AddWithValue("company_id", companyId);
+        retryCmd.Parameters.AddWithValue("company_id", companyId.Value);
         await using var retryReader = await retryCmd.ExecuteReaderAsync(cancellationToken);
         return await retryReader.ReadAsync(cancellationToken) ? Map(retryReader) : null;
     }
@@ -141,7 +141,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("name", request.Name.Trim());
         AddJsonbParameter(command, "config", request.Config);
 
@@ -176,7 +176,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", templateId);
         command.Parameters.AddWithValue("name", request.Name.Trim());
         AddJsonbParameter(command, "config", request.Config);
@@ -213,7 +213,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         {
             clearCmd.Transaction = transaction;
             clearCmd.CommandText = clearSql;
-            clearCmd.Parameters.AddWithValue("company_id", companyId);
+            clearCmd.Parameters.AddWithValue("company_id", companyId.Value);
             clearCmd.Parameters.AddWithValue("id", templateId);
             await clearCmd.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -231,7 +231,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         {
             setCmd.Transaction = transaction;
             setCmd.CommandText = setSql;
-            setCmd.Parameters.AddWithValue("company_id", companyId);
+            setCmd.Parameters.AddWithValue("company_id", companyId.Value);
             setCmd.Parameters.AddWithValue("id", templateId);
             await using var reader = await setCmd.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
@@ -264,7 +264,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var results = new List<InvoiceTemplate>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -292,7 +292,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         {
             checkCmd.Transaction = transaction;
             checkCmd.CommandText = checkSql;
-            checkCmd.Parameters.AddWithValue("company_id", companyId);
+            checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
             var existing = await checkCmd.ExecuteScalarAsync(cancellationToken);
             if (existing is not null)
             {
@@ -313,7 +313,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
             await using var cmd = connection.CreateCommand();
             cmd.Transaction = transaction;
             cmd.CommandText = insertSql;
-            cmd.Parameters.AddWithValue("company_id", companyId);
+            cmd.Parameters.AddWithValue("company_id", companyId.Value);
             cmd.Parameters.AddWithValue("name", name);
             cmd.Parameters.AddWithValue("is_default", isDefault);
             AddJsonbParameter(cmd, "config", config);

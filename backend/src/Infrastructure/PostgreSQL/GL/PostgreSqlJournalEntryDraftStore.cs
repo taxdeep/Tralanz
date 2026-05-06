@@ -248,7 +248,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
             from manual_journal_documents
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 

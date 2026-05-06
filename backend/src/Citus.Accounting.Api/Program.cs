@@ -3062,7 +3062,7 @@ accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/approve",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = new CompanyId(request.CompanyId);
+        var companyId = CompanyId.Parse(request.CompanyId.ToString());
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -3100,7 +3100,7 @@ accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/reject",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = new CompanyId(request.CompanyId);
+        var companyId = CompanyId.Parse(request.CompanyId.ToString());
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -3356,7 +3356,7 @@ accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/approve",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = new CompanyId(request.CompanyId);
+        var companyId = CompanyId.Parse(request.CompanyId.ToString());
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -3394,7 +3394,7 @@ accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/reject",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = new CompanyId(request.CompanyId);
+        var companyId = CompanyId.Parse(request.CompanyId.ToString());
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -4449,7 +4449,7 @@ accounting.MapGet(
         IInvoicePdfRenderer renderer,
         CancellationToken cancellationToken) =>
     {
-        var companyId = new CompanyId(query.CompanyId);
+        var companyId = CompanyId.Parse(query.CompanyId.ToString());
 
         var review = await reviewRepository.GetSourceDocumentAsync(
             companyId,
@@ -4555,7 +4555,7 @@ accounting.MapPost(
             return Results.BadRequest(new { message = "A recipient email is required." });
         }
 
-        var companyId = new CompanyId(query.CompanyId);
+        var companyId = CompanyId.Parse(query.CompanyId.ToString());
 
         var review = await reviewRepository.GetSourceDocumentAsync(
             companyId,
@@ -13006,7 +13006,7 @@ internal sealed record class ManualJournalSaveAndPostHttpRequest
 
 internal sealed record class ManualJournalSaveAndPostLineHttpRequest
 {
-    public Guid AccountId { get; init; }
+    public UserId AccountId { get; init; }
     public string? Description { get; init; }
     public decimal Debit { get; init; }
     public decimal Credit { get; init; }

@@ -336,7 +336,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 Id: reader.GetGuid(0),
                 Realm: reader.GetString(1),
                 MaskedEmail: maskedEmail,
-                AccountId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                AccountId: reader.IsDBNull(3) ? null : UserId.Parse(reader.GetString(3)),
                 LockoutKind: reader.GetString(4),
                 LockedAt: reader.GetFieldValue<DateTimeOffset>(5),
                 LockedUntil: reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
@@ -348,7 +348,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
 
     public async Task<LockoutLiftResult> LiftLockoutAsync(
         Guid lockoutId,
-        Guid sysAdminAccountId,
+        UserId sysAdminAccountId,
         string reason,
         CancellationToken cancellationToken)
     {
@@ -361,7 +361,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         string? realm;
-        Guid? accountId;
+        UserId? accountId;
         string? kind;
 
         await using (var lift = connection.CreateCommand())
@@ -387,7 +387,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 return new LockoutLiftResult(false, "Lockout not found or already lifted.");
             }
             realm = reader.GetString(0);
-            accountId = reader.IsDBNull(1) ? null : reader.GetGuid(1);
+            accountId = reader.IsDBNull(1) ? null : UserId.Parse(reader.GetString(1));
             kind = reader.GetString(2);
         }
 
@@ -430,7 +430,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
         string realm,
-        Guid accountId,
+        UserId accountId,
         string newStatus,
         CancellationToken cancellationToken)
     {

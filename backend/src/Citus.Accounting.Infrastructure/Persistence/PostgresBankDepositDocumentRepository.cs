@@ -176,7 +176,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
         return new BankDepositDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(depositNumber),
             status,
             depositDate,
@@ -513,7 +513,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
             limit 1;
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

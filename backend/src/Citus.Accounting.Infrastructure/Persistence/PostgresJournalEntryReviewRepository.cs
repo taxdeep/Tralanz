@@ -167,7 +167,7 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
             {
                 review = new JournalEntryReview(
                     reader.GetGuid(reader.GetOrdinal("id")),
-                    new CompanyId(CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")))),
+                    CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                     reader.GetString(reader.GetOrdinal("entity_number")),
                     reader.GetString(reader.GetOrdinal("display_number")),
                     reader.GetString(reader.GetOrdinal("status")),
@@ -349,7 +349,7 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
     private static JournalEntryReviewListItem MapListItem(System.Data.Common.DbDataReader reader) =>
         new(
             reader.GetGuid(reader.GetOrdinal("id")),
-            new CompanyId(CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")))),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("entity_number")),
             reader.GetString(reader.GetOrdinal("display_number")),
             reader.GetString(reader.GetOrdinal("status")),

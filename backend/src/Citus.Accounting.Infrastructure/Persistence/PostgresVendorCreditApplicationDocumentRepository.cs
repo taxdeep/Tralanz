@@ -245,7 +245,7 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
         return new VendorCreditApplicationDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(applicationNumber),
             status,
             applicationDate,
@@ -283,7 +283,7 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
             for update;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("open_item_id", openItemId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

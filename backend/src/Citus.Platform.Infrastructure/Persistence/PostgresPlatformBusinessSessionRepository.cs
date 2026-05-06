@@ -439,7 +439,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             return Failed("missing_session", "Business session token is required.");
         }
 
-        if (activeCompanyId == Guid.Empty)
+        if (activeCompanyId.Value is null)
         {
             return Failed("invalid_company", "Active company id is required.");
         }
@@ -690,7 +690,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         }
 
         return new AccountRecord(
-            reader.GetGuid(reader.GetOrdinal("id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.IsDBNull(reader.GetOrdinal("username"))
                 ? string.Empty
@@ -705,7 +705,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             reader.GetString(reader.GetOrdinal("security_stamp")).Trim());
     }
 
-    private static async Task<Guid?> ReadPreferredActiveCompanyIdAsync(
+    private static async Task<CompanyId?> ReadPreferredActiveCompanyIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         UserId userId,
@@ -721,11 +721,11 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             order by created_at desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         return await command.ExecuteScalarAsync(cancellationToken) switch
         {
-            Guid value => value,
+            string value => CompanyId.Parse(value),
             _ => null
         };
     }
@@ -734,10 +734,10 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         UserId userId,
-        Guid? preferredCompanyId,
+        CompanyId? preferredCompanyId,
         CancellationToken cancellationToken)
     {
-        if (preferredCompanyId.HasValue && preferredCompanyId.Value != Guid.Empty)
+        if (preferredCompanyId.HasValue && preferredCompanyId.Value.Value is not null)
         {
             var preferred = await ReadMembershipContextAsync(
                 connection,
@@ -770,7 +770,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
                      c.legal_name
             limit 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
 
         return await ReadMembershipContextAsync(command, cancellationToken);
     }
@@ -799,8 +799,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
               and c.status in ('active', 'inactive')
             limit 1;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         return await ReadMembershipContextAsync(command, cancellationToken);
     }
@@ -865,7 +865,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             );
             """;
         command.Parameters.AddWithValue("token_hash", tokenHash);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("active_company_id", membership.CompanyId);
         command.Parameters.AddWithValue("membership_id", membership.MembershipId);
         command.Parameters.AddWithValue("role", membership.Role);
@@ -1031,7 +1031,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             );
             """;
         command.Parameters.AddWithValue("id", challengeId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("active_company_id", membership.CompanyId);
         command.Parameters.AddWithValue("membership_id", membership.MembershipId);
         command.Parameters.AddWithValue("role", membership.Role);
@@ -1076,7 +1076,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             limit 1
             for update;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("status", "active");
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1106,7 +1106,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
               and status = 'active'
               and revoked_at is null;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1125,7 +1125,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             where user_id = @user_id
               and consumed_at is null;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1232,7 +1232,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             set locked_until = greatest(coalesce(locked_until, '-infinity'::timestamptz), @locked_until)
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         command.Parameters.AddWithValue("locked_until", lockedUntilUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1279,7 +1279,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     }
 
     private sealed record AccountRecord(
-        Guid Id,
+        UserId Id,
         string Email,
         string Username,
         string DisplayName,

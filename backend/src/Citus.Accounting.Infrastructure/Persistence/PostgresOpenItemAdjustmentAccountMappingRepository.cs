@@ -747,7 +747,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
     private static OpenItemAdjustmentAccountMappingRecord ReadMapping(NpgsqlDataReader reader) =>
         new(
             reader.GetGuid(reader.GetOrdinal("id")),
-            new CompanyId(CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")))),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.IsDBNull(reader.GetOrdinal("book_id")) ? null : reader.GetGuid(reader.GetOrdinal("book_id")),
             reader.IsDBNull(reader.GetOrdinal("book_code")) ? null : reader.GetString(reader.GetOrdinal("book_code")),
             reader.IsDBNull(reader.GetOrdinal("accounting_standard")) ? null : reader.GetString(reader.GetOrdinal("accounting_standard")),

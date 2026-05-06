@@ -51,7 +51,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                     ? null
                     : SettlementAmountMath.RoundBase(line.AppliedAmountBase - line.CarryingAmountBase),
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -89,7 +89,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                     ? null
                     : SettlementAmountMath.RoundBase(line.CarryingAmountBase - line.AppliedAmountBase),
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -123,7 +123,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
 
             await ApplySingleAsync(
@@ -141,7 +141,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -175,7 +175,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
 
             await ApplySingleAsync(
@@ -193,7 +193,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 settlementFxRate: null,
                 realizedFxAmount: null,
                 partyId: document.PartyId,
-                createdByUserId: createdByUserId.Value,
+                createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
         }
     }
@@ -304,7 +304,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
 
@@ -358,7 +358,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                          for update;
                          """))
         {
-            selectCommand.Parameters.AddWithValue("company_id", companyId);
+            selectCommand.Parameters.AddWithValue("company_id", companyId.Value);
             selectCommand.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
 
             await using var reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
@@ -445,7 +445,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                          """))
         {
             insertCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.AddWithValue("application_type", applicationType);
             insertCommand.Parameters.AddWithValue("source_type", sourceType);
             insertCommand.Parameters.AddWithValue("source_id", sourceId);
@@ -459,7 +459,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
             insertCommand.Parameters.AddWithValue(
                 "realized_fx_amount",
                 realizedFxAmount.HasValue ? (object)realizedFxAmount.Value : DBNull.Value);
-            insertCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+            insertCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -477,7 +477,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         updateCommand.Parameters.AddWithValue("open_amount_tx", newOpenAmountTx);
         updateCommand.Parameters.AddWithValue("open_amount_base", newOpenAmountBase);
         updateCommand.Parameters.AddWithValue("status", newStatus);
-        updateCommand.Parameters.AddWithValue("company_id", companyId);
+        updateCommand.Parameters.AddWithValue("company_id", companyId.Value);
         updateCommand.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
         await updateCommand.ExecuteNonQueryAsync(cancellationToken);
     }

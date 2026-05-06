@@ -10,7 +10,7 @@ public sealed class CompanyMembershipGovernanceWorkflow(
         Guid membershipId,
         string role,
         string reason,
-        Guid? sysAdminAccountId,
+        UserId? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
         if (companyId.Value is null)

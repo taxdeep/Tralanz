@@ -32,7 +32,7 @@ public sealed class PayBillDraftPreparationSmokeTests
             new StubFxRateStore());
 
         Guid documentId = Guid.Empty;
-        Guid bankAccountId = Guid.Empty;
+        Guid bankAccountId = default;
         UserId userId = Guid.Empty;
         var createdUser = false;
         var originalLock = await ReadVendorLockAsync(connectionFactory, VendorId, CancellationToken.None);
@@ -161,7 +161,7 @@ public sealed class PayBillDraftPreparationSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", accountId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("code", $"BANK-{entityNumber[^6..]}");
         command.Parameters.AddWithValue("name", "Smoke Test Bank");
@@ -389,7 +389,7 @@ public sealed class PayBillDraftPreparationSmokeTests
             delete from users
             where id = @user_id;
             """;
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

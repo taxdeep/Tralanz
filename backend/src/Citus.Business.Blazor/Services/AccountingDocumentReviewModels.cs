@@ -76,7 +76,7 @@ public sealed record class AccountingDocumentReviewLineSummary
 {
     public int LineNumber { get; init; }
 
-    public Guid AccountId { get; init; }
+    public UserId AccountId { get; init; }
 
     public string AccountCode { get; init; } = string.Empty;
 

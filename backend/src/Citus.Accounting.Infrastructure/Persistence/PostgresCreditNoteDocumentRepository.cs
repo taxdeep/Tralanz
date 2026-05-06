@@ -211,7 +211,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
         return new CreditNoteDocument(
             id,
             companyId,
-            new EntityNumber(entityNumber),
+            EntityNumber.Parse(entityNumber),
             new DocumentNumber(creditNoteNumber),
             status,
             creditNoteDate,
@@ -607,7 +607,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
               and id = @document_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

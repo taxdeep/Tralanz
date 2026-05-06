@@ -468,7 +468,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             );
             """;
         command.Parameters.AddWithValue("bom_id", bomId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var exists = (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
         if (!exists)
@@ -491,7 +491,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             from companies
             where id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not string baseCurrencyCode || string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -537,7 +537,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and manage_inventory_method = 'manage_stock'
             order by item_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var items = new List<InventoryManagedItemSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -609,7 +609,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and id = any(@item_ids)
               and is_active = true;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         var items = new Dictionary<Guid, InventoryManagedItemSummary>();
@@ -667,7 +667,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and is_active = true
             order by warehouse_code asc, name asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var warehouses = new List<InventoryManagedWarehouseSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -715,7 +715,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and is_active = true
               and id = any(@warehouse_ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("warehouse_ids", warehouseIds.ToArray());
 
         var warehouses = new Dictionary<Guid, InventoryManagedWarehouseSummary>();
@@ -763,7 +763,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
                 where b.company_id = @company_id
                 order by b.bom_code asc;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -855,7 +855,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and bom_id = any(@bom_ids)
             order by bom_id asc, line_no asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bom_ids", bomIds.ToArray());
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -949,7 +949,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and remaining_qty > 0
             group by item_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_ids", itemIds.ToArray());
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -993,7 +993,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
                 where company_id = @company_id
                   and id = @bom_id;
                 """;
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("bom_id", bomId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1070,7 +1070,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             order by r.posting_date desc, r.created_at desc
             limit 10;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var summaries = new List<InventoryManufacturingSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1123,7 +1123,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1170,7 +1170,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and item_id = @item_id
               and warehouse_id = @warehouse_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         return (decimal)(await command.ExecuteScalarAsync(cancellationToken) ?? 0m);
@@ -1202,7 +1202,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               and remaining_qty > 0
             order by layer_date asc, created_at asc, id asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
 
@@ -1373,7 +1373,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
               set on_hand_qty = item_warehouse_balances.on_hand_qty + excluded.on_hand_qty,
                   updated_at = now();
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("quantity_delta", quantityDelta);
@@ -1437,7 +1437,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             );
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_number", documentNumber);
         command.Parameters.AddWithValue("document_type", documentType);
         command.Parameters.AddWithValue("movement_direction", movementDirection);
@@ -1514,7 +1514,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             );
             """;
         command.Parameters.AddWithValue("id", lineId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
         command.Parameters.AddWithValue("line_no", lineNo);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -1592,7 +1592,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             );
             """;
         command.Parameters.AddWithValue("id", ledgerEntryId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("document_id", documentId);
@@ -1659,7 +1659,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
                   @created_at
                 );
                 """;
-            insertConsumptionCommand.Parameters.AddWithValue("company_id", companyId);
+            insertConsumptionCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertConsumptionCommand.Parameters.AddWithValue("issue_ledger_entry_id", issueLedgerEntryId);
             insertConsumptionCommand.Parameters.AddWithValue("cost_layer_id", consumption.CostLayerId);
             insertConsumptionCommand.Parameters.AddWithValue("consumed_qty", consumption.ConsumedQty);
@@ -1722,7 +1722,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             );
             """;
         command.Parameters.AddWithValue("id", costLayerId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("warehouse_id", warehouseId);
         command.Parameters.AddWithValue("source_document_id", sourceDocumentId);

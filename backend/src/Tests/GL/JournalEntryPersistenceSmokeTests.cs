@@ -169,7 +169,7 @@ public sealed class JournalEntryPersistenceSmokeTests
             var accountingConnectionFactory = new PostgresConnectionFactory(GetConnectionString());
             var usd = new CurrencyCode("USD");
             var draft = new AccountingJournalEntryDraft(
-                new CompanyId(companyId),
+                CompanyId.Parse(companyId.ToString()),
                 "invoice",
                 sourceId,
                 usd,
@@ -187,7 +187,7 @@ public sealed class JournalEntryPersistenceSmokeTests
                 writer.WriteAsync(
                     draft,
                     new PostingContext(
-                        new CompanyId(companyId),
+                        CompanyId.Parse(companyId.ToString()),
                         new UserId(Guid.NewGuid()),
                         usd,
                         null,
@@ -339,7 +339,7 @@ public sealed class JournalEntryPersistenceSmokeTests
                 );
                 """;
             bookCommand.Parameters.AddWithValue("id", bookId);
-            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             await bookCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -370,7 +370,7 @@ public sealed class JournalEntryPersistenceSmokeTests
                 );
                 """;
             signalCommand.Parameters.AddWithValue("id", signalId);
-            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("company_book_id", bookId);
             signalCommand.Parameters.AddWithValue("signal_date", closedThrough);
             await signalCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -460,7 +460,7 @@ public sealed class JournalEntryPersistenceSmokeTests
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("source_id", sourceId);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }

@@ -10,7 +10,7 @@ public sealed record class SysAdminAuthenticationResult
 
     public string SessionToken { get; init; } = string.Empty;
 
-    public Guid SysAdminAccountId { get; init; }
+    public UserId SysAdminAccountId { get; init; }
 
     public string Email { get; init; } = string.Empty;
 

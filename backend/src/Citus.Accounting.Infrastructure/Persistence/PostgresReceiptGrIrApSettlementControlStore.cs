@@ -667,7 +667,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and batch.receipt_id = @receipt_id
               and batch.status = 'posted';
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -768,7 +768,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             where batch.company_id = @company_id
               and batch.id = batch_truth.settlement_batch_id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -792,7 +792,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and receipt_id = @receipt_id;
             """))
         {
-            deleteCommand.Parameters.AddWithValue("company_id", companyId);
+            deleteCommand.Parameters.AddWithValue("company_id", companyId.Value);
             deleteCommand.Parameters.AddWithValue("receipt_id", receiptDocumentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -939,9 +939,9 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               refreshed_by_user_id = excluded.refreshed_by_user_id,
               refreshed_at = excluded.refreshed_at;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1093,9 +1093,9 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               refreshed_at = excluded.refreshed_at,
               last_settled_at = excluded.last_settled_at;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
-        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1120,7 +1120,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and batch.idempotency_key = @idempotency_key
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
 
@@ -1180,7 +1180,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             order by line.receipt_line_number, line.bill_line_number, line.id
             for update;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
 
         var lines = new List<ExecutableSettlementLine>();
@@ -1293,7 +1293,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             );
             """);
         command.Parameters.AddWithValue("batch_id", batchId);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
         command.Parameters.AddWithValue("requested_amount_base", requestedAmountBase);
@@ -1336,7 +1336,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                   @settled_amount_base
                 );
                 """);
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("settlement_batch_id", batchId);
             command.Parameters.AddWithValue("settlement_line_id", allocation.SettlementLineId);
             command.Parameters.AddWithValue("bridge_line_id", allocation.BridgeLineId);
@@ -1373,7 +1373,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                   )
                   and round(remaining_amount_base, 6) >= @settled_amount_base;
                 """);
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("settlement_line_id", allocation.SettlementLineId);
             command.Parameters.AddWithValue("settled_quantity", allocation.SettledQuantity);
             command.Parameters.AddWithValue("settled_amount_base", allocation.SettledAmountBase);
@@ -1400,7 +1400,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and source_id = @settlement_batch_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
         var existing = await command.ExecuteScalarAsync(cancellationToken);
@@ -1437,7 +1437,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and id = @settlement_batch_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
@@ -1504,7 +1504,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               oi.status
             order by batch_line.ap_open_item_id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
         var allocations = new List<OpenItemClearingAllocation>();
@@ -1588,7 +1588,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                          );
                          """))
         {
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
             insertCommand.Parameters.AddWithValue("ap_open_item_id", allocation.ApOpenItemId);
             insertCommand.Parameters.AddWithValue("applied_amount_tx", allocation.AmountBase);
@@ -1613,7 +1613,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         updateCommand.Parameters.AddWithValue("open_amount_tx", nextOpenAmountTx);
         updateCommand.Parameters.AddWithValue("open_amount_base", nextOpenAmountBase);
         updateCommand.Parameters.AddWithValue("status", nextStatus);
-        updateCommand.Parameters.AddWithValue("company_id", companyId);
+        updateCommand.Parameters.AddWithValue("company_id", companyId.Value);
         updateCommand.Parameters.AddWithValue("ap_open_item_id", allocation.ApOpenItemId);
         updateCommand.Parameters.AddWithValue("applied_amount_tx", allocation.AmountBase);
         updateCommand.Parameters.AddWithValue("applied_amount_base", allocation.AmountBase);
@@ -1642,7 +1642,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and id = @settlement_batch_id
               and open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.NotCleared}';
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
         command.Parameters.AddWithValue("cleared_by_user_id", userId);
         if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
@@ -1675,7 +1675,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and batch.id = @settlement_batch_id
             group by batch.open_item_clearing_status;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
@@ -1721,7 +1721,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed}'
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
@@ -1756,7 +1756,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and target_open_item_type = 'ap_open_item'
             order by created_at desc, id desc;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
         var applications = new List<OpenItemClearingApplication>();
@@ -1794,7 +1794,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and id = @ap_open_item_id
               and status <> 'voided';
             """);
-        updateCommand.Parameters.AddWithValue("company_id", companyId);
+        updateCommand.Parameters.AddWithValue("company_id", companyId.Value);
         updateCommand.Parameters.AddWithValue("ap_open_item_id", application.ApOpenItemId);
         updateCommand.Parameters.AddWithValue("applied_amount_tx", application.AppliedAmountTx);
         updateCommand.Parameters.AddWithValue("applied_amount_base", application.AppliedAmountBase);
@@ -1817,7 +1817,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and source_type = 'receipt_grir_ap_settlement'
               and source_id = @settlement_batch_id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1850,7 +1850,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                 '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingInconsistent}'
               );
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
         command.Parameters.AddWithValue("reversed_by_user_id", userId);
         command.Parameters.AddWithValue("application_count", applicationCount);
@@ -1882,7 +1882,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and id = @settlement_batch_id
             limit 1;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
 
@@ -1934,7 +1934,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
     {
         await using var command = scope.CreateCommand(
             BuildSummarySql("receipt_id", "receipt_document_ids"));
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("receipt_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = receiptDocumentIds
@@ -2084,7 +2084,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and batch.receipt_id = @receipt_id
             order by batch.created_at desc, batch.id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
 
         var summaries = new List<ReceiptGrIrApSettlementBatchSummary>();
@@ -2161,7 +2161,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and variance.receipt_id = @receipt_id
             order by variance.receipt_line_number, variance.bill_line_number, variance.settlement_batch_id;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
 
         var summaries = new List<ReceiptGrIrApPurchaseVarianceLineSummary>();
@@ -2200,7 +2200,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
     {
         await using var command = scope.CreateCommand(
             BuildSummarySql("bill_id", "bill_document_ids"));
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
         {
             TypedValue = [billDocumentId]

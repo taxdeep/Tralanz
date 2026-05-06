@@ -7,5 +7,5 @@ public sealed record class InventoryCostingPolicyRecord(
     bool RequireWriteOffApproval,
     UserId CreatedByUserId,
     DateTimeOffset CreatedAt,
-    Guid? UpdatedByUserId,
+    UserId? UpdatedByUserId,
     DateTimeOffset UpdatedAt);

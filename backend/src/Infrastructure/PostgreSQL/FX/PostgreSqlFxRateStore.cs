@@ -60,7 +60,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
             order by requested_date desc, effective_date desc, created_at desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("rate_type", rateType);
@@ -117,7 +117,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
             order by requested_date desc, effective_date desc, created_at desc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);
@@ -260,7 +260,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               and id = @id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", snapshotId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -424,7 +424,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
                   and coalesce(provider_key, '') = @provider_key
                 limit 1;
                 """;
-            existingCommand.Parameters.AddWithValue("company_id", companyId);
+            existingCommand.Parameters.AddWithValue("company_id", companyId.Value);
             existingCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
             existingCommand.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
             existingCommand.Parameters.AddWithValue("requested_date", requestedDate);
@@ -544,7 +544,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               created_at;
             """;
         insertCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-        insertCommand.Parameters.AddWithValue("company_id", companyId);
+        insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
         insertCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         insertCommand.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         insertCommand.Parameters.AddWithValue("requested_date", requestedDate);
@@ -641,7 +641,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               created_at;
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);

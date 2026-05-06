@@ -142,7 +142,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         }
         sql += " ORDER BY s.document_date DESC, s.created_at DESC;";
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -163,7 +163,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = SelectSalesOrderColumns + " WHERE s.company_id = @company_id AND s.id = @id LIMIT 1;";
-            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("id", salesOrderId);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -245,7 +245,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         {
             statusCommand.Transaction = transaction;
             statusCommand.CommandText = "SELECT status FROM sales_orders WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCommand.Parameters.AddWithValue("company_id", companyId);
+            statusCommand.Parameters.AddWithValue("company_id", companyId.Value);
             statusCommand.Parameters.AddWithValue("id", salesOrderId);
             var statusObj = await statusCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null) return null;
@@ -329,7 +329,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", salesOrderId);
         command.Parameters.AddWithValue("invoice_number", invoiceNumber.Trim());
 
@@ -353,7 +353,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         {
             statusCommand.Transaction = transaction;
             statusCommand.CommandText = "SELECT status FROM sales_orders WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCommand.Parameters.AddWithValue("company_id", companyId);
+            statusCommand.Parameters.AddWithValue("company_id", companyId.Value);
             statusCommand.Parameters.AddWithValue("id", salesOrderId);
             var statusObj = await statusCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null) return null;
@@ -379,7 +379,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                  ORDER BY created_at
                  LIMIT 1;
                 """;
-            warehouseCommand.Parameters.AddWithValue("company_id", companyId);
+            warehouseCommand.Parameters.AddWithValue("company_id", companyId.Value);
             var result = await warehouseCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (result is Guid id) warehouseId = id;
         }
@@ -404,7 +404,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                  WHERE sol.sales_order_id = @so_id
                  ORDER BY sol.sequence;
                 """;
-            linesCommand.Parameters.AddWithValue("company_id", companyId);
+            linesCommand.Parameters.AddWithValue("company_id", companyId.Value);
             linesCommand.Parameters.AddWithValue("so_id", salesOrderId);
             await using var reader = await linesCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -459,7 +459,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                      LIMIT 1
                      FOR UPDATE;
                     """;
-                balanceCommand.Parameters.AddWithValue("company_id", companyId);
+                balanceCommand.Parameters.AddWithValue("company_id", companyId.Value);
                 balanceCommand.Parameters.AddWithValue("item_id", line.ItemId.Value);
                 balanceCommand.Parameters.AddWithValue("warehouse_id", warehouseId.Value);
                 var result = await balanceCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -528,7 +528,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                         reserved_qty = item_warehouse_balances.reserved_qty + EXCLUDED.reserved_qty,
                         updated_at = now();
                     """;
-                upsertBalance.Parameters.AddWithValue("company_id", companyId);
+                upsertBalance.Parameters.AddWithValue("company_id", companyId.Value);
                 upsertBalance.Parameters.AddWithValue("item_id", itemId);
                 upsertBalance.Parameters.AddWithValue("warehouse_id", whId);
                 upsertBalance.Parameters.AddWithValue("reserved_delta", reservedDelta);
@@ -547,7 +547,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                        updated_at   = now()
                  WHERE company_id = @company_id AND id = @id;
                 """;
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("id", salesOrderId);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -586,7 +586,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         {
             statusCommand.Transaction = transaction;
             statusCommand.CommandText = "SELECT status FROM sales_orders WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            statusCommand.Parameters.AddWithValue("company_id", companyId);
+            statusCommand.Parameters.AddWithValue("company_id", companyId.Value);
             statusCommand.Parameters.AddWithValue("id", salesOrderId);
             var statusObj = await statusCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (statusObj is null) return null;
@@ -613,7 +613,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                  ORDER BY created_at
                  LIMIT 1;
                 """;
-            warehouseCommand.Parameters.AddWithValue("company_id", companyId);
+            warehouseCommand.Parameters.AddWithValue("company_id", companyId.Value);
             var result = await warehouseCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (result is Guid id) warehouseId = id;
         }
@@ -668,7 +668,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                        AND item_id = @item_id
                        AND warehouse_id = @warehouse_id;
                     """;
-                updateBalance.Parameters.AddWithValue("company_id", companyId);
+                updateBalance.Parameters.AddWithValue("company_id", companyId.Value);
                 updateBalance.Parameters.AddWithValue("item_id", itemId);
                 updateBalance.Parameters.AddWithValue("warehouse_id", whId);
                 updateBalance.Parameters.AddWithValue("reserved_delta", reservedDelta);
@@ -701,7 +701,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                        updated_at = now()
                  WHERE company_id = @company_id AND id = @id;
                 """;
-            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
             headerCommand.Parameters.AddWithValue("id", salesOrderId);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -725,7 +725,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                    AND cd.status IN ('open', 'partially_applied')
                    AND oi.open_amount_base > 0;
                 """;
-            depositsCommand.Parameters.AddWithValue("company_id", companyId);
+            depositsCommand.Parameters.AddWithValue("company_id", companyId.Value);
             depositsCommand.Parameters.AddWithValue("so_id", salesOrderId);
             await using var reader = await depositsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -767,7 +767,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
              WHERE company_id = @company_id AND id = @id
             RETURNING id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", salesOrderId);
         command.Parameters.AddWithValue("new_status", newStatus);
 
@@ -889,7 +889,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         decimal tax,
         decimal total)
     {
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", input.CustomerId);
         command.Parameters.Add("document_date", NpgsqlDbType.Date).Value = input.DocumentDate.ToDateTime(TimeOnly.MinValue);
         command.Parameters.AddWithValue("transaction_currency_code", input.TransactionCurrencyCode.Trim().ToUpperInvariant());

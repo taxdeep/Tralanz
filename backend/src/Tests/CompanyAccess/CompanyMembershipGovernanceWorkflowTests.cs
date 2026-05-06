@@ -6,8 +6,8 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
 {
     private static readonly CompanyId CompanyId = Guid.NewGuid();
     private static readonly Guid MembershipId = Guid.NewGuid();
-    private static readonly Guid AccountId = Guid.NewGuid();
-    private static readonly Guid SysAdminAccountId = Guid.NewGuid();
+    private static readonly UserId AccountId = Guid.NewGuid();
+    private static readonly UserId SysAdminAccountId = Guid.NewGuid();
 
     [Fact]
     public async Task ChangeRoleFromSysAdminAsync_NormalizesRoleAndDelegatesToCompanyAccessStore()
@@ -93,7 +93,7 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
             Guid membershipId,
             string role,
             string reason,
-            Guid? sysAdminAccountId,
+            UserId? sysAdminAccountId,
             CancellationToken cancellationToken)
         {
             SavedRole = role;

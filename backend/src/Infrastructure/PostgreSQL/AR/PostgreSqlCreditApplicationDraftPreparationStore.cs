@@ -280,7 +280,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
         command.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
         if (openItemIds is not null)
@@ -332,7 +332,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
               and is_active = true
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("customer_id", customerId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -357,7 +357,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             where id = @company_id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         if (scalar is null || scalar == DBNull.Value)
         {
@@ -490,7 +490,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             from credit_applications
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 

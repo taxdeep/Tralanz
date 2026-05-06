@@ -17,7 +17,7 @@ internal static class PostgresSettlementDraftingSupport
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         if (scalar is null || scalar == DBNull.Value)
         {
@@ -44,7 +44,7 @@ internal static class PostgresSettlementDraftingSupport
             limit 1;
             """);
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bank_account_id", bankAccountId);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -100,7 +100,7 @@ internal static class PostgresSettlementDraftingSupport
               """;
 
         await using var command = scope.CreateCommand(sql);
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);

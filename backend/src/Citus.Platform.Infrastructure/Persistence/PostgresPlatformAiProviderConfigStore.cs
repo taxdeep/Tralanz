@@ -75,7 +75,7 @@ public sealed class PostgresPlatformAiProviderConfigStore : IPlatformAiProviderC
             Temperature: (double)reader.GetDecimal(4),
             HasApiKey: !string.IsNullOrWhiteSpace(apiKeyProtected),
             UpdatedAt: reader.GetFieldValue<DateTimeOffset>(6),
-            UpdatedByUserId: reader.IsDBNull(7) ? null : reader.GetGuid(7));
+            UpdatedByUserId: reader.IsDBNull(7) ? null : UserId.Parse(reader.GetString(7)));
     }
 
     public async Task<PlatformAiProviderConfigSnapshot> UpsertAsync(

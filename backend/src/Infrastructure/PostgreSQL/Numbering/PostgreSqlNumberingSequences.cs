@@ -47,7 +47,7 @@ internal static class PostgreSqlNumberingSequences
               and scope_key = @scope_key
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", scopeKey);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -102,7 +102,7 @@ internal static class PostgreSqlNumberingSequences
               and scope_key = @scope_key
             returning prefix, greatest(next_number - 1, @seed_number) as issued_number, padding;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_key", scopeKey);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
@@ -149,7 +149,7 @@ internal static class PostgreSqlNumberingSequences
                 )
                 on conflict (company_id, scope_key) do nothing;
                 """;
-            seedCommand.Parameters.AddWithValue("company_id", companyId);
+            seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
             seedCommand.Parameters.AddWithValue("scope_key", scopeKey);
             seedCommand.Parameters.AddWithValue("prefix", prefix);
             seedCommand.Parameters.AddWithValue("next_number", seedNumber);
@@ -167,7 +167,7 @@ internal static class PostgreSqlNumberingSequences
             where company_id = @company_id
               and scope_key = @scope_key;
             """;
-        alignCommand.Parameters.AddWithValue("company_id", companyId);
+        alignCommand.Parameters.AddWithValue("company_id", companyId.Value);
         alignCommand.Parameters.AddWithValue("scope_key", scopeKey);
         alignCommand.Parameters.AddWithValue("seed_number", seedNumber);
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);

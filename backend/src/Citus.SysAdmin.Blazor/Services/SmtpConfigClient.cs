@@ -118,7 +118,7 @@ public sealed record SmtpConfigDto(
     string Username,
     bool HasPassword,
     DateTimeOffset UpdatedAt,
-    Guid? UpdatedByUserId);
+    UserId? UpdatedByUserId);
 
 public sealed record SmtpConfigUpsertDto(
     string Provider,
