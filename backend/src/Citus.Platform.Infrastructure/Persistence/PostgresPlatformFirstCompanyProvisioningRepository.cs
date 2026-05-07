@@ -309,8 +309,22 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
                 return Failed("owner_email_exists", "The first business owner email is already in use.");
             }
 
-            var ownerUserId = UserId.FromOrdinal(1);
-            var companyId = CompanyId.FromOrdinal(1);
+            // Allocate platform-wide UserId / CompanyId from the same
+            // platform_*_id_sequence tables the canonical allocators use,
+            // instead of hard-coding FromOrdinal(1). The first call against
+            // a fresh DB still yields U000001 / C000001, but later sysadmin
+            // runs (e.g. seeding a demo tenant after a real one already
+            // exists) get U000002 / C000002 and so on, so the bootstrap
+            // path is no longer special-cased to "the very first row, ever".
+            //
+            // SQL is inlined here (rather than calling the canonical
+            // PostgreSqlUserIdAllocator / PostgreSqlCompanyIdAllocator) so
+            // the platform-infrastructure layer doesn't have to take on the
+            // Infrastructure.PostgreSQL project — that project pulls in
+            // Citus.Accounting.Application transitively, which would be a
+            // layering violation at the platform tier.
+            var ownerUserId = await AllocateUserIdAsync(connection, transaction, cancellationToken);
+            var companyId = await AllocateCompanyIdAsync(connection, transaction, cancellationToken);
             var membershipId = Guid.NewGuid();
             var companyBookId = Guid.NewGuid();
             var companyEntityNumber = await ReserveEntityNumberAsync(connection, transaction, provisionedAtUtc.Year, cancellationToken);
@@ -1615,5 +1629,82 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         command.Parameters.AddWithValue("entity_year", year);
         var sequenceNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
         return $"EN{year}{Base36.Encode(sequenceNumber, 5)}";
+    }
+
+    // Mirrors Infrastructure.PostgreSQL.Identity.PostgreSqlUserIdAllocator —
+    // duplicated here to avoid a layering reference from the platform tier to
+    // Infrastructure.PostgreSQL (which transitively pulls in accounting).
+    // Both implementations target the same `platform_user_id_sequence`
+    // singleton row, so they hand out the same ordinal namespace.
+    private static async Task<UserId> AllocateUserIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using (var ensureSequence = connection.CreateCommand())
+        {
+            ensureSequence.Transaction = transaction;
+            ensureSequence.CommandText =
+                """
+                create table if not exists platform_user_id_sequence (
+                  singleton_key boolean primary key default true,
+                  next_ordinal bigint not null,
+                  check (singleton_key = true)
+                );
+                insert into platform_user_id_sequence (singleton_key, next_ordinal)
+                values (true, 1)
+                on conflict (singleton_key) do nothing;
+                """;
+            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update platform_user_id_sequence
+            set next_ordinal = next_ordinal + 1
+            where singleton_key = true
+            returning next_ordinal - 1 as ordinal;
+            """;
+        var ordinal = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+        return UserId.FromOrdinal(ordinal);
+    }
+
+    // Mirrors Infrastructure.PostgreSQL.Identity.PostgreSqlCompanyIdAllocator
+    // for the same reason as AllocateUserIdAsync above.
+    private static async Task<CompanyId> AllocateCompanyIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using (var ensureSequence = connection.CreateCommand())
+        {
+            ensureSequence.Transaction = transaction;
+            ensureSequence.CommandText =
+                """
+                create table if not exists platform_company_id_sequence (
+                  singleton_key boolean primary key default true,
+                  next_ordinal bigint not null,
+                  check (singleton_key = true)
+                );
+                insert into platform_company_id_sequence (singleton_key, next_ordinal)
+                values (true, 1)
+                on conflict (singleton_key) do nothing;
+                """;
+            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update platform_company_id_sequence
+            set next_ordinal = next_ordinal + 1
+            where singleton_key = true
+            returning next_ordinal - 1 as ordinal;
+            """;
+        var ordinal = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+        return CompanyId.FromOrdinal(ordinal);
     }
 }
