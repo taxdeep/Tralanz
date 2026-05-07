@@ -34,6 +34,7 @@
     }
     <CounterpartyForm Draft="_draft"
                       DraftChanged="@(v => _draft = v)"
+                      EntityNumberLabel="Customer #"
                       EntityNumberPlaceholder="CUS-000001"
                       PaymentTerms="_paymentTerms" />
     @* Buttons right-aligned and reordered (Cancel | Primary) so the
@@ -59,7 +60,11 @@ else
                 <thead>
                     <tr>
                         <th>Customer</th>
-                        <th>Entity number</th>
+                        @* "Customer #" reads more naturally than the raw
+                           "Entity number" platform label — operators look
+                           up customers by this code, the EN+YYYY+5base36
+                           shape is just the storage format. *@
+                        <th>Customer #</th>
                         <th>Email</th>
                         <th>Country</th>
                         <th>Currency</th>
