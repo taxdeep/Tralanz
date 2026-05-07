@@ -78,7 +78,7 @@ public sealed class PostReceiptWorkflowTests
         new(
             documentId,
             companyId,
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("RECEIPT-000001"),
             status,
             Guid.NewGuid(),

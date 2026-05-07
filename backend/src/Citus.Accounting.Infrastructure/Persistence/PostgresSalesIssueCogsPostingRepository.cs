@@ -122,7 +122,12 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
         }
 
         var idShort = salesIssueDocumentId.ToString("N")[..12].ToUpperInvariant();
-        var entityNumber = EntityNumber.FromLegacy($"EN-COGS-{idShort}");
+        // Entity number derives deterministically from the sales-issue id so
+        // re-runs reuse the same number. Map the GUID-derived suffix into the
+        // [0, MaxOrdinal] range so it round-trips through Create() instead of
+        // the legacy variable-width FromLegacy.
+        var ordinalSuffix = BitConverter.ToUInt32(salesIssueDocumentId.ToByteArray(), 0) % (EntityNumber.MaxOrdinal + 1);
+        var entityNumber = EntityNumber.Create(header.Value.PostingDate.Year, ordinalSuffix);
         var displayNumber = new DocumentNumber($"COGS-{idShort}");
         var baseCurrency = new CurrencyCode(header.Value.BaseCurrencyCode);
 

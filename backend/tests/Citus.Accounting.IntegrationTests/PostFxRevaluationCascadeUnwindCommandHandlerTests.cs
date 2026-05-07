@@ -207,7 +207,7 @@ public sealed class PostFxRevaluationCascadeUnwindCommandHandlerTests
             new(
                 draftId,
                 companyId,
-                EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+                EntityNumber.Create(2026, 1),
                 new DocumentNumber(displayNumber),
                 "draft",
                 new DateOnly(2026, 6, 1),

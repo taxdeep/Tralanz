@@ -95,7 +95,12 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
         var documentDate = DateOnly.FromDateTime(DateTime.UtcNow);
         var docId = Guid.NewGuid();
         var idShort = docId.ToString("N")[..12].ToUpperInvariant();
-        var entityNumber = EntityNumber.FromLegacy($"EN-DSWO-{idShort}");
+        // Entity number derives deterministically from the doc id so the same
+        // doc, re-prepared, always reuses the same number. Map the GUID-derived
+        // suffix into the [0, MaxOrdinal] range so it round-trips through
+        // Create() instead of the legacy variable-width FromLegacy() format.
+        var ordinalSuffix = BitConverter.ToUInt32(docId.ToByteArray(), 0) % (EntityNumber.MaxOrdinal + 1);
+        var entityNumber = EntityNumber.Create(documentDate.Year, ordinalSuffix);
         var displayNumber = new DocumentNumber($"DSWO-{idShort}");
 
         return new DropShipClearingWriteOffDocument(

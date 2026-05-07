@@ -198,7 +198,7 @@ public sealed class ForeignCurrencySettlementPostingTests
         return new ReceivePaymentDocument(
             Guid.NewGuid(),
             companyId,
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("RP-0001"),
             "draft",
             new DateOnly(2026, 4, 12),
@@ -232,7 +232,7 @@ public sealed class ForeignCurrencySettlementPostingTests
         return new PayBillDocument(
             Guid.NewGuid(),
             companyId,
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("PB-0001"),
             "draft",
             new DateOnly(2026, 4, 12),

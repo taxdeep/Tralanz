@@ -77,7 +77,7 @@ public sealed class PostReceiptGrIrCommandHandlerTests
         new(
             batchId,
             companyId,
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("GRIR-TEST"),
             "draft",
             receiptId,

@@ -268,10 +268,16 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
         var documentStatus = journalStatus == ReceiptGrIrApSettlementJournalStatusPolicy.Posted ? "posted" : "draft";
         var displayNumber = $"GRIR-SET-{settlementBatchId:N}"[..18].ToUpperInvariant();
 
+        // Entity number derives deterministically from the batch id so the
+        // same settlement batch always reuses the same number. Map the GUID-
+        // derived suffix into the [0, MaxOrdinal] range so it round-trips
+        // through Create() instead of the legacy variable-width FromLegacy.
+        var ordinalSuffix = BitConverter.ToUInt32(batchId.ToByteArray(), 0) % (EntityNumber.MaxOrdinal + 1);
+
         return new ReceiptGrIrSettlementPostingDocument(
             batchId,
             CompanyId.Parse(companyId.ToString()),
-            EntityNumber.FromLegacy($"EN-{displayNumber}"),
+            EntityNumber.Create(documentDate.Year, ordinalSuffix),
             new DocumentNumber(displayNumber),
             documentStatus,
             receiptDocumentId,

@@ -16,7 +16,7 @@ public sealed class ReceiptGrIrPostingFragmentBuilderTests
         var document = new ReceiptGrIrPostingDocument(
             Guid.NewGuid(),
             CompanyId.FromOrdinal(1),
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("GRIR-FRAG"),
             "draft",
             Guid.NewGuid(),

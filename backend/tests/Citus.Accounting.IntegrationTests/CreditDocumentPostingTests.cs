@@ -18,7 +18,7 @@ public sealed class CreditDocumentPostingTests
         var document = new CreditNoteDocument(
             Guid.NewGuid(),
             CompanyId.FromOrdinal(1),
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("CN-0001"),
             "draft",
             new DateOnly(2026, 4, 12),
@@ -97,7 +97,7 @@ public sealed class CreditDocumentPostingTests
         var document = new VendorCreditDocument(
             Guid.NewGuid(),
             CompanyId.FromOrdinal(1),
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("VC-0001"),
             "draft",
             new DateOnly(2026, 4, 12),

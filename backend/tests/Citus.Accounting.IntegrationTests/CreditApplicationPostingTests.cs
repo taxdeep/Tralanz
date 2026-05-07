@@ -176,7 +176,7 @@ public sealed class CreditApplicationPostingTests
         new(
             Guid.NewGuid(),
             CompanyId.FromOrdinal(1),
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("CAP-0001"),
             "draft",
             new DateOnly(2026, 4, 12),
@@ -220,7 +220,7 @@ public sealed class CreditApplicationPostingTests
         new(
             Guid.NewGuid(),
             CompanyId.FromOrdinal(1),
-            EntityNumber.FromLegacy("EN-LEGACY-TEST"),
+            EntityNumber.Create(2026, 1),
             new DocumentNumber("VCA-0001"),
             "draft",
             new DateOnly(2026, 4, 12),

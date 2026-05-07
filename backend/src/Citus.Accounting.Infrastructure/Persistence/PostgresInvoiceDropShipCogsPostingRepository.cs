@@ -154,9 +154,12 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
 
         // Identifiers mirror the M3 SalesIssueCogs pattern: short JE
         // identifier derived from the invoice id so the GL display ties
-        // back to the source document.
+        // back to the source document. The entity number maps the GUID-
+        // derived suffix into the [0, MaxOrdinal] range so it round-trips
+        // through Create() instead of the legacy variable-width FromLegacy.
         var idShort = invoiceDocumentId.ToString("N")[..12].ToUpperInvariant();
-        var entityNumber = EntityNumber.FromLegacy($"EN-DSCOGS-{idShort}");
+        var ordinalSuffix = BitConverter.ToUInt32(invoiceDocumentId.ToByteArray(), 0) % (EntityNumber.MaxOrdinal + 1);
+        var entityNumber = EntityNumber.Create(header.Value.InvoiceDate.Year, ordinalSuffix);
         var displayNumber = new DocumentNumber($"DSCOGS-{idShort}");
         var baseCurrency = new CurrencyCode(header.Value.BaseCurrencyCode);
 
