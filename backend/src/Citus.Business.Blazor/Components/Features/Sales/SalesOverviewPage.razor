@@ -20,13 +20,19 @@
 }
 else
 {
-    @* === Block 1: Flow diagram + Customer balances ====================== *@
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+    @* === Block 1: Flow diagram + Customer balances ======================
+         items-start keeps the Customers panel from stretching to match the
+         taller Sales flow panel — without it, an empty customer list
+         leaves a large blank band on the right that visually crowds the
+         Cash flow band below. *@
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6 items-start">
         <section class="citus-panel">
             <h2 class="citus-panel__title">Sales flow</h2>
             <p class="text-fg-muted text-sm mb-3">
-                Click any solid node to jump to that module. Dashed nodes mark
-                upcoming surfaces (Projects, Delivery Orders, Time Slips).
+                Click any of the lit nodes (Customers, Quotes, Sales Orders,
+                Sales Invoices, Receipts) to jump to that module. Dashed
+                nodes mark upcoming surfaces (Projects, Delivery Orders,
+                Time Slips).
             </p>
             <div class="sales-flow">
                 <svg class="sales-flow__edges" viewBox="0 0 720 460" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
@@ -229,13 +235,16 @@ else
     /* Sales flow — SVG holds the arrows, HTML/Tabler icons sit on top
        at absolute coords matching the SVG viewBox (720 x 460). The
        wrapper keeps a 720:460 aspect ratio so the icon coords line up
-       with the lines at any screen width. */
+       with the lines at any screen width. min-height keeps the content
+       readable on very narrow viewports where 460 * (panel_width /
+       720) collapses too tightly. */
     .sales-flow {
         position: relative;
         width: 100%;
         max-width: 720px;
         margin: 0 auto;
         aspect-ratio: 720 / 460;
+        min-height: 380px;
     }
 
     .sales-flow__edges {
@@ -284,9 +293,16 @@ else
     }
 
     .sales-flow__node:hover .sales-flow__node-icon {
-        transform: scale(1.06);
+        transform: scale(1.08);
         box-shadow: var(--citus-shadow-2);
-        background: var(--citus-color-bg-elevated);
+        background: var(--citus-color-primary);
+        color: var(--citus-color-on-primary, #ffffff);
+        border-color: var(--citus-color-primary);
+    }
+
+    .sales-flow__node:hover .sales-flow__node-label {
+        color: var(--citus-color-primary);
+        font-weight: 500;
     }
 
     .sales-flow__node-label {
