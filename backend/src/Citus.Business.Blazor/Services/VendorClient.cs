@@ -112,6 +112,9 @@ public sealed record VendorSummary(
     Guid Id,
     CompanyId CompanyId,
     string EntityNumber,
+    // Operator-facing vendor code (VEN-NNNNNN); null on rows created
+    // before the vendor-display scope was wired in.
+    string? VendorNumber,
     string DisplayName,
     string DefaultCurrencyCode,
     string? Email,

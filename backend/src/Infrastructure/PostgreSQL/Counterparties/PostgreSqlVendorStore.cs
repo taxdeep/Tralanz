@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Abstractions;
+using Infrastructure.PostgreSQL.Numbering;
 using Npgsql;
 
 namespace Infrastructure.PostgreSQL.Counterparties;
@@ -41,7 +42,11 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
             ALTER TABLE vendors ADD COLUMN IF NOT EXISTS tax_id           TEXT NULL;
             ALTER TABLE vendors ADD COLUMN IF NOT EXISTS notes            TEXT NULL;
             ALTER TABLE vendors ADD COLUMN IF NOT EXISTS payment_term_id  UUID NULL;
+            ALTER TABLE vendors ADD COLUMN IF NOT EXISTS vendor_number    TEXT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS uq_vendors_entity_number ON vendors (entity_number);
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_vendors_company_vendor_number
+                ON vendors (company_id, vendor_number)
+                WHERE vendor_number IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_vendors_company_active ON vendors (company_id, is_active);
             CREATE INDEX IF NOT EXISTS idx_vendors_company_name ON vendors (company_id, display_name);
             """;
@@ -90,24 +95,45 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // entity_number stays as the platform-wide audit identifier.
+        // vendor_number is the operator-facing display code drawn from
+        // the company-scoped "vendor-display" numbering scope (VEN-NNNNNN
+        // by default). Same shape as the customer-display wiring on the
+        // AR side — see PostgreSqlCustomerStore.
+        var vendorNumberSeed = await FindVendorNumberSeedAsync(
+            connection, transaction, companyId, cancellationToken).ConfigureAwait(false);
+        var vendorNumber = await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "vendor-display",
+            "VEN-",
+            padding: 6,
+            seedNumber: vendorNumberSeed,
+            cancellationToken).ConfigureAwait(false);
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO vendors (
-                company_id, entity_number, display_name, default_currency_code,
+                company_id, entity_number, vendor_number, display_name, default_currency_code,
                 email, phone, address_line, city, province_state, postal_code, country,
                 tax_id, notes, payment_term_id, is_active
             )
             VALUES (
-                @company_id, @entity_number, @display_name, @default_currency_code,
+                @company_id, @entity_number, @vendor_number, @display_name, @default_currency_code,
                 @email, @phone, @address_line, @city, @province_state, @postal_code, @country,
                 @tax_id, @notes, @payment_term_id, TRUE
             )
-            RETURNING id, company_id, entity_number, display_name, default_currency_code,
+            RETURNING id, company_id, entity_number, vendor_number, display_name, default_currency_code,
                       email, phone, address_line, city, province_state, postal_code, country,
                       tax_id, notes, payment_term_id, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", GenerateEntityNumber());
+        command.Parameters.AddWithValue("vendor_number", vendorNumber);
         command.Parameters.AddWithValue("display_name", request.DisplayName.Trim());
         command.Parameters.AddWithValue("default_currency_code", request.DefaultCurrencyCode.Trim().ToUpperInvariant());
         command.Parameters.AddWithValue("email", (object?)NormalizeOptional(request.Email) ?? DBNull.Value);
@@ -126,7 +152,10 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
         {
             throw new InvalidOperationException("Vendor insert returned no row.");
         }
-        return Map(reader);
+        var record = Map(reader);
+        await reader.CloseAsync().ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return record;
     }
 
     public async Task<VendorRecord?> UpdateAsync(
@@ -153,7 +182,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
                    payment_term_id       = @payment_term_id,
                    updated_at            = NOW()
              WHERE company_id = @company_id AND id = @id
-            RETURNING id, company_id, entity_number, display_name, default_currency_code,
+            RETURNING id, company_id, entity_number, vendor_number, display_name, default_currency_code,
                       email, phone, address_line, city, province_state, postal_code, country,
                       tax_id, notes, payment_term_id, is_active, created_at, updated_at;
             """;
@@ -186,8 +215,37 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
         return EntityNumber.Create(year, seed).Value;
     }
 
+    // Seed for vendor-display sequence is max(existing) + 1 across this
+    // company's vendors. Mirrors PostgreSqlCustomerStore's helper — keeps
+    // the sequence in sync if any rows pre-date the wiring.
+    private static async Task<long> FindVendorNumberSeedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select coalesce(
+              max(
+                case
+                  when vendor_number ~ '^VEN-[0-9]+$'
+                    then substring(vendor_number from 5)::bigint
+                  else null
+                end
+              ),
+              0
+            ) + 1
+            from vendors
+            where company_id = @company_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 1L);
+    }
+
     private const string SelectColumns = """
-        SELECT id, company_id, entity_number, display_name, default_currency_code,
+        SELECT id, company_id, entity_number, vendor_number, display_name, default_currency_code,
                email, phone, address_line, city, province_state, postal_code, country,
                tax_id, notes, payment_term_id, is_active, created_at, updated_at
           FROM vendors
@@ -197,6 +255,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
         reader.GetGuid(reader.GetOrdinal("id")),
         CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         reader.GetString(reader.GetOrdinal("entity_number")),
+        ReadNullable(reader, "vendor_number"),
         reader.GetString(reader.GetOrdinal("display_name")),
         reader.GetString(reader.GetOrdinal("default_currency_code")),
         ReadNullable(reader, "email"),

@@ -30,7 +30,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
         new("quote", "Quote", "quote-display", "QT-", 6, "AR", false),
         new("sales_order", "Sales Order", "sales-order-display", "SO-", 6, "AR", false),
         new("customer", "Customer", "customer-display", "CUS-", 6, "AR", true),
-        new("vendor", "Vendor", "vendor-display", "VEN-", 6, "AP", false),
+        new("vendor", "Vendor", "vendor-display", "VEN-", 6, "AP", true),
         new("expense", "Expense", "expense-display", "EXP-", 6, "AP", false)
     ];
 

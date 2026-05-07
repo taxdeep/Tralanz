@@ -132,9 +132,13 @@ else
             await Task.WhenAll(vendorsTask, termsTask);
             _vendors = vendorsTask.Result;
             _paymentTerms = termsTask.Result;
+            // VendorNumber (VEN-NNNNNN from the vendor-display numbering
+            // scope) is the operator-facing code. Pre-scope rows still
+            // show EntityNumber via the ?? fallback so legacy data stays
+            // readable.
             _rows = _vendors.Select(v => new VendorRow(
                 Id: v.Id,
-                VendorId: v.EntityNumber,
+                VendorId: v.VendorNumber ?? v.EntityNumber,
                 Name: v.DisplayName,
                 Currency: v.DefaultCurrencyCode,
                 PaymentTerm: ResolveTermLabel(v.PaymentTermId),

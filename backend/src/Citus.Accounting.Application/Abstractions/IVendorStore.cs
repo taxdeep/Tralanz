@@ -37,6 +37,10 @@ public sealed record VendorRecord(
     Guid Id,
     CompanyId CompanyId,
     string EntityNumber,
+    // Operator-facing vendor code (VEN-NNNNNN by default), drawn from
+    // the vendor-display numbering scope. Null on rows created before
+    // the scope was wired; the UI falls back to EntityNumber.
+    string? VendorNumber,
     string DisplayName,
     string DefaultCurrencyCode,
     string? Email,
