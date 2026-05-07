@@ -682,20 +682,63 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
 
+    // ALTER TABLE ... ADD COLUMN IF NOT EXISTS still acquires AccessExclusiveLock
+    // even when the column already exists — the IF NOT EXISTS only suppresses the
+    // error, not the lock. Since this helper runs on every GetForPostingAsync call
+    // *inside* the post-invoice unit-of-work transaction, holding that lock while
+    // a sibling connection (PostgreSqlInventoryShipmentStore.GetInvoiceLaneSummaryAsync,
+    // which opens its own connection on purpose) tries to SELECT from invoice_lines
+    // self-deadlocks for 30 s and trips the Npgsql command timeout — surfacing as
+    // a generic HTTP 500 on /accounting/invoices/{id}/post.
+    //
+    // Cheap fix: ask information_schema first. The catalog read takes only
+    // AccessShareLock on system catalogs, never on invoice_lines. The ALTER only
+    // fires the first time after a fresh DB, in which case there is no concurrent
+    // reader anyway because no invoice has been posted yet.
+    private static volatile bool _inventoryGradeColumnsEnsured;
+
     private static async Task EnsureInventoryGradeInvoiceLineColumnsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            """
-            alter table invoice_lines add column if not exists item_id uuid;
-            alter table invoice_lines add column if not exists warehouse_id uuid;
-            alter table invoice_lines add column if not exists uom_code text;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        if (_inventoryGradeColumnsEnsured)
+        {
+            return;
+        }
+
+        await using (var probe = connection.CreateCommand())
+        {
+            probe.Transaction = transaction;
+            probe.CommandText =
+                """
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'invoice_lines'
+                  and column_name in ('item_id', 'warehouse_id', 'uom_code');
+                """;
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 3)
+            {
+                _inventoryGradeColumnsEnsured = true;
+                return;
+            }
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                alter table invoice_lines add column if not exists item_id uuid;
+                alter table invoice_lines add column if not exists warehouse_id uuid;
+                alter table invoice_lines add column if not exists uom_code text;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        _inventoryGradeColumnsEnsured = true;
     }
 
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
