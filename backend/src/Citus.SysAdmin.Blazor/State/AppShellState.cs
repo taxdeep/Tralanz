@@ -12,11 +12,15 @@ public sealed class AppShellState
     [
         new NavSection
         {
-            Title = "Setup",
+            // Pre-first-company section was titled "Setup" — we kept "First
+            // Company" out of the menu after the SysAdmin login redirects
+            // straight into the wizard when FirstCompanySetupRequired is true,
+            // so this menu only needs the operator-facing Core entries.
+            Title = "Core",
             Items =
             [
                 new NavMenuItem { Title = "Overview", Href = "overview", Icon = IconName.LayoutDashboard },
-                new NavMenuItem { Title = "First Company", Href = "setup/company-decision", Icon = IconName.CirclePlus }
+                new NavMenuItem { Title = "Database Backup", Href = "operations/database", Icon = IconName.Database }
             ]
         },
         new NavSection
