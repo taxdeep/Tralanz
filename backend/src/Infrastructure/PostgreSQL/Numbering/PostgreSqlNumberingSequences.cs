@@ -20,6 +20,7 @@ internal static class PostgreSqlNumberingSequences
             return await PeekEntityNumberAsync(
                 connection,
                 transaction,
+                companyId,
                 entityYear.Value,
                 prefix,
                 padding,
@@ -74,6 +75,7 @@ internal static class PostgreSqlNumberingSequences
             return await ReserveEntityNumberAsync(
                 connection,
                 transaction,
+                companyId,
                 entityYear.Value,
                 prefix,
                 padding,
@@ -173,26 +175,33 @@ internal static class PostgreSqlNumberingSequences
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    // Per-company entity-number peek/reserve. Both target the
+    // company_entity_number_sequences (company_id, entity_year) row that
+    // PostgresNumberingSequences and PostgresSourceDocumentDraftNumbering
+    // also advance, so every audit-numbered writer in the platform shares
+    // the same per-company counter.
     private static async Task<string> PeekEntityNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        CompanyId companyId,
         int year,
         string prefix,
         short padding,
         long seedNumber,
         CancellationToken cancellationToken)
     {
-        await EnsureEntityNumberSeededAsync(connection, transaction, year, seedNumber, cancellationToken);
+        await EnsureEntityNumberSeededAsync(connection, transaction, companyId, year, seedNumber, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
-            select greatest(next_number, @seed_number)
-            from platform_entity_number_sequences
-            where entity_year = @entity_year
+            select greatest(next_ordinal, @seed_number)
+            from company_entity_number_sequences
+            where company_id = @company_id and entity_year = @entity_year
             limit 1;
             """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_year", year);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
@@ -203,23 +212,25 @@ internal static class PostgreSqlNumberingSequences
     private static async Task<string> ReserveEntityNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        CompanyId companyId,
         int year,
         string prefix,
         short padding,
         long seedNumber,
         CancellationToken cancellationToken)
     {
-        await EnsureEntityNumberSeededAsync(connection, transaction, year, seedNumber, cancellationToken);
+        await EnsureEntityNumberSeededAsync(connection, transaction, companyId, year, seedNumber, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
-            update platform_entity_number_sequences
-            set next_number = greatest(next_number, @seed_number) + 1
-            where entity_year = @entity_year
-            returning next_number - 1 as issued_number;
+            update company_entity_number_sequences
+            set next_ordinal = greatest(next_ordinal, @seed_number) + 1
+            where company_id = @company_id and entity_year = @entity_year
+            returning next_ordinal - 1 as issued_number;
             """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_year", year);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
@@ -230,6 +241,7 @@ internal static class PostgreSqlNumberingSequences
     private static async Task EnsureEntityNumberSeededAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        CompanyId companyId,
         int year,
         long seedNumber,
         CancellationToken cancellationToken)
@@ -239,9 +251,11 @@ internal static class PostgreSqlNumberingSequences
             schemaCommand.Transaction = transaction;
             schemaCommand.CommandText =
                 """
-                create table if not exists platform_entity_number_sequences (
-                  entity_year integer primary key,
-                  next_number bigint not null
+                create table if not exists company_entity_number_sequences (
+                  company_id char(7) not null,
+                  entity_year integer not null,
+                  next_ordinal bigint not null,
+                  primary key (company_id, entity_year)
                 );
                 """;
             await schemaCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -251,11 +265,12 @@ internal static class PostgreSqlNumberingSequences
         seedCommand.Transaction = transaction;
         seedCommand.CommandText =
             """
-            insert into platform_entity_number_sequences (entity_year, next_number)
-            values (@entity_year, @seed_number)
-            on conflict (entity_year) do update
-              set next_number = greatest(platform_entity_number_sequences.next_number, excluded.next_number);
+            insert into company_entity_number_sequences (company_id, entity_year, next_ordinal)
+            values (@company_id, @entity_year, @seed_number)
+            on conflict (company_id, entity_year) do update
+              set next_ordinal = greatest(company_entity_number_sequences.next_ordinal, excluded.next_ordinal);
             """;
+        seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
         seedCommand.Parameters.AddWithValue("entity_year", year);
         seedCommand.Parameters.AddWithValue("seed_number", seedNumber);
         await seedCommand.ExecuteNonQueryAsync(cancellationToken);

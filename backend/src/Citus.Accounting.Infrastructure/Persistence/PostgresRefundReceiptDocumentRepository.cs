@@ -309,7 +309,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                 $"EN{year}",
                 5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
-                    connection, transaction, year, cancellationToken),
+                    connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
             refundNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(

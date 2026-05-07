@@ -304,7 +304,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 5,
-                await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken),
+                await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(

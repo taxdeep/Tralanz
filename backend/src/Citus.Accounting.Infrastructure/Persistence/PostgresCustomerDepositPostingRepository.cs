@@ -81,7 +81,7 @@ public sealed class PostgresCustomerDepositPostingRepository : ICustomerDepositP
             $"EN{year}",
             5,
             await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
-                connection, transaction, year, cancellationToken),
+                connection, transaction, companyId, year, cancellationToken),
             cancellationToken);
 
         var displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(

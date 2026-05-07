@@ -305,7 +305,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                 $"EN{year}",
                 5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
-                    connection, transaction, year, cancellationToken),
+                    connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
             receiptNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(

@@ -113,7 +113,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
         var documentId = Guid.NewGuid();
         var year = preparation.Context.PaymentDate.Year;
 
-        var entityNumberSeed = await FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken);
+        var entityNumberSeed = await FindEntitySeedNumberAsync(connection, transaction, preparation.Context.CompanyId, year, cancellationToken);
         var entityNumber = await PostgreSqlNumberingSequences.ReserveAsync(
             connection,
             transaction,
@@ -478,12 +478,14 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             where company_id = @company_id;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 
     private static async Task<long> FindEntitySeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        CompanyId companyId,
         int year,
         CancellationToken cancellationToken)
     {
@@ -492,25 +494,25 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
         command.CommandText =
             $"""
             with all_entities as (
-              select entity_number from manual_journal_documents
+              select entity_number from manual_journal_documents where company_id = @company_id
               union all
-              select entity_number from journal_entries
+              select entity_number from journal_entries where company_id = @company_id
               union all
-              select entity_number from invoices
+              select entity_number from invoices where company_id = @company_id
               union all
-              select entity_number from bills
+              select entity_number from bills where company_id = @company_id
               union all
-              select entity_number from credit_notes
+              select entity_number from credit_notes where company_id = @company_id
               union all
-              select entity_number from vendor_credits
+              select entity_number from vendor_credits where company_id = @company_id
               union all
-              select entity_number from receive_payments
+              select entity_number from receive_payments where company_id = @company_id
               union all
-              select entity_number from pay_bills
+              select entity_number from pay_bills where company_id = @company_id
               union all
-              select entity_number from fx_revaluation_batches
+              select entity_number from fx_revaluation_batches where company_id = @company_id
               union all
-              select entity_number from accounts
+              select entity_number from accounts where company_id = @company_id
             )
             select coalesce(
               max(
@@ -524,6 +526,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             ) + 1
             from all_entities;
             """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }

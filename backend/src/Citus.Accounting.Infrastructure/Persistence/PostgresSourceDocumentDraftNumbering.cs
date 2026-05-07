@@ -20,6 +20,7 @@ internal static class PostgresSourceDocumentDraftNumbering
             return await ReserveEntityNumberAsync(
                 connection,
                 transaction,
+                companyId,
                 entityYear.Value,
                 prefix,
                 padding,
@@ -60,45 +61,43 @@ internal static class PostgresSourceDocumentDraftNumbering
         return $"{storedPrefix}{issuedNumber.ToString().PadLeft(storedPadding, '0')}";
     }
 
+    // Per-company entity-number seed scanner. Filters every document
+    // table by company_id so each company's seed reflects only its own
+    // audit history; without that filter cross-company writes inflate
+    // the seed and force later allocations to skip ordinals.
     public static async Task<long> FindEntitySeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        CompanyId companyId,
         int year,
         CancellationToken cancellationToken)
     {
-        // The core aggregator covers every document table that's
-        // existed since the migration baseline. New tables added via
-        // PostgresV1WriteFlowSchemaBootstrap (sales_receipts, etc.)
-        // get scanned through ScanOptionalTableMaxSeedAsync below so
-        // a partially-migrated DB (e.g. an integration test that
-        // hasn't run the bootstrap yet) doesn't blow up the whole
-        // entity-number lookup.
         await using var coreCommand = connection.CreateCommand();
         coreCommand.Transaction = transaction;
         coreCommand.CommandText =
             $"""
             with all_entities as (
-              select entity_number from manual_journal_documents
+              select entity_number from manual_journal_documents where company_id = @company_id
               union all
-              select entity_number from journal_entries
+              select entity_number from journal_entries where company_id = @company_id
               union all
-              select entity_number from invoices
+              select entity_number from invoices where company_id = @company_id
               union all
-              select entity_number from bills
+              select entity_number from bills where company_id = @company_id
               union all
-              select entity_number from credit_notes
+              select entity_number from credit_notes where company_id = @company_id
               union all
-              select entity_number from vendor_credits
+              select entity_number from vendor_credits where company_id = @company_id
               union all
-              select entity_number from receive_payments
+              select entity_number from receive_payments where company_id = @company_id
               union all
-              select entity_number from pay_bills
+              select entity_number from pay_bills where company_id = @company_id
               union all
-              select entity_number from credit_applications
+              select entity_number from credit_applications where company_id = @company_id
               union all
-              select entity_number from vendor_credit_applications
+              select entity_number from vendor_credit_applications where company_id = @company_id
               union all
-              select entity_number from fx_revaluation_batches
+              select entity_number from fx_revaluation_batches where company_id = @company_id
             )
             select coalesce(
               max(
@@ -112,15 +111,13 @@ internal static class PostgresSourceDocumentDraftNumbering
             )
             from all_entities;
             """;
+        coreCommand.Parameters.AddWithValue("company_id", companyId.Value);
 
         var coreMax = Convert.ToInt64(await coreCommand.ExecuteScalarAsync(cancellationToken) ?? 0L);
 
         // Scan optional tables (added by the V1 write-flow bootstrap).
         // Each call is a no-op if the table doesn't exist yet, so the
         // function stays safe across staged deployments.
-        // Already in the list — kept here intentionally so a future
-        // doc-type addition is a one-line edit; the helper itself is
-        // tolerant of tables that don't exist yet via to_regclass.
         var optionalTables = new[]
         {
             "sales_receipts",
@@ -134,7 +131,7 @@ internal static class PostgresSourceDocumentDraftNumbering
         foreach (var table in optionalTables)
         {
             var tableMax = await ScanOptionalTableMaxSeedAsync(
-                connection, transaction, table, year, cancellationToken);
+                connection, transaction, companyId, table, year, cancellationToken);
             if (tableMax > optionalMax)
             {
                 optionalMax = tableMax;
@@ -145,20 +142,31 @@ internal static class PostgresSourceDocumentDraftNumbering
     }
 
     /// <summary>
-    /// Returns max(seed) for the given table for the given year, or 0
-    /// if the table doesn't exist yet. Wrapping the SELECT in a
+    /// Returns max(seed) for the given table for the given (company, year),
+    /// or 0 if the table doesn't exist yet. Wrapping the SELECT in a
     /// to_regclass check via PL/pgSQL keeps a partially-migrated DB
     /// from breaking entity-number reservation across the whole app.
     /// </summary>
     private static async Task<long> ScanOptionalTableMaxSeedAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        CompanyId companyId,
         string tableName,
         int year,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        // Embed company_id literally because the dynamic execute() inside the
+        // DO block runs in its own scope and won't see Npgsql parameters.
+        // CompanyId is a 7-char fixed-shape string from a closed alphabet, so
+        // there is no SQL-injection surface — but we still validate length
+        // before formatting it in to keep the assumption explicit.
+        var companyLiteral = companyId.Value;
+        if (companyLiteral.Length != 7)
+        {
+            throw new InvalidOperationException($"Unexpected company_id width: '{companyLiteral}'.");
+        }
         command.CommandText =
             $"""
             do $$
@@ -167,9 +175,10 @@ internal static class PostgresSourceDocumentDraftNumbering
             begin
               if to_regclass('public.{tableName}') is not null then
                 execute format(
-                  'select coalesce(max(case when entity_number ~ %L then substring(entity_number from 7)::bigint else null end), 0) from %I',
+                  'select coalesce(max(case when entity_number ~ %L then substring(entity_number from 7)::bigint else null end), 0) from %I where company_id = %L',
                   '^EN{year}[0-9]+$',
-                  '{tableName}'
+                  '{tableName}',
+                  '{companyLiteral}'
                 ) into max_seed;
               end if;
               perform set_config('citus.optional_seed_max', max_seed::text, true);
@@ -273,27 +282,37 @@ internal static class PostgresSourceDocumentDraftNumbering
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    // Per-company entity-number reservation. Targets the same
+    // company_entity_number_sequences table that PostgresNumberingSequences
+    // uses, so source-document draft writers (vendor credits, tax returns,
+    // sales/refund receipts) advance the same per-company counter every
+    // other AP/AR write does. The pre-2026-05-07 implementation wrote
+    // platform_entity_number_sequences (year-only key), which is why two
+    // companies could trip uq_*_company_entity_number when their seeds
+    // happened to land on the same ordinal.
     private static async Task<string> ReserveEntityNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        CompanyId companyId,
         int year,
         string prefix,
         short padding,
         long seedNumber,
         CancellationToken cancellationToken)
     {
-        await EnsurePlatformEntityNumberSequenceAsync(connection, transaction, cancellationToken);
+        await EnsureCompanyEntityNumberSequenceAsync(connection, transaction, cancellationToken);
 
         await using (var seedCommand = connection.CreateCommand())
         {
             seedCommand.Transaction = transaction;
             seedCommand.CommandText =
                 """
-                insert into platform_entity_number_sequences (entity_year, next_number)
-                values (@entity_year, @seed_number)
-                on conflict (entity_year) do update
-                  set next_number = greatest(platform_entity_number_sequences.next_number, excluded.next_number);
+                insert into company_entity_number_sequences (company_id, entity_year, next_ordinal)
+                values (@company_id, @entity_year, @seed_number)
+                on conflict (company_id, entity_year) do update
+                  set next_ordinal = greatest(company_entity_number_sequences.next_ordinal, excluded.next_ordinal);
                 """;
+            seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
             seedCommand.Parameters.AddWithValue("entity_year", year);
             seedCommand.Parameters.AddWithValue("seed_number", seedNumber);
             await seedCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -303,11 +322,12 @@ internal static class PostgresSourceDocumentDraftNumbering
         command.Transaction = transaction;
         command.CommandText =
             """
-            update platform_entity_number_sequences
-            set next_number = greatest(next_number, @seed_number) + 1
-            where entity_year = @entity_year
-            returning next_number - 1 as issued_number;
+            update company_entity_number_sequences
+            set next_ordinal = greatest(next_ordinal, @seed_number) + 1
+            where company_id = @company_id and entity_year = @entity_year
+            returning next_ordinal - 1 as issued_number;
             """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_year", year);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
@@ -317,7 +337,7 @@ internal static class PostgresSourceDocumentDraftNumbering
         return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
-    private static async Task EnsurePlatformEntityNumberSequenceAsync(
+    private static async Task EnsureCompanyEntityNumberSequenceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -326,9 +346,11 @@ internal static class PostgresSourceDocumentDraftNumbering
         command.Transaction = transaction;
         command.CommandText =
             """
-            create table if not exists platform_entity_number_sequences (
-              entity_year integer primary key,
-              next_number bigint not null
+            create table if not exists company_entity_number_sequences (
+              company_id char(7) not null,
+              entity_year integer not null,
+              next_ordinal bigint not null,
+              primary key (company_id, entity_year)
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);

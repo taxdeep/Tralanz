@@ -205,7 +205,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
                 $"EN{year}",
                 5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
-                    connection, transaction, year, cancellationToken),
+                    connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
             transferNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(

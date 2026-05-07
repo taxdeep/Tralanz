@@ -266,7 +266,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
                 $"EN{year}",
                 5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
-                    connection, transaction, year, cancellationToken),
+                    connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
             depositNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(

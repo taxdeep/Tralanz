@@ -267,7 +267,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
             $"EN{year}",
             5,
             await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
-                connection, transaction, year, cancellationToken),
+                connection, transaction, companyId, year, cancellationToken),
             cancellationToken);
 
         // No dedicated parent table for customer-deposit-application docs

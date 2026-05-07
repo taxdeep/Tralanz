@@ -267,7 +267,7 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
                 $"EN{year}",
                 5,
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
-                    connection, transaction, year, cancellationToken),
+                    connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
             returnNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
