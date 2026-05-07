@@ -1407,7 +1407,15 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         DateTimeOffset provisionedAtUtc,
         CancellationToken cancellationToken)
     {
-        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, entityYear, cancellationToken);
+        // Starter accounts are per-company audit entities, so they pull from
+        // company_entity_number_sequences (the same table per-company doc
+        // writes use after the wizard finishes). Without this the wizard
+        // would consume 75+ ordinals from the platform-wide sequence and
+        // company A's account ENs would skip 0001 (claimed by the company
+        // itself) and run from 0002 onward, while later AP/AR documents
+        // would restart at 0001 — a confusing, non-monotonic audit chain.
+        var entityNumber = await ReserveCompanyScopedEntityNumberAsync(
+            connection, transaction, companyId, entityYear, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -1603,6 +1611,13 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    // Platform-wide entity number reservation for the company's OWN
+    // entity_number. The company itself has no company_id at allocation
+    // time (it IS the row being inserted), so per-company scoping doesn't
+    // apply — the platform sequence keeps companies.entity_number unique
+    // across the platform, matching the global UNIQUE(entity_number)
+    // index left in place on the companies table by the 2026-05-07
+    // per-company migration.
     private static async Task<string> ReserveEntityNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -1626,6 +1641,62 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               set next_number = platform_entity_number_sequences.next_number + 1
             returning next_number - 1;
             """;
+        command.Parameters.AddWithValue("entity_year", year);
+        var sequenceNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
+        return $"EN{year}{Base36.Encode(sequenceNumber, 5)}";
+    }
+
+    // Per-company entity number reservation, used by InsertStarterAccountAsync
+    // so the seed chart of accounts comes out of the same per-company series
+    // every later AP/AR/JE write will use. Mirrors the production allocator
+    // in Citus.Accounting.Infrastructure.Persistence.PostgresNumberingSequences
+    // so the audit chain in company_entity_number_sequences stays monotonic
+    // across wizard + business writes. Inlined here rather than referenced
+    // because the platform infrastructure layer can't take
+    // Infrastructure.PostgreSQL as a dependency without dragging
+    // Citus.Accounting.Application along.
+    private static async Task<string> ReserveCompanyScopedEntityNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        int year,
+        CancellationToken cancellationToken)
+    {
+        await using (var ensureSequence = connection.CreateCommand())
+        {
+            ensureSequence.Transaction = transaction;
+            ensureSequence.CommandText =
+                """
+                create table if not exists company_entity_number_sequences (
+                  company_id char(7) not null,
+                  entity_year integer not null,
+                  next_ordinal bigint not null,
+                  primary key (company_id, entity_year)
+                );
+                """;
+            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            insert into company_entity_number_sequences (
+              company_id,
+              entity_year,
+              next_ordinal
+            )
+            values (
+              @company_id,
+              @entity_year,
+              2
+            )
+            on conflict (company_id, entity_year)
+            do update
+              set next_ordinal = company_entity_number_sequences.next_ordinal + 1
+            returning next_ordinal - 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_year", year);
         var sequenceNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
         return $"EN{year}{Base36.Encode(sequenceNumber, 5)}";

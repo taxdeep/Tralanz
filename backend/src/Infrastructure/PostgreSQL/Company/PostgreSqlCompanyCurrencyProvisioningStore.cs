@@ -305,7 +305,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
             }
         }
 
-        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, DateTime.UtcNow.Year, cancellationToken);
+        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, companyId, DateTime.UtcNow.Year, cancellationToken);
         var accountId = Guid.NewGuid();
 
         await using (var insertCommand = connection.CreateCommand())
@@ -470,19 +470,77 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
         return currencyCode.Trim().ToUpperInvariant();
     }
 
+    // Per-company entity number reservation backed by the same advancing
+    // company_entity_number_sequences row that PostgresNumberingSequences
+    // (Citus.Accounting.Infrastructure) uses for AP/AR/JE writes. Without
+    // this, calling find-max here would race against the advancing
+    // sequence and trip uq_accounts_company_entity_number when two
+    // foreign-currency control accounts get adjacent ordinals.
+    //
+    // The seed-from-existing scan is preserved (filtered by company_id)
+    // so a fresh row whose sequence row hasn't been initialized yet
+    // still lands on max(existing)+1 instead of 1.
     private static async Task<string> ReserveEntityNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        CompanyId companyId,
         int year,
         CancellationToken cancellationToken)
     {
-        var nextNumber = await FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken);
-        return $"EN{year}{Base36.Encode(nextNumber, 5)}";
+        await using (var ensureSequence = connection.CreateCommand())
+        {
+            ensureSequence.Transaction = transaction;
+            ensureSequence.CommandText =
+                """
+                create table if not exists company_entity_number_sequences (
+                  company_id char(7) not null,
+                  entity_year integer not null,
+                  next_ordinal bigint not null,
+                  primary key (company_id, entity_year)
+                );
+                """;
+            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var seedNumber = await FindEntitySeedNumberAsync(connection, transaction, companyId, year, cancellationToken);
+
+        await using (var seedCommand = connection.CreateCommand())
+        {
+            seedCommand.Transaction = transaction;
+            seedCommand.CommandText =
+                """
+                insert into company_entity_number_sequences (company_id, entity_year, next_ordinal)
+                values (@company_id, @entity_year, @seed_number)
+                on conflict (company_id, entity_year) do update
+                  set next_ordinal = greatest(company_entity_number_sequences.next_ordinal, excluded.next_ordinal);
+                """;
+            seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            seedCommand.Parameters.AddWithValue("entity_year", year);
+            seedCommand.Parameters.AddWithValue("seed_number", seedNumber);
+            await seedCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update company_entity_number_sequences
+            set next_ordinal = greatest(next_ordinal, @seed_number) + 1
+            where company_id = @company_id and entity_year = @entity_year
+            returning next_ordinal - 1 as issued_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("entity_year", year);
+        command.Parameters.AddWithValue("seed_number", seedNumber);
+
+        var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
+        return $"EN{year}{Base36.Encode(issuedNumber, 5)}";
     }
 
     private static async Task<long> FindEntitySeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        CompanyId companyId,
         int year,
         CancellationToken cancellationToken)
     {
@@ -491,25 +549,25 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
         command.CommandText =
             $$"""
             with entity_numbers as (
-              select entity_number from manual_journal_documents
+              select entity_number from manual_journal_documents where company_id = @company_id
               union all
-              select entity_number from journal_entries
+              select entity_number from journal_entries where company_id = @company_id
               union all
-              select entity_number from invoices
+              select entity_number from invoices where company_id = @company_id
               union all
-              select entity_number from bills
+              select entity_number from bills where company_id = @company_id
               union all
-              select entity_number from credit_notes
+              select entity_number from credit_notes where company_id = @company_id
               union all
-              select entity_number from vendor_credits
+              select entity_number from vendor_credits where company_id = @company_id
               union all
-              select entity_number from receive_payments
+              select entity_number from receive_payments where company_id = @company_id
               union all
-              select entity_number from pay_bills
+              select entity_number from pay_bills where company_id = @company_id
               union all
-              select entity_number from fx_revaluation_batches
+              select entity_number from fx_revaluation_batches where company_id = @company_id
               union all
-              select entity_number from accounts
+              select entity_number from accounts where company_id = @company_id
             )
             select coalesce(
               max(
@@ -523,6 +581,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
             ) + 1
             from entity_numbers;
             """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
