@@ -36,11 +36,15 @@
                       DraftChanged="@(v => _draft = v)"
                       EntityNumberPlaceholder="CUS-000001"
                       PaymentTerms="_paymentTerms" />
-    <div class="flex gap-2 mt-4">
+    @* Buttons right-aligned and reordered (Cancel | Primary) so the
+       primary action sits at the form's natural visual terminus and
+       Cancel reads as the safe secondary, matching the Cancel/OK
+       convention used elsewhere in the shell. *@
+    <div class="flex justify-end gap-2 mt-4">
+        <CitusButton OnClick="CancelCreate">Cancel</CitusButton>
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
             @(_isSubmitting ? "Saving..." : "Save customer")
         </CitusButton>
-        <CitusButton OnClick="CancelCreate">Cancel</CitusButton>
     </div>
 }
 else
