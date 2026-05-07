@@ -132,6 +132,9 @@ public sealed record CustomerSummary(
     Guid Id,
     CompanyId CompanyId,
     string EntityNumber,
+    // Operator-facing customer code (CUS-NNNNNN); null on rows created
+    // before the customer-display scope was wired in.
+    string? CustomerNumber,
     string DisplayName,
     string DefaultCurrencyCode,
     string? Email,

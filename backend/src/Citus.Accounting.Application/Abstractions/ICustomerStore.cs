@@ -62,6 +62,10 @@ public sealed record CustomerRecord(
     Guid Id,
     CompanyId CompanyId,
     string EntityNumber,
+    // Operator-facing customer code (CUS-NNNNNN by default), drawn from
+    // the customer-display numbering scope. Null on rows created before
+    // the scope was wired; the UI falls back to EntityNumber in that case.
+    string? CustomerNumber,
     string DisplayName,
     string DefaultCurrencyCode,
     string? Email,

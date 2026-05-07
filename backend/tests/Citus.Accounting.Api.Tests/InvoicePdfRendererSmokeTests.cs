@@ -87,6 +87,7 @@ public sealed class InvoicePdfRendererSmokeTests
             Id: Guid.NewGuid(),
             CompanyId: company.Id,
             EntityNumber: "EN20260000B",
+            CustomerNumber: "CUS-000001",
             DisplayName: "Acme Co.",
             DefaultCurrencyCode: "CAD",
             Email: "billing@acme.example",

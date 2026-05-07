@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Abstractions;
+using Infrastructure.PostgreSQL.Numbering;
 using Npgsql;
 
 namespace Infrastructure.PostgreSQL.Counterparties;
@@ -39,7 +40,11 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
             ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_id           TEXT NULL;
             ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes            TEXT NULL;
             ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_term_id  UUID NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_number  TEXT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_entity_number ON customers (entity_number);
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_company_customer_number
+                ON customers (company_id, customer_number)
+                WHERE customer_number IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_customers_company_active ON customers (company_id, is_active);
             CREATE INDEX IF NOT EXISTS idx_customers_company_name ON customers (company_id, display_name);
             """;
@@ -88,24 +93,47 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // entity_number stays as the platform-wide audit identifier
+        // (EN+YYYY+5base36, kept for ledger / cross-company references).
+        // customer_number is the operator-facing display code drawn from
+        // the company-scoped "customer-display" numbering scope (CUS-NNNNNN
+        // by default, configurable in Settings → Numbering). The two run
+        // off independent scopes so a tenant can reset their CUS- counter
+        // mid-year without disturbing the audit chain.
+        var customerNumberSeed = await FindCustomerNumberSeedAsync(
+            connection, transaction, companyId, cancellationToken).ConfigureAwait(false);
+        var customerNumber = await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "customer-display",
+            "CUS-",
+            padding: 6,
+            seedNumber: customerNumberSeed,
+            cancellationToken).ConfigureAwait(false);
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO customers (
-                company_id, entity_number, display_name, default_currency_code,
+                company_id, entity_number, customer_number, display_name, default_currency_code,
                 email, phone, address_line, city, province_state, postal_code, country,
                 tax_id, notes, payment_term_id, is_active
             )
             VALUES (
-                @company_id, @entity_number, @display_name, @default_currency_code,
+                @company_id, @entity_number, @customer_number, @display_name, @default_currency_code,
                 @email, @phone, @address_line, @city, @province_state, @postal_code, @country,
                 @tax_id, @notes, @payment_term_id, TRUE
             )
-            RETURNING id, company_id, entity_number, display_name, default_currency_code,
+            RETURNING id, company_id, entity_number, customer_number, display_name, default_currency_code,
                       email, phone, address_line, city, province_state, postal_code, country,
                       tax_id, notes, payment_term_id, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", GenerateEntityNumber());
+        command.Parameters.AddWithValue("customer_number", customerNumber);
         command.Parameters.AddWithValue("display_name", request.DisplayName.Trim());
         command.Parameters.AddWithValue("default_currency_code", request.DefaultCurrencyCode.Trim().ToUpperInvariant());
         command.Parameters.AddWithValue("email", (object?)NormalizeOptional(request.Email) ?? DBNull.Value);
@@ -124,7 +152,10 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         {
             throw new InvalidOperationException("Customer insert returned no row.");
         }
-        return Map(reader);
+        var record = Map(reader);
+        await reader.CloseAsync().ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return record;
     }
 
     public async Task<CustomerRecord?> UpdateAsync(
@@ -151,7 +182,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
                    payment_term_id       = @payment_term_id,
                    updated_at            = NOW()
              WHERE company_id = @company_id AND id = @id
-            RETURNING id, company_id, entity_number, display_name, default_currency_code,
+            RETURNING id, company_id, entity_number, customer_number, display_name, default_currency_code,
                       email, phone, address_line, city, province_state, postal_code, country,
                       tax_id, notes, payment_term_id, is_active, created_at, updated_at;
             """;
@@ -264,8 +295,39 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         return EntityNumber.Create(year, seed).Value;
     }
 
+    // Seed for the customer-display sequence is max(existing) + 1 across
+    // this company's customers. Without the seed scan a fresh sequence
+    // row would start at 1, but if the operator had already issued
+    // CUS-000003 manually (via a prior seed import), we'd hand back
+    // CUS-000001 again and trip uq_customers_company_customer_number.
+    private static async Task<long> FindCustomerNumberSeedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select coalesce(
+              max(
+                case
+                  when customer_number ~ '^CUS-[0-9]+$'
+                    then substring(customer_number from 5)::bigint
+                  else null
+                end
+              ),
+              0
+            ) + 1
+            from customers
+            where company_id = @company_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 1L);
+    }
+
     private const string SelectColumns = """
-        SELECT id, company_id, entity_number, display_name, default_currency_code,
+        SELECT id, company_id, entity_number, customer_number, display_name, default_currency_code,
                email, phone, address_line, city, province_state, postal_code, country,
                tax_id, notes, payment_term_id, is_active, created_at, updated_at
           FROM customers
@@ -275,6 +337,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         reader.GetGuid(reader.GetOrdinal("id")),
         CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         reader.GetString(reader.GetOrdinal("entity_number")),
+        ReadNullable(reader, "customer_number"),
         reader.GetString(reader.GetOrdinal("display_name")),
         reader.GetString(reader.GetOrdinal("default_currency_code")),
         ReadNullable(reader, "email"),

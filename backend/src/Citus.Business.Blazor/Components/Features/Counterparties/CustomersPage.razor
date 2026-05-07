@@ -76,8 +76,14 @@ else
                         <tr>
                             <td><a class="citus-link" href="@($"customers/{c.Id:D}")">@c.DisplayName</a></td>
                             <td>
+                                @* CustomerNumber (CUS-NNNNNN from the
+                                   customer-display numbering scope) is
+                                   the operator-facing code. Pre-scope
+                                   rows still show EntityNumber via the
+                                   ?? fallback so legacy data stays
+                                   readable. *@
                                 <a class="citus-link" href="@($"customers/{c.Id:D}")">
-                                    <span class="citus-inline-code">@c.EntityNumber</span>
+                                    <span class="citus-inline-code">@(c.CustomerNumber ?? c.EntityNumber)</span>
                                 </a>
                             </td>
                             <td>@c.Email</td>
