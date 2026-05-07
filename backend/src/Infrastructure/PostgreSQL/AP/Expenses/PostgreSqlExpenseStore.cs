@@ -21,7 +21,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS expenses (
                 id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id                      UUID NOT NULL,
+                company_id                      char(7) NOT NULL,
                 expense_number                  TEXT NOT NULL,
                 status                          TEXT NOT NULL DEFAULT 'posted',
                 payee_kind                      TEXT NOT NULL,
@@ -49,7 +49,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 internal_note                   TEXT NULL,
                 posted_journal_entry_id         UUID NULL,
                 voided_at                       TIMESTAMPTZ NULL,
-                created_by_user_id              UUID NOT NULL,
+                created_by_user_id              char(7) NOT NULL,
                 created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );

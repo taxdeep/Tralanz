@@ -40,11 +40,11 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
     private const string SchemaSql = """
         CREATE TABLE IF NOT EXISTS ai_job_runs (
             id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id            UUID NULL,
+            company_id            char(7) NULL,
             job_type              TEXT NOT NULL,
             status                TEXT NOT NULL,
             trigger_type          TEXT NOT NULL,
-            triggered_by_user_id  UUID NULL,
+            triggered_by_user_id  char(7) NULL,
             started_at            TIMESTAMPTZ NULL,
             finished_at           TIMESTAMPTZ NULL,
             source_window_start   TIMESTAMPTZ NULL,
@@ -62,7 +62,7 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS ai_request_logs (
             id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id               UUID NULL,
+            company_id               char(7) NULL,
             job_run_id               UUID NULL,
             task_type                TEXT NOT NULL,
             provider                 TEXT NULL,
@@ -87,8 +87,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS unitysearch_events (
             id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id           UUID NOT NULL,
-            user_id              UUID NULL,
+            company_id           char(7) NOT NULL,
+            user_id              char(7) NULL,
             session_id           TEXT NULL,
             context              TEXT NOT NULL,
             entity_type          TEXT NOT NULL,
@@ -113,9 +113,9 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS unitysearch_usage_stats (
             id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id           UUID NOT NULL,
+            company_id           char(7) NOT NULL,
             scope_type           TEXT NOT NULL,
-            user_id              UUID NULL,
+            user_id              char(7) NULL,
             context              TEXT NOT NULL,
             entity_type          TEXT NOT NULL,
             entity_id            UUID NOT NULL,
@@ -128,13 +128,13 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
             avg_rank_position    NUMERIC NULL,
             updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_unitysearch_usage_stats_scope ON unitysearch_usage_stats (company_id, scope_type, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'), context, entity_type, entity_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_unitysearch_usage_stats_scope ON unitysearch_usage_stats (company_id, scope_type, COALESCE(user_id, '0000000'), context, entity_type, entity_id);
 
         CREATE TABLE IF NOT EXISTS unitysearch_pair_stats (
             id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id                  UUID NOT NULL,
+            company_id                  char(7) NOT NULL,
             scope_type                  TEXT NOT NULL,
-            user_id                     UUID NULL,
+            user_id                     char(7) NULL,
             source_context              TEXT NOT NULL,
             anchor_entity_type          TEXT NOT NULL,
             anchor_entity_id            UUID NOT NULL,
@@ -147,12 +147,12 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
             last_selected_at            TIMESTAMPTZ NULL,
             updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_unitysearch_pair_stats_scope ON unitysearch_pair_stats (company_id, scope_type, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'), source_context, anchor_entity_type, anchor_entity_id, target_context, target_entity_type, target_entity_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_unitysearch_pair_stats_scope ON unitysearch_pair_stats (company_id, scope_type, COALESCE(user_id, '0000000'), source_context, anchor_entity_type, anchor_entity_id, target_context, target_entity_type, target_entity_id);
 
         CREATE TABLE IF NOT EXISTS unitysearch_recent_queries (
             id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id            UUID NOT NULL,
-            user_id               UUID NULL,
+            company_id            char(7) NOT NULL,
+            user_id               char(7) NULL,
             context               TEXT NOT NULL,
             query                 TEXT NOT NULL,
             normalized_query      TEXT NOT NULL,
@@ -166,8 +166,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS unitysearch_learning_profiles (
             id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id            UUID NOT NULL,
-            user_id               UUID NULL,
+            company_id            char(7) NOT NULL,
+            user_id               char(7) NULL,
             context               TEXT NOT NULL,
             profile_json          JSONB NOT NULL,
             summary_text          TEXT NULL,
@@ -184,8 +184,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS unitysearch_ranking_hints (
             id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id               UUID NOT NULL,
-            user_id                  UUID NULL,
+            company_id               char(7) NOT NULL,
+            user_id                  char(7) NULL,
             context                  TEXT NOT NULL,
             entity_type              TEXT NOT NULL,
             entity_id                UUID NOT NULL,
@@ -196,8 +196,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
             status                   TEXT NOT NULL,
             validation_status        TEXT NOT NULL,
             validation_error         TEXT NULL,
-            activated_by_user_id     UUID NULL,
-            rejected_by_user_id      UUID NULL,
+            activated_by_user_id     char(7) NULL,
+            rejected_by_user_id      char(7) NULL,
             job_run_id               UUID NULL,
             expires_at               TIMESTAMPTZ NULL,
             created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -208,7 +208,7 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS unitysearch_alias_suggestions (
             id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id            UUID NOT NULL,
+            company_id            char(7) NOT NULL,
             context               TEXT NOT NULL,
             entity_type           TEXT NOT NULL,
             entity_id             UUID NOT NULL,
@@ -220,8 +220,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
             status                TEXT NOT NULL,
             validation_status     TEXT NOT NULL,
             validation_error      TEXT NULL,
-            approved_by_user_id   UUID NULL,
-            rejected_by_user_id   UUID NULL,
+            approved_by_user_id   char(7) NULL,
+            rejected_by_user_id   char(7) NULL,
             job_run_id            UUID NULL,
             created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -229,8 +229,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS unitysearch_decision_traces (
             id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id          UUID NOT NULL,
-            user_id             UUID NULL,
+            company_id          char(7) NOT NULL,
+            user_id             char(7) NULL,
             context             TEXT NOT NULL,
             entity_type         TEXT NOT NULL,
             query               TEXT NULL,
@@ -243,8 +243,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS report_usage_events (
             id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id      UUID NOT NULL,
-            user_id         UUID NULL,
+            company_id      char(7) NOT NULL,
+            user_id         char(7) NULL,
             report_key      TEXT NOT NULL,
             event_type      TEXT NOT NULL,
             date_range_key  TEXT NULL,
@@ -258,9 +258,9 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS report_usage_stats (
             id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id               UUID NOT NULL,
+            company_id               char(7) NOT NULL,
             scope_type               TEXT NOT NULL,
-            user_id                  UUID NULL,
+            user_id                  char(7) NULL,
             report_key               TEXT NOT NULL,
             open_count               INTEGER NOT NULL DEFAULT 0,
             export_count             INTEGER NOT NULL DEFAULT 0,
@@ -272,12 +272,12 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
             common_date_range_key    TEXT NULL,
             updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_report_usage_stats_scope ON report_usage_stats (company_id, scope_type, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'), report_key);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_report_usage_stats_scope ON report_usage_stats (company_id, scope_type, COALESCE(user_id, '0000000'), report_key);
 
         CREATE TABLE IF NOT EXISTS dashboard_user_widgets (
             id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id    UUID NOT NULL,
-            user_id       UUID NULL,
+            company_id    char(7) NOT NULL,
+            user_id       char(7) NULL,
             widget_key    TEXT NOT NULL,
             title         TEXT NULL,
             config_json   JSONB NULL,
@@ -287,12 +287,12 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
             created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_dashboard_user_widgets_scope ON dashboard_user_widgets (company_id, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'), widget_key);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_dashboard_user_widgets_scope ON dashboard_user_widgets (company_id, COALESCE(user_id, '0000000'), widget_key);
 
         CREATE TABLE IF NOT EXISTS dashboard_widget_suggestions (
             id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id      UUID NOT NULL,
-            user_id         UUID NULL,
+            company_id      char(7) NOT NULL,
+            user_id         char(7) NULL,
             widget_key      TEXT NOT NULL,
             title           TEXT NOT NULL,
             reason          TEXT NOT NULL,
@@ -312,8 +312,8 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS action_center_tasks (
             id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id          UUID NOT NULL,
-            assigned_user_id    UUID NULL,
+            company_id          char(7) NOT NULL,
+            assigned_user_id    char(7) NULL,
             task_type           TEXT NOT NULL,
             source_engine       TEXT NOT NULL,
             source_type         TEXT NOT NULL,
@@ -342,9 +342,9 @@ public sealed class PostgreSqlUnityAiSchemaInitializer
 
         CREATE TABLE IF NOT EXISTS action_center_task_events (
             id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id      UUID NOT NULL,
+            company_id      char(7) NOT NULL,
             task_id         UUID NOT NULL,
-            user_id         UUID NULL,
+            user_id         char(7) NULL,
             event_type      TEXT NOT NULL,
             metadata_json   JSONB NULL,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

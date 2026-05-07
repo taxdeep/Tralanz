@@ -21,7 +21,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS sales_orders (
                 id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id                  UUID NOT NULL,
+                company_id                  char(7) NOT NULL,
                 sales_order_number          TEXT NOT NULL,
                 status                      TEXT NOT NULL DEFAULT 'open',
                 customer_id                 UUID NOT NULL,

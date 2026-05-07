@@ -21,7 +21,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS quotes (
                 id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id                  UUID NOT NULL,
+                company_id                  char(7) NOT NULL,
                 quote_number                TEXT NOT NULL,
                 status                      TEXT NOT NULL DEFAULT 'draft',
                 customer_id                 UUID NOT NULL,

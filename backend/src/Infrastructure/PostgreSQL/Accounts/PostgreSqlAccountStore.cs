@@ -268,8 +268,8 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     private static string GenerateEntityNumber()
     {
         var year = DateTime.UtcNow.Year;
-        var seed = Random.Shared.Next(0, 100_000_000);
-        return $"EN{year:0000}{seed:00000000}";
+        var seed = Random.Shared.Next(0, (int)EntityNumber.MaxOrdinal + 1);
+        return EntityNumber.Create(year, seed).Value;
     }
 
     private const string SelectColumns = """

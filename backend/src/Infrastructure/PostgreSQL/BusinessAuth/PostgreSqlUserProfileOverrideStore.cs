@@ -15,7 +15,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
         await using var command = connection.CreateCommand();
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS user_profile_overrides (
-                user_id       UUID PRIMARY KEY,
+                user_id       char(7) PRIMARY KEY,
                 display_name  TEXT NULL,
                 created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()

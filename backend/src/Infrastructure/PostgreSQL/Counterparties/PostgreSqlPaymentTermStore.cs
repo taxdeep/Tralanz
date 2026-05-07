@@ -20,7 +20,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS payment_terms (
                 id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id  UUID NOT NULL,
+                company_id  char(7) NOT NULL,
                 code        TEXT NOT NULL,
                 name        TEXT NOT NULL,
                 net_days    INTEGER NOT NULL DEFAULT 0,
