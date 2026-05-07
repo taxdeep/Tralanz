@@ -119,7 +119,7 @@ ON CONFLICT (state_key) DO NOTHING;
 
 CREATE TABLE companies (
   id char(7) PRIMARY KEY,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   legal_name text NOT NULL,
   entity_type text NOT NULL DEFAULT 'corporation',
   industry text NOT NULL DEFAULT 'general_services',
@@ -621,7 +621,7 @@ CREATE TABLE company_settings (
 CREATE TABLE accounts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   code text NOT NULL,
   name text NOT NULL,
   root_type text NOT NULL,
@@ -645,7 +645,7 @@ CREATE TABLE accounts (
 CREATE TABLE tax_codes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   code text NOT NULL,
   name text NOT NULL,
   rate_percent numeric(9,6) NOT NULL,
@@ -673,7 +673,7 @@ CREATE TABLE tax_codes (
 CREATE TABLE customers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   display_name text NOT NULL,
   default_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   email text,
@@ -689,7 +689,7 @@ CREATE TABLE customers (
 CREATE TABLE vendors (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   display_name text NOT NULL,
   default_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   email text,
@@ -709,7 +709,7 @@ CREATE TABLE vendors (
 CREATE TABLE invoices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   invoice_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -762,7 +762,7 @@ CREATE TABLE invoice_lines (
 CREATE TABLE credit_notes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   credit_note_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -814,7 +814,7 @@ CREATE TABLE credit_note_lines (
 CREATE TABLE bills (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   bill_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -863,7 +863,7 @@ CREATE TABLE bill_lines (
 CREATE TABLE vendor_credits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   vendor_credit_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -912,7 +912,7 @@ CREATE TABLE vendor_credit_lines (
 CREATE TABLE receive_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   payment_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -962,7 +962,7 @@ CREATE TABLE customer_deposits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   display_number text NOT NULL,
   status text NOT NULL DEFAULT 'open',
   deposit_date date NOT NULL,
@@ -1004,7 +1004,7 @@ CREATE TABLE receive_payment_lines (
 CREATE TABLE pay_bills (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   payment_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1046,7 +1046,7 @@ CREATE TABLE pay_bill_lines (
 CREATE TABLE credit_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   application_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1082,7 +1082,7 @@ CREATE TABLE credit_application_lines (
 CREATE TABLE vendor_credit_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   application_number text NOT NULL,
   vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1118,7 +1118,7 @@ CREATE TABLE vendor_credit_application_lines (
 CREATE TABLE manual_journal_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   display_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   entry_date date NOT NULL,
@@ -1170,7 +1170,7 @@ CREATE TABLE manual_journal_document_lines (
 CREATE TABLE journal_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   display_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   source_type text NOT NULL,
@@ -1339,7 +1339,7 @@ CREATE TABLE fx_revaluation_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   company_book_id uuid REFERENCES company_books(id) ON DELETE RESTRICT,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   display_number text NOT NULL,
   book_code text,
   accounting_standard text,
@@ -1815,7 +1815,7 @@ EXECUTE FUNCTION citus_set_updated_at();
 CREATE TABLE sales_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   receipt_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1888,7 +1888,7 @@ CREATE INDEX ix_sales_receipt_lines_sales_receipt ON sales_receipt_lines (sales_
 CREATE TABLE refund_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   refund_number text NOT NULL,
   customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'draft',
@@ -1961,7 +1961,7 @@ CREATE INDEX ix_refund_receipt_lines_refund_receipt ON refund_receipt_lines (ref
 CREATE TABLE bank_transfers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   transfer_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   transfer_date date NOT NULL,
@@ -2015,7 +2015,7 @@ CREATE INDEX ix_bank_transfers_company_to ON bank_transfers (company_id, to_acco
 CREATE TABLE bank_deposits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   deposit_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   deposit_date date NOT NULL,
@@ -2080,7 +2080,7 @@ CREATE INDEX ix_bank_deposit_items_source ON bank_deposit_items (company_id, sou
 CREATE TABLE tax_returns (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  entity_number char(11) NOT NULL UNIQUE,
+  entity_number char(11) NOT NULL,
   return_number text NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   tax_regime text NOT NULL,
@@ -2161,5 +2161,69 @@ CREATE TRIGGER trg_tax_returns_set_updated_at
 BEFORE UPDATE ON tax_returns
 FOR EACH ROW
 EXECUTE FUNCTION citus_set_updated_at();
+
+-- entity_number uniqueness. Per the design memo, entity_number is per-company
+-- audit-only, so the constraint is widened from UNIQUE(entity_number) to
+-- UNIQUE(company_id, entity_number) on every table that has a company_id
+-- column. The companies table itself has no company_id (it IS the scope
+-- root), so its entity_number stays globally unique and is allocated from
+-- platform_entity_number_sequences instead of company_entity_number_sequences.
+CREATE UNIQUE INDEX uq_companies_entity_number
+  ON companies (entity_number);
+
+CREATE UNIQUE INDEX uq_accounts_company_entity_number
+  ON accounts (company_id, entity_number);
+CREATE UNIQUE INDEX uq_bank_deposits_company_entity_number
+  ON bank_deposits (company_id, entity_number);
+CREATE UNIQUE INDEX uq_bank_transfers_company_entity_number
+  ON bank_transfers (company_id, entity_number);
+CREATE UNIQUE INDEX uq_bills_company_entity_number
+  ON bills (company_id, entity_number);
+CREATE UNIQUE INDEX uq_credit_applications_company_entity_number
+  ON credit_applications (company_id, entity_number);
+CREATE UNIQUE INDEX uq_credit_notes_company_entity_number
+  ON credit_notes (company_id, entity_number);
+CREATE UNIQUE INDEX uq_customer_deposits_company_entity_number
+  ON customer_deposits (company_id, entity_number);
+CREATE UNIQUE INDEX uq_customers_company_entity_number
+  ON customers (company_id, entity_number);
+CREATE UNIQUE INDEX uq_fx_revaluation_batches_company_entity_number
+  ON fx_revaluation_batches (company_id, entity_number);
+CREATE UNIQUE INDEX uq_invoices_company_entity_number
+  ON invoices (company_id, entity_number);
+CREATE UNIQUE INDEX uq_journal_entries_company_entity_number
+  ON journal_entries (company_id, entity_number);
+CREATE UNIQUE INDEX uq_manual_journal_documents_company_entity_number
+  ON manual_journal_documents (company_id, entity_number);
+CREATE UNIQUE INDEX uq_pay_bills_company_entity_number
+  ON pay_bills (company_id, entity_number);
+CREATE UNIQUE INDEX uq_receive_payments_company_entity_number
+  ON receive_payments (company_id, entity_number);
+CREATE UNIQUE INDEX uq_refund_receipts_company_entity_number
+  ON refund_receipts (company_id, entity_number);
+CREATE UNIQUE INDEX uq_sales_receipts_company_entity_number
+  ON sales_receipts (company_id, entity_number);
+CREATE UNIQUE INDEX uq_tax_codes_company_entity_number
+  ON tax_codes (company_id, entity_number);
+CREATE UNIQUE INDEX uq_tax_returns_company_entity_number
+  ON tax_returns (company_id, entity_number);
+CREATE UNIQUE INDEX uq_vendor_credit_applications_company_entity_number
+  ON vendor_credit_applications (company_id, entity_number);
+CREATE UNIQUE INDEX uq_vendor_credits_company_entity_number
+  ON vendor_credits (company_id, entity_number);
+CREATE UNIQUE INDEX uq_vendors_company_entity_number
+  ON vendors (company_id, entity_number);
+
+-- Per-company entity_number sequence. company_entity_number_sequences is the
+-- source of truth for ReserveAsync(scope_key='entity-number:*'); each row
+-- holds the next ordinal for one (company_id, entity_year). The legacy
+-- platform_entity_number_sequences table is kept for the companies table
+-- itself (which has no company_id to scope by).
+CREATE TABLE company_entity_number_sequences (
+  company_id char(7) NOT NULL,
+  entity_year integer NOT NULL,
+  next_ordinal bigint NOT NULL,
+  PRIMARY KEY (company_id, entity_year)
+);
 
 COMMIT;
