@@ -355,8 +355,17 @@ public sealed class FxRevaluationWorkflowSmokeTests
         Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
         ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
 
+    // Tests share the same primary book + remeasurement policy, and the
+    // policy is inserted with effective_from = first asOfDate seen. If a
+    // later test picks an EARLIER date than an earlier test, LoadPolicy's
+    // `effective_from <= as_of_date` filter rejects the policy and the
+    // workflow throws "FX revaluation requires policy". Use a monotonic
+    // per-process counter so dates only ever advance forward.
+    private static int _dateCounter;
+
     private static DateOnly BuildUniqueDate() =>
-        DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(Math.Abs(Guid.NewGuid().GetHashCode() % 120) + 60);
+        DateOnly.FromDateTime(DateTime.UtcNow.Date)
+            .AddDays(60 + Interlocked.Increment(ref _dateCounter) * 10);
 
     private static async Task<Guid> CreateManualFxSnapshotAsync(
         PostgresConnectionFactory connectionFactory,

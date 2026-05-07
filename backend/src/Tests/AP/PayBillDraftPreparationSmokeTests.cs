@@ -33,6 +33,8 @@ public sealed class PayBillDraftPreparationSmokeTests
 
         Guid documentId = Guid.Empty;
         Guid bankAccountId = default;
+        Guid seededBillId = Guid.Empty;
+        Guid seededOpenItemId = Guid.Empty;
         UserId userId = default;
         var createdUser = false;
         var originalLock = await ReadVendorLockAsync(connectionFactory, VendorId, CancellationToken.None);
@@ -41,6 +43,8 @@ public sealed class PayBillDraftPreparationSmokeTests
         {
             (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
             bankAccountId = await CreateBankAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            (seededBillId, seededOpenItemId) = await SeedBillAndOpenItemAsync(
+                connectionFactory, userId, CancellationToken.None);
             var openItem = await LoadOpenItemAsync(connectionFactory, VendorId, CancellationToken.None);
 
             var appliedAmount = Math.Min(openItem.OpenAmountTx, 50m);
@@ -79,10 +83,124 @@ public sealed class PayBillDraftPreparationSmokeTests
         finally
         {
             await CleanupDraftAsync(connectionFactory, documentId, CancellationToken.None);
+            await CleanupOpenItemAndBillAsync(
+                connectionFactory, seededOpenItemId, seededBillId, CancellationToken.None);
             await CleanupBankAccountAsync(connectionFactory, bankAccountId, CancellationToken.None);
             await RestoreVendorLockAsync(connectionFactory, VendorId, originalLock, CancellationToken.None);
             await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
         }
+    }
+
+    private static async Task<(Guid BillId, Guid OpenItemId)> SeedBillAndOpenItemAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        UserId userId,
+        CancellationToken cancellationToken)
+    {
+        var billId = Guid.NewGuid();
+        var openItemId = Guid.NewGuid();
+        var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
+
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var billCommand = connection.CreateCommand())
+        {
+            billCommand.Transaction = transaction;
+            billCommand.CommandText =
+                """
+                insert into bills (
+                  id, company_id, entity_number, bill_number, vendor_id,
+                  bill_date, due_date,
+                  document_currency_code, base_currency_code,
+                  fx_requested_date, fx_effective_date,
+                  created_by_user_id
+                )
+                values (
+                  @id, @company_id, @entity_number, @bill_number, @vendor_id,
+                  @bill_date, @due_date,
+                  'USD', 'USD',
+                  @bill_date, @bill_date,
+                  @user_id
+                );
+                """;
+            billCommand.Parameters.AddWithValue("id", billId);
+            billCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
+            billCommand.Parameters.AddWithValue("entity_number", entityNumber);
+            billCommand.Parameters.AddWithValue("bill_number", $"BILL-{billId:N}"[..15]);
+            billCommand.Parameters.AddWithValue("vendor_id", VendorId);
+            billCommand.Parameters.AddWithValue("bill_date", new DateOnly(2026, 4, 14));
+            billCommand.Parameters.AddWithValue("due_date", new DateOnly(2026, 5, 14));
+            billCommand.Parameters.AddWithValue("user_id", userId.Value);
+            await billCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var openItemCommand = connection.CreateCommand())
+        {
+            openItemCommand.Transaction = transaction;
+            openItemCommand.CommandText =
+                """
+                insert into ap_open_items (
+                  id, company_id, vendor_id, source_type, source_id,
+                  balance_side,
+                  document_currency_code, base_currency_code,
+                  original_amount_tx, original_amount_base,
+                  open_amount_tx, open_amount_base,
+                  status, due_date
+                )
+                values (
+                  @id, @company_id, @vendor_id, 'bill', @source_id,
+                  'credit',
+                  'USD', 'USD',
+                  100, 100,
+                  100, 100,
+                  'open', @due_date
+                );
+                """;
+            openItemCommand.Parameters.AddWithValue("id", openItemId);
+            openItemCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
+            openItemCommand.Parameters.AddWithValue("vendor_id", VendorId);
+            openItemCommand.Parameters.AddWithValue("source_id", billId);
+            openItemCommand.Parameters.AddWithValue("due_date", new DateOnly(2026, 5, 14));
+            await openItemCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return (billId, openItemId);
+    }
+
+    private static async Task CleanupOpenItemAndBillAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        Guid openItemId,
+        Guid billId,
+        CancellationToken cancellationToken)
+    {
+        if (openItemId == Guid.Empty && billId == Guid.Empty)
+        {
+            return;
+        }
+
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        if (openItemId != Guid.Empty)
+        {
+            await using var deleteOpenItem = connection.CreateCommand();
+            deleteOpenItem.Transaction = transaction;
+            deleteOpenItem.CommandText = "delete from ap_open_items where id = @id;";
+            deleteOpenItem.Parameters.AddWithValue("id", openItemId);
+            await deleteOpenItem.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (billId != Guid.Empty)
+        {
+            await using var deleteBill = connection.CreateCommand();
+            deleteBill.Transaction = transaction;
+            deleteBill.CommandText = "delete from bills where id = @id;";
+            deleteBill.Parameters.AddWithValue("id", billId);
+            await deleteBill.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static string GetConnectionString() =>

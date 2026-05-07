@@ -447,11 +447,23 @@ public sealed class JournalEntryLifecycleSmokeTests
         await using (var deleteBook = connection.CreateCommand())
         {
             deleteBook.Transaction = transaction;
+            // Match by (company_id, book_code='PRIMARY') as well as id, so we
+            // also clean up any leftover 'PRIMARY' row that another test
+            // (e.g. FxRevaluationWorkflowSmokeTests' EnsureDefaultPrimaryBook)
+            // may have inserted with a different id. Without this we trip
+            // company_books_unique on (company_id, book_code).
             deleteBook.CommandText =
                 """
+                delete from company_book_remeasurement_policies
+                where company_book_id in (
+                  select id from company_books
+                  where company_id = @company_id
+                    and (id = @book_id or book_code = 'PRIMARY')
+                );
+
                 delete from company_books
                 where company_id = @company_id
-                  and id = @book_id;
+                  and (id = @book_id or book_code = 'PRIMARY');
                 """;
             deleteBook.Parameters.AddWithValue("company_id", companyId.Value);
             deleteBook.Parameters.AddWithValue("book_id", bookId);
@@ -609,10 +621,16 @@ public sealed class JournalEntryLifecycleSmokeTests
         string quoteCurrencyCode,
         CancellationToken cancellationToken)
     {
+        // Pick a RANDOM date in a wide future window. The previous sequential
+        // scan (start + offset++) is TOCTOU-racy: when these tests run in
+        // parallel with AR/AP, two threads can both see "date X is free",
+        // both pick X, and one fails on uq_company_fx_rate_snapshots_identity.
+        // Randomization across a 720-day window collapses collision odds to
+        // near-zero per test, and the retry loop covers the residual races.
         var start = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(60);
-        for (var offset = 0; offset < 720; offset++)
+        for (var attempt = 0; attempt < 16; attempt++)
         {
-            var candidate = start.AddDays(offset);
+            var candidate = start.AddDays(Random.Shared.Next(0, 720));
             if (!await SnapshotIdentityExistsAsync(
                     connectionFactory,
                     baseCurrencyCode,

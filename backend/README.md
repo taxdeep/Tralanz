@@ -19,6 +19,7 @@ Current layout:
 
 Notes:
 
+- **Run integration tests with `dotnet test -m:1`.** All `Tests.*` projects connect to the same shared Postgres database and write to overlapping tables (`users`, `companies`, `company_books`, `company_fx_rate_snapshots`, `journal_entries`, etc.). The default `dotnet test` invocation parallelizes test ASSEMBLIES (separate VSTest processes), which races on those shared rows and produces sporadic `users_pkey`, `company_books_unique`, `uq_company_fx_rate_snapshots_identity`, and `journal_entries_unique_display_number` failures. `-m:1` serializes MSBuild and therefore the test runners. Per-assembly serialization (`[assembly: CollectionBehavior(DisableTestParallelization=true)]`) is already in place inside `Tests/AP`, `Tests/AR`, `Tests/CompanyAccess`, and `Tests/GL`, so a single project's test run is always safe; only the cross-project default invocation needs `-m:1`.
 - The current machine resolves correctly with `C:\Program Files\dotnet\dotnet.exe`, and the backend solution now builds/tests from that 64-bit host.
 - The backend now targets `.NET 11 + C# 15` through `backend/Directory.Build.props`, so local build/test/run no longer depends on `DOTNET_ROLL_FORWARD=Major`.
 - `LangVersion` is intentionally pinned to `preview` so the repository baseline stays aligned with the current `.NET 11 / C# 15` direction.
