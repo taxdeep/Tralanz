@@ -195,13 +195,17 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             return;
         }
 
+        // Probe a column on the LAST table this helper creates so that
+        // a partial-failure between the ALTERs on receipt_grir_bridge_lines
+        // and the two CREATE TABLEs after them can't lock our cache into
+        // a state where the new tables stay missing forever.
         await using (var probe = scope.CreateCommand(
             """
             select count(*)
             from information_schema.columns
             where table_schema = 'public'
-              and table_name = 'receipt_grir_bridge_lines'
-              and column_name = 'posted_at';
+              and table_name = 'receipt_grir_bridge_posting_batch_lines'
+              and column_name = 'amount_base';
             """))
         {
             var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);

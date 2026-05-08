@@ -36,6 +36,12 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             return;
         }
 
+        // Probe a column on `business_sessions` — the only table this
+        // helper creates that no other helper (Governance, AccountProfile)
+        // touches. Using a shared column on `business_session_mfa_challenges`
+        // would let Governance's inline CREATE flip our cache to true and
+        // make us skip the unique CREATE TABLE business_sessions, breaking
+        // the next business login.
         await using (var probeConnection = await connectionFactory.OpenConnectionAsync(cancellationToken))
         await using (var probe = probeConnection.CreateCommand())
         {
@@ -44,7 +50,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
                 select count(*)
                 from information_schema.columns
                 where table_schema = 'public'
-                  and table_name = 'business_session_mfa_challenges'
+                  and table_name = 'business_sessions'
                   and column_name = 'security_stamp_snapshot';
                 """;
             var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);

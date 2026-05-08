@@ -2452,13 +2452,20 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return;
         }
 
+        // Probe a column on the LAST table this helper creates
+        // ({PurchaseVarianceLinesTableName}). The 17 ALTERs on
+        // {SettlementBatchesTableName} are followed by CREATE TABLE
+        // {SettlementBatchLinesTableName} and CREATE TABLE
+        // {PurchaseVarianceLinesTableName}; probing the variance table
+        // ensures the cache only short-circuits after every CREATE has
+        // succeeded, not after the last ALTER on settlement_batches.
         await using (var probe = scope.CreateCommand(
             $"""
             select count(*)
             from information_schema.columns
             where table_schema = 'public'
-              and table_name = '{SettlementBatchesTableName}'
-              and column_name = 'open_item_reversed_amount_base';
+              and table_name = '{PurchaseVarianceLinesTableName}'
+              and column_name = 'refreshed_at';
             """))
         {
             var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
