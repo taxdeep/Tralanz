@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
+    <!-- Optional exception monitoring. Active only when Sentry__Dsn is set
+         in the environment file; unset = no-op (the SDK doesn't touch the
+         pipeline if Init can't read a DSN). See deploy/SENTRY.md. -->
+    <PackageReference Include="Sentry.AspNetCore" Version="5.6.0" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Citus.Accounting.Application\Citus.Accounting.Application.csproj" />
     <ProjectReference Include="..\Citus.Accounting.Infrastructure\Citus.Accounting.Infrastructure.csproj" />
     <ProjectReference Include="..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />

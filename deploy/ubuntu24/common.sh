@@ -287,6 +287,10 @@ ensure_env_defaults() {
   # are hidden until the inventory write surface lands. Flip this to
   # "true" on a host that's piloting the V2 inventory module.
   append_env_if_missing "FeatureFlags__InventoryActivationEntryEnabled" "false"
+
+  # Optional Sentry exception monitoring — empty by default (no-op).
+  # Paste a project DSN to enrol the host. See deploy/SENTRY.md.
+  append_env_if_missing "Sentry__Dsn" ""
   ensure_db_connection_string
 
   # Encryption key shared by PlatformTotpSecretProtector (TOTP secrets)

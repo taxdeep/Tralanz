@@ -64,6 +64,32 @@ using GlJournalEntryLifecycleWorkflow = Modules.GL.JournalEntry.JournalEntryLife
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Optional exception monitoring. Active only when Sentry:Dsn is set —
+// SentryClient.Init no-ops on empty DSN, so the SDK costs nothing when
+// the operator hasn't enrolled a Sentry project. Release tag tracks
+// the auto-bumped Citus version (so an alert on v 0.00.000.0000.05.4M
+// stays linked to that exact build); the environment tag follows
+// ASPNETCORE_ENVIRONMENT (Development / Staging / Production).
+//
+// See deploy/SENTRY.md for how to set Sentry__Dsn on the host.
+builder.WebHost.UseSentry(options =>
+{
+    options.Dsn = builder.Configuration["Sentry:Dsn"]
+        ?? Environment.GetEnvironmentVariable("SENTRY_DSN")
+        ?? string.Empty;
+    options.Release = builder.Configuration["CITUS_APP_VERSION"]
+        ?? Environment.GetEnvironmentVariable("CITUS_APP_VERSION");
+    options.Environment = builder.Environment.EnvironmentName;
+    options.AttachStacktrace = true;
+    // Don't sample request bodies / cookies / IP — accounting payloads
+    // contain customer + amount data. Operators who want full PII can
+    // flip this in a custom override.
+    options.SendDefaultPii = false;
+    // 100% tracing on a single-tenant pilot is fine. Bump to a sample
+    // rate once traffic ramps up.
+    options.TracesSampleRate = 1.0;
+});
+
 var connectionString =
     builder.Configuration["CITUS_ACCOUNTING_DB"] ??
     builder.Configuration.GetConnectionString("AccountingCore");
@@ -603,6 +629,11 @@ await using (var startupScope = app.Services.CreateAsyncScope())
 // IPlatformBusinessSessionRepository (same repo SysAdmin uses to verify
 // First-Company-Wizard owners).
 // ---------------------------------------------------------------------------
+
+// Sentry request tracing. No-op when Sentry:Dsn is unset; otherwise
+// captures one transaction per request with the route template, the
+// 4xx/5xx status, and any unhandled exception that propagates up.
+app.UseSentryTracing();
 
 // Rate limiter must run before any rate-limited endpoint dispatches.
 // Stage-0 setup: only /auth/login is partitioned today (see auth-login

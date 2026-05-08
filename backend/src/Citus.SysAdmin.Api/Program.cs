@@ -19,6 +19,22 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Optional exception monitoring. Mirror of the accounting API setup —
+// see Citus.Accounting.Api/Program.cs for the rationale + override
+// hint, and deploy/SENTRY.md for the DSN configuration.
+builder.WebHost.UseSentry(options =>
+{
+    options.Dsn = builder.Configuration["Sentry:Dsn"]
+        ?? Environment.GetEnvironmentVariable("SENTRY_DSN")
+        ?? string.Empty;
+    options.Release = builder.Configuration["CITUS_APP_VERSION"]
+        ?? Environment.GetEnvironmentVariable("CITUS_APP_VERSION");
+    options.Environment = builder.Environment.EnvironmentName;
+    options.AttachStacktrace = true;
+    options.SendDefaultPii = false;
+    options.TracesSampleRate = 1.0;
+});
+
 var connectionString =
     builder.Configuration["CITUS_ACCOUNTING_DB"] ??
     builder.Configuration.GetConnectionString("AccountingCore");
@@ -189,6 +205,9 @@ await using (var startupScope = app.Services.CreateAsyncScope())
         controlState.SetMaintenanceState(persistedMaintenance.ToSummary());
     }
 }
+
+// Sentry request tracing. No-op when Sentry:Dsn is unset.
+app.UseSentryTracing();
 
 // Rate limiter must be wired before any rate-limited endpoint
 // dispatches. Per-IP partitioning + fixed window — no queue, so excess
