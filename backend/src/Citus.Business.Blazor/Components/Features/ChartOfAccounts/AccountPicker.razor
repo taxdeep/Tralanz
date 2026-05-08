@@ -185,9 +185,26 @@
 
     protected override void OnParametersSet()
     {
-        if (!_isFocused && !string.IsNullOrEmpty(SelectedDisplayText))
+        // SelectedDisplayText is a hint shown until the picker fetches its
+        // own chart. Don't overwrite a real resolved selection (set below
+        // in EnsureLoadedAsync) with the hint on subsequent renders.
+        if (!_isFocused && !string.IsNullOrEmpty(SelectedDisplayText) && string.IsNullOrEmpty(_searchText))
         {
             _searchText = SelectedDisplayText;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Edit pages render the picker with SelectedId already set. Pre-
+        // load the chart so we can replace the SelectedDisplayText hint
+        // (e.g. literal "(account)") with the actual code + name before
+        // the user ever clicks. Without this the input shows the hint as
+        // its value AND the dropdown uses it as a filter query, hiding
+        // the full chart behind a phantom "no matching accounts".
+        if (SelectedId.HasValue)
+        {
+            await EnsureLoadedAsync();
         }
     }
 
@@ -207,6 +224,20 @@
                 .Where(r => r.IsActive)
                 .Where(r => allowed is null || allowed.Contains(r.RootType ?? string.Empty))
                 .ToList();
+
+            // Now that the chart is in memory, resolve any pre-selected ID
+            // to its real code + name and overwrite the SelectedDisplayText
+            // hint. Skipped while the user is actively typing (focused) so
+            // a load that happens to land mid-keystroke doesn't clobber
+            // their query.
+            if (!_isFocused && SelectedId.HasValue)
+            {
+                var selected = _allAccounts.FirstOrDefault(a => a.Id == SelectedId.Value);
+                if (selected is not null)
+                {
+                    _searchText = $"{selected.Code} {selected.Name}";
+                }
+            }
         }
         finally
         {
@@ -230,6 +261,23 @@
         _blurCts = null;
 
         await EnsureLoadedAsync();
+
+        // Standard combobox behaviour: if the input currently displays
+        // the selected account (or the SelectedDisplayText hint), clear
+        // it on focus so the dropdown shows the full chart, not just
+        // the row matching the existing selection. Restored on blur if
+        // the user didn't pick something else.
+        if (SelectedId.HasValue)
+        {
+            var selected = _allAccounts.FirstOrDefault(a => a.Id == SelectedId.Value);
+            var resolvedDisplay = selected is not null ? $"{selected.Code} {selected.Name}" : null;
+            if (string.Equals(_searchText, resolvedDisplay, StringComparison.Ordinal) ||
+                string.Equals(_searchText, SelectedDisplayText, StringComparison.Ordinal))
+            {
+                _searchText = string.Empty;
+            }
+        }
+
         await ApplyFilterAsync(_searchText);
         _showResults = true;
         StateHasChanged();
@@ -345,7 +393,27 @@
             if (!cts.IsCancellationRequested && !_creating)
             {
                 _showResults = false;
-                _searchText = SelectedDisplayText ?? _searchText;
+                // Restore display from the loaded chart when possible —
+                // SelectedDisplayText is just the pre-load hint and may
+                // be the literal "(account)" placeholder some pages
+                // emit. Falling back to whatever the user last typed
+                // matches the prior behaviour.
+                if (SelectedId.HasValue)
+                {
+                    var selected = _allAccounts.FirstOrDefault(a => a.Id == SelectedId.Value);
+                    if (selected is not null)
+                    {
+                        _searchText = $"{selected.Code} {selected.Name}";
+                    }
+                    else
+                    {
+                        _searchText = SelectedDisplayText ?? _searchText;
+                    }
+                }
+                else
+                {
+                    _searchText = string.Empty;
+                }
                 await InvokeAsync(StateHasChanged);
             }
         }

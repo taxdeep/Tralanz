@@ -447,12 +447,17 @@ else
         }
     }
 
-    private string AccountDisplay(Guid? accountId)
+    private static string AccountDisplay(Guid? accountId)
     {
-        // The accounts are loaded inside AccountPicker itself; this hint
-        // surfaces what we already know about the saved selection until
-        // the picker fetches its own list. Empty when nothing's selected.
-        return accountId.HasValue ? "(account)" : string.Empty;
+        // The picker eagerly fetches its own chart when SelectedId is
+        // set and replaces this hint with the real code + name on first
+        // render. We keep the helper as a no-op so the parameter stays
+        // present (older builds passed a literal "(account)" placeholder
+        // here, which leaked into the input as both display value AND
+        // filter query — turning a populated chart into "No matching
+        // accounts").
+        _ = accountId;
+        return string.Empty;
     }
 
     private static string KindHint(string kind) => kind switch
