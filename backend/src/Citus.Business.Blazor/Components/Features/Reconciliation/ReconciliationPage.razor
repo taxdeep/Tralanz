@@ -1,7 +1,6 @@
 @page "/reconciliation"
 
 @inject BusinessShellState ShellState
-@inject CitusToastService Message
 
 <PageTitle>Reconciliation | Tralanz Books</PageTitle>
 
@@ -150,11 +149,20 @@
             <p class="text-fg-muted text-sm mb-3">
                 Per spec §8, completion is only allowed when the difference is exactly zero. Toggle Cleared on each row until inflow and outflow match the statement.
             </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(!IsZero(_difference) || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="CompleteAsync">
-                @(_isSubmitting ? "Completing..." : "Complete reconciliation")
+            @* The HTTP write surface for reconciliation is not wired yet —
+               clicking Complete used to fire a success-shaped toast and
+               post nothing, which is the worst possible failure mode for
+               an accounting product. The button stays in place but is
+               permanently disabled with a visible "Coming soon" notice
+               until the backend route ships. *@
+            <CitusButton Variant="CitusButtonVariant.Primary" Block="true" Disabled="true">
+                Complete reconciliation
             </CitusButton>
+            <p class="text-fg-subtle text-xs mt-2">
+                <strong>Coming soon.</strong> The completion endpoint is still in development.
+                Use this page today to compute the difference; come back to mark periods reconciled
+                once the backend route ships in the next release.
+            </p>
         </section>
     </div>
 </div>
@@ -173,7 +181,6 @@
     private decimal _endingBalance;
     private readonly List<RecRow> _inflows = new() { new RecRow { Date = DateTime.Today } };
     private readonly List<RecRow> _outflows = new() { new RecRow { Date = DateTime.Today } };
-    private bool _isSubmitting;
 
     private decimal _clearedInflow => _inflows.Where(r => r.Cleared).Sum(r => r.Amount);
     private decimal _clearedOutflow => _outflows.Where(r => r.Cleared).Sum(r => r.Amount);
@@ -186,26 +193,6 @@
     private static void AddRow(List<RecRow> rows) => rows.Add(new RecRow { Date = DateTime.Today });
     private static void Remove(List<RecRow> rows, int i) { if (i >= 0 && i < rows.Count) rows.RemoveAt(i); }
     private static void Update(List<RecRow> rows, int i, Func<RecRow, RecRow> mutate) { if (i >= 0 && i < rows.Count) rows[i] = mutate(rows[i]); }
-
-    private async Task CompleteAsync()
-    {
-        if (!IsZero(_difference))
-        {
-            await Message.WarningAsync("Reconciliation requires difference == 0.");
-            return;
-        }
-
-        _isSubmitting = true;
-        try
-        {
-            await Task.Yield();
-            await Message.InfoAsync("Reconciliation complete payload built. The HTTP write surface for reconciliation is not wired yet; this submit will land once the backend route ships.");
-        }
-        finally
-        {
-            _isSubmitting = false;
-        }
-    }
 
     private sealed record class RecRow
     {

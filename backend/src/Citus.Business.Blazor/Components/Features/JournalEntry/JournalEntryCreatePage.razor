@@ -5,7 +5,6 @@
 
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
-@inject TaxCodeClient TaxCodeClient
 @inject JournalEntryReviewClient JournalEntryReviewClient
 @inject CompanyCurrencyClient CompanyCurrencyClient
 @inject NavigationManager NavigationManager
@@ -160,8 +159,13 @@
                         <th class="text-right citus-journal-lines__amount">DEBIT (@_currency.ToUpperInvariant())</th>
                         <th class="text-right citus-journal-lines__amount">CREDIT (@_currency.ToUpperInvariant())</th>
                         <th class="citus-journal-lines__desc">DESCRIPTION</th>
-                        <th class="citus-journal-lines__name">NAME</th>
-                        <th class="citus-journal-lines__tax">SALES TAX</th>
+                        @* NAME (per-line counterparty) and SALES TAX columns
+                           were removed: the values used to be captured in the
+                           UI but the wire shape (ManualJournalLineDraft)
+                           dropped them on post, so they never landed in
+                           journal_entry_lines. They'll come back when the
+                           line schema gains counterparty_id + tax_code_id
+                           and the post payload carries them through. *@
                         <th class="citus-journal-lines__action"></th>
                     </tr>
                 </thead>
@@ -220,32 +224,7 @@
                                        @oninput="@(e => UpdateLine(i, l => l with { Description = e.Value?.ToString() ?? string.Empty }))"
                                        placeholder="Memo" />
                             </td>
-                            <td>
-                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                   Context="@SearchScopeContext.JournalEntryNamePicker"
-                                                   Take="6"
-                                                   Placeholder="Customer / vendor"
-                                                   SourceRoute="/journal-entry/new"
-                                                   SelectedDisplayText="@line.NameDisplay"
-                                                   OnOptionSelected="@(option => OnNameSelected(i, option))"
-                                                   OnCleared="@(() => ClearName(i))" />
-                            </td>
-                            <td>
-                                <select class="citus-journal-lines__cell-input"
-                                        value="@line.TaxCode"
-                                        @onchange="@(e => UpdateLine(i, l => l with { TaxCode = e.Value?.ToString() ?? string.Empty }))">
-                                    <option value=""></option>
-                                    @if (_taxCodes.Count == 0 && !_isLoadingTaxCodes)
-                                    {
-                                        <option value="" disabled>No tax codes — add in Settings</option>
-                                    }
-                                    @foreach (var tax in _taxCodes)
-                                    {
-                                        <option value="@tax.Code">@FormatTaxOption(tax)</option>
-                                    }
-                                </select>
-                            </td>
+                            @* NAME and SALES TAX cells removed; see header note. *@
                             <td class="citus-journal-lines__action">
                                 <button type="button"
                                         class="citus-icon-button"
@@ -298,9 +277,6 @@
             <p class="text-fg-muted text-sm mb-3">
                 Posting is irreversible from this surface. Backend reserves the journal entry number and the FX snapshot at the moment of the call.
             </p>
-            <p class="text-fg-subtle text-xs mb-3">
-                Note: per-line counterparty (NAME) and tax-code values are captured for the upcoming backend integration. They are not yet sent on post — only debit / credit / account / description make the wire today.
-            </p>
 
             <div class="flex items-center gap-3">
                 <CitusButton Variant="CitusButtonVariant.Primary"
@@ -341,8 +317,11 @@
         decimal Credit = 0m,
         string TaxCode = "");
 
-    private List<TaxCodeSummary> _taxCodes = new();
-    private bool _isLoadingTaxCodes;
+    @* Per-line tax codes were removed from the form; see header comment
+       in the table. The fetch + drop-down state previously kept here go
+       away too — they pull data nothing renders. Restore alongside the
+       NAME / SALES TAX columns when the JE post payload starts carrying
+       counterparty_id + tax_code_id per line. *@
 
     // Enabled currencies for the Transaction currency dropdown. Loaded
     // once at page init from /accounting/company/currencies. The base
@@ -350,12 +329,6 @@
     // enabled in Settings → Multi-currency.
     private IReadOnlyList<CompanyCurrencyEntry> _enabledCurrencies = Array.Empty<CompanyCurrencyEntry>();
     private bool _isLoadingCurrencies = true;
-
-    private static string FormatTaxOption(TaxCodeSummary tax)
-    {
-        var rate = tax.RatePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-        return $"{tax.Code} ({rate}%) — {tax.Name}";
-    }
 
     /// <summary>
     /// Optional ?from={journalEntryId} query param. When the operator clicks
@@ -424,14 +397,12 @@
             _lines.Add(new JournalLineEditState());
         }
 
-        // Three independent loads — start all, await in parallel. Each is
+        // Two independent loads — start both, await in parallel. Each is
         // best-effort: a transport failure leaves the corresponding field
         // empty / disabled, never blocks the form.
         _isLoadingJournalNumber = true;
-        _isLoadingTaxCodes = true;
         _isLoadingCurrencies = true;
         var numberTask = JournalEntryReviewClient.GetNextDisplayNumberAsync();
-        var taxCodesTask = TaxCodeClient.ListAsync(appliesTo: "sales");
         var currenciesTask = CompanyCurrencyClient.GetAsync();
 
         try
@@ -445,19 +416,6 @@
         finally
         {
             _isLoadingJournalNumber = false;
-        }
-
-        try
-        {
-            var rows = await taxCodesTask;
-            _taxCodes = rows
-                .Where(r => r.IsActive)
-                .OrderBy(r => r.Code)
-                .ToList();
-        }
-        finally
-        {
-            _isLoadingTaxCodes = false;
         }
 
         try
