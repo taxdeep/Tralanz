@@ -3532,31 +3532,82 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
    so future dashboard-style pages (Sales / Purchases / Inventory) can
    reuse the same primitives without duplicating styles. */
 
+/* citus-quick-card looks and behaves like a primary CTA button: same
+   --citus-color-primary fill the .citus-button--primary uses, but with
+   a two-line body (title + hint) and a leading icon tile. The trailing
+   chevron + hover lift signal "this is clickable, click it to navigate"
+   so operators don't mistake it for an info panel. */
 .citus-quick-card {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--citus-space-3);
     padding: var(--citus-space-4);
-    background: var(--citus-color-accent-soft, var(--citus-color-bg-elevated));
-    border: 1px solid var(--citus-color-border);
+    padding-right: calc(var(--citus-space-4) + 1.5rem); /* chevron room */
+    background: var(--citus-color-primary);
+    border: 1px solid var(--citus-color-primary);
     border-radius: var(--citus-radius-md);
-    color: var(--citus-color-fg);
+    color: var(--citus-color-primary-fg);
     text-decoration: none;
+    box-shadow: var(--citus-shadow-1);
     transition: background var(--citus-transition-fast, 150ms),
                 border-color var(--citus-transition-fast, 150ms),
+                box-shadow var(--citus-transition-fast, 150ms),
+                transform var(--citus-transition-fast, 150ms);
+    cursor: pointer;
+}
+
+.citus-quick-card::after {
+    content: "›";
+    position: absolute;
+    right: var(--citus-space-4);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.5rem;
+    line-height: 1;
+    opacity: .6;
+    transition: opacity var(--citus-transition-fast, 150ms),
                 transform var(--citus-transition-fast, 150ms);
 }
 
 .citus-quick-card:hover {
-    background: var(--citus-color-accent, var(--citus-color-bg-elevated));
-    border-color: var(--citus-color-accent-strong, var(--citus-color-border-strong));
-    color: var(--citus-color-fg);
+    background: var(--citus-color-primary-hover);
+    border-color: var(--citus-color-primary-hover);
+    color: var(--citus-color-primary-fg);
+    box-shadow: var(--citus-shadow-2, var(--citus-shadow-1));
     transform: translateY(-1px);
 }
 
+.citus-quick-card:hover::after {
+    opacity: 1;
+    transform: translate(2px, -50%);
+}
+
+.citus-quick-card:focus-visible {
+    outline: 2px solid var(--citus-color-primary);
+    outline-offset: 2px;
+}
+
+.citus-quick-card:active {
+    transform: translateY(0);
+    box-shadow: var(--citus-shadow-1);
+}
+
+/* Muted variant: lower-priority entry point. Rendered on the elevated
+   background with a primary-tinted border / text so it still reads as
+   actionable, just visibly secondary to the filled siblings. */
 .citus-quick-card--muted {
     background: var(--citus-color-bg-elevated);
-    color: var(--citus-color-fg-muted);
+    border-color: var(--citus-color-border);
+    color: var(--citus-color-fg);
+    box-shadow: none;
+}
+
+.citus-quick-card--muted:hover {
+    background: var(--citus-color-bg-elevated);
+    border-color: var(--citus-color-primary);
+    color: var(--citus-color-primary);
+    box-shadow: var(--citus-shadow-1);
 }
 
 .citus-quick-card__icon {
@@ -3567,7 +3618,13 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     width: 2.25rem;
     height: 2.25rem;
     border-radius: var(--citus-radius-sm, .25rem);
-    background: var(--citus-color-bg-elevated);
+    background: rgb(255 255 255 / 18%);
+    color: var(--citus-color-primary-fg);
+}
+
+.citus-quick-card--muted .citus-quick-card__icon {
+    background: var(--citus-color-primary-bg, var(--citus-color-bg));
+    color: var(--citus-color-primary);
 }
 
 .citus-quick-card__body {
@@ -3579,11 +3636,17 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 .citus-quick-card__body strong {
     font-weight: var(--citus-font-weight-semibold, 600);
+    font-size: var(--text-sm, .9375rem);
 }
 
 .citus-quick-card__body small {
     font-size: var(--text-xs, .75rem);
+    opacity: .85;
+}
+
+.citus-quick-card--muted .citus-quick-card__body small {
     color: var(--citus-color-fg-muted);
+    opacity: 1;
 }
 
 .citus-kpi-card {
