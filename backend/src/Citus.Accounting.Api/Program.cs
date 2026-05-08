@@ -8336,10 +8336,23 @@ accounting.MapPut(
                         line.WarehouseId,
                         line.UomCode)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
-                    request.SalesOrderId),
+                    request.SalesOrderId,
+                    request.ExpectedUpdatedAt),
                 cancellationToken);
 
             return Results.Ok(result);
+        }
+        catch (ConcurrencyConflictException ex)
+        {
+            // 409 Conflict — the draft moved between the editor's GET
+            // and this PUT. Front-end catches this and prompts the
+            // operator to refresh + re-apply, instead of silently
+            // overwriting the other session's changes.
+            return Results.Conflict(new
+            {
+                code = "concurrency_conflict",
+                message = ex.Message,
+            });
         }
         catch (InvalidOperationException ex)
         {

@@ -416,6 +416,14 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
+            // Optimistic-concurrency guard: the @expected_updated_at
+            // parameter, when non-null, narrows the UPDATE to rows
+            // that haven't moved since the caller's last GET. Zero
+            // rows affected can mean any of (a) wrong company, (b) row
+            // is no longer in 'draft' status, (c) timestamp drifted.
+            // The follow-up SELECT below distinguishes (c) so we can
+            // raise ConcurrencyConflictException instead of the
+            // generic "could not be updated" error.
             updateCommand.CommandText =
                 """
                 update invoices
@@ -438,12 +446,26 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                     updated_at = now()
                 where id = @id
                   and company_id = @company_id
-                  and status = 'draft';
+                  and status = 'draft'
+                  and (cast(@expected_updated_at as timestamptz) is null
+                       or updated_at = cast(@expected_updated_at as timestamptz));
                 """;
             BindHeader(updateCommand, draft, documentId, entityNumber, displayNumber, includeIdentity: false);
+            updateCommand.Parameters.AddWithValue(
+                "expected_updated_at",
+                draft.ExpectedUpdatedAt.HasValue
+                    ? (object)draft.ExpectedUpdatedAt.Value
+                    : DBNull.Value);
             var affectedRows = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
+                if (draft.ExpectedUpdatedAt.HasValue &&
+                    await DraftStillExistsAsync(connection, transaction, draft.CompanyId, documentId, cancellationToken))
+                {
+                    throw new ConcurrencyConflictException(
+                        "This invoice draft was modified by another session after you opened it. " +
+                        "Reload the draft to see the latest changes, then re-apply your edits.");
+                }
                 throw new InvalidOperationException("The invoice draft could not be updated. Only draft invoices can be modified.");
             }
         }
@@ -770,5 +792,36 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         return (
             reader.GetString(reader.GetOrdinal("entity_number")),
             reader.GetString(reader.GetOrdinal("invoice_number")));
+    }
+
+    /// <summary>
+    /// Optimistic-concurrency fallback probe. SaveDraftAsync's UPDATE
+    /// returns 0 affected rows for several reasons (wrong company,
+    /// already posted, expected_updated_at mismatch). When the caller
+    /// supplied an expected timestamp, this query distinguishes the
+    /// "still a draft, just stale snapshot" case so the route handler
+    /// can surface 409 instead of the generic 400.
+    /// </summary>
+    private static async Task<bool> DraftStillExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select 1
+            from invoices
+            where id = @document_id
+              and company_id = @company_id
+              and status = 'draft'
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 }

@@ -236,7 +236,12 @@ public sealed record SaveInvoiceDraftHttpRequest(
     string? Memo,
     IReadOnlyList<SaveInvoiceDraftLineHttpRequest> Lines,
     string? CustomerPoNumber = null,
-    Guid? SalesOrderId = null);
+    Guid? SalesOrderId = null,
+    // Optimistic-concurrency token. Round-trips the updated_at the
+    // editor saw on GET; the repository rejects the UPDATE with a 409
+    // if the value no longer matches the row's current updated_at.
+    // Null on first save / when the editor opts out of the check.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record SaveInvoiceDraftLineHttpRequest(
     int LineNumber,

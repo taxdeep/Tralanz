@@ -334,7 +334,13 @@ public sealed record InvoiceDraftSaveModel(
     string? Memo,
     IReadOnlyList<InvoiceDraftLineSaveModel> Lines,
     string? CustomerPoNumber = null,
-    Guid? SalesOrderId = null);
+    Guid? SalesOrderId = null,
+    // Optimistic-concurrency token. The editor holds the updated_at it
+    // saw on load and passes it back on save; the repository rejects
+    // the UPDATE if the row's current updated_at no longer matches —
+    // see ConcurrencyConflictException. Null on first save (insert
+    // path) or when the caller opts out of the check.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record InvoiceDraftLineSaveModel(
     int LineNumber,
