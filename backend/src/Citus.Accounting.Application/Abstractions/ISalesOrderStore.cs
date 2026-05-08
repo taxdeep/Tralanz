@@ -228,7 +228,10 @@ public sealed record SalesOrderUpsertInput(
     string? InternalNote,
     Guid? SourceQuoteId,
     string? CustomerPoNumber,
-    IReadOnlyList<SalesOrderLineInput> Lines);
+    IReadOnlyList<SalesOrderLineInput> Lines,
+    // Optimistic-concurrency token; same contract as the bill / PO /
+    // quote variants. Null preserves the legacy opt-out behaviour.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record SalesOrderLineInput(
     int Sequence,

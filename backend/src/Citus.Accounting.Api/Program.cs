@@ -5637,6 +5637,14 @@ accounting.MapPut(
                 cancellationToken);
             return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
+        catch (ConcurrencyConflictException ex)
+        {
+            return Results.Conflict(new
+            {
+                code = "concurrency_conflict",
+                message = ex.Message,
+            });
+        }
         catch (InvalidOperationException ex)
         {
             return Results.BadRequest(new { message = ex.Message });
@@ -5833,6 +5841,14 @@ accounting.MapPut(
                 MapSalesOrderInput(request),
                 cancellationToken);
             return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (ConcurrencyConflictException ex)
+        {
+            return Results.Conflict(new
+            {
+                code = "concurrency_conflict",
+                message = ex.Message,
+            });
         }
         catch (InvalidOperationException ex)
         {
@@ -6374,7 +6390,8 @@ static QuoteUpsertInput MapQuoteInput(QuoteUpsertHttpRequest request) => new(
             UnitPrice: l.UnitPrice,
             TaxCodeId: l.TaxCodeId,
             AccountCode: l.AccountCode))
-        .ToArray());
+        .ToArray(),
+    ExpectedUpdatedAt: request.ExpectedUpdatedAt);
 
 static string? ValidateSalesOrderInput(SalesOrderUpsertHttpRequest request)
 {
@@ -6429,7 +6446,8 @@ static SalesOrderUpsertInput MapSalesOrderInput(SalesOrderUpsertHttpRequest requ
             UnitPrice: l.UnitPrice,
             TaxCodeId: l.TaxCodeId,
             AccountCode: l.AccountCode))
-        .ToArray());
+        .ToArray(),
+    ExpectedUpdatedAt: request.ExpectedUpdatedAt);
 
 // ===========================================================================
 // Bills (vendor invoices) — AP-side document lifecycle.

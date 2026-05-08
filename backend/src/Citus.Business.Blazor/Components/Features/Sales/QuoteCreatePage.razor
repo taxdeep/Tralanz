@@ -355,6 +355,8 @@ else
     private bool _isLoading = true;
     private bool _isSaving;
     private string? _validation;
+    // Optimistic-concurrency token; same pattern as BillCreatePage.
+    private DateTimeOffset? _expectedUpdatedAt;
     private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "New quote", Subtitle = "Draft an estimate for a customer." };
 
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
@@ -415,6 +417,7 @@ else
     {
         _quoteNumber = quote.QuoteNumber;
         _status = quote.Status;
+        _expectedUpdatedAt = quote.UpdatedAt;
         _header = new PageHeaderModel
         {
             Eyebrow = "Sales & Get Paid",
@@ -632,7 +635,8 @@ else
                         UnitPrice: l.UnitPrice,
                         TaxCodeId: l.TaxCodeId,
                         AccountCode: l.AccountCode))
-                    .ToArray());
+                    .ToArray(),
+                ExpectedUpdatedAt: _quoteId is null ? null : _expectedUpdatedAt);
 
             QuoteMutationOutcome outcome = _quoteId is null
                 ? await QuoteClient.CreateAsync(payload)
@@ -640,11 +644,21 @@ else
 
             if (!outcome.Succeeded || outcome.Saved is null)
             {
+                if (outcome.IsConcurrencyConflict)
+                {
+                    _validation = outcome.ErrorMessage
+                        ?? "This quote was modified by another session. Reload the page to see the latest version, then re-apply your changes.";
+                    await Message.WarningAsync(_validation);
+                    return;
+                }
                 _validation = outcome.ErrorMessage ?? "Could not save the quote.";
                 return;
             }
 
             var saved = outcome.Saved;
+            // Refresh the token from the just-saved row so consecutive
+            // saves in this same editor session don't self-conflict.
+            _expectedUpdatedAt = saved.UpdatedAt;
             if (send && saved.Status == "draft")
             {
                 var sentOutcome = await QuoteClient.SetStatusAsync(saved.Id, "pending");

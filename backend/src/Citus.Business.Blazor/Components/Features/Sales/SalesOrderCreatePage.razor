@@ -319,6 +319,8 @@ else
     private bool _isLoading = true;
     private bool _isSaving;
     private string? _validation;
+    // Optimistic-concurrency token; same pattern as BillCreatePage.
+    private DateTimeOffset? _expectedUpdatedAt;
     private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "New sales order", Subtitle = "Open commitment to deliver." };
 
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
@@ -368,6 +370,7 @@ else
 
     private void ApplyExisting(SalesOrderRecordDto so)
     {
+        _expectedUpdatedAt = so.UpdatedAt;
         _soNumber = so.SalesOrderNumber;
         _sourceQuoteNumber = so.SourceQuoteNumber;
         _sourceQuoteId = so.SourceQuoteId;
@@ -520,7 +523,8 @@ else
                         UnitPrice: l.UnitPrice,
                         TaxCodeId: l.TaxCodeId,
                         AccountCode: l.AccountCode))
-                    .ToArray());
+                    .ToArray(),
+                ExpectedUpdatedAt: _salesOrderId is null ? null : _expectedUpdatedAt);
 
             SalesOrderMutationOutcome outcome = _salesOrderId is null
                 ? await SalesOrderClient.CreateAsync(payload)
@@ -528,9 +532,19 @@ else
 
             if (!outcome.Succeeded || outcome.Saved is null)
             {
+                if (outcome.IsConcurrencyConflict)
+                {
+                    _validation = outcome.ErrorMessage
+                        ?? "This sales order was modified by another session. Reload the page to see the latest version, then re-apply your changes.";
+                    await Message.WarningAsync(_validation);
+                    return;
+                }
                 _validation = outcome.ErrorMessage ?? "Could not save the sales order.";
                 return;
             }
+            // Refresh the token from the saved row so consecutive saves
+            // in the same editor don't self-conflict.
+            _expectedUpdatedAt = outcome.Saved.UpdatedAt;
             await Message.SuccessAsync($"Sales Order {outcome.Saved.SalesOrderNumber} saved.");
             Navigation.NavigateTo($"sales-orders/{outcome.Saved.Id:D}");
         }

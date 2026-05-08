@@ -168,7 +168,11 @@ public sealed record QuoteUpsertInput(
     string? MemoToCustomer,
     string? InternalNote,
     string? CustomerPoNumber,
-    IReadOnlyList<QuoteLineInput> Lines);
+    IReadOnlyList<QuoteLineInput> Lines,
+    // Optimistic-concurrency token. Same shape as BillUpsertInput +
+    // PurchaseOrderUpsertInput — null = opt-out, set = enforce
+    // updated_at match in the store's UPDATE.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record QuoteLineInput(
     int Sequence,

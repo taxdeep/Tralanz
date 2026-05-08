@@ -84,7 +84,11 @@ public sealed record QuoteUpsertHttpRequest(
     string? MemoToCustomer,
     string? InternalNote,
     string? CustomerPoNumber,
-    IReadOnlyList<QuoteLineHttpRequest>? Lines);
+    IReadOnlyList<QuoteLineHttpRequest>? Lines,
+    // Optimistic-concurrency token. Round-trips the updated_at the
+    // editor saw on GET; the store rejects with HTTP 409 if the
+    // value no longer matches.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record QuoteLineHttpRequest(
     int Sequence,
@@ -125,7 +129,10 @@ public sealed record SalesOrderUpsertHttpRequest(
     string? InternalNote,
     Guid? SourceQuoteId,
     string? CustomerPoNumber,
-    IReadOnlyList<SalesOrderLineHttpRequest>? Lines);
+    IReadOnlyList<SalesOrderLineHttpRequest>? Lines,
+    // Optimistic-concurrency token; same contract as the bill / PO /
+    // quote variants.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record SalesOrderLineHttpRequest(
     int Sequence,

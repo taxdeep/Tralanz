@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Abstractions;
+using Citus.Accounting.Application.Repositories;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -260,6 +261,8 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
+            // Optimistic-concurrency guard. Same shape as Bills + POs +
+            // Quotes — narrow on @expected_updated_at when non-null.
             command.CommandText = """
                 UPDATE sales_orders
                    SET customer_id              = @customer_id,
@@ -292,11 +295,24 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                        internal_note            = @internal_note,
                        customer_po_number       = @customer_po_number,
                        updated_at               = NOW()
-                 WHERE company_id = @company_id AND id = @id;
+                 WHERE company_id = @company_id AND id = @id
+                   AND (cast(@expected_updated_at as timestamptz) IS NULL
+                        OR updated_at = cast(@expected_updated_at as timestamptz));
                 """;
             BindUpsertParameters(command, companyId, input, subtotal, discount, tax, total);
             command.Parameters.AddWithValue("id", salesOrderId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            command.Parameters.AddWithValue(
+                "expected_updated_at",
+                input.ExpectedUpdatedAt.HasValue
+                    ? (object)input.ExpectedUpdatedAt.Value
+                    : DBNull.Value);
+            var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (affectedRows != 1 && input.ExpectedUpdatedAt.HasValue)
+            {
+                throw new ConcurrencyConflictException(
+                    "This sales order was modified by another session after you opened it. " +
+                    "Reload the SO to see the latest changes, then re-apply your edits.");
+            }
         }
 
         await using (var deleteLines = connection.CreateCommand())

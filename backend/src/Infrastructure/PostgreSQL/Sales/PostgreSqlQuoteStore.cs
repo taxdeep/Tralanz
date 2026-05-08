@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Abstractions;
+using Citus.Accounting.Application.Repositories;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -257,6 +258,11 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
+            // Optimistic-concurrency guard. Same shape as Bills + POs:
+            // narrow the UPDATE on @expected_updated_at when non-null.
+            // Zero rows after passing the status guard above ⇒ the row
+            // moved between the editor's GET and PUT ⇒ raise
+            // ConcurrencyConflictException so the route returns 409.
             command.CommandText = """
                 UPDATE quotes
                    SET customer_id              = @customer_id,
@@ -290,11 +296,24 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                        internal_note            = @internal_note,
                        customer_po_number       = @customer_po_number,
                        updated_at               = NOW()
-                 WHERE company_id = @company_id AND id = @id;
+                 WHERE company_id = @company_id AND id = @id
+                   AND (cast(@expected_updated_at as timestamptz) IS NULL
+                        OR updated_at = cast(@expected_updated_at as timestamptz));
                 """;
             BindUpsertParameters(command, companyId, input, subtotal, discount, tax, total);
             command.Parameters.AddWithValue("id", quoteId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            command.Parameters.AddWithValue(
+                "expected_updated_at",
+                input.ExpectedUpdatedAt.HasValue
+                    ? (object)input.ExpectedUpdatedAt.Value
+                    : DBNull.Value);
+            var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (affectedRows != 1 && input.ExpectedUpdatedAt.HasValue)
+            {
+                throw new ConcurrencyConflictException(
+                    "This quote was modified by another session after you opened it. " +
+                    "Reload the quote to see the latest changes, then re-apply your edits.");
+            }
         }
 
         await using (var deleteLines = connection.CreateCommand())

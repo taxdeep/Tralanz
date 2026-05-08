@@ -194,7 +194,14 @@ public sealed class SalesOrderClient(HttpClient httpClient, ILogger<SalesOrderCl
             using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                return new SalesOrderMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
+                // 409 + concurrency_conflict travels with the optimistic-
+                // lock guard. Edit pages render that case with a refresh-
+                // and-retry CTA.
+                var (message, code) = await ReadErrorAsync(response, cancellationToken);
+                var isConflict =
+                    response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    && string.Equals(code, "concurrency_conflict", StringComparison.OrdinalIgnoreCase);
+                return new SalesOrderMutationOutcome(false, null, message, isConflict);
             }
             var saved = await response.Content.ReadFromJsonAsync<SalesOrderRecordDto>(cancellationToken);
             return new SalesOrderMutationOutcome(true, saved, null);
@@ -208,22 +215,42 @@ public sealed class SalesOrderClient(HttpClient httpClient, ILogger<SalesOrderCl
 
     private static async Task<string> ReadMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        var (message, _) = await ReadErrorAsync(response, cancellationToken);
+        return message;
+    }
+
+    /// <summary>
+    /// Pulls (message, code) out of an error response in one pass —
+    /// same shape as BillClient.ReadErrorAsync.
+    /// </summary>
+    private static async Task<(string Message, string? Code)> ReadErrorAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return $"Request failed with status code {(int)response.StatusCode}.";
+            return ($"Request failed with status code {(int)response.StatusCode}.", null);
         }
         try
         {
             using var document = JsonDocument.Parse(raw);
-            if (document.RootElement.TryGetProperty("message", out var message) &&
-                message.ValueKind == JsonValueKind.String)
+            string? message = null;
+            string? code = null;
+            if (document.RootElement.TryGetProperty("message", out var messageEl) &&
+                messageEl.ValueKind == JsonValueKind.String)
             {
-                return message.GetString() ?? raw;
+                message = messageEl.GetString();
             }
+            if (document.RootElement.TryGetProperty("code", out var codeEl) &&
+                codeEl.ValueKind == JsonValueKind.String)
+            {
+                code = codeEl.GetString();
+            }
+            return (message ?? raw, code);
         }
         catch (JsonException) { }
-        return raw;
+        return (raw, null);
     }
 }
 
@@ -330,7 +357,11 @@ public sealed record SalesOrderUpsertPayload(
     string? InternalNote,
     Guid? SourceQuoteId,
     string? CustomerPoNumber,
-    IReadOnlyList<SalesOrderLinePayload> Lines);
+    IReadOnlyList<SalesOrderLinePayload> Lines,
+    // Optimistic-concurrency token. Edit pages capture the SO's
+    // updated_at on load, then round-trip it on save. The API rejects
+    // with HTTP 409 if the row's updated_at has moved since.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record SalesOrderLinePayload(
     int Sequence,
@@ -342,7 +373,12 @@ public sealed record SalesOrderLinePayload(
     Guid? TaxCodeId,
     string? AccountCode);
 
-public sealed record SalesOrderMutationOutcome(bool Succeeded, SalesOrderRecordDto? Saved, string? ErrorMessage);
+public sealed record SalesOrderMutationOutcome(
+    bool Succeeded,
+    SalesOrderRecordDto? Saved,
+    string? ErrorMessage,
+    // True when the server returned 409 + code:"concurrency_conflict".
+    bool IsConcurrencyConflict = false);
 
 public sealed record SalesOrderCancelOutcome(
     bool Succeeded,
