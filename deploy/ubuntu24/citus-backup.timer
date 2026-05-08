@@ -1,0 +1,22 @@
+[Unit]
+Description=Trigger Tralanz Books daily PostgreSQL backup
+Documentation=file:///opt/citus/source/deploy/RESTORE.md
+
+[Timer]
+# 03:00 UTC daily — well after typical end-of-day posting in CA / US,
+# before the 06:00 UTC ≈ 22:00 PST start of the next bookkeeper's day.
+OnCalendar=*-*-* 03:00:00 UTC
+
+# Persistent=true catches up after a host outage. If the box was off
+# at 03:00, the next boot triggers the backup as soon as it's up.
+Persistent=true
+
+# Spread the actual fire across a 5-minute window — keeps a fleet
+# of single-tenant boxes from hammering the same NAS / S3 endpoint
+# at the exact same wall-clock moment.
+RandomizedDelaySec=300
+
+Unit=citus-backup.service
+
+[Install]
+WantedBy=timers.target

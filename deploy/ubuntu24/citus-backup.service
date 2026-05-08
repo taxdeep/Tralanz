@@ -1,0 +1,19 @@
+[Unit]
+Description=Tralanz Books — daily PostgreSQL backup
+Documentation=file:///opt/citus/source/deploy/RESTORE.md
+After=postgresql.service network.target
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/citus-backup.sh
+SyslogIdentifier=citus-backup
+
+# The backup file contains every customer row in plain pg_dump form;
+# treat it like the database itself. 0700 on the dir is enforced by
+# the script, this just stops anyone but root reading the dumps via
+# the live filesystem.
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true

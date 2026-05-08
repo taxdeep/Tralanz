@@ -1436,10 +1436,29 @@ EOF
   nginx -t
 }
 
+install_backup_assets() {
+  # Daily PostgreSQL backup — script + systemd service + timer.
+  # Copied from the source tree so they stay versioned alongside the
+  # rest of the deploy artefacts. Idempotent: re-runs overwrite the
+  # files, daemon-reload + enable in reload_systemd_units catches any
+  # drift.
+  log "Installing daily backup script and timer."
+  install -m 0750 -o root -g root \
+    "${COMMON_DIR}/citus-backup.sh" /usr/local/sbin/citus-backup.sh
+  install -m 0644 -o root -g root \
+    "${COMMON_DIR}/citus-backup.service" "${SYSTEMD_DIR}/citus-backup.service"
+  install -m 0644 -o root -g root \
+    "${COMMON_DIR}/citus-backup.timer" "${SYSTEMD_DIR}/citus-backup.timer"
+}
+
 reload_systemd_units() {
   log "Reloading systemd service definitions."
   systemctl daemon-reload
   systemctl enable citus-web.service citus-accounting-api.service citus-sysadmin-api.service citus-sysadmin-web.service
+  # Backup timer enabled separately because it's a .timer, not a .service,
+  # and uses Persistent=true so a missed slot fires on next boot rather
+  # than silently skipping the day.
+  systemctl enable --now citus-backup.timer
 }
 
 restart_nginx_service() {
@@ -1607,6 +1626,7 @@ install_main() {
   publish_backends
   bootstrap_platform_core
   write_systemd_units
+  install_backup_assets
   reload_systemd_units
   obtain_or_renew_tls_certificate
   write_nginx_config
@@ -1662,6 +1682,7 @@ upgrade_main() {
   publish_backends
   bootstrap_platform_core
   write_systemd_units
+  install_backup_assets
   reload_systemd_units
   obtain_or_renew_tls_certificate
   write_nginx_config
