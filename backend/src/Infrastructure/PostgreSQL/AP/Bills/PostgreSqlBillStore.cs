@@ -1,3 +1,4 @@
+using Citus.Accounting.Application.Repositories;
 using Modules.AP.Bills;
 using Npgsql;
 using NpgsqlTypes;
@@ -200,6 +201,12 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
+            // Optimistic-concurrency guard. The follow-up UPDATE narrows
+            // on updated_at when the caller passed a non-null
+            // ExpectedUpdatedAt. Zero rows affected after passing the
+            // status guard above ⇒ the timestamp drifted ⇒ raise
+            // ConcurrencyConflictException so the route returns 409
+            // and the operator can refresh-and-retry.
             command.CommandText = """
                 UPDATE bills
                    SET bill_number              = @bill_number,
@@ -220,11 +227,24 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                        source_purchase_order_id = @source_purchase_order_id,
                        source_purchase_order_number = @source_purchase_order_number,
                        updated_at               = NOW()
-                 WHERE company_id = @company_id AND id = @id;
+                 WHERE company_id = @company_id AND id = @id
+                   AND (cast(@expected_updated_at as timestamptz) IS NULL
+                        OR updated_at = cast(@expected_updated_at as timestamptz));
                 """;
             BindUpsertParameters(command, companyId, input, baseCurrencyCode);
             command.Parameters.AddWithValue("id", billId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            command.Parameters.AddWithValue(
+                "expected_updated_at",
+                input.ExpectedUpdatedAt.HasValue
+                    ? (object)input.ExpectedUpdatedAt.Value
+                    : DBNull.Value);
+            var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (affectedRows != 1 && input.ExpectedUpdatedAt.HasValue)
+            {
+                throw new ConcurrencyConflictException(
+                    "This bill was modified by another session after you opened it. " +
+                    "Reload the bill to see the latest changes, then re-apply your edits.");
+            }
         }
 
         await using (var deleteLines = connection.CreateCommand())

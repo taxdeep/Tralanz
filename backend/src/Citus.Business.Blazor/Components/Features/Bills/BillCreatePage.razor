@@ -303,6 +303,11 @@ else
     private bool _isLoading = true;
     private bool _isSaving;
     private string? _validation;
+    // Optimistic-concurrency token. Captured from the bill's
+    // updated_at on load and on every successful save; round-trips
+    // back to the server on the next save so the API can reject
+    // stale writes with HTTP 409.
+    private DateTimeOffset? _expectedUpdatedAt;
     private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "New bill", Subtitle = "Record a vendor invoice." };
 
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.LineAmount, 6));
@@ -374,6 +379,7 @@ else
     {
         _billNumberDisplay = bill.EntityNumber;
         _status = bill.Status;
+        _expectedUpdatedAt = bill.UpdatedAt;
         _header = new PageHeaderModel
         {
             Eyebrow = "Expense & Bills",
@@ -531,7 +537,8 @@ else
                         LineAmount: l.LineAmount,
                         TaxCodeId: l.TaxCodeId,
                         TaxAmount: l.TaxAmount))
-                    .ToArray());
+                    .ToArray(),
+                ExpectedUpdatedAt: _billId is null ? null : _expectedUpdatedAt);
 
             BillMutationOutcome outcome = _billId is null
                 ? await BillClient.CreateAsync(payload)
@@ -539,9 +546,25 @@ else
 
             if (!outcome.Succeeded || outcome.Saved is null)
             {
+                if (outcome.IsConcurrencyConflict)
+                {
+                    // Another session moved the bill between this editor's
+                    // GET and PUT. Surface a refresh-and-retry CTA — the
+                    // operator's draft state is preserved here so they
+                    // can decide what to do (reload + redo vs. discard).
+                    _validation = outcome.ErrorMessage
+                        ?? "This bill was modified by another session. Reload the page to see the latest version, then re-apply your changes.";
+                    await Message.WarningAsync(_validation);
+                    return;
+                }
                 _validation = outcome.ErrorMessage ?? "Could not save the bill.";
                 return;
             }
+
+            // Capture the new updated_at from the just-saved row so the
+            // next save in this same editor session doesn't conflict
+            // with itself.
+            _expectedUpdatedAt = outcome.Saved.UpdatedAt;
 
             var saved = outcome.Saved;
             if (post && saved.Status == "draft")

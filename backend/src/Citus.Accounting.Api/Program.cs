@@ -6500,6 +6500,14 @@ accounting.MapPut(
                 cancellationToken);
             return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
+        catch (ConcurrencyConflictException ex)
+        {
+            return Results.Conflict(new
+            {
+                code = "concurrency_conflict",
+                message = ex.Message,
+            });
+        }
         catch (InvalidOperationException ex)
         {
             return Results.BadRequest(new { message = ex.Message });
@@ -6593,7 +6601,8 @@ static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
                 LineAmount: l.LineAmount,
                 TaxCodeId: l.TaxCodeId,
                 TaxAmount: l.TaxAmount ?? 0m))
-            .ToArray());
+            .ToArray(),
+        ExpectedUpdatedAt: request.ExpectedUpdatedAt);
 
 // ===========================================================================
 // Purchase Orders (AP-side, /ap/purchase-orders) — pre-bill commitments.
@@ -6699,6 +6708,14 @@ accounting.MapPut(
                 MapPurchaseOrderInput(request),
                 cancellationToken);
             return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (ConcurrencyConflictException ex)
+        {
+            return Results.Conflict(new
+            {
+                code = "concurrency_conflict",
+                message = ex.Message,
+            });
         }
         catch (InvalidOperationException ex)
         {
@@ -6859,7 +6876,8 @@ static PurchaseOrderUpsertInput MapPurchaseOrderInput(PurchaseOrderUpsertHttpReq
             Quantity: l.Quantity,
             UnitPrice: l.UnitPrice,
             TaxCodeId: l.TaxCodeId))
-        .ToArray());
+        .ToArray(),
+    ExpectedUpdatedAt: request.ExpectedUpdatedAt);
 
 // ===========================================================================
 // Expenses (AP-side, /ap/expenses) — cash outflows.

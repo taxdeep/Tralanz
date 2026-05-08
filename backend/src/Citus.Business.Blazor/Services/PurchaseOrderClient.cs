@@ -131,7 +131,14 @@ public sealed class PurchaseOrderClient(HttpClient httpClient, ILogger<PurchaseO
             using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                return new PurchaseOrderMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
+                // 409 + concurrency_conflict travels with the optimistic-
+                // lock guard. Edit pages render that case with refresh-
+                // and-retry CTA instead of the generic save-failed toast.
+                var (message, code) = await ReadErrorAsync(response, cancellationToken);
+                var isConflict =
+                    response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    && string.Equals(code, "concurrency_conflict", StringComparison.OrdinalIgnoreCase);
+                return new PurchaseOrderMutationOutcome(false, null, message, isConflict);
             }
             var saved = await response.Content.ReadFromJsonAsync<PurchaseOrderRecordDto>(cancellationToken);
             return new PurchaseOrderMutationOutcome(true, saved, null);
@@ -145,22 +152,42 @@ public sealed class PurchaseOrderClient(HttpClient httpClient, ILogger<PurchaseO
 
     private static async Task<string> ReadMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        var (message, _) = await ReadErrorAsync(response, cancellationToken);
+        return message;
+    }
+
+    /// <summary>
+    /// Pulls the (message, code) pair out of an error response in one
+    /// pass — same shape as BillClient.ReadErrorAsync.
+    /// </summary>
+    private static async Task<(string Message, string? Code)> ReadErrorAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return $"Request failed with status code {(int)response.StatusCode}.";
+            return ($"Request failed with status code {(int)response.StatusCode}.", null);
         }
         try
         {
             using var document = JsonDocument.Parse(raw);
-            if (document.RootElement.TryGetProperty("message", out var message) &&
-                message.ValueKind == JsonValueKind.String)
+            string? message = null;
+            string? code = null;
+            if (document.RootElement.TryGetProperty("message", out var messageEl) &&
+                messageEl.ValueKind == JsonValueKind.String)
             {
-                return message.GetString() ?? raw;
+                message = messageEl.GetString();
             }
+            if (document.RootElement.TryGetProperty("code", out var codeEl) &&
+                codeEl.ValueKind == JsonValueKind.String)
+            {
+                code = codeEl.GetString();
+            }
+            return (message ?? raw, code);
         }
         catch (JsonException) { }
-        return raw;
+        return (raw, null);
     }
 }
 
@@ -258,7 +285,11 @@ public sealed record PurchaseOrderUpsertPayload(
     string? MemoToSupplier,
     string? InternalNote,
     Guid? PaymentTermId,
-    IReadOnlyList<PurchaseOrderLinePayload> Lines);
+    IReadOnlyList<PurchaseOrderLinePayload> Lines,
+    // Optimistic-concurrency token. Edit pages capture the PO's
+    // updated_at on load, then round-trip it on save. The API rejects
+    // with HTTP 409 if the row's updated_at has moved since.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record PurchaseOrderLinePayload(
     int Sequence,
@@ -270,6 +301,14 @@ public sealed record PurchaseOrderLinePayload(
     decimal UnitPrice,
     Guid? TaxCodeId);
 
-public sealed record PurchaseOrderMutationOutcome(bool Succeeded, PurchaseOrderRecordDto? Saved, string? ErrorMessage);
+public sealed record PurchaseOrderMutationOutcome(
+    bool Succeeded,
+    PurchaseOrderRecordDto? Saved,
+    string? ErrorMessage,
+    // True when the server returned 409 + code:"concurrency_conflict",
+    // i.e. the PO was edited by another session between this editor's
+    // GET and PUT. Pages render a refresh-and-retry CTA instead of a
+    // generic "save failed" toast.
+    bool IsConcurrencyConflict = false);
 
 public sealed record BillConvertOutcome(bool Succeeded, BillRecordDto? Saved, string? ErrorMessage);

@@ -17,7 +17,11 @@ public sealed record BillUpsertHttpRequest(
     Guid? PaymentTermId,
     Guid? SourcePurchaseOrderId,
     string? SourcePurchaseOrderNumber,
-    IReadOnlyList<BillLineHttpRequest>? Lines);
+    IReadOnlyList<BillLineHttpRequest>? Lines,
+    // Optimistic-concurrency token. Round-trips the updated_at the
+    // editor saw on GET; the store rejects the UPDATE with a 409 if
+    // the value no longer matches. Null on first save / opt-out.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record BillLineHttpRequest(
     int LineNumber,

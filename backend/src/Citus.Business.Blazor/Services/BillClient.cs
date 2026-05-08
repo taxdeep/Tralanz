@@ -91,7 +91,16 @@ public sealed class BillClient(HttpClient httpClient, ILogger<BillClient> logger
             using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                return new BillMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
+                // Read the body once and pull both message + code out of
+                // it. The optimistic-lock guard (commit fc05168) returns
+                // 409 + { code: "concurrency_conflict", message: ... };
+                // pages render that case with a refresh-and-retry CTA
+                // instead of the generic "save failed" toast.
+                var (message, code) = await ReadErrorAsync(response, cancellationToken);
+                var isConflict =
+                    response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    && string.Equals(code, "concurrency_conflict", StringComparison.OrdinalIgnoreCase);
+                return new BillMutationOutcome(false, null, message, isConflict);
             }
             var saved = await response.Content.ReadFromJsonAsync<BillRecordDto>(cancellationToken);
             return new BillMutationOutcome(true, saved, null);
@@ -124,22 +133,43 @@ public sealed class BillClient(HttpClient httpClient, ILogger<BillClient> logger
 
     private static async Task<string> ReadMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        var (message, _) = await ReadErrorAsync(response, cancellationToken);
+        return message;
+    }
+
+    /// <summary>
+    /// Pulls the (message, code) pair out of an error response in one
+    /// pass. Backend errors ship as { "message": "...", "code": "..." };
+    /// non-JSON or message-only bodies still produce a useful string.
+    /// </summary>
+    private static async Task<(string Message, string? Code)> ReadErrorAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return $"Request failed with status code {(int)response.StatusCode}.";
+            return ($"Request failed with status code {(int)response.StatusCode}.", null);
         }
         try
         {
             using var document = JsonDocument.Parse(raw);
-            if (document.RootElement.TryGetProperty("message", out var message) &&
-                message.ValueKind == JsonValueKind.String)
+            string? message = null;
+            string? code = null;
+            if (document.RootElement.TryGetProperty("message", out var messageEl) &&
+                messageEl.ValueKind == JsonValueKind.String)
             {
-                return message.GetString() ?? raw;
+                message = messageEl.GetString();
             }
+            if (document.RootElement.TryGetProperty("code", out var codeEl) &&
+                codeEl.ValueKind == JsonValueKind.String)
+            {
+                code = codeEl.GetString();
+            }
+            return (message ?? raw, code);
         }
         catch (JsonException) { }
-        return raw;
+        return (raw, null);
     }
 }
 
@@ -206,7 +236,12 @@ public sealed record BillUpsertPayload(
     Guid? PaymentTermId,
     Guid? SourcePurchaseOrderId,
     string? SourcePurchaseOrderNumber,
-    IReadOnlyList<BillLinePayload> Lines);
+    IReadOnlyList<BillLinePayload> Lines,
+    // Optimistic-concurrency token. Edit pages capture the bill's
+    // updated_at when GET-loading, then round-trip it on save. The
+    // API rejects with HTTP 409 if the row's updated_at has moved
+    // since — see BillMutationOutcome.IsConcurrencyConflict.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record BillLinePayload(
     int LineNumber,
@@ -216,4 +251,12 @@ public sealed record BillLinePayload(
     Guid? TaxCodeId,
     decimal? TaxAmount);
 
-public sealed record BillMutationOutcome(bool Succeeded, BillRecordDto? Saved, string? ErrorMessage);
+public sealed record BillMutationOutcome(
+    bool Succeeded,
+    BillRecordDto? Saved,
+    string? ErrorMessage,
+    // True when the server returned 409 + code:"concurrency_conflict",
+    // i.e. the bill was edited by another session between this editor's
+    // GET and PUT. Pages use this to render a refresh-and-retry CTA
+    // instead of a generic "save failed" toast.
+    bool IsConcurrencyConflict = false);

@@ -31,7 +31,12 @@ public sealed record PurchaseOrderUpsertHttpRequest(
     string? MemoToSupplier,
     string? InternalNote,
     Guid? PaymentTermId,
-    IReadOnlyList<PurchaseOrderLineHttpRequest>? Lines);
+    IReadOnlyList<PurchaseOrderLineHttpRequest>? Lines,
+    // Optimistic-concurrency token. Round-trips the updated_at the
+    // editor saw on GET; the store rejects the UPDATE with a 409 if
+    // the value no longer matches. Null = opt-out (preserves any
+    // old callers that don't set the field).
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record PurchaseOrderLineHttpRequest(
     int Sequence,

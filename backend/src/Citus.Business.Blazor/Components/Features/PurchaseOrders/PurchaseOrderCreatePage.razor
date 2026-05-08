@@ -328,6 +328,10 @@ else
     private bool _isLoading = true;
     private bool _isSaving;
     private string? _validation;
+    // Optimistic-concurrency token. See BillCreatePage for the same
+    // pattern — captured on load and on every successful save, sent
+    // back on the next save so the API can reject stale writes.
+    private DateTimeOffset? _expectedUpdatedAt;
     private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "New PO", Subtitle = "Commit to a vendor purchase." };
 
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
@@ -396,6 +400,7 @@ else
     {
         _poNumber = po.PurchaseOrderNumber;
         _status = po.Status;
+        _expectedUpdatedAt = po.UpdatedAt;
         _header = new PageHeaderModel
         {
             Eyebrow = "Expense & Bills",
@@ -547,7 +552,8 @@ else
                         Quantity: l.Quantity,
                         UnitPrice: l.UnitPrice,
                         TaxCodeId: l.TaxCodeId))
-                    .ToArray());
+                    .ToArray(),
+                ExpectedUpdatedAt: _purchaseOrderId is null ? null : _expectedUpdatedAt);
 
             PurchaseOrderMutationOutcome outcome = _purchaseOrderId is null
                 ? await PurchaseOrderClient.CreateAsync(payload)
@@ -555,11 +561,21 @@ else
 
             if (!outcome.Succeeded || outcome.Saved is null)
             {
+                if (outcome.IsConcurrencyConflict)
+                {
+                    _validation = outcome.ErrorMessage
+                        ?? "This purchase order was modified by another session. Reload the page to see the latest version, then re-apply your changes.";
+                    await Message.WarningAsync(_validation);
+                    return;
+                }
                 _validation = outcome.ErrorMessage ?? "Could not save the purchase order.";
                 return;
             }
 
             var saved = outcome.Saved;
+            // Capture the freshly-saved updated_at so subsequent saves in
+            // this same editor don't conflict with the row we just wrote.
+            _expectedUpdatedAt = saved.UpdatedAt;
             if (send && saved.Status == "draft")
             {
                 var sentOutcome = await PurchaseOrderClient.SetStatusAsync(saved.Id, "open");

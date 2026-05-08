@@ -170,7 +170,12 @@ public sealed record PurchaseOrderUpsertInput(
     string? MemoToSupplier,
     string? InternalNote,
     Guid? PaymentTermId,
-    IReadOnlyList<PurchaseOrderLineInput> Lines);
+    IReadOnlyList<PurchaseOrderLineInput> Lines,
+    // Optimistic-concurrency token threaded down from the route layer.
+    // When non-null, UpdateAsync's UPDATE narrows on updated_at; a
+    // mismatch raises ConcurrencyConflictException so the route can
+    // surface 409. Null = legacy opt-out preserved for old callers.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record PurchaseOrderLineInput(
     int Sequence,

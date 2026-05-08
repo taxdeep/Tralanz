@@ -147,7 +147,12 @@ public sealed record BillUpsertInput(
     Guid? PaymentTermId,
     Guid? SourcePurchaseOrderId,
     string? SourcePurchaseOrderNumber,
-    IReadOnlyList<BillLineInput> Lines);
+    IReadOnlyList<BillLineInput> Lines,
+    // Optimistic-concurrency token threaded down from the route layer.
+    // When non-null, UpdateAsync's UPDATE narrows on updated_at; a
+    // mismatch raises ConcurrencyConflictException so the route can
+    // surface 409. Null = legacy opt-out behaviour preserved.
+    DateTimeOffset? ExpectedUpdatedAt = null);
 
 public sealed record BillLineInput(
     int LineNumber,

@@ -1,3 +1,4 @@
+using Citus.Accounting.Application.Repositories;
 using Modules.AP.PurchaseOrders;
 using Npgsql;
 using NpgsqlTypes;
@@ -247,6 +248,11 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
+            // Optimistic-concurrency guard. Same shape as PostgreSqlBillStore:
+            // the @expected_updated_at parameter narrows the UPDATE when
+            // non-null. Zero rows affected after the status guard above
+            // ⇒ the timestamp drifted ⇒ raise ConcurrencyConflictException
+            // so the route returns 409.
             command.CommandText = """
                 UPDATE ap_purchase_orders
                    SET vendor_id                 = @vendor_id,
@@ -280,11 +286,24 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
                        internal_note             = @internal_note,
                        payment_term_id           = @payment_term_id,
                        updated_at                = NOW()
-                 WHERE company_id = @company_id AND id = @id;
+                 WHERE company_id = @company_id AND id = @id
+                   AND (cast(@expected_updated_at as timestamptz) IS NULL
+                        OR updated_at = cast(@expected_updated_at as timestamptz));
                 """;
             BindUpsertParameters(command, companyId, input, subtotal, discount, tax, total);
             command.Parameters.AddWithValue("id", purchaseOrderId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            command.Parameters.AddWithValue(
+                "expected_updated_at",
+                input.ExpectedUpdatedAt.HasValue
+                    ? (object)input.ExpectedUpdatedAt.Value
+                    : DBNull.Value);
+            var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (affectedRows != 1 && input.ExpectedUpdatedAt.HasValue)
+            {
+                throw new ConcurrencyConflictException(
+                    "This purchase order was modified by another session after you opened it. " +
+                    "Reload the PO to see the latest changes, then re-apply your edits.");
+            }
         }
 
         await using (var deleteLines = connection.CreateCommand())
