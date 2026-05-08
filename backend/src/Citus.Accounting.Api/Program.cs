@@ -1091,6 +1091,7 @@ accounting.MapPost(
         CustomerUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ICustomerStore store,
+        ICompanyCurrencyGovernanceWorkflow currencyWorkflow,
         Citus.Modules.UnitySearch.Application.Contracts.IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
@@ -1108,6 +1109,19 @@ accounting.MapPost(
 
         try
         {
+            // Picking a foreign currency for a counterparty is the
+            // operator's commitment to do business in that currency, so
+            // make sure the per-currency AR/AP control accounts are
+            // provisioned before the row goes in. EnableCurrencyAsync is
+            // idempotent: same-as-base or already-enabled currencies
+            // return the existing profile without inserting anything,
+            // so it's safe to call unconditionally.
+            await currencyWorkflow.EnableCurrencyAsync(
+                session.ActiveCompanyId,
+                request.DefaultCurrencyCode,
+                session.UserId,
+                cancellationToken);
+
             var saved = await store.CreateAsync(
                 session.ActiveCompanyId,
                 new CustomerUpsertRequest(
@@ -1271,6 +1285,7 @@ accounting.MapPost(
         VendorUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IVendorStore store,
+        ICompanyCurrencyGovernanceWorkflow currencyWorkflow,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1287,6 +1302,16 @@ accounting.MapPost(
 
         try
         {
+            // Mirror of the customer create route: provision per-currency
+            // AP control accounts the moment a vendor is recorded in a
+            // foreign currency. Idempotent — same-as-base or already-
+            // enabled currencies just return the existing profile.
+            await currencyWorkflow.EnableCurrencyAsync(
+                session.ActiveCompanyId,
+                request.DefaultCurrencyCode,
+                session.UserId,
+                cancellationToken);
+
             var saved = await store.CreateAsync(
                 session.ActiveCompanyId,
                 new VendorUpsertRequest(
