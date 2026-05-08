@@ -390,8 +390,11 @@ builder.Services.AddSingleton<PostgreSqlUnityAiSchemaInitializer>();
 // business write. PostgresPlatformFirstCompanyProvisioningRepository
 // guarantees idempotency via IF NOT EXISTS / ON CONFLICT DO NOTHING.
 builder.Services.AddSingleton<Citus.Platform.Core.Runtime.SysAdminPasswordHasher>();
-builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformFirstCompanyProvisioningRepository,
-    Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>();
+builder.Services.AddSingleton<Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>();
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformFirstCompanyProvisioningRepository>(static sp =>
+    sp.GetRequiredService<Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>());
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformAdditionalCompanyProvisioningRepository>(static sp =>
+    sp.GetRequiredService<Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>());
 builder.Services.AddSingleton<PlatformSchemaInitializer>();
 
 // Business sign-in / session endpoints. The repo is the same one SysAdmin
@@ -1022,6 +1025,77 @@ accounting.MapGet(
 
         var profile = await workflow.GetProfileAsync(session.ActiveCompanyId, cancellationToken);
         return Results.Ok(MapCurrencyProfile(profile));
+    });
+
+// -----------------------------------------------------------------------
+// Create an additional company (Business shell, "+ New Company").
+//
+// The signed-in user (resolved from BusinessSession) becomes the owner
+// of the new company. The caller already has at least one active
+// company — that's how they reached this endpoint — but the active
+// company on the session header is incidental here; this endpoint
+// writes a new row to `companies`, a new `company_memberships` for the
+// caller, and seeds the canonical chart of accounts. After the call
+// returns the Blazor shell switches to the new company by re-fetching
+// /accounting/session/context.
+// -----------------------------------------------------------------------
+accounting.MapPost(
+    "/companies",
+    async (
+        CreateAdditionalCompanyHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        Citus.Platform.Core.Abstractions.IPlatformAdditionalCompanyProvisioningRepository provisioning,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value))
+        {
+            return Results.Unauthorized();
+        }
+
+        var command = new Citus.Platform.Core.Runtime.PlatformAdditionalCompanyProvisioningCommand
+        {
+            OwnerUserId = session.UserId,
+            CompanyName = request.CompanyName ?? string.Empty,
+            EntityType = request.EntityType ?? string.Empty,
+            Industry = request.Industry ?? string.Empty,
+            IncorporatedOn = request.IncorporatedOn,
+            FiscalYearEnd = request.FiscalYearEnd ?? string.Empty,
+            Country = request.Country ?? string.Empty,
+            BaseCurrencyCode = request.BaseCurrencyCode ?? string.Empty,
+            AccountCodeLength = request.AccountCodeLength ?? 5,
+            BusinessNumber = request.BusinessNumber ?? string.Empty,
+            Phone = request.Phone ?? string.Empty,
+            CompanyEmail = request.CompanyEmail ?? string.Empty,
+            AddressLine = request.AddressLine ?? string.Empty,
+            City = request.City ?? string.Empty,
+            ProvinceState = request.ProvinceState ?? string.Empty,
+            PostalCode = request.PostalCode ?? string.Empty,
+            TemplateKey = request.TemplateKey ?? string.Empty
+        };
+
+        var result = await provisioning.ProvisionAsync(command, cancellationToken);
+        if (!result.Succeeded)
+        {
+            return Results.BadRequest(new
+            {
+                code = result.FailureCode,
+                message = result.FailureMessage
+            });
+        }
+
+        return Results.Ok(new
+        {
+            companyId = result.CompanyId.Value,
+            entityNumber = result.CompanyEntityNumber,
+            companyName = result.CompanyName,
+            baseCurrencyCode = result.BaseCurrencyCode,
+            accountCodeLength = result.AccountCodeLength,
+            templateKey = result.TemplateKey,
+            templateVersion = result.TemplateVersion,
+            starterAccountCount = result.StarterAccountCodes.Count,
+            provisionedAtUtc = result.ProvisionedAtUtc
+        });
     });
 
 accounting.MapPost(

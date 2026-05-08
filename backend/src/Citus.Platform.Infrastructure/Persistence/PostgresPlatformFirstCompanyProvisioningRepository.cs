@@ -5,10 +5,20 @@ using Npgsql;
 
 namespace Citus.Platform.Infrastructure.Persistence;
 
+// Despite the class name (kept for git-blame continuity), this class
+// also implements IPlatformAdditionalCompanyProvisioningRepository — the
+// "create my second / Nth company" flow used by the Business shell. The
+// two paths share every helper below; ProvisionAsync is the SysAdmin
+// bootstrap-time path, ProvisionAdditionalAsync (added in 2026-05) is
+// the per-user one-click path. Renaming the class would ripple across
+// ~10 files for no functional gain, so the role-vs-name mismatch is
+// accepted.
 public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     PlatformPostgresConnectionFactory connectionFactory,
     SysAdminPasswordHasher passwordHasher,
-    IPlatformRuntimeStateRepository runtimeStateRepository) : IPlatformFirstCompanyProvisioningRepository
+    IPlatformRuntimeStateRepository runtimeStateRepository) :
+    IPlatformFirstCompanyProvisioningRepository,
+    IPlatformAdditionalCompanyProvisioningRepository
 {
     private const int MinimumPasswordLength = 12;
     private const string TemplateVersion = "2026.05";
@@ -417,6 +427,272 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             await transaction.RollbackAsync(cancellationToken);
             return Failed("invalid_setup", ex.Message);
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Additional-company path (Business shell, "+ New Company" button).
+    // Mirrors ProvisionAsync but:
+    //   * the calling user already exists — no users INSERT;
+    //   * no setup_status guard / no LockProvisioningScopeAsync — a
+    //     populated platform doesn't have the bootstrap race the
+    //     first-company path defends against;
+    //   * no UpsertFirstCompanySetupStateAsync at the end (that's a
+    //     SysAdmin lifecycle marker, irrelevant here).
+    // Most of the body is the same nine inserts the first-company
+    // path runs, in the same order, so the platform tier ends up with
+    // the same shape regardless of which entry point created the row.
+    // -----------------------------------------------------------------
+    public async Task<PlatformAdditionalCompanyProvisioningResult> ProvisionAsync(
+        PlatformAdditionalCompanyProvisioningCommand command,
+        CancellationToken cancellationToken)
+    {
+        var validation = ValidateAdditional(command);
+        if (!validation.Succeeded)
+        {
+            return validation;
+        }
+
+        var normalized = NormalizeAdditional(command);
+        var fiscalYearEnd = ParseFiscalYearEnd(normalized.FiscalYearEnd);
+        var template = ResolveTemplateDefinition(
+            normalized.TemplateKey,
+            normalized.Country,
+            normalized.EntityType,
+            normalized.Industry);
+        var provisionedAtUtc = DateTimeOffset.UtcNow;
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            // Look up the existing user's email + display_name. We
+            // bake them into company_settings.profile so its JSON
+            // matches the first-company shape ("ProvisionedOwnerEmail"
+            // and "ProvisionedOwnerDisplayName" are read by some
+            // Settings UI surfaces). If the user's row vanished
+            // between login and this click, fail rather than crash.
+            var (ownerDisplayName, ownerEmail) = await ReadUserIdentityAsync(
+                connection, transaction, normalized.OwnerUserId, cancellationToken);
+            if (ownerEmail is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return AdditionalFailed("owner_user_not_found",
+                    "The signed-in user could not be resolved. Sign out and back in, then try again.");
+            }
+
+            var ownerUserId = normalized.OwnerUserId;
+            var companyId = await AllocateCompanyIdAsync(connection, transaction, cancellationToken);
+            var membershipId = Guid.NewGuid();
+            var companyBookId = Guid.NewGuid();
+            var companyEntityNumber = await ReserveEntityNumberAsync(connection, transaction, provisionedAtUtc.Year, cancellationToken);
+            var effectiveFrom = normalized.IncorporatedOn!.Value.Date;
+            var starterAccountCodes = template.Accounts
+                .Select(account => FormatAccountCode(account.CanonicalCode, normalized.AccountCodeLength))
+                .OfType<string>()
+                .ToArray();
+
+            // Adapter — every helper below was authored to take a
+            // PlatformFirstCompanyProvisioningCommand. The three owner-
+            // related fields it reads (OwnerDisplayName, OwnerEmail,
+            // OwnerPassword) are the only ones missing from the
+            // additional command; we fill in what we have (and leave
+            // OwnerPassword empty, since no users INSERT happens).
+            var firstCompat = new PlatformFirstCompanyProvisioningCommand
+            {
+                OwnerDisplayName = ownerDisplayName ?? string.Empty,
+                OwnerEmail = ownerEmail,
+                OwnerPassword = string.Empty,
+                CompanyName = normalized.CompanyName,
+                EntityType = normalized.EntityType,
+                Industry = normalized.Industry,
+                IncorporatedOn = normalized.IncorporatedOn,
+                FiscalYearEnd = normalized.FiscalYearEnd,
+                BusinessNumber = normalized.BusinessNumber,
+                AccountCodeLength = normalized.AccountCodeLength,
+                Phone = normalized.Phone,
+                CompanyEmail = normalized.CompanyEmail,
+                AddressLine = normalized.AddressLine,
+                City = normalized.City,
+                ProvinceState = normalized.ProvinceState,
+                PostalCode = normalized.PostalCode,
+                Country = normalized.Country,
+                TemplateKey = normalized.TemplateKey,
+                BaseCurrencyCode = normalized.BaseCurrencyCode
+            };
+
+            await EnsureCurrencyExistsAsync(connection, transaction, normalized.BaseCurrencyCode, cancellationToken);
+            await InsertCompanyAsync(connection, transaction, companyId, companyEntityNumber, firstCompat, fiscalYearEnd, provisionedAtUtc, cancellationToken);
+            await InsertOwnerMembershipAsync(connection, transaction, membershipId, companyId, ownerUserId, provisionedAtUtc, cancellationToken);
+            await EnableBaseCurrencyAsync(connection, transaction, companyId, normalized.BaseCurrencyCode, cancellationToken);
+            await InsertCompanySettingsAsync(connection, transaction, companyId, ownerUserId, firstCompat, template, starterAccountCodes, provisionedAtUtc, cancellationToken);
+            await InsertPrimaryBookAsync(connection, transaction, companyBookId, companyId, ownerUserId, normalized.BaseCurrencyCode, template.AccountingStandard, effectiveFrom, provisionedAtUtc, cancellationToken);
+            await InsertDefaultRemeasurementPolicyAsync(connection, transaction, companyId, companyBookId, ownerUserId, effectiveFrom, provisionedAtUtc, cancellationToken);
+            foreach (var account in template.Accounts)
+            {
+                var formattedCode = FormatAccountCode(account.CanonicalCode, normalized.AccountCodeLength);
+                if (formattedCode is null)
+                {
+                    continue;
+                }
+                await InsertStarterAccountAsync(
+                    connection,
+                    transaction,
+                    companyId,
+                    provisionedAtUtc.Year,
+                    normalized.BaseCurrencyCode,
+                    formattedCode,
+                    account,
+                    provisionedAtUtc,
+                    cancellationToken);
+            }
+            await InsertChartTemplateBindingAsync(connection, transaction, companyId, firstCompat, template, provisionedAtUtc, cancellationToken);
+            // Audit actor is the calling business user, not a sysadmin.
+            // InsertAuditLogIfAvailableAsync's first parameter is named
+            // sysAdminAccountId but the helper just stamps it as the
+            // actor_id; passing the business UserId keeps the row
+            // attributable.
+            await InsertAuditLogIfAvailableAsync(connection, transaction, ownerUserId, companyId, firstCompat, template, starterAccountCodes, cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return new PlatformAdditionalCompanyProvisioningResult
+            {
+                Succeeded = true,
+                CompanyId = companyId,
+                CompanyEntityNumber = companyEntityNumber,
+                CompanyName = normalized.CompanyName,
+                CompanyBookId = companyBookId,
+                CompanyBookCode = "PRIMARY",
+                TemplateKey = template.TemplateKey,
+                TemplateVersion = template.TemplateVersion,
+                BaseCurrencyCode = normalized.BaseCurrencyCode,
+                AccountCodeLength = normalized.AccountCodeLength,
+                StarterAccountCodes = starterAccountCodes,
+                ReservedFamilies = template.ReservedFamilies.Select(static family => family.CodeRange).ToArray(),
+                ProvisionedAtUtc = provisionedAtUtc
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return AdditionalFailed("invalid_setup", ex.Message);
+        }
+    }
+
+    private static PlatformAdditionalCompanyProvisioningResult ValidateAdditional(PlatformAdditionalCompanyProvisioningCommand? command)
+    {
+        if (command is null)
+        {
+            return AdditionalFailed("missing_command", "Additional-company provisioning input is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.OwnerUserId.Value))
+        {
+            return AdditionalFailed("missing_owner_user_id", "An authenticated user is required to create a company.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.CompanyName))
+        {
+            return AdditionalFailed("missing_company_name", "Company name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.EntityType))
+        {
+            return AdditionalFailed("missing_entity_type", "Entity type is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Industry))
+        {
+            return AdditionalFailed("missing_industry", "Industry is required.");
+        }
+
+        if (!command.IncorporatedOn.HasValue)
+        {
+            return AdditionalFailed("missing_incorporated_on", "Incorporated date is required.");
+        }
+
+        if (!TryParseFiscalYearEnd(command.FiscalYearEnd, out _, out _))
+        {
+            return AdditionalFailed("invalid_fiscal_year_end", "Fiscal year end must use MM-DD format.");
+        }
+
+        if (command.AccountCodeLength is < 4 or > 10)
+        {
+            return AdditionalFailed("invalid_account_code_length", "Account code length must be between 4 and 10.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Country))
+        {
+            return AdditionalFailed("missing_country", "Country is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.BaseCurrencyCode))
+        {
+            return AdditionalFailed("missing_base_currency", "Base currency is required.");
+        }
+
+        return new PlatformAdditionalCompanyProvisioningResult { Succeeded = true };
+    }
+
+    private static PlatformAdditionalCompanyProvisioningCommand NormalizeAdditional(PlatformAdditionalCompanyProvisioningCommand command) =>
+        command with
+        {
+            CompanyName = command.CompanyName.Trim(),
+            EntityType = command.EntityType.Trim().ToLowerInvariant(),
+            Industry = command.Industry.Trim().ToLowerInvariant(),
+            IncorporatedOn = command.IncorporatedOn?.Date,
+            FiscalYearEnd = command.FiscalYearEnd.Trim(),
+            BusinessNumber = command.BusinessNumber.Trim(),
+            Phone = command.Phone.Trim(),
+            CompanyEmail = command.CompanyEmail.Trim().ToLowerInvariant(),
+            AddressLine = command.AddressLine.Trim(),
+            City = command.City.Trim(),
+            ProvinceState = command.ProvinceState.Trim(),
+            PostalCode = command.PostalCode.Trim(),
+            Country = command.Country.Trim(),
+            TemplateKey = NormalizeTemplateKey(
+                command.TemplateKey,
+                command.Country.Trim(),
+                command.EntityType.Trim(),
+                command.Industry.Trim()),
+            BaseCurrencyCode = command.BaseCurrencyCode.Trim().ToUpperInvariant()
+        };
+
+    private static PlatformAdditionalCompanyProvisioningResult AdditionalFailed(string code, string message) =>
+        new()
+        {
+            Succeeded = false,
+            FailureCode = code,
+            FailureMessage = message
+        };
+
+    private static async Task<(string? DisplayName, string? Email)> ReadUserIdentityAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        UserId userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select coalesce(display_name, ''), email
+            from users
+            where id = @id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("id", userId.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return (null, null);
+        }
+
+        var displayName = reader.GetString(0);
+        var email = reader.GetString(1);
+        return (string.IsNullOrWhiteSpace(displayName) ? null : displayName, email);
     }
 
     private static PlatformFirstCompanyProvisioningResult Validate(PlatformFirstCompanyProvisioningCommand? command)

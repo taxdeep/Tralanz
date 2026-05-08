@@ -205,6 +205,18 @@ builder.Services.AddHttpClient<CustomerClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// "+ New Company" on the My Companies page. Same header handler so
+// the BusinessSession token + active-company id ride along — the
+// active-company id isn't read by the endpoint but the auth filter
+// expects it on every business-shell request.
+builder.Services.AddHttpClient<CompanyProvisioningClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 // Customer detail page aggregates: financial-summary + transactions
 // timeline. Reuses the same business-session header handler the rest
 // of the per-customer surfaces use.
