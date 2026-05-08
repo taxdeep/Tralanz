@@ -2700,11 +2700,49 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             reader.GetString(reader.GetOrdinal("status")));
     }
 
+    // Stage-1.4: schema setup is now in
+    // deploy/migrations/2026-05-08-purchase-order-tables.sql, applied
+    // by the deploy-time migration runner. The inline body below is
+    // retained as a fallback for fresh test databases that don't go
+    // through the installer; the _schemaEnsured short-circuit means
+    // it runs at most once per process even if 21 call sites still
+    // invoke it, so the AccessExclusiveLock the inline ALTERs take
+    // never re-emerges on the read path post-warmup. Same pattern as
+    // commit 2ef2640.
+    private static volatile bool _schemaEnsured;
+
     private static async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        // Cheap probe — if the latest column we'd be adding is already
+        // there, skip the whole block. AccessShareLock on system
+        // catalogs only, never on purchase_orders / its sibling tables.
+        await using (var probe = connection.CreateCommand())
+        {
+            probe.Transaction = transaction;
+            probe.CommandText =
+                $"""
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = '{PurchaseOrdersTableName}'
+                  and column_name = 'amendment_started_at';
+                """;
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
@@ -2859,6 +2897,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             end $$;
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     private static async Task<bool> TableExistsAsync(

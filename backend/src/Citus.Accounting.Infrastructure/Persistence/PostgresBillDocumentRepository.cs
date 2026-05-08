@@ -31,7 +31,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureInventoryGradeBillLineColumnsAsync(scope.Connection, scope.Transaction, cancellationToken);
+        // Inventory-grade bill_lines columns are managed by the
+        // migration runner; no inline ALTER on the read path.
 
         Guid id;
         string entityNumber;
@@ -260,7 +261,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await EnsureInventoryGradeBillLineColumnsAsync(connection, transaction, cancellationToken);
+        // Inventory-grade bill_lines columns are managed by the
+        // migration runner; no inline ALTER on this write path.
 
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         string entityNumber;
@@ -935,28 +937,12 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         }
     }
 
-    private static async Task EnsureInventoryGradeBillLineColumnsAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            """
-            alter table bill_lines add column if not exists item_id uuid;
-            alter table bill_lines add column if not exists warehouse_id uuid;
-            alter table bill_lines add column if not exists uom_code text;
-            alter table bill_lines add column if not exists quantity numeric(18,6);
-            alter table bill_lines add column if not exists unit_cost numeric(18,6);
-            alter table bill_lines add column if not exists purchase_order_id uuid;
-            alter table bill_lines add column if not exists purchase_order_line_number integer;
-
-            create index if not exists ix_bill_lines_company_purchase_order_line
-              on bill_lines (company_id, purchase_order_id, purchase_order_line_number);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
+    // EnsureInventoryGradeBillLineColumnsAsync used to live here.
+    // The columns + index are now in
+    // deploy/migrations/2026-05-08-bill-line-inventory-columns.sql,
+    // applied at deploy time. The two read-path call sites that used
+    // to invoke this helper no longer take an AccessExclusiveLock on
+    // bill_lines.
 
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,

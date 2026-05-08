@@ -41,7 +41,7 @@ fi
 # inline ALTERs and the count truly dropped, or (b) you've genuinely
 # justified an inline ALTER (rare — explain in the commit). The Stage
 # 1.4 sweep is expected to drive this number down toward 0.
-ALTER_TABLE_BASELINE=176
+ALTER_TABLE_BASELINE=166
 alter_table_actual="$(
   cd "${REPO_ROOT}" && \
   grep -rh "alter table" backend/src \
