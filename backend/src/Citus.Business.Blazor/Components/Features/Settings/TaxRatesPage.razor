@@ -181,7 +181,7 @@
 
             <label class="citus-form-field md:col-span-2">
                 <span class="citus-form-field__label">
-                    Tax registration number
+                    Tax registration number <span class="text-error">*</span>
                 </span>
                 <input type="text"
                        class="citus-form-field__input"
@@ -192,7 +192,7 @@
                        disabled="@_isMutating" />
                 <span class="text-fg-subtle text-xs mt-1">
                     Issued by the taxing authority (GST/HST #, VAT #, EIN, etc.).
-                    When set, invoices and tax returns surface this number on documents that use this code.
+                    Invoices and tax returns surface this number on documents that use this code.
                 </span>
             </label>
 
@@ -320,13 +320,16 @@
             await Message.WarningAsync("Rate must be between 0 and 100.");
             return;
         }
+        if (string.IsNullOrWhiteSpace(_formRegistrationNumber))
+        {
+            await Message.WarningAsync("Tax registration number is required.");
+            return;
+        }
 
         _isMutating = true;
         try
         {
-            var registration = string.IsNullOrWhiteSpace(_formRegistrationNumber)
-                ? null
-                : _formRegistrationNumber.Trim();
+            var registration = _formRegistrationNumber.Trim();
             var payload = new TaxCodeUpsertPayload(
                 Code: _formCode.Trim(),
                 Name: _formName.Trim(),
