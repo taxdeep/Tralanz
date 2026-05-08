@@ -33,9 +33,20 @@ public interface ICoaTemplateSeeder
     /// post-onboarding flows that need to ensure a known set of system
     /// accounts exists, like Inventory module activation.
     /// </param>
+    /// <param name="accountCodeLength">
+    /// When provided, canonical 5-digit template codes are scaled to this
+    /// width before insert: codes longer than 5 right-pad with zeros
+    /// (<c>14000</c> → <c>1400000</c> at 7 digits), shorter widths drop
+    /// zero tails. Rows whose tail is non-zero (e.g. <c>13701</c>) are
+    /// skipped under widths smaller than 5 — same rule first-company
+    /// provisioning uses. Without this argument the literal canonical
+    /// code is inserted, which is what the user-driven "apply template"
+    /// action wants on a fresh chart.
+    /// </param>
     Task<CoaSeedSummary> SeedAsync(
         CompanyId companyId,
         string templateKey,
         CancellationToken cancellationToken,
-        bool additive = false);
+        bool additive = false,
+        int? accountCodeLength = null);
 }

@@ -22,4 +22,10 @@ public sealed record CompanyProfileSnapshot(
     string? ProvinceState,
     string? PostalCode,
     string? Country,
-    string BaseCurrencyCode);
+    string BaseCurrencyCode,
+    // Operator-chosen chart-of-accounts code length (4–10), set during
+    // first-company provisioning. CoA seeders that target this company
+    // scale canonical 5-digit template codes to this width so additive
+    // seeds (e.g. Inventory module activation) don't drop a 5-digit
+    // account into a chart whose other rows are 6/7 digits.
+    int AccountCodeLength);

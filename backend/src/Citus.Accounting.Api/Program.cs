@@ -1399,6 +1399,7 @@ accounting.MapPost(
         IInventoryModuleActivationStore activationStore,
         IInventoryFoundationStore foundationStore,
         ICoaTemplateSeeder coaSeeder,
+        ICompanyProfileQuery companyProfileQuery,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1407,6 +1408,14 @@ accounting.MapPost(
 
         try
         {
+            // Look up the company's chosen account_code_length so the
+            // additive seeder can scale canonical 5-digit template codes
+            // to the same width as the operator's curated chart. Without
+            // this a 4-digit chart would end up with an orphan 5-digit
+            // row whenever a system_role is missing.
+            var companyProfile = await companyProfileQuery.GetByIdAsync(
+                session.ActiveCompanyId, cancellationToken);
+
             // Step 1 — make sure every standard CoA account exists
             // (covers companies that already onboarded before M1). Runs
             // in additive mode: the company almost certainly already has
@@ -1416,7 +1425,11 @@ accounting.MapPost(
             // already exist; only the missing inventory-side rows get
             // inserted.
             var coaSummary = await coaSeeder.SeedAsync(
-                session.ActiveCompanyId, "ca_general_small_business", cancellationToken, additive: true);
+                session.ActiveCompanyId,
+                "ca_general_small_business",
+                cancellationToken,
+                additive: true,
+                accountCodeLength: companyProfile?.AccountCodeLength);
 
             // Step 2 — costing method (locks on first inventory document).
             var costingMethod = InventoryActivationRequestParser.ParseCostingMethod(request.CostingMethod);

@@ -16,7 +16,8 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
     {
         const string sql = """
             select id, entity_number, legal_name, email, phone, address_line, city,
-                   province_state, postal_code, country, base_currency_code
+                   province_state, postal_code, country, base_currency_code,
+                   account_code_length
               from companies
              where id = @id
             """;
@@ -43,6 +44,7 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
             ProvinceState: reader.IsDBNull(7) ? null : reader.GetString(7),
             PostalCode: reader.IsDBNull(8) ? null : reader.GetString(8),
             Country: reader.IsDBNull(9) ? null : reader.GetString(9),
-            BaseCurrencyCode: reader.GetString(10));
+            BaseCurrencyCode: reader.GetString(10),
+            AccountCodeLength: reader.GetInt16(11));
     }
 }

@@ -13,11 +13,19 @@ public sealed class CoaTemplateSeeder(
     ICoaTemplateRegistry registry,
     IAccountStore accountStore) : ICoaTemplateSeeder
 {
+    // Canonical template codes are authored at this width; FormatAccountCode
+    // scales them up or down to the company's chosen account_code_length.
+    // Mirrors the helper in PostgresPlatformFirstCompanyProvisioningRepository
+    // so first-company provisioning and post-onboarding additive seeds use
+    // identical scaling rules.
+    private const int CanonicalCodeLength = 5;
+
     public async Task<CoaSeedSummary> SeedAsync(
         CompanyId companyId,
         string templateKey,
         CancellationToken cancellationToken,
-        bool additive = false)
+        bool additive = false,
+        int? accountCodeLength = null)
     {
         var template = registry.Get(templateKey)
             ?? throw new ArgumentException($"Unknown CoA template '{templateKey}'.", nameof(templateKey));
@@ -99,8 +107,24 @@ public sealed class CoaTemplateSeeder(
                     continue;
                 }
 
+                // Scale the canonical 5-digit code to the company's chosen
+                // account_code_length when the caller provided one. Rows
+                // that can't host the canonical code at a narrower width
+                // (e.g. 13701 at 4 digits) come back null and are skipped
+                // with a clear marker — same rule first-company
+                // provisioning uses, so the two paths stay consistent.
+                var insertCode = accountCodeLength is int width
+                    ? FormatAccountCode(account.Code, width)
+                    : account.Code;
+                if (insertCode is null)
+                {
+                    skipped++;
+                    results.Add(new CoaSeedAccountResult(account.Code, account.Name, CoaSeedOutcome.SkippedExisting));
+                    continue;
+                }
+
                 var seedInput = new AccountSeedInput(
-                    Code: account.Code,
+                    Code: insertCode,
                     Name: account.Name,
                     RootType: account.RootType,
                     DetailType: account.DetailType,
@@ -144,5 +168,41 @@ public sealed class CoaTemplateSeeder(
             SkippedCount: skipped,
             FailedCount: failed,
             Results: results);
+    }
+
+    // Same scaling rules as
+    // PostgresPlatformFirstCompanyProvisioningRepository.FormatAccountCode.
+    // Length == 5: returned unchanged. Length > 5: pad RIGHT with zeros
+    // (10000 → 100000 → 1000000…). Length < 5: drop the trailing chars; if
+    // any of them is NOT '0' the truncation would lose information, so the
+    // helper returns null and the seeding loop records a SkippedExisting.
+    private static string? FormatAccountCode(string canonicalCode, int accountCodeLength)
+    {
+        var trimmed = canonicalCode.Trim();
+        if (trimmed.Length != CanonicalCodeLength)
+        {
+            // Not authored at canonical width — leave as-is; this is most
+            // likely a per-currency control account or a custom row that
+            // already carries the company's preferred width.
+            return trimmed;
+        }
+
+        if (accountCodeLength == CanonicalCodeLength)
+        {
+            return trimmed;
+        }
+
+        if (accountCodeLength > CanonicalCodeLength)
+        {
+            return trimmed.PadRight(accountCodeLength, '0');
+        }
+
+        var charsToDrop = CanonicalCodeLength - accountCodeLength;
+        var tail = trimmed[^charsToDrop..];
+        if (tail.Any(static ch => ch != '0'))
+        {
+            return null;
+        }
+        return trimmed[..accountCodeLength];
     }
 }

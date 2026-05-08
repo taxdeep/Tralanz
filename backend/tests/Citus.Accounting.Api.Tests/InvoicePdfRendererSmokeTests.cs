@@ -81,7 +81,8 @@ public sealed class InvoicePdfRendererSmokeTests
             ProvinceState: "BC",
             PostalCode: "V6B 1A1",
             Country: "Canada",
-            BaseCurrencyCode: "CAD");
+            BaseCurrencyCode: "CAD",
+            AccountCodeLength: 5);
 
         var customer = new CustomerRecord(
             Id: Guid.NewGuid(),
