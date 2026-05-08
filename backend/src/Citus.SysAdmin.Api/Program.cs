@@ -12,8 +12,10 @@ using Citus.Ui.Shared.Control;
 using Citus.Ui.Shared.Shell;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.CompanyAccess;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Modules.CompanyAccess.Memberships;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -103,6 +105,48 @@ builder.Services.AddSingleton<Citus.Modules.UnityAi.Application.Contracts.IAiJob
 builder.Services.AddSingleton<Citus.Modules.UnityAi.Application.Contracts.IAiRequestLogStore,
     Infrastructure.PostgreSQL.UnityAi.PostgreSqlAiRequestLogStore>();
 
+// HTTP-layer rate limiting on /auth/login. Mirror of the Accounting
+// API's policy — the SysAdmin lockout policy is account-scoped, this
+// closes the orthogonal network-speed brute-force vector. See the
+// matching block in Citus.Accounting.Api/Program.cs for rationale.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth-login", httpContext =>
+    {
+        var partitionKey = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(60),
+                PermitLimit = 5,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+
+    // Bootstrap-only paths (first SysAdmin account, first company, secret
+    // rotation) are also vulnerable to network-speed probing but expected
+    // to fire at very low cadence. 10/min is enough headroom for a fat-
+    // fingered admin without giving an attacker much.
+    options.AddPolicy("auth-bootstrap", httpContext =>
+    {
+        var partitionKey = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(60),
+                PermitLimit = 10,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
+
 var app = builder.Build();
 
 await using (var startupScope = app.Services.CreateAsyncScope())
@@ -145,6 +189,11 @@ await using (var startupScope = app.Services.CreateAsyncScope())
         controlState.SetMaintenanceState(persistedMaintenance.ToSummary());
     }
 }
+
+// Rate limiter must be wired before any rate-limited endpoint
+// dispatches. Per-IP partitioning + fixed window — no queue, so excess
+// requests get 429 immediately. See builder.Services.AddRateLimiter.
+app.UseRateLimiter();
 
 app.MapGet("/", () => Results.Ok(new
 {
@@ -195,7 +244,8 @@ auth.MapPost(
             SessionToken = result.SessionToken,
             Session = ToSessionSummaryFromAuthentication(result)
         });
-    });
+    })
+    .RequireRateLimiting("auth-login");
 
 auth.MapGet(
     "/setup",
@@ -242,7 +292,8 @@ auth.MapPost(
                 message = ex.Message
             });
         }
-    });
+    })
+    .RequireRateLimiting("auth-bootstrap");
 
 auth.MapPost(
     "/setup/company-decision",
@@ -362,7 +413,8 @@ auth.MapPost(
                 code = result.FailureCode
             });
     })
-    .AddEndpointFilter(RequireSysAdminSessionAsync);
+    .AddEndpointFilter(RequireSysAdminSessionAsync)
+    .RequireRateLimiting("auth-bootstrap");
 
 core.MapGet(
     "/",

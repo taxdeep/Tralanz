@@ -49,12 +49,14 @@ using Infrastructure.PostgreSQL.Numbering;
 using Infrastructure.PostgreSQL.Tax;
 using Infrastructure.PostgreSQL.UnitySearch;
 using Infrastructure.PostgreSQL.UnityAi;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Modules.CompanyAccess.SessionContext;
 using Npgsql;
 using Modules.Company.MultiBook;
 using Modules.Company.MultiCurrency;
 using System.Text;
+using System.Threading.RateLimiting;
 using JournalEntryNumberLookup = Engines.Numbering.JournalEntry.IJournalEntryNumberLookup;
 using GlIJournalEntryLifecycleStore = Modules.GL.JournalEntry.IJournalEntryLifecycleStore;
 using GlIJournalEntryLifecycleWorkflow = Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow;
@@ -489,6 +491,36 @@ builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCen
     missingDomain: "sales-tax filing calendar not yet exposed",
     sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
 
+// HTTP-layer rate limiting on /auth/login. The application already has
+// account-level lockout (PostgresPlatformLoginLockoutPolicy) which kicks
+// in after N consecutive failures for the SAME username — but that's
+// orthogonal to the network-speed brute-force threat where an attacker
+// rotates usernames against a single IP. This middleware caps any
+// single IP at 5 login attempts per 60 seconds, then returns 429 for
+// the rest of the window. The same partition fires when an account is
+// already locked (so the lockout response itself can't be probed at
+// network speed for timing leaks). Other /auth/* routes are not
+// rate-limited here — /auth/session and /auth/logout aren't useful
+// brute-force vectors.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth-login", httpContext =>
+    {
+        var partitionKey = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(60),
+                PermitLimit = 5,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
+
 var app = builder.Build();
 
 await using (var startupScope = app.Services.CreateAsyncScope())
@@ -572,6 +604,12 @@ await using (var startupScope = app.Services.CreateAsyncScope())
 // First-Company-Wizard owners).
 // ---------------------------------------------------------------------------
 
+// Rate limiter must run before any rate-limited endpoint dispatches.
+// Stage-0 setup: only /auth/login is partitioned today (see auth-login
+// policy in builder.Services.AddRateLimiter above). UseRateLimiter() is
+// a no-op for endpoints that don't opt in via RequireRateLimiting.
+app.UseRateLimiter();
+
 app.MapPost(
     "/auth/login",
     async (
@@ -634,7 +672,8 @@ app.MapPost(
             Message = string.Empty,
             IsBootstrap = false
         });
-    });
+    })
+    .RequireRateLimiting("auth-login");
 
 app.MapGet(
     "/auth/session",
