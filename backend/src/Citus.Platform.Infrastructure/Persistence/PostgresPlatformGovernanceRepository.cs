@@ -45,8 +45,39 @@ public sealed class PostgresPlatformGovernanceRepository(
         "sysadmin_password_rotated"
     ];
 
+    // Stage-1.4: cache + information_schema probe so the 17 ALTERs
+    // here only fire on a fresh DB. Sysadmin governance pages call
+    // EnsureSchemaAsync at the top of every read; the cache turns
+    // 11 call sites into a single information_schema probe per
+    // process. Same pattern as commit 2ef2640.
+    private static volatile bool _schemaEnsured;
+
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using (var probeConnection = await connectionFactory.OpenConnectionAsync(cancellationToken))
+        await using (var probe = probeConnection.CreateCommand())
+        {
+            probe.CommandText =
+                """
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'platform_notification_dispatches'
+                  and column_name = 'last_error';
+                """;
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         const string sql = """
             create extension if not exists pgcrypto;
 
@@ -237,6 +268,7 @@ public sealed class PostgresPlatformGovernanceRepository(
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     public async Task<IReadOnlyList<PlatformAuditEvent>> ListRecentAuditEventsAsync(

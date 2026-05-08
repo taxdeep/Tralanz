@@ -31,8 +31,39 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         "governance_only"
     };
 
+    // Stage-1.4: cache + information_schema probe (same pattern as
+    // commit 2ef2640) so EnsureSchemaAsync stops taking
+    // AccessExclusiveLock on the mapping table after the first call.
+    private static volatile bool _schemaEnsured;
+
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using var probeScope = await PostgresCommandScope.CreateAsync(
+            connections,
+            executionContextAccessor,
+            cancellationToken);
+        await using (var probe = probeScope.CreateCommand(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'open_item_adjustment_account_mappings'
+              and column_name = 'deactivated_at';
+            """))
+        {
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         const string sql = """
             create table if not exists open_item_adjustment_account_mappings (
               id uuid primary key,
@@ -103,6 +134,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
             cancellationToken);
         await using var command = scope.CreateCommand(sql);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     public async Task<OpenItemAdjustmentAccountMappingLookupResult> LookupAsync(

@@ -2437,10 +2437,38 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
           on vg.document_id = rd.document_id;
         """;
 
+    // Stage-1.4: cache + information_schema probe. The 17 ALTERs
+    // here add late open-item-clearing audit columns to settlement
+    // batches; once the latest one is observed, this short-circuits
+    // before touching any table. Same pattern as commit 2ef2640.
+    private static volatile bool _schemaEnsured;
+
     private static async Task EnsureSchemaAsync(
         PostgresCommandScope scope,
         CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using (var probe = scope.CreateCommand(
+            $"""
+            select count(*)
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = '{SettlementBatchesTableName}'
+              and column_name = 'open_item_reversed_amount_base';
+            """))
+        {
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         await using var command = scope.CreateCommand(
             $"""
             create table if not exists {SettlementLinesTableName} (
@@ -2602,6 +2630,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               on {PurchaseVarianceLinesTableName} (company_id, bill_id, bill_line_number, variance_status);
             """);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     private static async Task<bool> TableExistsAsync(

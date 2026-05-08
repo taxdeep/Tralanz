@@ -101,10 +101,38 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
         }
     }
 
+    // Stage-1.4: cache + information_schema probe. Once the latest
+    // column on receipt_grir_ap_settlement_batches is observed, this
+    // skips the dual TableExists round-trip and the seven ALTERs.
+    // Same pattern as commit 2ef2640.
+    private static volatile bool _schemaEnsured;
+
     private static async Task EnsureSchemaAsync(
         PostgresCommandScope scope,
         CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using (var probe = scope.CreateCommand(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'receipt_grir_ap_settlement_batches'
+              and column_name = 'journal_blocked_reason_code';
+            """))
+        {
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         if (!await TableExistsAsync(scope, "receipt_grir_ap_settlement_batches", cancellationToken) ||
             !await TableExistsAsync(scope, "receipt_grir_ap_settlement_batch_lines", cancellationToken))
         {
@@ -135,6 +163,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               add column if not exists journal_blocked_reason_code text null;
             """);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     private static async Task AcquireSettlementPostingLockAsync(

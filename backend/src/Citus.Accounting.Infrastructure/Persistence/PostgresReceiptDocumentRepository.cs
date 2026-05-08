@@ -806,11 +806,41 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             reader.GetString(reader.GetOrdinal("status")));
     }
 
+    // Stage-1.4: cache flag + information_schema probe so that after the
+    // first call (or after the deploy-time migration runner has applied
+    // the same SQL), subsequent calls take no AccessExclusiveLock on
+    // receipt_lines / receipts. Same pattern as commit 2ef2640.
+    private static volatile bool _schemaEnsured;
+
     private static async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using (var probe = connection.CreateCommand())
+        {
+            probe.Transaction = transaction;
+            probe.CommandText =
+                $"""
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = '{ReceiptLinesTableName}'
+                  and column_name = 'purchase_order_line_number';
+                """;
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
@@ -875,6 +905,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               on {ReceiptLinesTableName} (company_id, purchase_order_id, purchase_order_line_number);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     private sealed record PurchaseOrderReceiptAnchorCandidate(

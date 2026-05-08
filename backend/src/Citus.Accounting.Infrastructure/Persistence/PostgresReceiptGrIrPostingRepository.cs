@@ -180,10 +180,38 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
         await lineCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    // Stage-1.4: cache + information_schema probe. Skips both the
+    // TableExistsAsync round-trip and the AccessExclusiveLock-taking
+    // ALTERs once the latest column added is observed on the live
+    // schema. Same pattern as commit 2ef2640.
+    private static volatile bool _schemaEnsured;
+
     private static async Task EnsureSchemaAsync(
         PostgresCommandScope scope,
         CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using (var probe = scope.CreateCommand(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'receipt_grir_bridge_lines'
+              and column_name = 'posted_at';
+            """))
+        {
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         if (!await TableExistsAsync(scope, "receipt_grir_bridge_lines", cancellationToken))
         {
             throw new InvalidOperationException("The receipt GR/IR bridge lane must be refreshed before GR/IR posting.");
@@ -248,6 +276,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               on receipt_grir_bridge_posting_batch_lines (company_id, posting_batch_id);
             """);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     private static async Task AcquireReceiptPostingLockAsync(

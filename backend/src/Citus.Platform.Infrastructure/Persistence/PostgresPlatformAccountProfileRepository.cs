@@ -941,8 +941,37 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         };
     }
 
+    // Stage-1.4: cache + information_schema probe so the 9 ALTERs
+    // here only fire on a fresh DB (or until the deploy-time migration
+    // runner gets the same SQL). Same pattern as commit 2ef2640.
+    private static volatile bool _schemaEnsured;
+
     private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using (var probeConnection = await connectionFactory.OpenConnectionAsync(cancellationToken))
+        await using (var probe = probeConnection.CreateCommand())
+        {
+            probe.CommandText =
+                """
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'account_verification_codes'
+                  and column_name = 'payload';
+                """;
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         const string sql = """
             create extension if not exists pgcrypto;
 
@@ -1078,6 +1107,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 
     private async Task EnsureInteractiveWritesAllowedAsync(CancellationToken cancellationToken)
