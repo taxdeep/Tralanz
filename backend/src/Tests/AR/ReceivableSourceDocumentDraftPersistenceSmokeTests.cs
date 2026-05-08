@@ -4037,7 +4037,31 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var journalEntryId = Guid.NewGuid();
         var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
 
+        // Seven tests in this class share the hardcoded display_number
+        // 'JE-SMOKE-001' as part of their fixture seed (and assert on it
+        // afterwards). The unique constraint
+        // journal_entries_unique_display_number rejects the second
+        // insert with PostgresException 23505 — what looked like a flake
+        // was every test after the first one in the class failing
+        // deterministically.
+        //
+        // Tests in the same xUnit assembly run sequentially
+        // (DisableTestParallelization=true), so the prior test's row is
+        // dead state by the time we reach this point. Drop it before
+        // inserting ours.
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using (var cleanup = connection.CreateCommand())
+        {
+            cleanup.CommandText =
+                """
+                delete from journal_entries
+                where company_id = @company_id
+                  and display_number = 'JE-SMOKE-001';
+                """;
+            cleanup.Parameters.AddWithValue("company_id", companyId.Value);
+            await cleanup.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
