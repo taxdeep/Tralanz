@@ -125,6 +125,15 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             alter table companies add column if not exists account_code_length smallint not null default 4;
             alter table companies alter column account_code_length set default 5;
 
+            -- The migration draft shipped with CHECK (account_code_length BETWEEN 4 AND 6),
+            -- but the application validates 4–10 (see ValidateNormalizedCommand). Widen
+            -- the constraint so the wizard's full range is honoured. Drop+re-add is the
+            -- cheapest way to relax a CHECK in Postgres; idempotent guards avoid an error
+            -- on fresh databases that already have the wider rule.
+            alter table companies drop constraint if exists companies_account_code_length_chk;
+            alter table companies add constraint companies_account_code_length_chk
+              check (account_code_length between 4 and 10);
+
             -- Inventory module (paid add-on, per Tralanz Inventory V1 plan).
             -- Enabled flag drives the Items page gate, the activation
             -- wizard's idempotency, and (later) the Receipt / Shipment /

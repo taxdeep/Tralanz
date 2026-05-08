@@ -141,7 +141,7 @@ CREATE TABLE companies (
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT companies_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
-  CONSTRAINT companies_account_code_length_chk CHECK (account_code_length BETWEEN 4 AND 6),
+  CONSTRAINT companies_account_code_length_chk CHECK (account_code_length BETWEEN 4 AND 10),
   CONSTRAINT companies_status_chk CHECK (status IN ('active', 'inactive', 'suspended', 'archived'))
 );
 
