@@ -2,6 +2,9 @@
 
 @inject BusinessShellState ShellState
 @inject WarehouseClient WarehouseClient
+@inject PurchaseOrderClient PurchaseOrderClient
+@inject SalesOrderClient SalesOrderClient
+@inject ItemClient ItemClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -21,10 +24,7 @@
 
 @if (!ShellState.ActiveCompany.InventoryModuleEnabled)
 {
-    @* Module-not-enabled state: no warehouses to manage. Surface the
-       activation wizard CTA prominently rather than showing an empty
-       table — same call-to-action pattern as the Items page Stock
-       kind upsell. *@
+    @* Module-not-enabled state: same upsell as before. *@
     <section class="citus-panel">
         <div class="text-center py-8">
             <CitusIcon Name="IconName.BuildingStore" Size="IconSize.Display" />
@@ -47,7 +47,143 @@ else
         <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
     }
 
+    @* ─── Quick actions ──────────────────────────────────────────────
+       Four large entry points, matching the dashboard sketch. Targets
+       are the closest existing surface for each workflow; the Receipts /
+       Shipments / Returns first-class pages arrive with the V2
+       inventory module — for now Receiving/Shipping point at the
+       upstream document queues that block them. *@
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+        <a class="citus-quick-card" href="purchase-orders">
+            <span class="citus-quick-card__icon"><CitusIcon Name="IconName.Download" Size="IconSize.Action" /></span>
+            <span class="citus-quick-card__body">
+                <strong>Receiving</strong>
+                <small>Purchase orders awaiting receipt</small>
+            </span>
+        </a>
+        <a class="citus-quick-card" href="credit-memos/new">
+            <span class="citus-quick-card__icon"><CitusIcon Name="IconName.Refresh" Size="IconSize.Action" /></span>
+            <span class="citus-quick-card__body">
+                <strong>Return</strong>
+                <small>Customer return → credit memo</small>
+            </span>
+        </a>
+        <a class="citus-quick-card" href="sales-orders">
+            <span class="citus-quick-card__icon"><CitusIcon Name="IconName.Truck" Size="IconSize.Action" /></span>
+            <span class="citus-quick-card__body">
+                <strong>Shipping</strong>
+                <small>Sales orders awaiting shipment</small>
+            </span>
+        </a>
+        <a class="citus-quick-card citus-quick-card--muted" href="bills">
+            <span class="citus-quick-card__icon"><CitusIcon Name="IconName.Receipt" Size="IconSize.Action" /></span>
+            <span class="citus-quick-card__body">
+                <strong>Return Receipts</strong>
+                <small>Vendor returns (interim: bill credit)</small>
+            </span>
+        </a>
+    </div>
+
+    @* ─── KPI strip ─────────────────────────────────────────────────
+       V1 figures derived from data the page already loads. Stock value
+       and low-stock count need the valuation engine + reorder_point
+       fields, both arriving with M2 — placeholders kept simple ("—")
+       rather than fake metrics. *@
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div class="citus-kpi-card">
+            <span class="citus-kpi-card__label">Warehouses</span>
+            <span class="citus-kpi-card__value">@_warehouses.Count</span>
+            <span class="citus-kpi-card__hint">@($"{_warehouses.Count(w => w.IsActive)} active")</span>
+        </div>
+        <div class="citus-kpi-card">
+            <span class="citus-kpi-card__label">Stock SKUs</span>
+            <span class="citus-kpi-card__value">@_stockSkuCount</span>
+            <span class="citus-kpi-card__hint">@($"{_serviceSkuCount} services + {_dropShipSkuCount} drop-ship")</span>
+        </div>
+        <div class="citus-kpi-card">
+            <span class="citus-kpi-card__label">Open POs</span>
+            <span class="citus-kpi-card__value">@_openPoCount</span>
+            <span class="citus-kpi-card__hint">awaiting receipt</span>
+        </div>
+        <div class="citus-kpi-card">
+            <span class="citus-kpi-card__label">Open SOs</span>
+            <span class="citus-kpi-card__value">@_openSoCount</span>
+            <span class="citus-kpi-card__hint">awaiting shipment</span>
+        </div>
+    </div>
+
+    @* ─── Queues — Waiting to Receive | Waiting to Ship ──────────── *@
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
+        <section class="citus-panel">
+            <header class="flex items-baseline justify-between mb-3">
+                <h2 class="text-base font-semibold">Waiting to Receive</h2>
+                <a class="citus-link text-sm" href="purchase-orders">See all POs →</a>
+            </header>
+            <CitusAsyncBoundary IsLoading="@_isLoading"
+                                IsEmpty="@(_waitingToReceive.Count == 0)"
+                                EmptyIcon="IconName.Download"
+                                EmptyTitle="No open POs"
+                                EmptyMessage="Confirmed purchase orders queue here until they're received and converted to a bill.">
+                <ul class="citus-stack-list">
+                    @foreach (var po in _waitingToReceive)
+                    {
+                        <li class="citus-stack-list__row">
+                            <div>
+                                <a class="citus-link font-medium" href="@($"purchase-orders/{po.Id:D}")">@po.PurchaseOrderNumber</a>
+                                <div class="text-fg-muted text-xs mt-0.5">@po.VendorName</div>
+                                <div class="mt-1"><CitusBadge Color="@StatusBadgeColor(po.Status)">@FormatStatus(po.Status)</CitusBadge></div>
+                            </div>
+                            <div class="text-right">
+                                <div class="font-medium">@FormatMoney(po.TransactionCurrencyCode, po.TotalAmount)</div>
+                                <div class="text-fg-muted text-xs mt-0.5">
+                                    @(po.ExpectedDeliveryDate.HasValue ? po.ExpectedDeliveryDate.Value.ToString("yyyy-MM-dd") : "No date")
+                                </div>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </CitusAsyncBoundary>
+        </section>
+
+        <section class="citus-panel">
+            <header class="flex items-baseline justify-between mb-3">
+                <h2 class="text-base font-semibold">Waiting to Ship</h2>
+                <a class="citus-link text-sm" href="sales-orders">See all SOs →</a>
+            </header>
+            <CitusAsyncBoundary IsLoading="@_isLoading"
+                                IsEmpty="@(_waitingToShip.Count == 0)"
+                                EmptyIcon="IconName.Truck"
+                                EmptyTitle="No open SOs"
+                                EmptyMessage="Confirmed sales orders queue here until they're invoiced and shipped.">
+                <ul class="citus-stack-list">
+                    @foreach (var so in _waitingToShip)
+                    {
+                        <li class="citus-stack-list__row">
+                            <div>
+                                <a class="citus-link font-medium" href="@($"sales-orders/{so.Id:D}")">@so.SalesOrderNumber</a>
+                                <div class="text-fg-muted text-xs mt-0.5">@so.CustomerName</div>
+                                <div class="mt-1"><CitusBadge Color="@StatusBadgeColor(so.Status)">@FormatStatus(so.Status)</CitusBadge></div>
+                            </div>
+                            <div class="text-right">
+                                <div class="font-medium">@FormatMoney(so.TransactionCurrencyCode, so.TotalAmount)</div>
+                                <div class="text-fg-muted text-xs mt-0.5">@so.DocumentDate.ToString("yyyy-MM-dd")</div>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </CitusAsyncBoundary>
+        </section>
+    </div>
+
+    @* ─── Warehouse list (demoted from page hero) ──────────────────
+       V1 single-warehouse keeps this short. The activation wizard
+       seeded MAIN; rename it inline. The ERP tier extends this to
+       multi-warehouse with bin / lot tracking. *@
     <section class="citus-panel">
+        <header class="flex items-baseline justify-between mb-3">
+            <h2 class="text-base font-semibold">All Warehouses</h2>
+            <span class="text-fg-subtle text-xs">V1 inventory tier supports a single warehouse per company.</span>
+        </header>
         <CitusAsyncBoundary IsLoading="@_isLoading"
                             IsEmpty="@(_warehouses.Count == 0)"
                             EmptyIcon="IconName.BuildingStore"
@@ -128,22 +264,36 @@ else
             </table>
         </CitusAsyncBoundary>
     </section>
-
-    <p class="text-fg-subtle text-xs mt-3">
-        V1 Inventory tier supports a single warehouse per company. Multi-warehouse,
-        bin / location, and lot / serial tracking arrive with the ERP tier.
-    </p>
 }
 
 @code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Warehouse",
-        Title = "Warehouses",
-        Subtitle = "Inventory locations under this company. The activation wizard creates Main Warehouse; rename here."
+        Title = "Warehouse Operations",
+        Subtitle = "Receive, ship, adjust — and the queues that drive those moves."
     };
 
+    // POs in this status block receipt: confirmed but not yet billed /
+    // received. The list endpoint filters server-side by status.
+    private const string OpenPoStatus = "confirmed";
+
+    // SOs that still owe a shipment: confirmed (no invoice yet) plus
+    // partially-invoiced (some lines outstanding). Closed/fully-invoiced
+    // SOs drop out of the queue.
+    private static readonly string[] OpenSoStatuses = { "confirmed", "partially_invoiced" };
+
+    private const int QueuePreviewLimit = 5;
+
     private IReadOnlyList<WarehouseSummary> _warehouses = Array.Empty<WarehouseSummary>();
+    private IReadOnlyList<PurchaseOrderSummaryDto> _waitingToReceive = Array.Empty<PurchaseOrderSummaryDto>();
+    private IReadOnlyList<SalesOrderSummaryDto> _waitingToShip = Array.Empty<SalesOrderSummaryDto>();
+    private int _openPoCount;
+    private int _openSoCount;
+    private int _stockSkuCount;
+    private int _serviceSkuCount;
+    private int _dropShipSkuCount;
+
     private bool _isLoading = true;
     private bool _isSubmitting;
     private string? _validation;
@@ -168,7 +318,39 @@ else
         _isLoading = true;
         try
         {
-            _warehouses = await WarehouseClient.ListAsync(includeInactive: true);
+            // Parallel fan-out — every box on the dashboard hits a
+            // different endpoint. SOs need two status filters, so two
+            // fetches there. Anything that fails returns an empty list
+            // (the per-client try/catch already handles it) so a single
+            // failure can't blank the whole dashboard.
+            var warehousesTask = WarehouseClient.ListAsync(includeInactive: true);
+            var openPosTask = PurchaseOrderClient.ListAsync(includeDrafts: false, status: OpenPoStatus);
+            var soConfirmedTask = SalesOrderClient.ListAsync(status: "confirmed");
+            var soPartialTask = SalesOrderClient.ListAsync(status: "partially_invoiced");
+            var itemsTask = ItemClient.ListAsync(includeInactive: false);
+
+            await Task.WhenAll(warehousesTask, openPosTask, soConfirmedTask, soPartialTask, itemsTask);
+
+            _warehouses = warehousesTask.Result;
+
+            var openPos = openPosTask.Result;
+            _openPoCount = openPos.Count;
+            _waitingToReceive = openPos
+                .OrderByDescending(p => p.UpdatedAt)
+                .Take(QueuePreviewLimit)
+                .ToArray();
+
+            var openSos = soConfirmedTask.Result.Concat(soPartialTask.Result).ToArray();
+            _openSoCount = openSos.Length;
+            _waitingToShip = openSos
+                .OrderByDescending(s => s.UpdatedAt)
+                .Take(QueuePreviewLimit)
+                .ToArray();
+
+            var items = itemsTask.Result;
+            _stockSkuCount = items.Count(i => string.Equals(i.ItemKind, "stock", StringComparison.OrdinalIgnoreCase));
+            _serviceSkuCount = items.Count(i => string.Equals(i.ItemKind, "service", StringComparison.OrdinalIgnoreCase));
+            _dropShipSkuCount = items.Count(i => string.Equals(i.ItemKind, "drop_ship", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -226,4 +408,22 @@ else
             _isSubmitting = false;
         }
     }
+
+    private static string FormatStatus(string status) =>
+        status.Replace('_', ' ') switch
+        {
+            "partially invoiced" => "Partially invoiced",
+            var s => char.ToUpperInvariant(s[0]) + s[1..]
+        };
+
+    private static string StatusBadgeColor(string status) => status.ToLowerInvariant() switch
+    {
+        "confirmed" => "blue",
+        "partially_invoiced" => "amber",
+        "draft" => "default",
+        _ => "default"
+    };
+
+    private static string FormatMoney(string currency, decimal amount) =>
+        $"{currency} {amount:N2}";
 }

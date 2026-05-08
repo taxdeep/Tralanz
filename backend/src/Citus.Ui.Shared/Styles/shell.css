@@ -3524,3 +3524,113 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     width: 3rem;
     padding: 0;
 }
+
+/* ─── Warehouse / dashboard primitives ─────────────────────────────
+   Used by the Warehouse Operations dashboard at /company/warehouses.
+   Quick action cards, KPI strip cards, and a thin stack list for the
+   "Waiting to Receive / Ship" queues. Kept in the shared stylesheet
+   so future dashboard-style pages (Sales / Purchases / Inventory) can
+   reuse the same primitives without duplicating styles. */
+
+.citus-quick-card {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-4);
+    background: var(--citus-color-accent-soft, var(--citus-color-bg-elevated));
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    color: var(--citus-color-fg);
+    text-decoration: none;
+    transition: background var(--citus-transition-fast, 150ms),
+                border-color var(--citus-transition-fast, 150ms),
+                transform var(--citus-transition-fast, 150ms);
+}
+
+.citus-quick-card:hover {
+    background: var(--citus-color-accent, var(--citus-color-bg-elevated));
+    border-color: var(--citus-color-accent-strong, var(--citus-color-border-strong));
+    color: var(--citus-color-fg);
+    transform: translateY(-1px);
+}
+
+.citus-quick-card--muted {
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-quick-card__icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--citus-radius-sm, .25rem);
+    background: var(--citus-color-bg-elevated);
+}
+
+.citus-quick-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.citus-quick-card__body strong {
+    font-weight: var(--citus-font-weight-semibold, 600);
+}
+
+.citus-quick-card__body small {
+    font-size: var(--text-xs, .75rem);
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-kpi-card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--citus-space-3) var(--citus-space-4);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    box-shadow: var(--citus-shadow-1);
+}
+
+.citus-kpi-card__label {
+    font-size: var(--text-xs, .75rem);
+    color: var(--citus-color-fg-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wider, .05em);
+}
+
+.citus-kpi-card__value {
+    font-size: 1.5rem;
+    font-weight: var(--citus-font-weight-semibold, 600);
+    line-height: 1.1;
+    margin-top: 2px;
+}
+
+.citus-kpi-card__hint {
+    font-size: var(--text-xs, .75rem);
+    color: var(--citus-color-fg-subtle, var(--citus-color-fg-muted));
+}
+
+.citus-stack-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.citus-stack-list__row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-3) 0;
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-stack-list__row:last-child {
+    border-bottom: 0;
+}
