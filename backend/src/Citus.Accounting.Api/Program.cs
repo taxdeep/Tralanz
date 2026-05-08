@@ -1408,9 +1408,15 @@ accounting.MapPost(
         try
         {
             // Step 1 — make sure every standard CoA account exists
-            // (covers companies that already onboarded before M1).
+            // (covers companies that already onboarded before M1). Runs
+            // in additive mode: the company almost certainly already has
+            // a curated chart by the time it reaches this wizard, so the
+            // strict empty-chart guard would block activation. Per-row
+            // idempotency in SeedSystemAccountAsync skips rows that
+            // already exist; only the missing inventory-side rows get
+            // inserted.
             var coaSummary = await coaSeeder.SeedAsync(
-                session.ActiveCompanyId, "ca_general_small_business", cancellationToken);
+                session.ActiveCompanyId, "ca_general_small_business", cancellationToken, additive: true);
 
             // Step 2 — costing method (locks on first inventory document).
             var costingMethod = InventoryActivationRequestParser.ParseCostingMethod(request.CostingMethod);
@@ -1423,18 +1429,25 @@ accounting.MapPost(
                     RequireWriteOffApproval: true),
                 cancellationToken);
 
-            // Step 3 — default warehouse. SaveWarehouseAsync is idempotent
-            // on (company_id, lower(warehouse_code)) per its unique index;
-            // re-running the wizard updates the existing MAIN warehouse
-            // rather than failing.
+            // Step 3 — default warehouse. SaveWarehouseAsync's INSERT path
+            // hits the (company_id, lower(warehouse_code)) unique index
+            // when re-running the wizard, so look up the existing MAIN
+            // first and pass its id to take the UPDATE branch. Without
+            // this the activation route is single-shot — exactly the
+            // opposite of what the wizard's "Re-apply settings" copy
+            // promises operators.
             var warehouseName = string.IsNullOrWhiteSpace(request.WarehouseName)
                 ? "Main Warehouse"
                 : request.WarehouseName.Trim();
+            var existingWarehouses = await foundationStore.ListWarehousesAsync(
+                session.ActiveCompanyId, includeInactive: true, cancellationToken);
+            var existingMain = existingWarehouses.FirstOrDefault(w =>
+                string.Equals(w.WarehouseCode, "MAIN", StringComparison.OrdinalIgnoreCase));
             var warehouseId = await foundationStore.SaveWarehouseAsync(
                 new InventoryWarehouseUpsertRequest(
                     CompanyId: session.ActiveCompanyId,
                     UserId: session.UserId,
-                    WarehouseId: null,
+                    WarehouseId: existingMain?.Id,
                     WarehouseCode: "MAIN",
                     Name: warehouseName,
                     Description: "Default warehouse created by the Inventory activation wizard."),

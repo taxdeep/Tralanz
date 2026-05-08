@@ -16,26 +16,43 @@ public sealed class CoaTemplateSeeder(
     public async Task<CoaSeedSummary> SeedAsync(
         CompanyId companyId,
         string templateKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool additive = false)
     {
         var template = registry.Get(templateKey)
             ?? throw new ArgumentException($"Unknown CoA template '{templateKey}'.", nameof(templateKey));
 
-        // Templates may only seed an empty chart of accounts. Once a company
-        // has any accounts (active or inactive, system or user-created), the
-        // chart is owned by the company and re-seeding is forbidden — even
-        // though the underlying upsert is additive. This protects users from
-        // accidentally re-introducing system rows after they have curated
-        // the catalog and gives the UI a hard rule to hide the affordance
-        // against. The first-company provisioning flow seeds before any
-        // accounts exist, so it is unaffected.
+        // In strict mode (the default) the call is rejected once a company
+        // has any accounts. This protects an operator who has curated the
+        // catalog from accidentally re-introducing system rows via the
+        // user-driven "apply template" affordance, and lets the UI hide
+        // that affordance with a hard rule. The first-company provisioning
+        // flow seeds before any accounts exist, so the guard is a no-op
+        // for it.
+        //
+        // In additive mode the guard is bypassed: post-onboarding flows
+        // (e.g. Inventory module activation) need to make sure a known set
+        // of system accounts exists on a company that already has its own
+        // chart. The per-row idempotency in SeedSystemAccountAsync is what
+        // keeps additive mode safe — existing rows still get skipped at
+        // the row level, never overwritten.
+        // Both modes need the existing chart: strict mode uses Count for
+        // the empty-chart guard, additive mode uses SystemRole values for
+        // role-level dedup further down (different code-numbering schemes
+        // won't collide on code, so role dedup is the only safe filter).
         var existing = await accountStore.ListAsync(companyId, includeInactive: true, cancellationToken)
             .ConfigureAwait(false);
-        if (existing.Count > 0)
+        if (!additive && existing.Count > 0)
         {
             throw new InvalidOperationException(
                 "Chart of accounts is not empty; templates can only be applied to a company with no accounts. Add or edit accounts individually instead.");
         }
+
+        var takenRoles = new HashSet<string>(
+            existing
+                .Select(static a => a.SystemRole)
+                .Where(static role => !string.IsNullOrWhiteSpace(role))!,
+            StringComparer.OrdinalIgnoreCase);
 
         var results = new List<CoaSeedAccountResult>(template.Accounts.Count);
         var created = 0;
@@ -47,6 +64,41 @@ public sealed class CoaTemplateSeeder(
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
+                // Additive mode only fills in MISSING system roles. The
+                // template ships with ~75 accounts; ~24 of those have a
+                // system_role binding (the ones the engine actually needs
+                // to find by role), the rest are generic chart structure
+                // (Bank Operating, Furniture, Computer Equipment, etc.)
+                // that the company will already have under whatever
+                // numbering scheme the operator picked at onboarding.
+                // Adding those would just clutter the chart with parallel
+                // copies under the template's own numbering.
+                //
+                // Strict mode keeps the original behaviour (empty chart →
+                // seed everything) so first-company provisioning is
+                // unchanged.
+                if (additive && string.IsNullOrWhiteSpace(account.SystemRole))
+                {
+                    skipped++;
+                    results.Add(new CoaSeedAccountResult(account.Code, account.Name, CoaSeedOutcome.SkippedExisting));
+                    continue;
+                }
+
+                // Role-level dedup. SeedSystemAccountAsync already does
+                // ON CONFLICT (company_id, code) DO NOTHING, but two
+                // different code-numbering schemes (5-digit template vs.
+                // a 6-digit chart the operator may have curated) won't
+                // collide on code, so we'd still end up with two accounts
+                // bound to the same system_role. Skipping at the role
+                // level here is the only safe fix.
+                if (!string.IsNullOrWhiteSpace(account.SystemRole) &&
+                    takenRoles.Contains(account.SystemRole))
+                {
+                    skipped++;
+                    results.Add(new CoaSeedAccountResult(account.Code, account.Name, CoaSeedOutcome.SkippedExisting));
+                    continue;
+                }
+
                 var seedInput = new AccountSeedInput(
                     Code: account.Code,
                     Name: account.Name,
@@ -72,6 +124,10 @@ public sealed class CoaTemplateSeeder(
                 {
                     created++;
                     results.Add(new CoaSeedAccountResult(account.Code, account.Name, CoaSeedOutcome.Created));
+                    if (!string.IsNullOrWhiteSpace(saved.SystemRole))
+                    {
+                        takenRoles.Add(saved.SystemRole!);
+                    }
                 }
             }
             catch (Exception ex)
