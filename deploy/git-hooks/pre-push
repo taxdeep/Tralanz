@@ -29,6 +29,45 @@ if [[ -z "${current_branch}" ]]; then
   exit 0
 fi
 
+# Stage-1.3 guard: refuse to introduce new `alter table` calls inside
+# repository / store classes. The existing occurrences (counted when
+# this guard landed) are tolerated; new ones must move into
+# deploy/migrations/NNNN_*.sql so schema evolution doesn't re-emerge
+# as a hot-path read deadlock (commit 2ef2640 — invoice posting hung
+# 30s because EnsureSchemaAsync ran ALTER TABLE inside a unit-of-work
+# while a sibling connection tried to SELECT the same table).
+#
+# Bump ALTER_TABLE_BASELINE in this hook only when (a) you've removed
+# inline ALTERs and the count truly dropped, or (b) you've genuinely
+# justified an inline ALTER (rare — explain in the commit). The Stage
+# 1.4 sweep is expected to drive this number down toward 0.
+ALTER_TABLE_BASELINE=176
+alter_table_actual="$(
+  cd "${REPO_ROOT}" && \
+  grep -rh "alter table" backend/src \
+    --include="*Repository.cs" \
+    --include="*Store.cs" 2>/dev/null | wc -l
+)"
+if (( alter_table_actual > ALTER_TABLE_BASELINE )); then
+  cat <<EOF >&2
+
+  ✗ pre-push blocked: $((alter_table_actual - ALTER_TABLE_BASELINE)) new "alter table" call(s) in *Repository.cs / *Store.cs
+    baseline: ${ALTER_TABLE_BASELINE}
+    current:  ${alter_table_actual}
+
+  Schema evolution belongs in deploy/migrations/NNNN_*.sql now. The
+  installer's apply_pending_migrations runs them once at deploy time
+  instead of re-running on every read path.
+
+  If you genuinely need an inline ALTER (e.g. a one-shot ADD COLUMN
+  IF NOT EXISTS that has to live next to a read for some structural
+  reason), bump ALTER_TABLE_BASELINE here in the same commit and
+  explain in the commit message.
+
+EOF
+  exit 1
+fi
+
 CITUS_REPO_ROOT="${REPO_ROOT}" bash "${SCRIPT_DIR}/bump-version.sh"
 git add VERSION backend/Directory.Build.props
 git commit --amend --no-edit --no-verify

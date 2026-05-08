@@ -1108,6 +1108,129 @@ apply_backend_baseline_if_needed() {
       -f "${SOURCE_DIR}/CITUS_POSTGRESQL_MIGRATION_DRAFT.sql"
 }
 
+# Stage-1.2: Apply each deploy/migrations/*.sql once, in alpha order.
+# The convention is YYYY-MM-DD-name.sql so alphabetical = chronological.
+#
+# The schema_migrations table tracks completed runs so re-deploying is
+# idempotent. On its very first creation we pre-populate it with every
+# already-existing migration filename — that handles two cases the same
+# way:
+#
+#   1. Existing deployment (today's 107.173.10.113): the dated
+#      migrations were applied manually back when each one shipped.
+#      Marking them avoids re-running and risking duplicate effects.
+#   2. Fresh deployment: the baseline draft already contains every
+#      schema shape those historic migrations introduced. Marking them
+#      is the same as saying "you don't need them, baseline has it".
+#
+# Anything added to deploy/migrations/ AFTER this hook lands runs once
+# on the next deploy and is recorded.
+apply_pending_migrations() {
+  load_env_file
+
+  local migrations_dir="${SOURCE_DIR}/deploy/migrations"
+  if [[ ! -d "${migrations_dir}" ]]; then
+    log "No deploy/migrations directory; skipping incremental migrations."
+    return
+  fi
+
+  # Tracking table — id-less, name is the natural key. applied_at is
+  # for human / audit purposes only; we don't sort by it.
+  PGPASSWORD="${CITUS_DB_PASSWORD}" \
+    psql \
+      -v ON_ERROR_STOP=1 \
+      -h "${CITUS_DB_HOST}" \
+      -p "${CITUS_DB_PORT}" \
+      -U "${CITUS_DB_USER}" \
+      -d "${CITUS_DB_NAME}" \
+      -tAc "create table if not exists schema_migrations (
+              name text primary key,
+              applied_at timestamptz not null default now()
+            );" >/dev/null
+
+  # First-touch bootstrap. Only fires when schema_migrations is empty,
+  # i.e. this deploy is the first to ever run the migration runner on
+  # this database. Every existing .sql file gets recorded as applied
+  # without being executed (rationale above).
+  local bootstrap_count
+  bootstrap_count="$(
+    PGPASSWORD="${CITUS_DB_PASSWORD}" \
+      psql \
+        -tAc "select count(*) from schema_migrations;" \
+        -h "${CITUS_DB_HOST}" \
+        -p "${CITUS_DB_PORT}" \
+        -U "${CITUS_DB_USER}" \
+        -d "${CITUS_DB_NAME}"
+  )"
+
+  if [[ "${bootstrap_count//[[:space:]]/}" == "0" ]]; then
+    log "schema_migrations is empty — recording all existing migration files as already applied (one-time bootstrap)."
+    while IFS= read -r migration_path; do
+      local migration_name
+      migration_name="$(basename "${migration_path}")"
+      PGPASSWORD="${CITUS_DB_PASSWORD}" \
+        psql \
+          -v ON_ERROR_STOP=1 \
+          -h "${CITUS_DB_HOST}" \
+          -p "${CITUS_DB_PORT}" \
+          -U "${CITUS_DB_USER}" \
+          -d "${CITUS_DB_NAME}" \
+          -tAc "insert into schema_migrations(name) values ('${migration_name}') on conflict do nothing;" >/dev/null
+      log "  bootstrapped: ${migration_name}"
+    done < <(find "${migrations_dir}" -maxdepth 1 -name '*.sql' -print | sort)
+    return
+  fi
+
+  # Steady-state: apply any .sql whose filename is NOT yet in
+  # schema_migrations. Order is alphabetical (date-prefixed names sort
+  # chronologically). Each migration runs in its own psql call with
+  # ON_ERROR_STOP=1 — a failure aborts the whole deploy.
+  local applied=0
+  while IFS= read -r migration_path; do
+    local migration_name
+    migration_name="$(basename "${migration_path}")"
+
+    local already
+    already="$(
+      PGPASSWORD="${CITUS_DB_PASSWORD}" \
+        psql \
+          -tAc "select 1 from schema_migrations where name = '${migration_name}';" \
+          -h "${CITUS_DB_HOST}" \
+          -p "${CITUS_DB_PORT}" \
+          -U "${CITUS_DB_USER}" \
+          -d "${CITUS_DB_NAME}"
+    )"
+    if [[ "${already//[[:space:]]/}" == "1" ]]; then
+      continue
+    fi
+
+    log "Applying migration: ${migration_name}"
+    PGPASSWORD="${CITUS_DB_PASSWORD}" \
+      psql \
+        -v ON_ERROR_STOP=1 \
+        -h "${CITUS_DB_HOST}" \
+        -p "${CITUS_DB_PORT}" \
+        -U "${CITUS_DB_USER}" \
+        -d "${CITUS_DB_NAME}" \
+        -f "${migration_path}"
+    PGPASSWORD="${CITUS_DB_PASSWORD}" \
+      psql \
+        -v ON_ERROR_STOP=1 \
+        -h "${CITUS_DB_HOST}" \
+        -p "${CITUS_DB_PORT}" \
+        -U "${CITUS_DB_USER}" \
+        -d "${CITUS_DB_NAME}" \
+        -tAc "insert into schema_migrations(name) values ('${migration_name}');" >/dev/null
+    applied=$((applied + 1))
+  done < <(find "${migrations_dir}" -maxdepth 1 -name '*.sql' -print | sort)
+
+  if (( applied == 0 )); then
+    log "No new migrations to apply."
+  else
+    log "Applied ${applied} migration(s)."
+  fi
+}
+
 publish_backends() {
   load_env_file
 
@@ -1629,6 +1752,7 @@ install_main() {
   sync_source_tree
   ensure_postgres_database
   apply_backend_baseline_if_needed
+  apply_pending_migrations
   publish_backends
   bootstrap_platform_core
   write_systemd_units
@@ -1685,6 +1809,7 @@ upgrade_main() {
   sync_source_tree
   ensure_postgres_database
   apply_backend_baseline_if_needed
+  apply_pending_migrations
   publish_backends
   bootstrap_platform_core
   write_systemd_units
