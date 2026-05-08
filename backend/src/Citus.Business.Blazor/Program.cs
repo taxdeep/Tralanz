@@ -18,6 +18,7 @@ builder.Services.AddRadzenComponents();
 builder.Services.AddScoped<CitusToastService>();
 builder.Services.AddCitusTheme();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
+builder.Services.Configure<FeatureFlagsOptions>(builder.Configuration.GetSection(FeatureFlagsOptions.SectionName));
 builder.Services.AddScoped<BusinessShellState>();
 
 // Bridge the circuit's IServiceProvider into HttpClientFactory's handler

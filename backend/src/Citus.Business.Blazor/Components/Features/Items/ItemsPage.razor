@@ -4,6 +4,7 @@
 @inject ItemClient ItemClient
 @inject TaxCodeClient TaxCodeClient
 @inject CitusToastService Message
+@inject IOptions<FeatureFlagsOptions> FeatureFlags
 
 <PageTitle>Products & Services | Tralanz Books</PageTitle>
 
@@ -66,10 +67,22 @@
                 </select>
                 @if (!ShellState.ActiveCompany.InventoryModuleEnabled && _draft.ItemKind != "stock")
                 {
-                    <p class="text-fg-subtle text-xs mt-1">
-                        Stock items track on-hand quantity, cost layers, and COGS.
-                        <a class="citus-link" href="company/inventory/activate">Enable Tralanz Inventory →</a>
-                    </p>
+                    @* Stock-kind upsell: only show the activation link
+                       when the entry is enabled (V1 hides it; the
+                       wizard route still works via direct URL). *@
+                    @if (FeatureFlags.Value.InventoryActivationEntryEnabled)
+                    {
+                        <p class="text-fg-subtle text-xs mt-1">
+                            Stock items track on-hand quantity, cost layers, and COGS.
+                            <a class="citus-link" href="company/inventory/activate">Enable Tralanz Inventory →</a>
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="text-fg-subtle text-xs mt-1">
+                            Stock items track on-hand quantity, cost layers, and COGS — coming with the V2 Inventory module.
+                        </p>
+                    }
                 }
                 else
                 {

@@ -4,6 +4,7 @@
 @inject SalesIssueCogsClient CogsClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
+@inject IOptions<FeatureFlagsOptions> FeatureFlags
 
 <PageTitle>Sales Issue COGS | Tralanz Books</PageTitle>
 
@@ -22,14 +23,25 @@
         <div class="text-center py-8">
             <CitusIcon Name="IconName.Receipt" Size="IconSize.Display" />
             <h2 class="text-lg font-semibold mt-3">Tralanz Inventory is not enabled.</h2>
-            <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
-                The Sales Issue COGS workbench appears once you enable the
-                Inventory paid module. Without it, sales-issues are not generated
-                and there is no cost-layer truth to journalise.
-            </p>
-            <a class="citus-button citus-button--primary" href="company/inventory/activate">
-                Enable Tralanz Inventory →
-            </a>
+            @if (FeatureFlags.Value.InventoryActivationEntryEnabled)
+            {
+                <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
+                    The Sales Issue COGS workbench appears once you enable the
+                    Inventory paid module. Without it, sales-issues are not generated
+                    and there is no cost-layer truth to journalise.
+                </p>
+                <a class="citus-button citus-button--primary" href="company/inventory/activate">
+                    Enable Tralanz Inventory →
+                </a>
+            }
+            else
+            {
+                <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
+                    The Sales Issue COGS workbench is part of the Tralanz Inventory module,
+                    which ships with the V2 release.
+                </p>
+                <p class="text-fg-subtle text-xs">Coming in the next release.</p>
+            }
         </div>
     </section>
 }

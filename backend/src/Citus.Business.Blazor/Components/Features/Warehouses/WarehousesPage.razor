@@ -7,6 +7,7 @@
 @inject ItemClient ItemClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
+@inject IOptions<FeatureFlagsOptions> FeatureFlags
 
 <PageTitle>Warehouses | Tralanz Books</PageTitle>
 
@@ -24,19 +25,37 @@
 
 @if (!ShellState.ActiveCompany.InventoryModuleEnabled)
 {
-    @* Module-not-enabled state: same upsell as before. *@
+    @* Module-not-enabled state. The "Enable Tralanz Inventory →" CTA
+       is gated by FeatureFlags.InventoryActivationEntryEnabled — V1
+       deployments hide it until the inventory write surface (Receipt
+       / Shipment / Adjustment / Return / Manufacturing) lands, so an
+       operator can't activate the module and find themselves stranded
+       with no UI to move stock through. The wizard route stays
+       reachable via direct URL for developers / pilots. *@
     <section class="citus-panel">
         <div class="text-center py-8">
             <CitusIcon Name="IconName.BuildingStore" Size="IconSize.Display" />
             <h2 class="text-lg font-semibold mt-3">Tralanz Inventory is not enabled for this company.</h2>
-            <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
-                Warehouses become available after you enable the Inventory paid module.
-                Activation also adds the standard inventory accounts (GR/IR Clearing, COGS,
-                PPV, Adjustment) and the costing engine (Moving Average or FIFO).
-            </p>
-            <a class="citus-button citus-button--primary" href="company/inventory/activate">
-                Enable Tralanz Inventory →
-            </a>
+            @if (FeatureFlags.Value.InventoryActivationEntryEnabled)
+            {
+                <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
+                    Warehouses become available after you enable the Inventory paid module.
+                    Activation also adds the standard inventory accounts (GR/IR Clearing, COGS,
+                    PPV, Adjustment) and the costing engine (Moving Average or FIFO).
+                </p>
+                <a class="citus-button citus-button--primary" href="company/inventory/activate">
+                    Enable Tralanz Inventory →
+                </a>
+            }
+            else
+            {
+                <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
+                    The Inventory paid module ships with the V2 release. The activation wizard
+                    is wired up but gated to prevent accidental activation while the
+                    Receipt / Shipment / Adjustment surfaces are still being built.
+                </p>
+                <p class="text-fg-subtle text-xs">Coming in the next release.</p>
+            }
         </div>
     </section>
 }

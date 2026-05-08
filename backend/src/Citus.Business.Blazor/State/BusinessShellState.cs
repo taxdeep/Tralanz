@@ -91,8 +91,14 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Products & Services", Href = "items", Icon = IconName.Puzzle },
                 new NavMenuItem { Title = "Warehouses", Href = "company/warehouses", Icon = IconName.BuildingStore },
                 new NavMenuItem { Title = "Sales Issue COGS", Href = "company/inventory/cogs-postings", Icon = IconName.Receipt },
-                new NavMenuItem { Title = "Drop-ship Clearing", Href = "company/inventory/drop-ship-clearing", Icon = IconName.Truck },
-                new NavMenuItem { Title = "Inventory Setup", Href = "company/inventory/activate", Icon = IconName.Settings }
+                new NavMenuItem { Title = "Drop-ship Clearing", Href = "company/inventory/drop-ship-clearing", Icon = IconName.Truck }
+                // "Inventory Setup" intentionally not surfaced in the
+                // sidebar — the /company/warehouses page exposes a
+                // Setup button to operators whose company has already
+                // activated the module, and the activation wizard for
+                // a fresh company is gated by
+                // FeatureFlags.InventoryActivationEntryEnabled. See
+                // commit b827c5d (Stage 1.1).
             ]
         },
         new NavSection

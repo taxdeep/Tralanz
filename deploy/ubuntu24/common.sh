@@ -281,6 +281,12 @@ ensure_env_defaults() {
   append_env_if_missing "ASPNETCORE_FORWARDEDHEADERS_ENABLED" "true"
   append_env_if_missing "DOTNET_CLI_TELEMETRY_OPTOUT" "1"
   append_env_if_missing "DOTNET_PRINT_TELEMETRY_MESSAGE" "false"
+  # Inventory activation is gated by default (V1) — the activation
+  # wizard works but the operator-facing entry points (sidebar item,
+  # CTAs on /items / /company/warehouses / /company/inventory/...)
+  # are hidden until the inventory write surface lands. Flip this to
+  # "true" on a host that's piloting the V2 inventory module.
+  append_env_if_missing "FeatureFlags__InventoryActivationEntryEnabled" "false"
   ensure_db_connection_string
 
   # Encryption key shared by PlatformTotpSecretProtector (TOTP secrets)
