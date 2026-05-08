@@ -5361,7 +5361,11 @@ static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
     {
         return "Applies to must be 'sales', 'purchase', or 'both'.";
     }
-    if (request.RegistrationNumber is { Length: > 64 })
+    if (string.IsNullOrWhiteSpace(request.RegistrationNumber))
+    {
+        return "Tax registration number is required.";
+    }
+    if (request.RegistrationNumber.Length > 64)
     {
         return "Registration number must be 64 characters or fewer.";
     }
