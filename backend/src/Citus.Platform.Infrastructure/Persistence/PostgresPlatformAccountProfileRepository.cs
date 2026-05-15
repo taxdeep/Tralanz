@@ -30,16 +30,12 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
 
     public async Task<PlatformAccountProfileSummary?> GetAsync(UserId userId, CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         return await BuildSummaryAsync(connection, null, userId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(UserId userId, CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -112,7 +108,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         UserId userId,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -215,7 +210,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string verificationCode,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -349,7 +343,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string displayName,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -404,7 +397,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string mfaMode,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -475,7 +467,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string reason,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -603,7 +594,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string verificationCode,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -683,7 +673,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string verificationCode,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -759,7 +748,6 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         CancellationToken cancellationToken,
         string? payloadValue = null)
     {
-        await EnsureSchemaAsync(cancellationToken);
         await EnsureInteractiveWritesAllowedAsync(cancellationToken);
         await EnsureVerificationDeliveryReadyAsync(cancellationToken);
 

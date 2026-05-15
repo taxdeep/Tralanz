@@ -35,7 +35,9 @@ public sealed class BusinessSessionRequestReaderTests
 
         Assert.False(success);
         Assert.Null(context);
-        Assert.Equal($"Missing required business session header '{BusinessSessionHeaders.UserId}'.", error);
+        Assert.Equal(
+            $"Missing required business session header '{BusinessSessionHeaders.UserId}' or 'X-Citus-User-Id'.",
+            error);
     }
 
     [Fact]

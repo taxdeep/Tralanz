@@ -45,7 +45,7 @@ public sealed class PayBillDraftPreparationSmokeTests
             bankAccountId = await CreateBankAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
             (seededBillId, seededOpenItemId) = await SeedBillAndOpenItemAsync(
                 connectionFactory, userId, CancellationToken.None);
-            var openItem = await LoadOpenItemAsync(connectionFactory, VendorId, CancellationToken.None);
+            var openItem = await LoadOpenItemAsync(connectionFactory, seededOpenItemId, CancellationToken.None);
 
             var appliedAmount = Math.Min(openItem.OpenAmountTx, 50m);
             var result = await workflow.PrepareDraftAsync(
@@ -209,7 +209,7 @@ public sealed class PayBillDraftPreparationSmokeTests
 
     private static async Task<(Guid OpenItemId, decimal OpenAmountTx)> LoadOpenItemAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid vendorId,
+        Guid openItemId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
@@ -218,13 +218,12 @@ public sealed class PayBillDraftPreparationSmokeTests
             """
             select id, open_amount_tx
             from ap_open_items
-            where vendor_id = @vendor_id
+            where id = @open_item_id
               and status in ('open', 'partially_applied')
               and open_amount_tx > 0
-            order by created_at
             limit 1;
             """;
-        command.Parameters.AddWithValue("vendor_id", vendorId);
+        command.Parameters.AddWithValue("open_item_id", openItemId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

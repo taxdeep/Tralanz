@@ -3865,8 +3865,25 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         // returns (which is FromOrdinal(1) = U000001). Use ordinal 2 for
         // the secondary "approval" user so the two helpers can be invoked
         // back-to-back without a users_pkey duplicate.
-        var newUserId = UserId.FromOrdinal(2);
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        var newUserId = UserId.FromOrdinal(2);
+        await using (var findCommand = connection.CreateCommand())
+        {
+            findCommand.CommandText =
+                """
+                select id
+                from users
+                where id = @id
+                limit 1;
+                """;
+            findCommand.Parameters.AddWithValue("id", newUserId.Value);
+            var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
+            if (existing is string existingUserId && UserId.TryParse(existingUserId, out var userId))
+            {
+                return (userId, false);
+            }
+        }
+
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """
@@ -3998,6 +4015,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await ReleaseJournalDisplayNumberAsync(connection, null, companyId, "JE-SMOKE-AP-001", cancellationToken);
+
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -4093,6 +4112,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        await ReleaseJournalDisplayNumberAsync(connection, transaction, companyId, displayNumber, cancellationToken);
+
         await using (var headerCommand = connection.CreateCommand())
         {
             headerCommand.Transaction = transaction;
@@ -4172,6 +4193,27 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         await transaction.CommitAsync(cancellationToken);
         return journalEntryId;
+    }
+
+    private static async Task ReleaseJournalDisplayNumberAsync(
+        Npgsql.NpgsqlConnection connection,
+        Npgsql.NpgsqlTransaction? transaction,
+        CompanyId companyId,
+        string displayNumber,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update journal_entries
+            set display_number = display_number || '-STALE-' || left(replace(id::text, '-', ''), 8)
+            where company_id = @company_id
+              and display_number = @display_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("display_number", displayNumber);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task CleanupJournalEntryAsync(
@@ -5044,13 +5086,13 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             delete from audit_logs
             where entity_type = 'source_document_reverse_request'
               and (
-                entity_id = @document_id
+                entity_id = @document_id::text
                 or payload ->> 'DocumentId' = @document_id_text
                 or payload ->> 'RequestId' in (
                   select payload ->> 'RequestId'
                   from audit_logs
                   where entity_type = 'source_document_reverse_request'
-                    and (entity_id = @document_id or payload ->> 'DocumentId' = @document_id_text)
+                    and (entity_id = @document_id::text or payload ->> 'DocumentId' = @document_id_text)
                 )
               )
               or (
@@ -5060,7 +5102,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
               or (
                 entity_type = 'open_item_adjustment_request'
                 and (
-                  entity_id = @document_id
+                  entity_id = @document_id::text
                   or payload ->> 'OpenItemId' = @document_id_text
                 )
               );

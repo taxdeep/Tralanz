@@ -26,6 +26,9 @@ public sealed class BusinessSessionHeaderHandlerTests
         Assert.Equal(
             state.ActiveCompany.Id.ToString(),
             capture.Request.Headers.GetValues(BusinessSessionHeaderNames.ActiveCompanyId).Single());
+        Assert.Equal(
+            state.SessionToken,
+            capture.Request.Headers.GetValues(BusinessAuthHeaderNames.SessionToken).Single());
     }
 
     [Fact]
@@ -82,6 +85,7 @@ public sealed class BusinessSessionHeaderHandlerTests
         Assert.NotNull(capture.Request);
         Assert.False(capture.Request!.Headers.Contains(BusinessSessionHeaderNames.UserId));
         Assert.False(capture.Request.Headers.Contains(BusinessSessionHeaderNames.ActiveCompanyId));
+        Assert.False(capture.Request.Headers.Contains(BusinessAuthHeaderNames.SessionToken));
     }
 
     private static (BusinessSessionHeaderHandler Handler, CapturingHandler Capture) BuildHandler(BusinessShellState state)

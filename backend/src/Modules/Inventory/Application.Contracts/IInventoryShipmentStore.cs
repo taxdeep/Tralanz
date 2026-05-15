@@ -2,6 +2,8 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public interface IInventoryShipmentStore
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<InventoryShipmentDashboard> GetDashboardAsync(
         CompanyId companyId,
         CancellationToken cancellationToken);

@@ -61,9 +61,6 @@ public sealed class PostgresSysAdminAuthRepository(
 
     public async Task<SysAdminSetupStatus> GetSetupStatusAsync(CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-        await runtimeStateRepository.EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -110,8 +107,6 @@ public sealed class PostgresSysAdminAuthRepository(
         {
             return;
         }
-
-        await EnsureSchemaAsync(cancellationToken);
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
         var normalizedDisplayName = string.IsNullOrWhiteSpace(displayName) ? "Platform Administrator" : displayName.Trim();
@@ -179,8 +174,6 @@ public sealed class PostgresSysAdminAuthRepository(
         {
             return FailedProvisioning("invalid_secret", secretValidationError);
         }
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -277,9 +270,6 @@ public sealed class PostgresSysAdminAuthRepository(
         {
             return FailedAuthentication("invalid_credentials", "Email and password are required.");
         }
-
-        await EnsureSchemaAsync(cancellationToken);
-        await lockoutPolicy.EnsureSchemaAsync(cancellationToken);
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
 
@@ -405,8 +395,6 @@ public sealed class PostgresSysAdminAuthRepository(
             return FailedValidation("missing_session", "SysAdmin session token is required.");
         }
 
-        await EnsureSchemaAsync(cancellationToken);
-
         var sessionTokenHash = HashSessionToken(sessionToken.Trim());
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -466,8 +454,6 @@ public sealed class PostgresSysAdminAuthRepository(
             return;
         }
 
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -502,8 +488,6 @@ public sealed class PostgresSysAdminAuthRepository(
         {
             return FailedRotation("invalid_secret", secretValidationError);
         }
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);

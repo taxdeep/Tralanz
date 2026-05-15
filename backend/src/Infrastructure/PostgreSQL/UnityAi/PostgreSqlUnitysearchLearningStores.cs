@@ -22,7 +22,7 @@ public sealed class PostgreSqlUnitysearchEventStore(PostgreSqlConnectionFactory 
                 @anchor_context, @anchor_entity_type, @anchor_entity_id, @metadata_json::jsonb);
             """;
         command.Parameters.AddWithValue("company_id", input.CompanyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)input.UserId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)input.UserId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("session_id", (object?)input.SessionId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", input.Context);
         command.Parameters.AddWithValue("entity_type", input.EntityType);
@@ -88,7 +88,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);
         command.Parameters.AddWithValue("entity_id", entityId);
@@ -126,7 +126,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);
         command.Parameters.Add(new NpgsqlParameter("entity_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = entityIds.ToArray() });
@@ -254,7 +254,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("source_context", sourceContext);
         command.Parameters.AddWithValue("anchor_entity_type", anchorEntityType);
         command.Parameters.AddWithValue("anchor_entity_id", anchorEntityId);
@@ -291,7 +291,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("source_context", sourceContext);
         command.Parameters.AddWithValue("anchor_entity_type", anchorEntityType);
         command.Parameters.AddWithValue("anchor_entity_id", anchorEntityId);
@@ -340,7 +340,7 @@ public sealed class PostgreSqlUnitysearchRecentQueryStore(PostgreSqlConnectionFa
                 @result_clicked, @clicked_entity_type, @clicked_entity_id, @result_count, @created_at);
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("query", query);
         command.Parameters.AddWithValue("normalized_query", normalizedQuery);
@@ -430,7 +430,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
             """;
         command.Parameters.AddWithValue("id", record.Id == Guid.Empty ? Guid.NewGuid() : record.Id);
         command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)record.UserId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)record.UserId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("context", record.Context);
         command.Parameters.AddWithValue("entity_type", record.EntityType);
         command.Parameters.AddWithValue("entity_id", record.EntityId);
@@ -463,7 +463,7 @@ public sealed class PostgreSqlUnitysearchDecisionTraceStore(PostgreSqlConnection
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("context", context);
         command.Parameters.AddWithValue("entity_type", entityType);
         command.Parameters.AddWithValue("query", (object?)query ?? DBNull.Value);

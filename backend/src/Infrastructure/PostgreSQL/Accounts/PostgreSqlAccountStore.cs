@@ -9,14 +9,10 @@ namespace Infrastructure.PostgreSQL.Accounts;
 /// (line 645 of <c>CITUS_POSTGRESQL_MIGRATION_DRAFT.sql</c>).
 ///
 /// Schema compatibility notes:
-///   * <c>EnsureSchemaAsync</c> uses <c>CREATE TABLE IF NOT EXISTS</c>
-///     so a deploy that already loaded the migration draft is a no-op
-///     and a fresh dev database gets a structurally-equivalent shape.
-///     The dev variant intentionally omits the FK to
-///     <c>currency_catalog</c> (which the migration draft loads later);
-///     production keeps that FK from the canonical schema.
+///   * <c>EnsureSchemaAsync</c> verifies the migration-installed table
+///     shape instead of applying DDL from the application process.
 ///   * <c>entity_number</c> is auto-generated to satisfy the regex
-///     <c>^EN[0-9]{4}[0-9]{8}$</c>.
+///     <c>^EN[0-9]{4}[A-Z0-9]{5}$</c>.
 ///   * <c>is_system</c>-flagged rows reject UPDATE attempts so the
 ///     control accounts (AR, AP, FX revaluation, …) can't be quietly
 ///     mutated through the maintenance UI.
@@ -25,33 +21,30 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS accounts (
-                id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id               UUID NOT NULL,
-                entity_number            TEXT NOT NULL,
-                code                     TEXT NOT NULL,
-                name                     TEXT NOT NULL,
-                root_type                TEXT NOT NULL,
-                detail_type              TEXT NOT NULL DEFAULT '',
-                is_active                BOOLEAN NOT NULL DEFAULT TRUE,
-                is_system                BOOLEAN NOT NULL DEFAULT FALSE,
-                is_system_default        BOOLEAN NOT NULL DEFAULT FALSE,
-                system_key               TEXT NULL,
-                system_role              TEXT NULL,
-                currency_code            CHAR(3) NULL,
-                allow_manual_posting     BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_entity_number ON accounts (entity_number);
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_company_code ON accounts (company_id, code);
-            CREATE INDEX IF NOT EXISTS idx_accounts_company_active ON accounts (company_id, is_active);
-            CREATE INDEX IF NOT EXISTS idx_accounts_company_root ON accounts (company_id, root_type);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlSchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "accounts",
+            new[]
+            {
+                "id",
+                "company_id",
+                "entity_number",
+                "code",
+                "name",
+                "root_type",
+                "detail_type",
+                "is_active",
+                "is_system",
+                "is_system_default",
+                "system_key",
+                "system_role",
+                "currency_code",
+                "allow_manual_posting",
+                "created_at",
+                "updated_at"
+            },
+            "Account schema has not been installed. Apply database migrations before using chart-of-accounts records.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<AccountRecord>> ListAsync(

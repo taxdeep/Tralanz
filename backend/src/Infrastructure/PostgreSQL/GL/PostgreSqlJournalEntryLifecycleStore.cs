@@ -7,6 +7,8 @@ namespace Infrastructure.PostgreSQL.GL;
 
 public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycleStore
 {
+    private const int MaxAttempts = 3;
+
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly Engines.Numbering.JournalEntry.IJournalEntryNumberLookup _journalEntryNumberLookup;
 
@@ -23,7 +25,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         Guid journalEntryId,
         UserId userId,
         CancellationToken cancellationToken) =>
-        ApplyLifecycleAsync(
+        ApplyLifecycleWithRetryAsync(
             companyId,
             journalEntryId,
             userId,
@@ -37,7 +39,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         Guid journalEntryId,
         UserId userId,
         CancellationToken cancellationToken) =>
-        ApplyLifecycleAsync(
+        ApplyLifecycleWithRetryAsync(
             companyId,
             journalEntryId,
             userId,
@@ -45,6 +47,37 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             null,
             "Reversal",
             cancellationToken);
+
+    private async Task<JournalEntryLifecycleResult> ApplyLifecycleWithRetryAsync(
+        CompanyId companyId,
+        Guid journalEntryId,
+        UserId userId,
+        string originalStatus,
+        string? compensationSourceType,
+        string actionLabel,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            try
+            {
+                return await ApplyLifecycleAsync(
+                    companyId,
+                    journalEntryId,
+                    userId,
+                    originalStatus,
+                    compensationSourceType,
+                    actionLabel,
+                    cancellationToken);
+            }
+            catch (PostgresException ex) when (IsTransientConcurrencyFailure(ex) && attempt < MaxAttempts)
+            {
+                await DelayBeforeRetryAsync(attempt, cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException("The journal-entry lifecycle retry loop exited unexpectedly.");
+    }
 
     private async Task<JournalEntryLifecycleResult> ApplyLifecycleAsync(
         CompanyId companyId,
@@ -57,7 +90,6 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await EnsureJournalEntryLineAuditColumnsAsync(connection, transaction, cancellationToken);
 
         var original = await LoadOriginalAsync(connection, transaction, companyId, journalEntryId, cancellationToken)
             ?? throw new JournalEntryLifecycleException(
@@ -392,6 +424,12 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             lifecycleBehavior.CompensationSourceType);
     }
 
+    private static bool IsTransientConcurrencyFailure(PostgresException exception) =>
+        exception.SqlState is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure;
+
+    private static Task DelayBeforeRetryAsync(int attempt, CancellationToken cancellationToken) =>
+        Task.Delay(TimeSpan.FromMilliseconds(25 * attempt), cancellationToken);
+
     private async Task<string> ReserveJournalDisplayNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -616,22 +654,6 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         }
 
         return lines;
-    }
-
-    private static async Task EnsureJournalEntryLineAuditColumnsAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            """
-            alter table journal_entry_lines
-              add column if not exists posting_role text null,
-              add column if not exists source_line_number integer null;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task EnsurePostingPeriodOpenAsync(

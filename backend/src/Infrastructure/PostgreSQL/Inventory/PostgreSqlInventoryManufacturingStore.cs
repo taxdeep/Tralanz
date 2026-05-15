@@ -19,6 +19,13 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<InventoryManufacturingDashboard> GetDashboardAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
@@ -26,7 +33,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, null, companyId, cancellationToken);
         var activeItems = await LoadActiveItemsAsync(connection, null, companyId, cancellationToken);
@@ -52,7 +59,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
         _ = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -249,7 +256,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -383,11 +390,24 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Inventory manufacturing schema has not been installed. Apply database migrations before using manufacturing features.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -395,6 +415,12 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -415,6 +441,26 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              to_regclass('inventory_documents') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'document_number');
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private static void ValidateBomItem(

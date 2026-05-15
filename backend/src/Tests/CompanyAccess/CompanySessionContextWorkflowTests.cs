@@ -43,7 +43,7 @@ public sealed class CompanySessionContextWorkflowTests
             Assert.Equal(
                 expectedCompanyCodes,
                 context.AvailableCompanies.Select(static company => company.CompanyCode).ToArray());
-            Assert.Equal(["owner", "user"], context.User.Roles);
+            Assert.Equal(["user"], context.User.Roles);
         }
         finally
         {
@@ -108,6 +108,57 @@ public sealed class CompanySessionContextWorkflowTests
         finally
         {
             await CleanupAsync(connectionFactory, userId, companyId, null, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task GetAsync_DoesNotLeakPermissionTokensFromOtherCompanyMemberships()
+    {
+        var userId = UserId.FromOrdinal(101);
+        var firstCompanyId = CompanyId.FromOrdinal(101);
+        var secondCompanyId = CompanyId.FromOrdinal(102);
+        var firstEntityNumber = BuildEntityNumber();
+        var secondEntityNumber = BuildEntityNumber();
+        var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var store = new PostgreSqlCompanySessionContextStore(connectionFactory);
+        var workflow = new CompanySessionContextWorkflow(store);
+
+        try
+        {
+            await using (var connection = await connectionFactory.OpenAsync(CancellationToken.None))
+            {
+                await InsertUserAsync(connection, userId, CancellationToken.None);
+                await InsertCompanyAsync(connection, firstCompanyId, firstEntityNumber, "Approval Source Co.", "USD", true, CancellationToken.None);
+                await InsertCompanyAsync(connection, secondCompanyId, secondEntityNumber, "Plain Operator Co.", "CAD", false, CancellationToken.None);
+                await InsertMembershipAsync(
+                    connection,
+                    firstCompanyId,
+                    userId,
+                    "owner",
+                    true,
+                    CancellationToken.None,
+                    """["approve","company_book_governance"]""");
+                await InsertMembershipAsync(
+                    connection,
+                    secondCompanyId,
+                    userId,
+                    "user",
+                    true,
+                    CancellationToken.None);
+            }
+
+            var context = await workflow.GetAsync(userId, secondCompanyId, CancellationToken.None);
+
+            Assert.NotNull(context);
+            Assert.Equal(secondCompanyId, context!.ActiveCompany.Id);
+            Assert.Equal(["user"], context.User.Roles);
+            Assert.DoesNotContain("approve", context.User.Roles);
+            Assert.DoesNotContain("company_book_governance", context.User.Roles);
+            Assert.DoesNotContain("owner", context.User.Roles);
+        }
+        finally
+        {
+            await CleanupAsync(connectionFactory, userId, firstCompanyId, secondCompanyId, CancellationToken.None);
         }
     }
 

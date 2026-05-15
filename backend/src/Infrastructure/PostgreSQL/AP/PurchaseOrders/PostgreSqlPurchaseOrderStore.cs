@@ -17,73 +17,70 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS ap_purchase_orders (
-                id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id                  char(7) NOT NULL,
-                purchase_order_number       TEXT NOT NULL,
-                status                      TEXT NOT NULL DEFAULT 'draft',
-                vendor_id                   UUID NOT NULL,
-                order_date                  DATE NOT NULL,
-                expected_delivery_date      DATE NULL,
-                transaction_currency_code   CHAR(3) NOT NULL,
-                fx_rate                     NUMERIC(18,8) NULL,
-                billing_address_line        TEXT NULL,
-                billing_city                TEXT NULL,
-                billing_province_state      TEXT NULL,
-                billing_postal_code         TEXT NULL,
-                billing_country             TEXT NULL,
-                shipping_address_line       TEXT NULL,
-                shipping_city               TEXT NULL,
-                shipping_province_state     TEXT NULL,
-                shipping_postal_code        TEXT NULL,
-                shipping_country            TEXT NULL,
-                ship_via                    TEXT NULL,
-                shipping_date               DATE NULL,
-                tracking_no                 TEXT NULL,
-                tax_mode                    TEXT NOT NULL DEFAULT 'exclusive',
-                discount_kind               TEXT NULL,
-                discount_value              NUMERIC(18,4) NULL,
-                shipping_amount             NUMERIC(18,4) NULL,
-                shipping_tax_code_id        UUID NULL,
-                subtotal_amount             NUMERIC(18,4) NOT NULL DEFAULT 0,
-                discount_amount             NUMERIC(18,4) NOT NULL DEFAULT 0,
-                tax_amount                  NUMERIC(18,4) NOT NULL DEFAULT 0,
-                total_amount                NUMERIC(18,4) NOT NULL DEFAULT 0,
-                memo_to_supplier            TEXT NULL,
-                internal_note               TEXT NULL,
-                payment_term_id             UUID NULL,
-                created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_ap_purchase_orders_company_po_number
-                ON ap_purchase_orders (company_id, purchase_order_number);
-            CREATE INDEX IF NOT EXISTS idx_ap_purchase_orders_company_status
-                ON ap_purchase_orders (company_id, status);
-            CREATE INDEX IF NOT EXISTS idx_ap_purchase_orders_company_vendor
-                ON ap_purchase_orders (company_id, vendor_id);
-            CREATE INDEX IF NOT EXISTS idx_ap_purchase_orders_company_order_date
-                ON ap_purchase_orders (company_id, order_date DESC);
+        await PostgreSqlSchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "ap_purchase_orders",
+            new[]
+            {
+                "id",
+                "company_id",
+                "purchase_order_number",
+                "status",
+                "vendor_id",
+                "order_date",
+                "expected_delivery_date",
+                "transaction_currency_code",
+                "fx_rate",
+                "billing_address_line",
+                "billing_city",
+                "billing_province_state",
+                "billing_postal_code",
+                "billing_country",
+                "shipping_address_line",
+                "shipping_city",
+                "shipping_province_state",
+                "shipping_postal_code",
+                "shipping_country",
+                "ship_via",
+                "shipping_date",
+                "tracking_no",
+                "tax_mode",
+                "discount_kind",
+                "discount_value",
+                "shipping_amount",
+                "shipping_tax_code_id",
+                "subtotal_amount",
+                "discount_amount",
+                "tax_amount",
+                "total_amount",
+                "memo_to_supplier",
+                "internal_note",
+                "payment_term_id",
+                "created_at",
+                "updated_at"
+            },
+            "AP purchase order schema has not been installed. Apply database migrations before using purchase orders.",
+            cancellationToken).ConfigureAwait(false);
 
-            CREATE TABLE IF NOT EXISTS ap_purchase_order_lines (
-                id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                purchase_order_id   UUID NOT NULL REFERENCES ap_purchase_orders(id) ON DELETE CASCADE,
-                sequence            INTEGER NOT NULL,
-                service_date        DATE NULL,
-                item_id             UUID NULL,
-                expense_account_id  UUID NULL,
-                description         TEXT NOT NULL DEFAULT '',
-                quantity            NUMERIC(18,4) NOT NULL DEFAULT 0,
-                unit_price          NUMERIC(18,4) NOT NULL DEFAULT 0,
-                tax_code_id         UUID NULL,
-                line_total          NUMERIC(18,4) NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS idx_ap_purchase_order_lines_po
-                ON ap_purchase_order_lines (purchase_order_id, sequence);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlSchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "ap_purchase_order_lines",
+            new[]
+            {
+                "id",
+                "purchase_order_id",
+                "sequence",
+                "service_date",
+                "item_id",
+                "expense_account_id",
+                "description",
+                "quantity",
+                "unit_price",
+                "tax_code_id",
+                "line_total"
+            },
+            "AP purchase order line schema has not been installed. Apply database migrations before using purchase orders.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<PurchaseOrderSummary>> ListAsync(

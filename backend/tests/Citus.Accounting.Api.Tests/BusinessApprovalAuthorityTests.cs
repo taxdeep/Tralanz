@@ -184,6 +184,33 @@ public sealed class BusinessApprovalAuthorityTests
     }
 
     [Fact]
+    public void CanAccessBankReconciliation_AllowsReconciliationPermissionToken()
+    {
+        var session = CreateSession("user", "reconciliation");
+
+        var decision = BusinessApprovalAuthority.EvaluateBankReconciliationAccess(
+            session,
+            "complete");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void CanAccessBankReconciliation_BlocksOrdinaryApRole()
+    {
+        var session = CreateSession("user", "ap");
+
+        var decision = BusinessApprovalAuthority.EvaluateBankReconciliationAccess(
+            session,
+            "complete");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_bank_reconciliation_authority", decision.OutcomeCode);
+        Assert.Contains("reconciliation user", decision.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CanReleasePurchaseOrder_AllowsBookGovernanceRole()
     {
         var session = CreateSession("company_book_governance");

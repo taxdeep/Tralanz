@@ -15,6 +15,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
 {
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
+    private const string RevaluationCurrencyCode = "CHF";
 
     [Fact]
     public async Task PreparePostAndPrepareNextPeriodUnwindAsync_UpdatesOpenItemBaseAndBuildsDraft()
@@ -51,7 +52,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                     UserId.FromOrdinal(1),
                     BookId: null,
                     revaluationDate,
-                    new CurrencyCode("EUR"),
+                    new CurrencyCode(RevaluationCurrencyCode),
                     snapshotId,
                     IncludeAccountsReceivable: true,
                     IncludeAccountsPayable: false,
@@ -301,7 +302,12 @@ public sealed class FxRevaluationWorkflowSmokeTests
         var companyCurrencyStore = new PostgreSqlCompanyCurrencyProvisioningStore(legacyConnectionFactory);
         var companyCurrencyWorkflow = new CompanyCurrencyGovernanceWorkflow(companyCurrencyStore);
         var (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
-        var governance = await companyCurrencyWorkflow.EnableCurrencyAsync(CompanyId, "EUR", userId, CancellationToken.None);
+        var governance = await companyCurrencyWorkflow.EnableCurrencyAsync(CompanyId, RevaluationCurrencyCode, userId, CancellationToken.None);
+        await EnsurePrimaryBookPolicyIsUsableAsync(
+            legacyConnectionFactory,
+            governance.Profile.BaseCurrencyCode,
+            userId,
+            CancellationToken.None);
         var createdUnrealizedFxAccountIds = await EnsureUnrealizedFxAccountsAsync(
             legacyConnectionFactory,
             CancellationToken.None);
@@ -319,6 +325,126 @@ public sealed class FxRevaluationWorkflowSmokeTests
             createdUser);
     }
 
+    private static async Task EnsurePrimaryBookPolicyIsUsableAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        string baseCurrencyCode,
+        UserId userId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var bookCommand = connection.CreateCommand())
+        {
+            bookCommand.Transaction = transaction;
+            bookCommand.CommandText =
+                """
+                insert into company_books (
+                  id,
+                  company_id,
+                  book_code,
+                  book_name,
+                  book_role,
+                  accounting_standard,
+                  book_base_currency_code,
+                  functional_currency_code,
+                  presentation_currency_code,
+                  is_primary,
+                  is_adjustment_only,
+                  effective_from,
+                  is_active,
+                  created_by_user_id,
+                  created_at,
+                  updated_at
+                )
+                values (
+                  gen_random_uuid(),
+                  @company_id,
+                  'PRIMARY',
+                  'Primary Book',
+                  'primary',
+                  'ASPE',
+                  @base_currency_code,
+                  @base_currency_code,
+                  null,
+                  true,
+                  false,
+                  date '2000-01-01',
+                  true,
+                  @user_id,
+                  now(),
+                  now()
+                )
+                on conflict (company_id, book_code) do update
+                set
+                  effective_from = least(company_books.effective_from, excluded.effective_from),
+                  accounting_standard = 'ASPE',
+                  is_active = true,
+                  is_primary = true,
+                  updated_at = now();
+                """;
+            bookCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
+            bookCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+            bookCommand.Parameters.AddWithValue("user_id", userId.Value);
+            await bookCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var policyCommand = connection.CreateCommand())
+        {
+            policyCommand.Transaction = transaction;
+            policyCommand.CommandText =
+                """
+                insert into company_book_remeasurement_policies (
+                  id,
+                  company_id,
+                  company_book_id,
+                  rate_type,
+                  quote_basis,
+                  rate_use_case,
+                  posting_reason,
+                  revaluation_profile,
+                  fx_rounding_policy,
+                  effective_from,
+                  is_active,
+                  created_by_user_id,
+                  created_at,
+                  updated_at
+                )
+                select
+                  gen_random_uuid(),
+                  @company_id,
+                  b.id,
+                  'closing',
+                  'direct',
+                  'remeasurement',
+                  'revaluation',
+                  'monetary_open_item_closing',
+                  'currency_precision',
+                  date '2000-01-01',
+                  true,
+                  @user_id,
+                  now(),
+                  now()
+                from company_books b
+                where b.company_id = @company_id
+                  and b.book_code = 'PRIMARY'
+                  and not exists (
+                    select 1
+                    from company_book_remeasurement_policies p
+                    where p.company_id = b.company_id
+                      and p.company_book_id = b.id
+                      and p.is_active = true
+                  )
+                limit 1;
+                """;
+            policyCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
+            policyCommand.Parameters.AddWithValue("user_id", userId.Value);
+            await policyCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     private static async Task<Guid> PrepareAndPostBatchAsync(
         FxFixture fixture,
         DateOnly revaluationDate,
@@ -332,7 +458,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                 UserId.FromOrdinal(1),
                 BookId: null,
                 revaluationDate,
-                new CurrencyCode("EUR"),
+                new CurrencyCode(RevaluationCurrencyCode),
                 snapshotId,
                 IncludeAccountsReceivable: true,
                 IncludeAccountsPayable: false,
@@ -405,7 +531,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
               @id,
               @company_id,
               @base_currency_code,
-              'EUR',
+              @quote_currency_code,
               @requested_date,
               @effective_date,
               @rate,
@@ -425,10 +551,11 @@ public sealed class FxRevaluationWorkflowSmokeTests
         command.Parameters.AddWithValue("id", snapshotId);
         command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+        command.Parameters.AddWithValue("quote_currency_code", RevaluationCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);
         command.Parameters.AddWithValue("effective_date", requestedDate);
         command.Parameters.AddWithValue("rate", rate);
-        command.Parameters.AddWithValue("provider_key", $"smoke-eur-{snapshotId:N}");
+        command.Parameters.AddWithValue("provider_key", $"smoke-{RevaluationCurrencyCode.ToLowerInvariant()}-{snapshotId:N}");
         command.Parameters.AddWithValue("created_by_user_id", userId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -474,7 +601,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
               'invoice',
               @source_id,
               @due_date,
-              'EUR',
+              @document_currency_code,
               @base_currency_code,
               @original_amount_tx,
               @original_amount_base,
@@ -491,6 +618,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         command.Parameters.AddWithValue("customer_id", CustomerId);
         command.Parameters.AddWithValue("source_id", Guid.NewGuid());
         command.Parameters.AddWithValue("due_date", dueDate);
+        command.Parameters.AddWithValue("document_currency_code", RevaluationCurrencyCode);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("original_amount_tx", openAmountTx);
         command.Parameters.AddWithValue("original_amount_base", openAmountBase);
@@ -890,25 +1018,6 @@ public sealed class FxRevaluationWorkflowSmokeTests
         {
             await ExecuteDeleteByIdAsync(connection, transaction, "delete from accounts where id = @id;", accountId, cancellationToken);
         }
-
-        await ExecuteDeleteByCompanyAsync(
-            connection,
-            transaction,
-            """
-            delete from accounts
-            where company_id = @company_id
-              and system_role in ('accounts_receivable:EUR', 'accounts_payable:EUR');
-            """,
-            cancellationToken);
-        await ExecuteDeleteByCompanyAsync(
-            connection,
-            transaction,
-            """
-            delete from company_currencies
-            where company_id = @company_id
-              and currency_code = 'EUR';
-            """,
-            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 

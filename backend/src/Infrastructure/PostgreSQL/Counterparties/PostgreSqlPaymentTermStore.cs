@@ -15,25 +15,22 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS payment_terms (
-                id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id  char(7) NOT NULL,
-                code        TEXT NOT NULL,
-                name        TEXT NOT NULL,
-                net_days    INTEGER NOT NULL DEFAULT 0,
-                is_active   BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_terms_company_code
-                ON payment_terms (company_id, code);
-            CREATE INDEX IF NOT EXISTS idx_payment_terms_company_active
-                ON payment_terms (company_id, is_active);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlCounterpartySchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "payment_terms",
+            new[]
+            {
+                "id",
+                "company_id",
+                "code",
+                "name",
+                "net_days",
+                "is_active",
+                "created_at",
+                "updated_at"
+            },
+            "Payment term schema has not been installed. Apply database migrations before using payment terms.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<PaymentTermRecord>> ListAsync(

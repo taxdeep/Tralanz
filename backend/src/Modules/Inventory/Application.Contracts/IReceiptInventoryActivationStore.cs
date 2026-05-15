@@ -2,6 +2,8 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public interface IReceiptInventoryActivationStore
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task ValidateCanActivateAsync(
         CompanyId companyId,
         Guid receiptDocumentId,

@@ -14,8 +14,6 @@ public sealed class PostgreSqlEntityNumberAllocator : IEntityNumberAllocator
     {
         ArgumentNullException.ThrowIfNull(transaction);
 
-        await PostgreSqlIdentitySchemaBootstrap.EnsureEntityNumberSequenceTableAsync(connection, transaction, cancellationToken);
-
         await using (var seedCommand = connection.CreateCommand())
         {
             seedCommand.Transaction = transaction;

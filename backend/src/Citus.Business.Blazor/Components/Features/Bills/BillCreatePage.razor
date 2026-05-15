@@ -21,10 +21,9 @@
       • /bills/new — fresh draft
       • /bills/{id}/edit — loads an existing Draft (only Draft is editable)
 
-    Two save buttons: Save (silent draft) and Save & Post (transitions
-    to Posted). The full GL posting pipeline isn't wired in V1 — Post
-    just flips the status flag for now; the journal entry / AP open
-    item integration lands when PO + Inventory ships.
+    This legacy page saves Draft bills only. Posting is blocked here
+    until the canonical workflow can create the journal entry and AP
+    open item atomically.
 *@
 
 <PageTitle>@(_billId is null ? "New bill" : $"Edit {_billNumberDisplay}") | Tralanz Books</PageTitle>
@@ -255,15 +254,9 @@ else
             </section>
 
             <div class="flex flex-wrap gap-2">
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(post: false))">
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
                     @(_isSaving ? "Saving…" : "Save")
                 </CitusButton>
-                @if (_status == "draft" || _billId is null)
-                {
-                    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(post: true))">
-                        Save &amp; Post
-                    </CitusButton>
-                }
                 <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
             </div>
         </aside>
@@ -495,7 +488,7 @@ else
 
     private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
 
-    private async Task SaveAsync(bool post)
+    private async Task SaveAsync()
     {
         _validation = null;
         if (_vendorId is null) { _validation = "Pick a supplier."; return; }
@@ -567,23 +560,7 @@ else
             _expectedUpdatedAt = outcome.Saved.UpdatedAt;
 
             var saved = outcome.Saved;
-            if (post && saved.Status == "draft")
-            {
-                var postOutcome = await BillClient.PostAsync(saved.Id);
-                if (!postOutcome.Succeeded)
-                {
-                    _validation = postOutcome.ErrorMessage ?? "Saved, but could not transition to Posted.";
-                    await Message.WarningAsync(_validation);
-                }
-                else
-                {
-                    await Message.SuccessAsync($"Bill {saved.BillNumber} posted.");
-                }
-            }
-            else
-            {
-                await Message.SuccessAsync($"Bill {saved.BillNumber} saved.");
-            }
+            await Message.SuccessAsync($"Bill {saved.BillNumber} saved.");
 
             Navigation.NavigateTo($"bills/{saved.Id:D}");
         }

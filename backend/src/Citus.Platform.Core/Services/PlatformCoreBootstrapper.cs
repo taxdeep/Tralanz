@@ -12,8 +12,6 @@ public sealed class PlatformCoreBootstrapper(
 {
     public async Task<PlatformBootstrapReport> BootstrapAsync(CancellationToken cancellationToken)
     {
-        await repository.EnsureSchemaAsync(cancellationToken);
-
         var entities = CitusPlatformKernel.GetBuiltInEntities();
         var modules = NormalizeModules(CitusPlatformKernel.GetBuiltInModules(), entities);
 

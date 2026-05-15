@@ -128,7 +128,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
                  where account_id = @account_id
                    and used_at is null;
                 """;
-            invalidate.Parameters.AddWithValue("account_id", accountId);
+            invalidate.Parameters.AddWithValue("account_id", accountId.Value);
             await invalidate.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -141,7 +141,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
                 values
                   ('business', @account_id, @token_hash, @expires_at, @ip);
                 """;
-            insert.Parameters.AddWithValue("account_id", accountId);
+            insert.Parameters.AddWithValue("account_id", accountId.Value);
             insert.Parameters.AddWithValue("token_hash", tokenHash);
             insert.Parameters.AddWithValue("expires_at", expiresAt);
             insert.Parameters.AddWithValue("ip", (object?)requestedIp ?? DBNull.Value);
@@ -217,7 +217,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
                  where id = @id;
                 """;
             updateUser.Parameters.AddWithValue("hash", newHash);
-            updateUser.Parameters.AddWithValue("id", accountId);
+            updateUser.Parameters.AddWithValue("id", accountId.Value);
             await updateUser.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -232,7 +232,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
                  where user_id = @id
                    and revoked_at is null;
                 """;
-            revokeSessions.Parameters.AddWithValue("id", accountId);
+            revokeSessions.Parameters.AddWithValue("id", accountId.Value);
             await revokeSessions.ExecuteNonQueryAsync(cancellationToken);
         }
 

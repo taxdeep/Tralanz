@@ -23,6 +23,17 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        if (!await EnsureSchemaAsync(connection, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Receipt GR/IR bridge schema requires receipt inventory cost layer emission schema to be installed first.");
+        }
+    }
+
     public async Task<ReceiptGrIrBridgeSummary> RefreshReceiptGrIrBridgeAsync(
         CompanyId companyId,
         UserId userId,
@@ -32,9 +43,17 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        if (!await EnsureSchemaAsync(connection, cancellationToken))
+        var hasEmissionLines = await TableExistsAsync(connection, EmissionLinesTableName, cancellationToken);
+        if (!hasEmissionLines)
         {
             return BuildEmptySummary(receiptDocumentId);
+        }
+
+        var hasBridgeLines = await TableExistsAsync(connection, BridgeLinesTableName, cancellationToken);
+        if (!hasBridgeLines)
+        {
+            throw new InvalidOperationException(
+                "Receipt GR/IR bridge schema has not been installed. Apply database migrations before refreshing GR/IR bridge lines.");
         }
 
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
@@ -79,7 +98,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        var hasBridgeLines = await EnsureSchemaAsync(connection, cancellationToken);
+        var hasBridgeLines = await TableExistsAsync(connection, BridgeLinesTableName, cancellationToken);
         return await LoadReceiptGrIrBridgeSummaryAsync(
             connection,
             null,
@@ -101,7 +120,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
         var distinctReceiptIds = receiptDocumentIds.Distinct().ToArray();
-        var hasBridgeLines = await EnsureSchemaAsync(connection, cancellationToken);
+        var hasBridgeLines = await TableExistsAsync(connection, BridgeLinesTableName, cancellationToken);
         return await LoadReceiptGrIrBridgeSummariesAsync(
             connection,
             null,
@@ -448,6 +467,12 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
             return true;
         }
 
+        if (await TableExistsAsync(connection, BridgeLinesTableName, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return true;
+        }
+
         if (!await TableExistsAsync(connection, EmissionLinesTableName, cancellationToken))
         {
             return false;
@@ -458,6 +483,12 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
         {
             if (_schemaEnsured)
             {
+                return true;
+            }
+
+            if (await TableExistsAsync(connection, BridgeLinesTableName, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return true;
             }
 

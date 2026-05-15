@@ -23,6 +23,13 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersAsync(
         CompanyId companyId,
         UserId userId,
@@ -32,7 +39,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
         var hasValuationLines = await TableExistsAsync(connection, ValuationLinesTableName, cancellationToken);
@@ -88,7 +95,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
         var hasValuationLines = await TableExistsAsync(connection, ValuationLinesTableName, cancellationToken);
 
@@ -114,7 +121,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         }
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
         var hasValuationLines = await TableExistsAsync(connection, ValuationLinesTableName, cancellationToken);
 
@@ -137,7 +144,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
 
         return await LoadReceiptCostLayerEmissionReconciliationSummaryAsync(
@@ -163,7 +170,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
 
         return await LoadReceiptCostLayerEmissionReconciliationSummariesAsync(
@@ -679,11 +686,24 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await TableExistsAsync(connection, EmissionLinesTableName, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Receipt inventory cost layer emission schema has not been installed. Apply database migrations before emitting receipt cost layers.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -691,6 +711,12 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await TableExistsAsync(connection, EmissionLinesTableName, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 

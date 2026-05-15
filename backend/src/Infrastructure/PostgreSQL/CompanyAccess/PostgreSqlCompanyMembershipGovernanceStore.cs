@@ -16,7 +16,6 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
-        await EnsureAuditLogsTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var target = await ReadTargetForUpdateAsync(
@@ -220,30 +219,8 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
-        command.Parameters.AddWithValue("entity_id", membershipId);
+        command.Parameters.AddWithValue("entity_id", membershipId.ToString("D"));
         command.Parameters.AddWithValue("payload", payload);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task EnsureAuditLogsTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            create table if not exists audit_logs (
-              id uuid primary key,
-              company_id char(7) not null,
-              actor_type text not null,
-              actor_id uuid null,
-              entity_type text not null,
-              entity_id uuid not null,
-              action text not null,
-              payload jsonb not null,
-              created_at timestamptz not null default now()
-            );
-            """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

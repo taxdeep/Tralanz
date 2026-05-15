@@ -20,6 +20,13 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<InventoryShipmentDashboard> GetDashboardAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
@@ -27,7 +34,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, null, companyId, cancellationToken);
         var activeItems = await LoadActiveItemsAsync(connection, null, companyId, cancellationToken);
@@ -50,7 +57,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await RefreshShipmentIssueLaneAsync(connection, null, companyId, shipmentDocumentId, cancellationToken);
 
         await using var headerCommand = connection.CreateCommand();
@@ -206,7 +213,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await RefreshInvoiceShipmentLanesAsync(connection, null, companyId, new[] { invoiceDocumentId }, cancellationToken);
         await RefreshInvoiceShipmentIssueLanesAsync(connection, null, companyId, invoiceDocumentId, cancellationToken);
 
@@ -255,7 +262,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         var requestedInvoiceIds = invoiceDocumentIds.Distinct().ToArray();
         await RefreshInvoiceShipmentLanesAsync(connection, null, companyId, requestedInvoiceIds, cancellationToken);
 
@@ -384,7 +391,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         _ = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -601,11 +608,24 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Inventory shipment schema has not been installed. Apply database migrations before using inventory shipment features.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -613,6 +633,12 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -718,6 +744,46 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              to_regclass('inventory_documents') is not null
+              and to_regclass('inventory_outbound_matching_lanes') is not null
+              and to_regclass('inventory_outbound_discrepancy_lanes') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'document_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'carrier_name')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'tracking_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'shipping_slip_number');
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(

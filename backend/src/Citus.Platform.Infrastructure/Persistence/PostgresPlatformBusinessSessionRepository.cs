@@ -85,6 +85,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
               permission_version text,
               security_stamp_snapshot text not null default '',
               expires_at timestamptz not null,
+              revoked_at timestamptz,
               created_at timestamptz not null default now(),
               constraint business_sessions_role_chk check (role in ('owner', 'user')),
               constraint business_sessions_permissions_array_chk check (jsonb_typeof(permissions) = 'array'),
@@ -92,7 +93,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             );
 
             alter table business_sessions
-              add column if not exists security_stamp_snapshot text not null default '';
+              add column if not exists security_stamp_snapshot text not null default '',
+              add column if not exists revoked_at timestamptz;
 
             update business_sessions s
             set security_stamp_snapshot = u.security_stamp
@@ -105,6 +107,14 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
             create index if not exists idx_business_sessions_token_expiry
               on business_sessions (token_hash, expires_at desc);
+
+            create index if not exists idx_business_sessions_active_user_company_expiry
+              on business_sessions (user_id, active_company_id, expires_at desc)
+              where revoked_at is null;
+
+            create index if not exists idx_business_sessions_active_token_expiry
+              on business_sessions (token_hash, expires_at desc)
+              where revoked_at is null;
 
             create table if not exists business_session_mfa_challenges (
               id uuid primary key default gen_random_uuid(),
@@ -184,9 +194,6 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         {
             return Failed("invalid_credentials", "Email/username and password are required.");
         }
-
-        await EnsureSchemaAsync(cancellationToken);
-        await lockoutPolicy.EnsureSchemaAsync(cancellationToken);
 
         var normalizedLogin = login.Trim().ToLowerInvariant();
 
@@ -402,8 +409,6 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             return Failed("missing_session", "Business session token is required.");
         }
 
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -481,8 +486,6 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             return Failed("invalid_company", "Active company id is required.");
         }
 
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -544,8 +547,6 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         {
             return Failed("invalid_mfa_challenge", "MFA challenge id and verification code are required.");
         }
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -658,8 +659,6 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         {
             return;
         }
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -979,6 +978,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             from business_sessions s
             inner join users u on u.id = s.user_id
             where s.token_hash = @token_hash
+              and s.revoked_at is null
             limit 1;
             """;
         command.Parameters.AddWithValue("token_hash", tokenHash);

@@ -337,7 +337,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
             command.Parameters.AddWithValue("actor_type", request.RequestedByActorType);
             command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
             command.Parameters.AddWithValue("entity_type", "open_item_adjustment_request");
-            command.Parameters.AddWithValue("entity_id", requestId);
+            command.Parameters.AddWithValue("entity_id", requestId.ToString("D"));
             command.Parameters.AddWithValue("action", "open_item_adjustment_requested");
             command.Parameters.AddWithValue("payload", payload);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1403,7 +1403,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
               from audit_logs tl
               where tl.company_id = al.company_id
                 and tl.entity_type = 'open_item_adjustment_request'
-                and tl.entity_id = (al.payload ->> 'RequestId')::uuid
+                and tl.entity_id = (al.payload ->> 'RequestId')
                 and tl.action = 'open_item_adjustment_request_submitted'
               order by tl.created_at desc, tl.id desc
               limit 1
@@ -1413,7 +1413,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
               from audit_logs tl
               where tl.company_id = al.company_id
                 and tl.entity_type = 'open_item_adjustment_request'
-                and tl.entity_id = (al.payload ->> 'RequestId')::uuid
+                and tl.entity_id = (al.payload ->> 'RequestId')
                 and tl.action = 'open_item_adjustment_request_cancelled'
               order by tl.created_at desc, tl.id desc
               limit 1
@@ -1423,7 +1423,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
               from audit_logs tl
               where tl.company_id = al.company_id
                 and tl.entity_type = 'open_item_adjustment_request'
-                and tl.entity_id = (al.payload ->> 'RequestId')::uuid
+                and tl.entity_id = (al.payload ->> 'RequestId')
                 and tl.action = 'open_item_adjustment_request_approved'
               order by tl.created_at desc, tl.id desc
               limit 1
@@ -1433,7 +1433,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
               from audit_logs tl
               where tl.company_id = al.company_id
                 and tl.entity_type = 'open_item_adjustment_request'
-                and tl.entity_id = (al.payload ->> 'RequestId')::uuid
+                and tl.entity_id = (al.payload ->> 'RequestId')
                 and tl.action = 'open_item_adjustment_request_rejected'
               order by tl.created_at desc, tl.id desc
               limit 1
@@ -1443,7 +1443,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
               from audit_logs tl
               where tl.company_id = al.company_id
                 and tl.entity_type = 'open_item_adjustment_request'
-                and tl.entity_id = (al.payload ->> 'RequestId')::uuid
+                and tl.entity_id = (al.payload ->> 'RequestId')
                 and tl.action = 'open_item_adjustment_execution_requested'
               order by tl.created_at desc, tl.id desc
               limit 1
@@ -1453,7 +1453,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
               from audit_logs tl
               where tl.company_id = al.company_id
                 and tl.entity_type = 'open_item_adjustment_request'
-                and tl.entity_id = (al.payload ->> 'RequestId')::uuid
+                and tl.entity_id = (al.payload ->> 'RequestId')
                 and tl.action = 'open_item_adjustment_execution_completed'
               order by tl.created_at desc, tl.id desc
               limit 1
@@ -1578,7 +1578,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
         command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_type", "open_item_adjustment_request");
-        command.Parameters.AddWithValue("entity_id", requestId);
+        command.Parameters.AddWithValue("entity_id", requestId.ToString("D"));
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload));
         await command.ExecuteNonQueryAsync(cancellationToken);

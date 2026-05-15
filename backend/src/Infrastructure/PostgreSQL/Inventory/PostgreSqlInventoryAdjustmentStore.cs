@@ -19,6 +19,13 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<InventoryAdjustmentDashboard> GetDashboardAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
@@ -26,7 +33,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         var summary = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, null, companyId, cancellationToken);
         var activeItems = await LoadActiveItemsAsync(connection, null, companyId, cancellationToken);
@@ -51,7 +58,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -229,7 +236,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         ArgumentNullException.ThrowIfNull(request);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -310,7 +317,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         ArgumentNullException.ThrowIfNull(request);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -370,7 +377,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -1622,11 +1629,24 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Inventory adjustment schema has not been installed. Apply database migrations before using inventory adjustments.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -1634,6 +1654,12 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -1656,6 +1682,38 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              to_regclass('inventory_documents') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'approved_at')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'approved_by_user_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'posted_by_user_id');
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private sealed record ItemWarehouseBalanceSnapshot(

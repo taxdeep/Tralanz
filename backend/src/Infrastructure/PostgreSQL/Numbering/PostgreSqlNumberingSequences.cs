@@ -126,6 +126,8 @@ internal static class PostgreSqlNumberingSequences
         long seedNumber,
         CancellationToken cancellationToken)
     {
+        await EnsureCompanyNumberingSequenceInstalledAsync(connection, transaction, cancellationToken);
+
         await using (var seedCommand = connection.CreateCommand())
         {
             seedCommand.Transaction = transaction;
@@ -175,6 +177,49 @@ internal static class PostgreSqlNumberingSequences
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task EnsureCompanyNumberingSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              to_regclass('company_numbering_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'scope_key')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'next_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'suggestion_enabled');
+            """;
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Company numbering schema has not been installed. Apply database migrations before reserving display numbers.");
+        }
+    }
+
     // Per-company entity-number peek/reserve. Both target the
     // company_entity_number_sequences (company_id, entity_year) row that
     // PostgresNumberingSequences and PostgresSourceDocumentDraftNumbering
@@ -190,6 +235,7 @@ internal static class PostgreSqlNumberingSequences
         long seedNumber,
         CancellationToken cancellationToken)
     {
+        await EnsureEntityNumberSequenceInstalledAsync(connection, transaction, cancellationToken);
         await EnsureEntityNumberSeededAsync(connection, transaction, companyId, year, seedNumber, cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -219,6 +265,7 @@ internal static class PostgreSqlNumberingSequences
         long seedNumber,
         CancellationToken cancellationToken)
     {
+        await EnsureEntityNumberSequenceInstalledAsync(connection, transaction, cancellationToken);
         await EnsureEntityNumberSeededAsync(connection, transaction, companyId, year, seedNumber, cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -238,6 +285,43 @@ internal static class PostgreSqlNumberingSequences
         return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
+    private static async Task EnsureEntityNumberSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var schemaCommand = connection.CreateCommand();
+        schemaCommand.Transaction = transaction;
+        schemaCommand.CommandText =
+            """
+            select
+              to_regclass('company_entity_number_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'entity_year')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'next_ordinal');
+            """;
+        if (await schemaCommand.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Entity number sequence schema has not been installed. Apply database migrations before reserving entity numbers.");
+        }
+    }
+
     private static async Task EnsureEntityNumberSeededAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -246,21 +330,6 @@ internal static class PostgreSqlNumberingSequences
         long seedNumber,
         CancellationToken cancellationToken)
     {
-        await using (var schemaCommand = connection.CreateCommand())
-        {
-            schemaCommand.Transaction = transaction;
-            schemaCommand.CommandText =
-                """
-                create table if not exists company_entity_number_sequences (
-                  company_id char(7) not null,
-                  entity_year integer not null,
-                  next_ordinal bigint not null,
-                  primary key (company_id, entity_year)
-                );
-                """;
-            await schemaCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
         await using var seedCommand = connection.CreateCommand();
         seedCommand.Transaction = transaction;
         seedCommand.CommandText =

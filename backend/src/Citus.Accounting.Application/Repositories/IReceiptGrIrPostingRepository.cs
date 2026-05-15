@@ -5,6 +5,8 @@ namespace Citus.Accounting.Application.Repositories;
 
 public interface IReceiptGrIrPostingRepository
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<ReceiptGrIrPostingDocument> PreparePostingDocumentAsync(
         CompanyId companyId,
         UserId userId,

@@ -733,7 +733,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
               actor_type text not null,
               actor_id char(7) null,
               entity_type text not null,
-              entity_id uuid not null,
+              entity_id text not null,
               action text not null,
               payload jsonb not null,
               created_at timestamptz not null default now()
@@ -756,7 +756,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             from audit_logs
             where company_id = @company_id
               and entity_type = 'purchase_order'
-              and entity_id = @purchase_order_id
+              and entity_id = @purchase_order_id::text
             order by created_at asc, action asc;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);

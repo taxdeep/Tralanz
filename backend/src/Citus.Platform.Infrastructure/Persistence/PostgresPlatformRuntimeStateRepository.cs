@@ -61,8 +61,6 @@ public sealed class PostgresPlatformRuntimeStateRepository(
             UpdatedAtUtc = DateTimeOffset.UtcNow
         };
 
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("state_key", MaintenanceStateKey);
@@ -102,8 +100,6 @@ public sealed class PostgresPlatformRuntimeStateRepository(
             TestStatus = NormalizeTestStatus(state.TestStatus),
             UpdatedAtUtc = DateTimeOffset.UtcNow
         };
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
@@ -152,8 +148,6 @@ public sealed class PostgresPlatformRuntimeStateRepository(
             UpdatedAtUtc = DateTimeOffset.UtcNow
         };
 
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("state_key", FirstCompanySetupStateKey);
@@ -171,8 +165,6 @@ public sealed class PostgresPlatformRuntimeStateRepository(
             where state_key = @state_key
             limit 1;
             """;
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);

@@ -19,6 +19,13 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<InventoryTransferDashboard> GetDashboardAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
@@ -26,7 +33,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, null, companyId, cancellationToken);
         var activeItems = await LoadActiveItemsAsync(connection, null, companyId, cancellationToken);
@@ -50,7 +57,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         _ = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -256,7 +263,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -315,11 +322,24 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Inventory transfer schema has not been installed. Apply database migrations before using inventory transfers.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -327,6 +347,12 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -361,6 +387,51 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              to_regclass('warehouse_transfers') is not null
+              and to_regclass('warehouse_transfer_lines') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'warehouse_transfer_lines'
+                  and column_name = 'uom_code')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'warehouse_transfers'
+                  and column_name = 'submitted_at')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'warehouse_transfers'
+                  and column_name = 'submitted_by_user_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'warehouse_transfers'
+                  and column_name = 'shipped_by_user_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'warehouse_transfers'
+                  and column_name = 'received_by_user_id');
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
@@ -1094,7 +1165,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         var foundationSummary = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -1319,7 +1390,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try

@@ -15,12 +15,18 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<InventoryFoundationSummary> GetSummaryAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await EnsureCompanyExistsAsync(connection, transaction: null, companyId, cancellationToken);
         return await LoadSummaryAsync(connection, transaction: null, companyId, cancellationToken);
     }
@@ -30,7 +36,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await EnsureCompanyExistsAsync(connection, transaction, request.CompanyId, cancellationToken);
@@ -46,7 +52,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await EnsureCompanyExistsAsync(connection, transaction: null, companyId, cancellationToken);
 
         var summary = await LoadSummaryAsync(connection, transaction: null, companyId, cancellationToken);
@@ -66,7 +72,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await EnsureCompanyExistsAsync(connection, transaction, request.CompanyId, cancellationToken);
@@ -123,7 +129,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await EnsureCompanyExistsAsync(connection, transaction, request.CompanyId, cancellationToken);
@@ -343,7 +349,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await EnsureCompanyExistsAsync(connection, transaction: null, companyId, cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -371,7 +377,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -462,7 +468,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await EnsureCompanyExistsAsync(connection, transaction, request.CompanyId, cancellationToken);
@@ -559,7 +565,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await EnsureCompanyExistsAsync(connection, transaction: null, companyId, cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -587,7 +593,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -630,11 +636,24 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Inventory foundation schema has not been installed. Apply database migrations before using inventory features.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -642,6 +661,12 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -1117,6 +1142,32 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              to_regclass('company_inventory_policies') is not null
+              and to_regclass('inventory_items') is not null
+              and to_regclass('inventory_warehouses') is not null
+              and to_regclass('item_warehouse_balances') is not null
+              and to_regclass('inventory_documents') is not null
+              and to_regclass('inventory_document_lines') is not null
+              and to_regclass('inventory_ledger_entries') is not null
+              and to_regclass('inventory_cost_layers') is not null
+              and to_regclass('inventory_layer_consumptions') is not null
+              and to_regclass('warehouse_transfers') is not null
+              and to_regclass('warehouse_transfer_lines') is not null
+              and to_regclass('boms') is not null
+              and to_regclass('bom_lines') is not null;
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private static async Task EnsureCompanyExistsAsync(

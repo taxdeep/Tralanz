@@ -30,11 +30,11 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
                 @created_at, @updated_at);
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", (object?)companyId ?? DBNull.Value);
+        command.Parameters.AddWithValue("company_id", (object?)companyId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("job_type", jobType);
         command.Parameters.AddWithValue("status", AiJobRunStatus.Running);
         command.Parameters.AddWithValue("trigger_type", triggerType);
-        command.Parameters.AddWithValue("triggered_by_user_id", (object?)triggeredByUserId ?? DBNull.Value);
+        command.Parameters.AddWithValue("triggered_by_user_id", (object?)triggeredByUserId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("started_at", now);
         command.Parameters.AddWithValue("source_window_start", (object?)sourceWindowStart ?? DBNull.Value);
         command.Parameters.AddWithValue("source_window_end", (object?)sourceWindowEnd ?? DBNull.Value);
@@ -190,7 +190,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
                 @created_at);
             """;
         command.Parameters.AddWithValue("id", record.Id);
-        command.Parameters.AddWithValue("company_id", (object?)record.CompanyId ?? DBNull.Value);
+        command.Parameters.AddWithValue("company_id", (object?)record.CompanyId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("job_run_id", (object?)record.JobRunId ?? DBNull.Value);
         command.Parameters.AddWithValue("task_type", record.TaskType);
         command.Parameters.AddWithValue("provider", (object?)record.Provider ?? DBNull.Value);

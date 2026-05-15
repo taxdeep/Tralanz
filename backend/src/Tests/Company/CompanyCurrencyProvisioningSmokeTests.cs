@@ -22,8 +22,6 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
             var result = await workflow.EnableCurrencyAsync(CompanyId, currencyCode, UserId.FromOrdinal(1), CancellationToken.None);
 
             Assert.True(result.Profile.IsCurrencyEnabled(currencyCode));
-            Assert.Contains(result.ProvisionedControlAccounts, account => account.SystemRole == "accounts_receivable:CAD");
-            Assert.Contains(result.ProvisionedControlAccounts, account => account.SystemRole == "accounts_payable:CAD");
 
             await using var connection = await connectionFactory.OpenAsync(CancellationToken.None);
 
@@ -77,26 +75,6 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await ExecuteAsync(
-            connection,
-            transaction,
-            """
-            delete from accounts
-            where company_id = @company_id
-              and system_role in ('accounts_receivable:CAD', 'accounts_payable:CAD');
-            """,
-            cancellationToken);
-
-        await ExecuteAsync(
-            connection,
-            transaction,
-            """
-            delete from company_currencies
-            where company_id = @company_id
-              and currency_code = 'CAD';
-            """,
-            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }

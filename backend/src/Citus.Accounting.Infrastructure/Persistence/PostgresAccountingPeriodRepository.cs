@@ -7,10 +7,9 @@ using NpgsqlTypes;
 namespace Citus.Accounting.Infrastructure.Persistence;
 
 /// <summary>
-/// M7 iter 1 implementation. Owns the <c>accounting_periods</c>
-/// schema bootstrap (idempotent) and the lazy-seed of one fiscal
-/// year of monthly periods on first read for a company that has no
-/// periods yet.
+/// M7 iter 1 implementation. Owns accounting-period reads,
+/// transitions, and the lazy-seed of one fiscal year of monthly
+/// periods on first read for a company that has no periods yet.
 /// </summary>
 public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodRepository
 {
@@ -33,8 +32,6 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var scope = await PostgresCommandScope.CreateAsync(
             _connections, _executionContextAccessor, cancellationToken);
 
@@ -60,8 +57,6 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         string targetStatus,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         if (!AccountingPeriodStatus.All.Contains(targetStatus))
         {
             throw new InvalidOperationException(
@@ -187,7 +182,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         };
     }
 
-    private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _schemaEnsured) == 1) return;
 

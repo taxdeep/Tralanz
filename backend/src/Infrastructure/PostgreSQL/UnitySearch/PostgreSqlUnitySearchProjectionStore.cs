@@ -132,8 +132,6 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
 
     public async Task EnsureProjectionFreshAsync(CompanyId companyId, CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         if (_companyRefreshTimestamps.TryGetValue(companyId, out var refreshedAt) &&
             DateTimeOffset.UtcNow - refreshedAt < RefreshWindow)
         {

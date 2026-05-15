@@ -38,8 +38,8 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         {
             User = user with
             {
-                Roles = companies
-                    .SelectMany(static company => company.PermissionTokens.Prepend(company.MembershipRole))
+                Roles = activeCompany.PermissionTokens
+                    .Prepend(activeCompany.MembershipRole)
                     .Where(static role => !string.IsNullOrWhiteSpace(role))
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(static role => role, StringComparer.Ordinal)

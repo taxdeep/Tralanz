@@ -46,7 +46,6 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return BuildEmptyReceiptSummary(receiptDocumentId);
         }
 
-        await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await UpsertReceiptSettlementLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
@@ -78,7 +77,6 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return BuildEmptyReceiptSummary(receiptDocumentId);
         }
 
-        await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
@@ -109,7 +107,6 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return BuildEmptyReceiptSummary(receiptDocumentId);
         }
 
-        await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
@@ -134,7 +131,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return BuildEmptyReceiptSummary(receiptDocumentId);
         }
 
-        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        if (!await SettlementBatchSchemaAvailableForReadAsync(scope, cancellationToken))
         {
             return BuildEmptyReceiptSummary(receiptDocumentId);
         }
@@ -166,7 +163,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                 static id => BuildEmptyReceiptSummary(id));
         }
 
-        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        if (!await SettlementBatchSchemaAvailableForReadAsync(scope, cancellationToken))
         {
             return distinctIds.ToDictionary(
                 static id => id,
@@ -191,7 +188,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             _executionContextAccessor,
             cancellationToken);
 
-        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        if (!await SettlementBatchSchemaAvailableForReadAsync(scope, cancellationToken))
         {
             return Array.Empty<ReceiptGrIrApSettlementBatchSummary>();
         }
@@ -218,7 +215,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             _executionContextAccessor,
             cancellationToken);
 
-        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        if (!await SettlementBatchSchemaAvailableForReadAsync(scope, cancellationToken))
         {
             return Array.Empty<ReceiptGrIrApPurchaseVarianceLineSummary>();
         }
@@ -245,7 +242,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return BuildEmptyBillSummary(billDocumentId);
         }
 
-        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        if (!await SettlementBatchSchemaAvailableForReadAsync(scope, cancellationToken))
         {
             return BuildEmptyBillSummary(billDocumentId);
         }
@@ -292,7 +289,6 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             throw new InvalidOperationException("The GR/IR settlement lane is not ready. Refresh GR/IR bridge, post GR/IR, and ensure AP open item truth exists before settlement execution.");
         }
 
-        await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await UpsertReceiptSettlementLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
@@ -384,7 +380,6 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             throw new InvalidOperationException("The GR/IR AP open-item clearing lane is not ready. Settlement applications, posted settlement journals, and AP open-item truth are required before clearing.");
         }
 
-        await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
@@ -493,7 +488,6 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             throw new InvalidOperationException("The GR/IR AP open-item clearing lane is not ready. Settlement applications, posted settlement journals, and AP open-item truth are required before reversal.");
         }
 
-        await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
@@ -590,7 +584,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await CanBuildSettlementLaneAsync(scope, cancellationToken) &&
         await TableExistsAsync(scope, "settlement_applications", cancellationToken);
 
-    private static async Task<bool> EnsureSettlementBatchSchemaForReadAsync(
+    private static async Task<bool> SettlementBatchSchemaAvailableForReadAsync(
         PostgresCommandScope scope,
         CancellationToken cancellationToken)
     {
@@ -599,7 +593,6 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return false;
         }
 
-        await EnsureSchemaAsync(scope, cancellationToken);
         return await TableExistsAsync(scope, SettlementBatchesTableName, cancellationToken) &&
             await TableExistsAsync(scope, SettlementBatchLinesTableName, cancellationToken) &&
             await TableExistsAsync(scope, PurchaseVarianceLinesTableName, cancellationToken);
@@ -2442,6 +2435,20 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
     // batches; once the latest one is observed, this short-circuits
     // before touching any table. Same pattern as commit 2ef2640.
     private static volatile bool _schemaEnsured;
+
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+        if (!await CanBuildSettlementLaneAsync(scope, cancellationToken))
+        {
+            return;
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+    }
 
     private static async Task EnsureSchemaAsync(
         PostgresCommandScope scope,

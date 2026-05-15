@@ -142,7 +142,7 @@ public sealed class PostgresPlatformAiProviderConfigStore : IPlatformAiProviderC
         command.Parameters.AddWithValue("max_tokens", clampedMaxTokens);
         command.Parameters.AddWithValue("temperature", clampedTemperature);
         command.Parameters.AddWithValue("api_key_protected", (object?)apiKeyProtected ?? DBNull.Value);
-        command.Parameters.AddWithValue("updated_by_user_id", updatedByUserId);
+        command.Parameters.AddWithValue("updated_by_user_id", updatedByUserId.Value);
 
         // Npgsql 6+ reads timestamptz as DateTime (UTC kind) by default,
         // not DateTimeOffset — the direct cast on the boxed scalar

@@ -19,6 +19,8 @@ public sealed class SystemSetupSmokeTests
 
         try
         {
+            await EnsureSchemaAsync(connectionFactory, CancellationToken.None);
+
             var saved = await workflow.SaveNumberDisplayModeAsync(DemoUserId, "space-comma", CancellationToken.None);
             Assert.Equal(NumberDisplayMode.SpaceComma, saved.NumberDisplayMode);
 
@@ -44,6 +46,24 @@ public sealed class SystemSetupSmokeTests
     private static string GetConnectionString() =>
         Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
         ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+
+    private static async Task EnsureSchemaAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            create table if not exists user_preferences (
+              user_id char(7) primary key,
+              number_display_mode text not null,
+              created_at timestamptz not null default now(),
+              updated_at timestamptz not null default now()
+            );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static async Task CleanupAsync(
         PostgreSqlConnectionFactory connectionFactory,

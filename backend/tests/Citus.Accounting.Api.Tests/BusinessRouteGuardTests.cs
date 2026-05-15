@@ -1,4 +1,7 @@
+using Citus.Platform.Core.Abstractions;
+using Citus.Platform.Core.Accounts;
 using Citus.Platform.Core.Runtime;
+using Citus.Ui.Shared.Business;
 using Microsoft.AspNetCore.Http;
 using Modules.CompanyAccess.SessionContext;
 using SharedKernel.CompanyAccess;
@@ -31,11 +34,11 @@ public sealed class BusinessRouteGuardTests
     }
 
     [Fact]
-    public void Evaluate_AllowsReadRequests_WhenMaintenanceModeIsEnabled()
+    public async Task EvaluateAsync_AllowsReadRequests_WhenMaintenanceModeIsEnabled()
     {
         var guard = CreateGuard();
 
-        var result = guard.Evaluate(
+        var result = await guard.EvaluateAsync(
             HttpMethods.Get,
             CreateHeaders(UserId, CompanyId),
             [
@@ -49,7 +52,8 @@ public sealed class BusinessRouteGuardTests
             {
                 Enabled = true,
                 Message = "Maintenance window in progress."
-            });
+            },
+            CancellationToken.None);
 
         Assert.True(result.Allowed);
         Assert.NotNull(result.Session);
@@ -58,15 +62,16 @@ public sealed class BusinessRouteGuardTests
     }
 
     [Fact]
-    public void Evaluate_RequiresSessionHeaders()
+    public async Task EvaluateAsync_RequiresSessionHeaders()
     {
         var guard = CreateGuard();
 
-        var result = guard.Evaluate(
+        var result = await guard.EvaluateAsync(
             HttpMethods.Get,
             new HeaderDictionary(),
             Array.Empty<object?>(),
-            maintenanceState: null);
+            maintenanceState: null,
+            CancellationToken.None);
 
         Assert.False(result.Allowed);
         Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
@@ -74,15 +79,16 @@ public sealed class BusinessRouteGuardTests
     }
 
     [Fact]
-    public void Evaluate_RejectsUserCompanyMembershipMismatch()
+    public async Task EvaluateAsync_RejectsUserCompanyMembershipMismatch()
     {
         var guard = CreateGuard();
 
-        var result = guard.Evaluate(
+        var result = await guard.EvaluateAsync(
             HttpMethods.Get,
             CreateHeaders(UserId, CompanyId.FromOrdinal(2)),
             Array.Empty<object?>(),
-            maintenanceState: null);
+            maintenanceState: null,
+            CancellationToken.None);
 
         Assert.False(result.Allowed);
         Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
@@ -90,11 +96,11 @@ public sealed class BusinessRouteGuardTests
     }
 
     [Fact]
-    public void Evaluate_AssignsResolvedSession_WhenRequestIsValid()
+    public async Task EvaluateAsync_AssignsResolvedSession_WhenRequestIsValid()
     {
         var guard = CreateGuard();
 
-        var result = guard.Evaluate(
+        var result = await guard.EvaluateAsync(
             HttpMethods.Get,
             CreateHeaders(UserId, CompanyId),
             [
@@ -104,7 +110,8 @@ public sealed class BusinessRouteGuardTests
                     UserId = UserId
                 }
             ],
-            maintenanceState: null);
+            maintenanceState: null,
+            CancellationToken.None);
 
         Assert.True(result.Allowed);
         Assert.NotNull(result.Session);
@@ -152,6 +159,23 @@ public sealed class BusinessRouteGuardTests
         Assert.NotNull(result.Resolution);
         Assert.Equal(["company_book_governance", "user"], result.Session!.Roles);
         Assert.Equal("active", result.Resolution!.ActiveCompany.Status);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_RejectsForgedUserHeader_WhenTokenBelongsToDifferentUser()
+    {
+        var guard = CreateGuard(sessionUserId: UserId.FromOrdinal(2));
+
+        var result = await guard.EvaluateAsync(
+            HttpMethods.Get,
+            CreateHeaders(UserId, CompanyId),
+            Array.Empty<object?>(),
+            maintenanceState: null,
+            CancellationToken.None);
+
+        Assert.False(result.Allowed);
+        Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
+        Assert.Contains("does not match", result.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -276,16 +300,21 @@ public sealed class BusinessRouteGuardTests
     }
 
     private static BusinessRouteGuard CreateGuard() =>
+        CreateGuard(sessionUserId: UserId);
+
+    private static BusinessRouteGuard CreateGuard(UserId sessionUserId) =>
         new(
             new BusinessSessionRequestReader(),
             new BusinessRequestContractGuard(),
-            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions())));
+            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions())),
+            new StubPlatformBusinessSessionRepository(sessionUserId, CompanyId));
 
     private static BusinessRouteGuard CreateGuard(ICompanySessionContextWorkflow workflow) =>
         new(
             new BusinessSessionRequestReader(),
             new BusinessRequestContractGuard(),
-            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions()), workflow));
+            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions()), workflow),
+            new StubPlatformBusinessSessionRepository(UserId, CompanyId));
 
     // Test-local fixture. Production directory no longer carries built-ins.
     private static BusinessSessionOptions CreateFixtureOptions() => new()
@@ -326,6 +355,7 @@ public sealed class BusinessRouteGuardTests
     private static HeaderDictionary CreateHeaders(UserId userId, CompanyId companyId) =>
         new()
         {
+            [BusinessAuthHeaderNames.SessionToken] = "session-test",
             [BusinessSessionHeaders.UserId] = userId.ToString(),
             [BusinessSessionHeaders.ActiveCompanyId] = companyId.ToString()
         };
@@ -356,5 +386,51 @@ public sealed class BusinessRouteGuardTests
             CompanyId? preferredActiveCompanyId,
             CancellationToken cancellationToken) =>
             Task.FromResult(context);
+    }
+
+    private sealed class StubPlatformBusinessSessionRepository(
+        UserId userId,
+        CompanyId activeCompanyId) : IPlatformBusinessSessionRepository
+    {
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<PlatformBusinessSessionResult> AuthenticateAsync(
+            string login,
+            string password,
+            TimeSpan sessionLifetime,
+            string? remoteIp,
+            string? userAgent,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<PlatformBusinessSessionResult> ValidateSessionAsync(
+            string sessionToken,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new PlatformBusinessSessionResult
+            {
+                Succeeded = string.Equals(sessionToken, "session-test", StringComparison.Ordinal),
+                UserId = userId,
+                ActiveCompanyId = activeCompanyId
+            });
+
+        public Task<PlatformBusinessSessionResult> SwitchActiveCompanyAsync(
+            string sessionToken,
+            CompanyId activeCompanyId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<PlatformBusinessSessionResult> CompleteSecondFactorAsync(
+            Guid challengeId,
+            string verificationCode,
+            TimeSpan sessionLifetime,
+            string? remoteIp,
+            string? userAgent,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RevokeSessionAsync(
+            string sessionToken,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }

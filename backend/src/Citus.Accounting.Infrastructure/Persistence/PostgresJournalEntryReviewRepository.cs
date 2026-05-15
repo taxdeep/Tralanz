@@ -27,7 +27,6 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureJournalEntryLineAuditColumnsAsync(scope, cancellationToken);
 
         var items = new List<JournalEntryReviewListItem>();
 
@@ -99,7 +98,6 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureJournalEntryLineAuditColumnsAsync(scope, cancellationToken);
 
         JournalEntryReview? review = null;
 
@@ -259,19 +257,6 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
         {
             Lines = lines
         };
-    }
-
-    private static async Task EnsureJournalEntryLineAuditColumnsAsync(
-        PostgresCommandScope scope,
-        CancellationToken cancellationToken)
-    {
-        await using var command = scope.CreateCommand(
-            """
-            alter table journal_entry_lines
-              add column if not exists posting_role text null,
-              add column if not exists source_line_number integer null;
-            """);
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<JournalEntryReviewListItem?> FindBySourceAsync(

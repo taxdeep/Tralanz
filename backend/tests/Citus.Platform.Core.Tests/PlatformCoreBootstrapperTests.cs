@@ -23,7 +23,7 @@ public sealed class PlatformCoreBootstrapperTests
         Assert.Equal(CitusPlatformKernel.GetBuiltInEntities().Count, report.EntitiesSeeded);
         Assert.Contains(PlatformModuleKeys.Accounting, report.ModuleKeys);
         Assert.Contains("journal_entries", report.EntityNames);
-        Assert.True(repository.SchemaEnsured);
+        Assert.False(repository.SchemaEnsured);
     }
 
     [Fact]

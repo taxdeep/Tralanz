@@ -10,8 +10,6 @@ public sealed class PostgreSqlUserIdAllocator : IUserIdAllocator
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        await PostgreSqlIdentitySchemaBootstrap.EnsureUserIdSequenceAsync(connection, transaction, cancellationToken);
-
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =

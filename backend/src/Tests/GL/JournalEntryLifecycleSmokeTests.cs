@@ -276,7 +276,14 @@ public sealed class JournalEntryLifecycleSmokeTests
     [Fact]
     public async Task ReverseAsync_RejectsClosedPrimaryBookPeriod()
     {
-        var fixture = await CreateFixtureAsync();
+        var closedPeriodJournalDate = await ReserveUniqueJournalDateAsync(
+            new PostgreSqlConnectionFactory(GetConnectionString()),
+            "USD",
+            "CNY",
+            new DateOnly(2025, 1, 1),
+            300,
+            CancellationToken.None);
+        var fixture = await CreateFixtureAsync(closedPeriodJournalDate);
         var governanceBookId = Guid.NewGuid();
 
         try
@@ -305,7 +312,32 @@ public sealed class JournalEntryLifecycleSmokeTests
         }
     }
 
-    private static async Task<LifecycleFixture> CreateFixtureAsync()
+    private static async Task<LifecycleFixture> CreateFixtureAsync(DateOnly? journalDateOverride = null)
+    {
+        if (journalDateOverride.HasValue)
+        {
+            return await CreateFixtureCoreAsync(journalDateOverride);
+        }
+
+        for (var attempt = 1; attempt <= 8; attempt++)
+        {
+            try
+            {
+                return await CreateFixtureCoreAsync(null);
+            }
+            catch (PostgresException ex) when (
+                ex.SqlState == "23505" &&
+                string.Equals(ex.ConstraintName, "uq_company_fx_rate_snapshots_identity", StringComparison.Ordinal) &&
+                attempt < 8)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(15 * attempt), CancellationToken.None);
+            }
+        }
+
+        throw new InvalidOperationException("Could not create a lifecycle smoke fixture after retrying FX snapshot identity collisions.");
+    }
+
+    private static async Task<LifecycleFixture> CreateFixtureCoreAsync(DateOnly? journalDateOverride)
     {
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var accountCatalog = new PostgreSqlJournalEntryAccountCatalog(connectionFactory);
@@ -325,11 +357,14 @@ public sealed class JournalEntryLifecycleSmokeTests
         var accounts = await accountCatalog.ListManualPostingAccountsAsync(CompanyId, CancellationToken.None);
         Assert.True(accounts.Count >= 2, "Expected at least two manual-posting accounts in the demo company.");
 
-        var journalDate = await ReserveUniqueJournalDateAsync(
-            connectionFactory,
-            companyCurrency.Profile.BaseCurrencyCode,
-            "CNY",
-            CancellationToken.None);
+        var journalDate = journalDateOverride
+            ?? await ReserveUniqueJournalDateAsync(
+                connectionFactory,
+                companyCurrency.Profile.BaseCurrencyCode,
+                "CNY",
+                DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(60),
+                720,
+                CancellationToken.None);
         var draft = JournalEntryEditorState.CreateDarkModeDemo().Draft;
         draft.CompanyId = CompanyId;
         draft.JournalDate = journalDate;
@@ -430,6 +465,26 @@ public sealed class JournalEntryLifecycleSmokeTests
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        var effectiveBookId = bookId;
+        await using (var existingBook = connection.CreateCommand())
+        {
+            existingBook.Transaction = transaction;
+            existingBook.CommandText =
+                """
+                select id
+                from company_books
+                where company_id = @company_id
+                  and book_code = 'PRIMARY'
+                limit 1;
+                """;
+            existingBook.Parameters.AddWithValue("company_id", companyId.Value);
+            var existing = await existingBook.ExecuteScalarAsync(cancellationToken);
+            if (existing is Guid existingId)
+            {
+                effectiveBookId = existingId;
+            }
+        }
+
         await using (var deleteSignals = connection.CreateCommand())
         {
             deleteSignals.Transaction = transaction;
@@ -437,37 +492,26 @@ public sealed class JournalEntryLifecycleSmokeTests
                 """
                 delete from company_book_governance_signals
                 where company_id = @company_id
-                  and company_book_id = @book_id;
+                  and (
+                    company_book_id = @book_id
+                    or reference_label = 'Lifecycle smoke closed period'
+                  );
                 """;
             deleteSignals.Parameters.AddWithValue("company_id", companyId.Value);
-            deleteSignals.Parameters.AddWithValue("book_id", bookId);
+            deleteSignals.Parameters.AddWithValue("book_id", effectiveBookId);
             await deleteSignals.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using (var deleteBook = connection.CreateCommand())
+        await using (var deletePolicy = connection.CreateCommand())
         {
-            deleteBook.Transaction = transaction;
-            // Match by (company_id, book_code='PRIMARY') as well as id, so we
-            // also clean up any leftover 'PRIMARY' row that another test
-            // (e.g. FxRevaluationWorkflowSmokeTests' EnsureDefaultPrimaryBook)
-            // may have inserted with a different id. Without this we trip
-            // company_books_unique on (company_id, book_code).
-            deleteBook.CommandText =
+            deletePolicy.Transaction = transaction;
+            deletePolicy.CommandText =
                 """
                 delete from company_book_remeasurement_policies
-                where company_book_id in (
-                  select id from company_books
-                  where company_id = @company_id
-                    and (id = @book_id or book_code = 'PRIMARY')
-                );
-
-                delete from company_books
-                where company_id = @company_id
-                  and (id = @book_id or book_code = 'PRIMARY');
+                where company_book_id = @book_id;
                 """;
-            deleteBook.Parameters.AddWithValue("company_id", companyId.Value);
-            deleteBook.Parameters.AddWithValue("book_id", bookId);
-            await deleteBook.ExecuteNonQueryAsync(cancellationToken);
+            deletePolicy.Parameters.AddWithValue("book_id", effectiveBookId);
+            await deletePolicy.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await using (var bookCommand = connection.CreateCommand())
@@ -491,24 +535,25 @@ public sealed class JournalEntryLifecycleSmokeTests
                   created_by_user_id,
                   created_at
                 )
-                values (
-                  @id,
-                  @company_id,
+            values (
+              @id,
+              @company_id,
                   'PRIMARY',
                   'Primary Book',
                   'primary',
-                  'IFRS',
+                  'ASPE',
                   'USD',
                   'USD',
                   'USD',
                   true,
                   true,
                   @effective_from,
-                  @created_by_user_id,
-                  now()
-                );
-                """;
-            bookCommand.Parameters.AddWithValue("id", bookId);
+              @created_by_user_id,
+              now()
+            )
+            on conflict (company_id, book_code) do nothing;
+            """;
+            bookCommand.Parameters.AddWithValue("id", effectiveBookId);
             bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
             bookCommand.Parameters.AddWithValue("effective_from", journalDate.AddDays(-30));
             bookCommand.Parameters.AddWithValue("created_by_user_id", UserId.Value);
@@ -543,7 +588,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 """;
             signalCommand.Parameters.AddWithValue("id", Guid.NewGuid());
             signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
-            signalCommand.Parameters.AddWithValue("book_id", bookId);
+            signalCommand.Parameters.AddWithValue("book_id", effectiveBookId);
             signalCommand.Parameters.AddWithValue("signal_date", journalDate.AddDays(5));
             signalCommand.Parameters.AddWithValue("created_by_user_id", UserId.Value);
             await signalCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -573,25 +618,14 @@ public sealed class JournalEntryLifecycleSmokeTests
                 """
                 delete from company_book_governance_signals
                 where company_id = @company_id
-                  and company_book_id = @book_id;
+                  and (
+                    company_book_id = @book_id
+                    or reference_label = 'Lifecycle smoke closed period'
+                  );
                 """;
             signalCommand.Parameters.AddWithValue("company_id", companyId.Value);
             signalCommand.Parameters.AddWithValue("book_id", bookId);
             await signalCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using (var bookCommand = connection.CreateCommand())
-        {
-            bookCommand.Transaction = transaction;
-            bookCommand.CommandText =
-                """
-                delete from company_books
-                where company_id = @company_id
-                  and id = @book_id;
-                """;
-            bookCommand.Parameters.AddWithValue("company_id", companyId.Value);
-            bookCommand.Parameters.AddWithValue("book_id", bookId);
-            await bookCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -619,6 +653,8 @@ public sealed class JournalEntryLifecycleSmokeTests
         PostgreSqlConnectionFactory connectionFactory,
         string baseCurrencyCode,
         string quoteCurrencyCode,
+        DateOnly start,
+        int dayWindow,
         CancellationToken cancellationToken)
     {
         // Pick a RANDOM date in a wide future window. The previous sequential
@@ -627,10 +663,9 @@ public sealed class JournalEntryLifecycleSmokeTests
         // both pick X, and one fails on uq_company_fx_rate_snapshots_identity.
         // Randomization across a 720-day window collapses collision odds to
         // near-zero per test, and the retry loop covers the residual races.
-        var start = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(60);
         for (var attempt = 0; attempt < 16; attempt++)
         {
-            var candidate = start.AddDays(Random.Shared.Next(0, 720));
+            var candidate = start.AddDays(Random.Shared.Next(0, dayWindow));
             if (!await SnapshotIdentityExistsAsync(
                     connectionFactory,
                     baseCurrencyCode,

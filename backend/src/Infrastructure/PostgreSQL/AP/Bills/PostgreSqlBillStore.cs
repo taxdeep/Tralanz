@@ -11,8 +11,8 @@ namespace Infrastructure.PostgreSQL.AP.Bills;
 /// draft (line 811); this store layers on the three columns the
 /// Bill page needs (<c>payment_term_id</c>,
 /// <c>source_purchase_order_id</c>, <c>source_purchase_order_number</c>)
-/// via idempotent ALTER TABLE so a deploy that already loaded the
-/// migration draft sees additive changes only.
+/// by verifying the migration-installed schema instead of applying DDL
+/// from the application process.
 ///
 /// V1 keeps Post / Void as pure status transitions — the heavy
 /// posting integration (FX snapshot, AP open item, journal-entry
@@ -22,20 +22,34 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            ALTER TABLE bills ADD COLUMN IF NOT EXISTS payment_term_id              UUID NULL;
-            ALTER TABLE bills ADD COLUMN IF NOT EXISTS source_purchase_order_id     UUID NULL;
-            ALTER TABLE bills ADD COLUMN IF NOT EXISTS source_purchase_order_number TEXT NULL;
-            CREATE INDEX IF NOT EXISTS idx_bills_company_status_date
-                ON bills (company_id, status, bill_date DESC);
-            CREATE INDEX IF NOT EXISTS idx_bills_company_vendor
-                ON bills (company_id, vendor_id);
-            CREATE INDEX IF NOT EXISTS idx_bills_source_po
-                ON bills (source_purchase_order_id) WHERE source_purchase_order_id IS NOT NULL;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlSchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "bills",
+            new[]
+            {
+                "id",
+                "company_id",
+                "entity_number",
+                "bill_number",
+                "vendor_id",
+                "status",
+                "bill_date",
+                "due_date",
+                "document_currency_code",
+                "base_currency_code",
+                "fx_rate",
+                "subtotal_amount",
+                "tax_amount",
+                "total_amount",
+                "payment_term_id",
+                "source_purchase_order_id",
+                "source_purchase_order_number",
+                "created_by_user_id",
+                "created_at",
+                "updated_at"
+            },
+            "Bill schema has not been installed. Apply database migrations before using AP bills.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<BillSummary>> ListAsync(
@@ -261,50 +275,22 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         return await GetByIdAsync(companyId, billId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<BillRecord?> PostAsync(
+    public Task<BillRecord?> PostAsync(
         CompanyId companyId,
         Guid billId,
-        CancellationToken cancellationToken)
-    {
-        // V1: pure status transition. The full posting pipeline
-        // (PostBillCommandHandler — FX snapshot, journal entry, AP
-        // open item) gets wired in alongside the PO + Inventory batch.
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE bills
-               SET status     = 'posted',
-                   posted_at  = NOW(),
-                   updated_at = NOW()
-             WHERE company_id = @company_id AND id = @id AND status = 'draft'
-            RETURNING id;
-            """;
-        command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("id", billId);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        if (result is null)
-        {
-            // Either not found or not in draft state — distinguish so the API can return the right code.
-            await using var checkCmd = connection.CreateCommand();
-            checkCmd.CommandText = "SELECT status FROM bills WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
-            checkCmd.Parameters.AddWithValue("id", billId);
-            var status = (string?)await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            if (status is null) return null;
-            throw new InvalidOperationException(
-                $"Bill in status '{status}' cannot be posted. Only Draft bills can be posted.");
-        }
-        return await GetByIdAsync(companyId, billId, cancellationToken).ConfigureAwait(false);
-    }
+        CancellationToken cancellationToken) =>
+        Task.FromException<BillRecord?>(
+            new InvalidOperationException(
+                "Bill posting is disabled on this legacy Bills page because it would not create the required journal entry and AP open item. Use the canonical bill posting workflow."));
 
     public async Task<BillRecord?> VoidAsync(
         CompanyId companyId,
         Guid billId,
         CancellationToken cancellationToken)
     {
-        // V1: pure status transition. Reversing the GL entries lands
-        // with the posting wiring batch.
+        // Draft cancellation only. Posted bills require a governed
+        // reversal/void workflow so the ledger and AP open item stay
+        // traceable.
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -312,7 +298,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                SET status     = 'voided',
                    updated_at = NOW()
              WHERE company_id = @company_id AND id = @id
-               AND status IN ('draft', 'posted')
+               AND status = 'draft'
             RETURNING id;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -328,7 +314,9 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
             var status = (string?)await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (status is null) return null;
             throw new InvalidOperationException(
-                $"Bill in status '{status}' cannot be voided.");
+                status.Equals("posted", StringComparison.OrdinalIgnoreCase)
+                    ? "Posted bills cannot be voided from the legacy Bills page because that would not reverse the journal entry or AP open item. Use the governed bill reversal workflow."
+                    : $"Bill in status '{status}' cannot be voided.");
         }
         return await GetByIdAsync(companyId, billId, cancellationToken).ConfigureAwait(false);
     }

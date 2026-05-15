@@ -4,6 +4,8 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public interface IInventoryFoundationStore
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<InventoryFoundationSummary> GetSummaryAsync(
         CompanyId companyId,
         CancellationToken cancellationToken);

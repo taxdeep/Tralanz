@@ -21,31 +21,22 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        const string sql = """
-            create table if not exists invoice_templates (
-              id uuid primary key default gen_random_uuid(),
-              company_id char(7) not null,
-              name text not null,
-              is_default boolean not null default false,
-              config jsonb not null,
-              created_at timestamptz not null default now(),
-              updated_at timestamptz not null default now()
-            );
+        await PostgresSchemaChecks.EnsureTableColumnsAsync(
+            _connections,
+            "invoice_templates",
+            new[]
+            {
+                "id",
+                "company_id",
+                "name",
+                "is_default",
+                "config",
+                "created_at",
+                "updated_at"
+            },
+            "Invoice template schema has not been installed. Apply database migrations before rendering invoices.",
+            cancellationToken);
 
-            create index if not exists invoice_templates_company_idx
-              on invoice_templates (company_id);
-
-            -- A company can have at most one default template at a time.
-            -- Filtered unique index — only enforces uniqueness on the
-            -- defaults, not on the overall (company_id, is_default) tuple.
-            create unique index if not exists invoice_templates_company_default_idx
-              on invoice_templates (company_id) where is_default = true;
-            """;
-
-        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<InvoiceTemplate>> ListByCompanyAsync(

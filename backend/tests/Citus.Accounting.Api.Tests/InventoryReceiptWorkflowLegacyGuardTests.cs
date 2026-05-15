@@ -151,6 +151,9 @@ public sealed class InventoryReceiptWorkflowLegacyGuardTests
     {
         public int PostCalls { get; private set; }
 
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public Task<InventoryPurchaseReceiptDashboard> GetDashboardAsync(CompanyId companyId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 

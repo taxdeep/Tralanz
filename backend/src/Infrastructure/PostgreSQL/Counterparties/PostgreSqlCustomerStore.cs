@@ -15,40 +15,33 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS customers (
-                id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id               UUID NOT NULL,
-                entity_number            TEXT NOT NULL,
-                display_name             TEXT NOT NULL,
-                default_currency_code    CHAR(3) NOT NULL,
-                email                    TEXT NULL,
-                phone                    TEXT NULL,
-                address                  TEXT NULL,
-                is_active                BOOLEAN NOT NULL DEFAULT TRUE,
-                currency_locked          BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_line     TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS city             TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS province_state   TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS postal_code      TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS country          TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_id           TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes            TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_term_id  UUID NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_number  TEXT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_entity_number ON customers (entity_number);
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_company_customer_number
-                ON customers (company_id, customer_number)
-                WHERE customer_number IS NOT NULL;
-            CREATE INDEX IF NOT EXISTS idx_customers_company_active ON customers (company_id, is_active);
-            CREATE INDEX IF NOT EXISTS idx_customers_company_name ON customers (company_id, display_name);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlCounterpartySchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "customers",
+            new[]
+            {
+                "id",
+                "company_id",
+                "entity_number",
+                "customer_number",
+                "display_name",
+                "default_currency_code",
+                "email",
+                "phone",
+                "address_line",
+                "city",
+                "province_state",
+                "postal_code",
+                "country",
+                "tax_id",
+                "notes",
+                "payment_term_id",
+                "is_active",
+                "created_at",
+                "updated_at"
+            },
+            "Customer schema has not been installed. Apply database migrations before using customer records.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<CustomerRecord>> ListAsync(

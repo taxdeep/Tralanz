@@ -447,7 +447,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 and al.payload ->> 'SourceType' = sa.source_type
                 and (
                   al.payload ->> 'DocumentId' = sa.source_id::text
-                  or al.entity_id = sa.source_id
+                  or al.entity_id = sa.source_id::text
                 )
               order by al.created_at desc, al.id desc
               limit 1
@@ -457,7 +457,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
               from audit_logs al
               where al.company_id = sa.company_id
                 and al.entity_type = 'source_document_reverse_request'
-                and al.entity_id = rr.request_id
+                and al.entity_id = rr.request_id::text
                 and al.action = 'reverse_request_submitted'
               order by al.created_at desc, al.id desc
               limit 1
@@ -467,7 +467,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
               from audit_logs al
               where al.company_id = sa.company_id
                 and al.entity_type = 'source_document_reverse_request'
-                and al.entity_id = rr.request_id
+                and al.entity_id = rr.request_id::text
                 and al.action = 'reverse_request_cancelled'
               order by al.created_at desc, al.id desc
               limit 1
@@ -477,7 +477,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
               from audit_logs al
               where al.company_id = sa.company_id
                 and al.entity_type = 'source_document_reverse_request'
-                and al.entity_id = rr.request_id
+                and al.entity_id = rr.request_id::text
                 and al.action = 'reverse_execution_requested'
               order by al.created_at desc, al.id desc
               limit 1
@@ -487,7 +487,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
               from audit_logs al
               where al.company_id = sa.company_id
                 and al.entity_type = 'source_document_reverse_request'
-                and al.entity_id = rr.request_id
+                and al.entity_id = rr.request_id::text
                 and al.action = 'reverse_execution_completed'
               order by al.created_at desc, al.id desc
               limit 1
@@ -878,7 +878,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
             command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
             command.Parameters.AddWithValue("entity_type", "source_document_reverse_request");
-            command.Parameters.AddWithValue("entity_id", requestId);
+            command.Parameters.AddWithValue("entity_id", requestId.ToString("D"));
             command.Parameters.AddWithValue("action", "reverse_requested");
             command.Parameters.AddWithValue("payload", payload);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1780,7 +1780,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
         command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
-        command.Parameters.AddWithValue("entity_id", application.Id);
+        command.Parameters.AddWithValue("entity_id", application.Id.ToString("D"));
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(new
         {
             RequestId = requestId,
@@ -2015,7 +2015,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
               and al.payload ->> 'SourceType' = @source_type
               and (
                 al.payload ->> 'DocumentId' = @document_id_text
-                or al.entity_id = @document_id
+                or al.entity_id = @document_id::text
               )
             order by al.created_at desc, al.id desc
             limit 1;
@@ -2139,7 +2139,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             from audit_logs al
             where al.company_id = @company_id
               and al.entity_type = 'source_document_reverse_request'
-              and al.entity_id = @request_id
+              and al.entity_id = @request_id::text
               and al.action = @action
             order by al.created_at desc, al.id desc
             limit 1;
@@ -2177,7 +2177,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             from audit_logs al
             where al.company_id = @company_id
               and al.entity_type = 'source_document_reverse_request'
-              and al.entity_id = @request_id
+              and al.entity_id = @request_id::text
               and al.action = 'reverse_execution_completed'
             order by al.created_at desc, al.id desc
             limit 1;
@@ -2209,7 +2209,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         using var payloadDocument = JsonDocument.Parse(reader.GetString(reader.GetOrdinal("payload")));
         var payload = payloadDocument.RootElement;
         var requestId = TryGetOptionalGuid(payload, "RequestId") ?? reader.GetGuid(reader.GetOrdinal("id"));
-        var documentId = TryGetOptionalGuid(payload, "DocumentId") ?? reader.GetGuid(reader.GetOrdinal("entity_id"));
+        var documentId = TryGetOptionalGuid(payload, "DocumentId") ?? Guid.Parse(reader.GetString(reader.GetOrdinal("entity_id")));
 
         return new ReverseRequestRequestedEvent(
             requestId,
@@ -2271,7 +2271,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
         command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_type", "source_document_reverse_request");
-        command.Parameters.AddWithValue("entity_id", requestId);
+        command.Parameters.AddWithValue("entity_id", requestId.ToString("D"));
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload));
         await command.ExecuteNonQueryAsync(cancellationToken);

@@ -15,6 +15,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
 
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+    private static volatile bool _schemaEnsured;
 
     public PostgresBillReceiptMatchingRepository(
         PostgresConnectionFactory connections,
@@ -36,13 +37,11 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
 
         if (scope.Transaction is not null)
         {
-            await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
             await RefreshForBillsAsync(scope.Connection, scope.Transaction, companyId, new[] { billDocumentId }, cancellationToken);
             return await LoadBillLaneSummaryAsync(scope.Connection, scope.Transaction, companyId, billDocumentId, cancellationToken);
         }
 
         await using var transaction = await scope.Connection.BeginTransactionAsync(cancellationToken);
-        await EnsureSchemaAsync(scope.Connection, transaction, cancellationToken);
         await RefreshForBillsAsync(scope.Connection, transaction, companyId, new[] { billDocumentId }, cancellationToken);
         var summary = await LoadBillLaneSummaryAsync(scope.Connection, transaction, companyId, billDocumentId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -68,13 +67,11 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
 
         if (scope.Transaction is not null)
         {
-            await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
             await RefreshForBillsAsync(scope.Connection, scope.Transaction, companyId, requestedBillIds, cancellationToken);
             return await LoadPostingGateSnapshotsAsync(scope.Connection, scope.Transaction, companyId, requestedBillIds, cancellationToken);
         }
 
         await using var transaction = await scope.Connection.BeginTransactionAsync(cancellationToken);
-        await EnsureSchemaAsync(scope.Connection, transaction, cancellationToken);
         await RefreshForBillsAsync(scope.Connection, transaction, companyId, requestedBillIds, cancellationToken);
         var snapshots = await LoadPostingGateSnapshotsAsync(scope.Connection, transaction, companyId, requestedBillIds, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -1256,11 +1253,41 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, null, cancellationToken);
+    }
+
     private static async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        await using (var probe = connection.CreateCommand())
+        {
+            probe.Transaction = transaction;
+            probe.CommandText =
+                $"""
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = '{DiscrepanciesTableName}'
+                  and column_name = 'last_detected_at';
+                """;
+            var present = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+            if (present == 1)
+            {
+                _schemaEnsured = true;
+                return;
+            }
+        }
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
@@ -1351,5 +1378,6 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
             """;
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _schemaEnsured = true;
     }
 }

@@ -20,7 +20,7 @@ public sealed class PostgreSqlReportUsageEventStore(PostgreSqlConnectionFactory 
                 @filters_json::jsonb, @source_route, @metadata_json::jsonb);
             """;
         command.Parameters.AddWithValue("company_id", input.CompanyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)input.UserId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)input.UserId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("report_key", input.ReportKey);
         command.Parameters.AddWithValue("event_type", input.EventType);
         command.Parameters.AddWithValue("date_range_key", (object?)input.DateRangeKey ?? DBNull.Value);
@@ -84,7 +84,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
             """;
         command.Parameters.AddWithValue("company_id", input.CompanyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("report_key", input.ReportKey);
         command.Parameters.AddWithValue("open_inc", openIncrement);
         command.Parameters.AddWithValue("export_inc", exportIncrement);
@@ -113,7 +113,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -156,7 +156,7 @@ public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFacto
             ORDER BY position NULLS LAST, created_at;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -198,7 +198,7 @@ public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFacto
             """;
         command.Parameters.AddWithValue("id", record.Id == Guid.Empty ? Guid.NewGuid() : record.Id);
         command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)record.UserId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)record.UserId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("widget_key", record.WidgetKey);
         command.Parameters.AddWithValue("title", (object?)record.Title ?? DBNull.Value);
         command.Parameters.Add(new NpgsqlParameter("config_json", NpgsqlDbType.Jsonb) { Value = (object?)record.ConfigJson ?? DBNull.Value });
@@ -235,7 +235,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
         if (statusFilter is not null) where += " AND status = @status";
         command.CommandText = SelectColumns + " WHERE " + where + " ORDER BY created_at DESC;";
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         if (statusFilter is not null) command.Parameters.AddWithValue("status", statusFilter);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -262,7 +262,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
             " AND COALESCE(user_id, '00000000-0000-0000-0000-000000000000') = COALESCE(@user_id, '00000000-0000-0000-0000-000000000000')" +
             " AND widget_key = ANY(@widget_keys);";
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.Add(new NpgsqlParameter("widget_keys", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = widgetKeys.ToArray() });
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -290,7 +290,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
-        command.Parameters.AddWithValue("user_id", (object?)record.UserId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)record.UserId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("widget_key", record.WidgetKey);
         command.Parameters.AddWithValue("title", record.Title);
         command.Parameters.AddWithValue("reason", record.Reason);
@@ -395,7 +395,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
         if (statuses is not null && statuses.Count > 0) where.Add("status = ANY(@statuses)");
         command.CommandText = SelectColumns + " WHERE " + string.Join(" AND ", where) + " ORDER BY priority, due_date NULLS LAST, created_at DESC;";
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        if (assignedUserId is not null) command.Parameters.AddWithValue("user_id", assignedUserId);
+        if (assignedUserId is not null) command.Parameters.AddWithValue("user_id", assignedUserId.Value.Value);
         if (statuses is not null && statuses.Count > 0)
             command.Parameters.Add(new NpgsqlParameter("statuses", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = statuses.ToArray() });
 
@@ -426,7 +426,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
-        command.Parameters.AddWithValue("assigned_user_id", (object?)record.AssignedUserId ?? DBNull.Value);
+        command.Parameters.AddWithValue("assigned_user_id", (object?)record.AssignedUserId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("task_type", record.TaskType);
         command.Parameters.AddWithValue("source_engine", record.SourceEngine);
         command.Parameters.AddWithValue("source_type", record.SourceType);
@@ -525,7 +525,7 @@ public sealed class PostgreSqlActionCenterTaskEventStore(PostgreSqlConnectionFac
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("task_id", taskId);
-        command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
+        command.Parameters.AddWithValue("user_id", (object?)userId?.Value ?? DBNull.Value);
         command.Parameters.AddWithValue("event_type", eventType);
         command.Parameters.Add(new NpgsqlParameter("metadata_json", NpgsqlDbType.Jsonb) { Value = (object?)metadataJson ?? DBNull.Value });
         command.Parameters.AddWithValue("created_at", occurredAt);

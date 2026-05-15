@@ -376,7 +376,6 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             return null;
         }
 
-        await EnsureJournalEntryLineAuditColumnsAsync(connection, cancellationToken);
         var lines = new List<JournalEntryReviewLine>();
 
         await using (var command = connection.CreateCommand())
@@ -496,20 +495,6 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
             reader.IsDBNull(reader.GetOrdinal("reversed_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reversed_at")));
-
-    private static async Task EnsureJournalEntryLineAuditColumnsAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            alter table journal_entry_lines
-              add column if not exists posting_role text null,
-              add column if not exists source_line_number integer null;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
 
     private async Task<IReadOnlyList<JournalLedgerCurrencyExposure>> LoadCurrencyExposuresAsync(
         CompanyId companyId,

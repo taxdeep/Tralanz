@@ -12,6 +12,13 @@ namespace Citus.Accounting.Application.Repositories;
 public interface IAccountingPeriodRepository
 {
     /// <summary>
+    /// Creates or upgrades the backing schema. Production deployments
+    /// should run the matching migration externally before requests are
+    /// served; this hook is only for controlled startup/bootstrap flows.
+    /// </summary>
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// List all periods for the company in chronological order.
     /// First call also seeds the company's current fiscal year of
     /// monthly periods (all status='open') if none exist yet.

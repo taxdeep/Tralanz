@@ -33,8 +33,6 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-
         Guid id;
         string entityNumber;
         string receiptNumber;
@@ -166,8 +164,6 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-
         var items = new List<ReceiptDocumentListItem>();
 
         await using var command = scope.CreateCommand(
@@ -246,8 +242,6 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
 
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
 
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         string entityNumber;
@@ -475,8 +469,6 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     {
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
 
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
@@ -811,6 +803,12 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     // the same SQL), subsequent calls take no AccessExclusiveLock on
     // receipt_lines / receipts. Same pattern as commit 2ef2640.
     private static volatile bool _schemaEnsured;
+
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, null, cancellationToken);
+    }
 
     private static async Task EnsureSchemaAsync(
         NpgsqlConnection connection,

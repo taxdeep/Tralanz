@@ -19,6 +19,7 @@ public sealed class PostgreSqlUserIdAllocatorTests
             var allocator = new PostgreSqlUserIdAllocator();
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsurePlatformUserIdSequenceAsync(connection);
 
             var id = await allocator.AllocateAsync(connection, transaction: null, CancellationToken.None);
 
@@ -44,6 +45,7 @@ public sealed class PostgreSqlUserIdAllocatorTests
             var allocator = new PostgreSqlUserIdAllocator();
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsurePlatformUserIdSequenceAsync(connection);
 
             var first = await allocator.AllocateAsync(connection, null, CancellationToken.None);
             var second = await allocator.AllocateAsync(connection, null, CancellationToken.None);
@@ -72,6 +74,7 @@ public sealed class PostgreSqlUserIdAllocatorTests
             var allocator = new PostgreSqlUserIdAllocator();
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsurePlatformUserIdSequenceAsync(connection);
 
             UserId aborted;
             await using (var tx = await connection.BeginTransactionAsync())

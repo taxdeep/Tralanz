@@ -20,6 +20,10 @@ public sealed class BusinessSessionHeaderHandler(CircuitServicesAccessor accesso
     {
         request.Headers.Remove(BusinessSessionHeaderNames.UserId);
         request.Headers.Remove(BusinessSessionHeaderNames.ActiveCompanyId);
+        request.Headers.Remove(BusinessSessionHeaderNames.LegacyUserId);
+        request.Headers.Remove(BusinessSessionHeaderNames.LegacyActiveCompanyId);
+        request.Headers.Remove(BusinessAuthHeaderNames.SessionToken);
+        request.Headers.Remove(BusinessAuthHeaderNames.LegacySessionToken);
 
         // Pull ShellState from the circuit's IServiceProvider, not our own.
         // Bootstrap-time calls (before any circuit is active, e.g. during
@@ -29,6 +33,11 @@ public sealed class BusinessSessionHeaderHandler(CircuitServicesAccessor accesso
         var shellState = accessor.Services?.GetService<BusinessShellState>();
         if (shellState is not null)
         {
+            if (!string.IsNullOrWhiteSpace(shellState.SessionToken))
+            {
+                request.Headers.Add(BusinessAuthHeaderNames.SessionToken, shellState.SessionToken);
+            }
+
             request.Headers.Add(BusinessSessionHeaderNames.UserId, shellState.CurrentUserId.ToString());
             request.Headers.Add(BusinessSessionHeaderNames.ActiveCompanyId, shellState.ActiveCompany.Id.ToString());
         }

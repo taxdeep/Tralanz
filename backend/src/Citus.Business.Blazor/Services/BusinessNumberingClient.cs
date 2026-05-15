@@ -39,7 +39,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
         CancellationToken cancellationToken = default)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
-        await EnsureTableAsync(connection, cancellationToken);
+        await EnsureTableInstalledAsync(connection, cancellationToken);
         await SeedKnownRulesAsync(connection, companyId, cancellationToken);
 
         var rows = await LoadRowsAsync(connection, companyId, cancellationToken);
@@ -110,7 +110,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
         }
 
         await using var connection = await connections.OpenAsync(cancellationToken);
-        await EnsureTableAsync(connection, cancellationToken);
+        await EnsureTableInstalledAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -169,25 +169,45 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
             definition.IsRuntimeConnected ? "Runtime" : "Planned");
     }
 
-    private static async Task EnsureTableAsync(
+    private static async Task EnsureTableInstalledAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            create table if not exists company_numbering_sequences (
-              company_id char(7) not null references companies(id) on delete cascade,
-              scope_key text not null,
-              prefix text not null,
-              next_number bigint not null,
-              padding smallint not null,
-              suggestion_enabled boolean not null default true,
-              updated_at timestamptz not null default now(),
-              primary key (company_id, scope_key)
-            );
+            select
+              to_regclass('company_numbering_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'scope_key')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'next_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'suggestion_enabled');
             """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Company numbering schema has not been installed. Apply database migrations before editing numbering settings.");
+        }
     }
 
     private static async Task SeedKnownRulesAsync(

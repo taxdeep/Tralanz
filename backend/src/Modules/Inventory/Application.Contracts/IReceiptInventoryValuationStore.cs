@@ -2,6 +2,8 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public interface IReceiptInventoryValuationStore
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(
         CompanyId companyId,
         UserId userId,

@@ -2,6 +2,8 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public interface IReceiptInventoryCostLayerEmissionStore
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersAsync(
         CompanyId companyId,
         UserId userId,

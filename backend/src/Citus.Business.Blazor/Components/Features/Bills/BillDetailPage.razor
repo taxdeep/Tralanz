@@ -58,12 +58,10 @@ else
         <div class="flex flex-wrap gap-2 items-center">
             @if (_bill.Status == "draft")
             {
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="PostAsync">Post</CitusButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
             }
             else if (_bill.Status == "posted")
             {
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
                 <span class="text-fg-muted text-sm">Use the Pay Bills page to settle this bill.</span>
             }
             @if (_bill.SourcePurchaseOrderId is { } poId)
@@ -203,26 +201,6 @@ else
     {
         var account = _accounts.FirstOrDefault(a => a.Id == accountId);
         return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
-    }
-
-    private async Task PostAsync()
-    {
-        if (_bill is null || _isMutating) return;
-        _isMutating = true;
-        try
-        {
-            var outcome = await BillClient.PostAsync(_bill.Id);
-            if (!outcome.Succeeded)
-            {
-                _error = outcome.ErrorMessage ?? "Post failed.";
-                await Message.WarningAsync(_error);
-                return;
-            }
-            _bill = outcome.Saved;
-            ApplyHeader();
-            await Message.SuccessAsync($"Bill {_bill?.BillNumber} posted.");
-        }
-        finally { _isMutating = false; }
     }
 
     private async Task VoidAsync()

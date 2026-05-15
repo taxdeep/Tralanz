@@ -16,6 +16,8 @@ internal static class PostgresNumberingSequences
             return await ReserveEntityNumberAsync(scope, companyId, entityYear.Value, prefix, padding, cancellationToken);
         }
 
+        await EnsureCompanyNumberingSequenceInstalledAsync(scope, cancellationToken);
+
         await using (var seedCommand = scope.CreateCommand(
                          """
                          insert into company_numbering_sequences (
@@ -73,6 +75,46 @@ internal static class PostgresNumberingSequences
         return $"{issuedPrefix}{issuedNumber.ToString().PadLeft(issuedPadding, '0')}";
     }
 
+    private static async Task EnsureCompanyNumberingSequenceInstalledAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              to_regclass('company_numbering_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'scope_key')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'next_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'suggestion_enabled');
+            """);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Company numbering schema has not been installed. Apply database migrations before reserving accounting display numbers.");
+        }
+    }
+
     // Per-company entity-number reservation. The scope is (company_id,
     // entity_year), so each company independently advances its own
     // EN+YYYY+5base36 series starting at 1. Companies don't share a
@@ -87,7 +129,7 @@ internal static class PostgresNumberingSequences
         short padding,
         CancellationToken cancellationToken)
     {
-        await EnsureCompanyEntityNumberSequenceAsync(scope, cancellationToken);
+        await EnsureCompanyEntityNumberSequenceInstalledAsync(scope, cancellationToken);
 
         var seedNumber = await FindEntitySeedNumberAsync(scope, companyId, year, cancellationToken);
 
@@ -120,20 +162,38 @@ internal static class PostgresNumberingSequences
         return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
-    private static async Task EnsureCompanyEntityNumberSequenceAsync(
+    private static async Task EnsureCompanyEntityNumberSequenceInstalledAsync(
         PostgresCommandScope scope,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
             """
-            create table if not exists company_entity_number_sequences (
-              company_id char(7) not null,
-              entity_year integer not null,
-              next_ordinal bigint not null,
-              primary key (company_id, entity_year)
-            );
+            select
+              to_regclass('company_entity_number_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'entity_year')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'next_ordinal');
             """);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Entity number sequence schema has not been installed. Apply database migrations before reserving accounting entity numbers.");
+        }
     }
 
     // Compute the next ordinal seed for (company, year) by scanning the

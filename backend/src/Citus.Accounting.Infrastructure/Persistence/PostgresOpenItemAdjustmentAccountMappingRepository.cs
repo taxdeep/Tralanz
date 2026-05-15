@@ -190,8 +190,6 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         bool includeInactive,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         var normalizedOpenItemType = string.IsNullOrWhiteSpace(openItemType)
             ? null
             : NormalizeOpenItemType(openItemType);
@@ -294,8 +292,6 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         OpenItemAdjustmentAccountMappingSaveRequest request,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         var openItemType = NormalizeOpenItemType(request.OpenItemType);
         var adjustmentType = NormalizeAdjustmentType(request.AdjustmentType);
 
@@ -446,8 +442,6 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         UserId? actorId,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var scope = await PostgresCommandScope.CreateAsync(
             connections,
             executionContextAccessor,
@@ -770,7 +764,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
         command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
-        command.Parameters.AddWithValue("entity_id", mappingId);
+        command.Parameters.AddWithValue("entity_id", mappingId.ToString("D"));
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload, JsonOptions));
         await command.ExecuteNonQueryAsync(cancellationToken);

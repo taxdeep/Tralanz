@@ -170,6 +170,14 @@ builder.Services.AddHttpClient<AccountClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+builder.Services.AddHttpClient<BankReconciliationClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 // Receive Payment page: lists the customer's open invoices (and, once
 // Commit B brings them in, their existing customer deposits as negative
 // rows) so the operator can tick which ones the cash applies to.

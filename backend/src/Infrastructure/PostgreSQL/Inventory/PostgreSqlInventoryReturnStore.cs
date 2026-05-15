@@ -19,6 +19,13 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<InventoryReturnReceiveDashboard> GetDashboardAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
@@ -26,7 +33,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var recentShipments = await LoadRecentShipmentsAsync(connection, null, companyId, cancellationToken);
         var recentReturns = await LoadRecentReturnsAsync(connection, null, companyId, cancellationToken);
@@ -45,7 +52,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         return await LoadShipmentHandoffSummaryAsync(connection, null, companyId, shipmentDocumentId, cancellationToken);
     }
@@ -59,7 +66,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
         _ = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -199,11 +206,24 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Inventory return schema has not been installed. Apply database migrations before receiving inventory returns.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -211,6 +231,12 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -240,6 +266,45 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              to_regclass('inventory_documents') is not null
+              and to_regclass('inventory_document_lines') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'document_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_document_lines'
+                  and column_name = 'condition_code')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_document_lines'
+                  and column_name = 'return_reason_code')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_document_lines'
+                  and column_name = 'disposition_reason_code');
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private static async Task<InventoryReturnReceiveHandoffSummary> LoadShipmentHandoffSummaryAsync(

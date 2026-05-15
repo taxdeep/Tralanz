@@ -24,6 +24,13 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task ValidateCanActivateAsync(
         CompanyId companyId,
         Guid receiptDocumentId,
@@ -32,7 +39,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var receipt = await LoadReceiptRecordAsync(connection, null, companyId, receiptDocumentId, cancellationToken);
         ValidateReceiptForActivation(receipt, allowDraft: true);
@@ -62,7 +69,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -157,7 +164,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -197,7 +204,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         return await LoadReceiptActivationSummaryAsync(connection, null, companyId, receiptDocumentId, cancellationToken);
     }
 
@@ -212,7 +219,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         }
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         return await LoadReceiptActivationSummariesAsync(connection, null, companyId, receiptDocumentIds.Distinct().ToArray(), cancellationToken);
     }
 
@@ -1055,11 +1062,24 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Receipt inventory activation schema has not been installed. Apply database migrations before activating receipts.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -1067,6 +1087,12 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -1121,6 +1147,28 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"""
+            select
+              to_regclass('inventory_documents') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'document_number')
+              and to_regclass('{ActivationLinesTableName}') is not null
+              and to_regclass('{ActivationFailuresTableName}') is not null;
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private static string BuildActivationDocumentNumber(DateOnly receiptDate) =>

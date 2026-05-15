@@ -32,6 +32,15 @@ public static class BusinessApprovalAuthority
         "company_accounting_settings"
     ];
 
+    public static readonly IReadOnlyList<string> BankReconciliationRoles =
+    [
+        "owner",
+        "reconciliation",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
     public static bool CanApproveOpenItemAdjustment(BusinessSessionContext? session) =>
         session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
 
@@ -53,6 +62,9 @@ public static class BusinessApprovalAuthority
     /// </summary>
     public static bool CanTransitionAccountingPeriod(BusinessSessionContext? session) =>
         session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
+
+    public static bool CanAccessBankReconciliation(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsBankReconciliationRole) == true;
 
     public static bool CanApprovePurchaseOrder(BusinessSessionContext? session) =>
         session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
@@ -216,6 +228,32 @@ public static class BusinessApprovalAuthority
             $"The business session has authority to {transitionCode} the purchase order.");
     }
 
+    public static Decision EvaluateBankReconciliationAccess(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} bank reconciliation.");
+        }
+
+        if (!CanAccessBankReconciliation(session))
+        {
+            return new Decision(
+                false,
+                "blocked_bank_reconciliation_authority",
+                $"Only a company owner, reconciliation user, or accounting-governance user can {transitionCode} bank reconciliation.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} bank reconciliation.");
+    }
+
     public static bool RequiresPurchaseOrderGovernanceApproval(decimal? estimatedOrderAmount) =>
         PurchaseOrderApprovalThresholdPolicy.RequiresGovernanceApproval(estimatedOrderAmount);
 
@@ -366,6 +404,11 @@ public static class BusinessApprovalAuthority
 
     private static bool IsPurchaseOrderAmendmentRole(string role) =>
         PurchaseOrderAmendmentRoles.Contains(
+            role.Trim().ToLowerInvariant(),
+            StringComparer.Ordinal);
+
+    private static bool IsBankReconciliationRole(string role) =>
+        BankReconciliationRoles.Contains(
             role.Trim().ToLowerInvariant(),
             StringComparer.Ordinal);
 

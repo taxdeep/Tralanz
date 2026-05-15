@@ -10,8 +10,6 @@ public sealed class PostgreSqlCompanyIdAllocator : ICompanyIdAllocator
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        await PostgreSqlIdentitySchemaBootstrap.EnsureCompanyIdSequenceAsync(connection, transaction, cancellationToken);
-
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =

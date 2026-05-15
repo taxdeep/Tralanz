@@ -1,6 +1,9 @@
 @page "/reconciliation"
 
 @inject BusinessShellState ShellState
+@inject AccountClient AccountClient
+@inject BankReconciliationClient ReconciliationClient
+@inject CitusToastService Message
 
 <PageTitle>Reconciliation | Tralanz Books</PageTitle>
 
@@ -12,19 +15,45 @@
     </Actions>
 </CitusPageHeader>
 
-<CitusAlert Severity="CitusAlertSeverity.Info"
-                 ShowIcon="true"
-                 Message="Reconciliation can only complete when difference equals zero (spec §8). The Complete button stays locked otherwise."
-                 Class="mb-4" />
+@if (ShellState.AreWritesBlocked)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_completed is not null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Success"
+                ShowIcon="true"
+                Message="@($"Reconciliation completed for {_completed.LineCount} ledger entries. Difference {_completed.Difference:N2}.")"
+                Class="mb-4" />
+}
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
         <section class="citus-panel">
-            <h2 class="citus-panel__title">Statement</h2>
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Statement</h2>
+                <CitusButton LeadingIcon="IconName.Refresh" Size="CitusButtonSize.Small" Disabled="@(!_selectedAccountId.HasValue || _isLoading)" OnClick="LoadEntriesAsync">
+                    @(_isLoading ? "Loading..." : "Load ledger")
+                </CitusButton>
+            </header>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                    <label class="text-sm font-medium block mb-1">Bank account</label>
-                    <CitusInput TValue="string" @bind-Value="_account" Placeholder="1010 — Bank operating" />
+                    <label class="text-sm font-medium block mb-1">Statement account</label>
+                    <select class="citus-form-field__input"
+                            value="@(_selectedAccountId?.ToString("D") ?? string.Empty)"
+                            @onchange="OnAccountChanged">
+                        <option value="">Select bank, cash, or credit card account</option>
+                        @foreach (var account in _bankAccounts)
+                        {
+                            <option value="@account.Id.ToString("D")">@account.Code @account.Name (@FormatAccountKind(account)) - @(account.CurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode)</option>
+                        }
+                    </select>
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement date</label>
@@ -38,100 +67,69 @@
                     <label class="text-sm font-medium block mb-1">Statement ending balance</label>
                     <RadzenNumeric TValue="decimal" @bind-Value="_endingBalance" Class="citus-control-full" />
                 </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Notes</label>
+                    <CitusInput TValue="string" @bind-Value="_notes" Placeholder="Statement reference or review note" />
+                </div>
             </div>
         </section>
 
         <section class="citus-panel">
             <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Inflow (deposits and credits)</h2>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="@(() => AddRow(_inflows))">Add inflow</CitusButton>
+                <h2 class="citus-panel__title">Unreconciled ledger entries</h2>
+                <CitusBadge Color="blue">@_selectedCount selected</CitusBadge>
             </header>
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Memo</th>
-                        <th class="text-right" style="width: 9rem">Amount</th>
-                        <th style="width: 6rem">Cleared</th>
-                        <th style="width: 3rem"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (var index = 0; index < _inflows.Count; index++)
-                    {
-                        var i = index;
-                        var row = _inflows[i];
+            @if (!_selectedAccountId.HasValue)
+            {
+                <p class="text-fg-muted text-sm">Pick a bank, cash, or credit card account, then load ledger entries.</p>
+            }
+            else if (_rows.Count == 0)
+            {
+                <p class="text-fg-muted text-sm">No unreconciled posted ledger entries found up to the statement date.</p>
+            }
+            else
+            {
+                <table class="citus-data-table">
+                    <thead>
                         <tr>
-                            <td><RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@row.Date" ValueChanged="@(v => Update(_inflows, i, r => r with { Date = v }))" Class="citus-control-full" /></td>
-                            <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_inflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_inflows, i, r => r with { Amount = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td><RadzenSwitch Value="@row.Cleared" ValueChanged="@(v => Update(_inflows, i, r => r with { Cleared = v }))" /></td>
-                            <td>
-                                <button type="button" class="citus-icon-button" @onclick="() => Remove(_inflows, i)">
-                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
-                                </button>
-                            </td>
+                            <th style="width: 3rem">Clear</th>
+                            <th>Date</th>
+                            <th>Source</th>
+                            <th>Memo</th>
+                            <th class="text-right" style="width: 9rem">@IncreaseLabel</th>
+                            <th class="text-right" style="width: 9rem">@DecreaseLabel</th>
                         </tr>
-                    }
-                    <tr class="citus-data-table__total">
-                        <td colspan="2" class="text-right font-medium">Cleared inflow</td>
-                        <td class="text-right font-semibold">@FormatAmount(_clearedInflow)</td>
-                        <td colspan="2"></td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
-
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Outflow (payments and debits)</h2>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="@(() => AddRow(_outflows))">Add outflow</CitusButton>
-            </header>
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Memo</th>
-                        <th class="text-right" style="width: 9rem">Amount</th>
-                        <th style="width: 6rem">Cleared</th>
-                        <th style="width: 3rem"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (var index = 0; index < _outflows.Count; index++)
-                    {
-                        var i = index;
-                        var row = _outflows[i];
-                        <tr>
-                            <td><RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@row.Date" ValueChanged="@(v => Update(_outflows, i, r => r with { Date = v }))" Class="citus-control-full" /></td>
-                            <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_outflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_outflows, i, r => r with { Amount = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td><RadzenSwitch Value="@row.Cleared" ValueChanged="@(v => Update(_outflows, i, r => r with { Cleared = v }))" /></td>
-                            <td>
-                                <button type="button" class="citus-icon-button" @onclick="() => Remove(_outflows, i)">
-                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                    <tr class="citus-data-table__total">
-                        <td colspan="2" class="text-right font-medium">Cleared outflow</td>
-                        <td class="text-right font-semibold">@FormatAmount(_clearedOutflow)</td>
-                        <td colspan="2"></td>
-                    </tr>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            <tr>
+                                <td>
+                                    <input type="checkbox"
+                                           checked="@row.Selected"
+                                           @onchange="e => row.Selected = e.Value is true" />
+                                </td>
+                                <td>@row.Entry.PostingDate.ToString("yyyy-MM-dd")</td>
+                                <td>@row.Entry.DisplayNumber</td>
+                                <td>@(string.IsNullOrWhiteSpace(row.Entry.Description) ? row.Entry.SourceType : row.Entry.Description)</td>
+                                <td class="text-right">@FormatAmount(row.Entry.SignedAmountBase > 0m ? row.Entry.SignedAmountBase : 0m)</td>
+                                <td class="text-right">@FormatAmount(row.Entry.SignedAmountBase < 0m ? Math.Abs(row.Entry.SignedAmountBase) : 0m)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         </section>
     </div>
 
     <div class="lg:col-span-4 flex flex-col gap-6">
         <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary bar</h2>
+            <h2 class="citus-panel__title">Summary</h2>
             <table class="citus-keyvalue">
                 <tbody>
                     <tr><th>Opening</th><td>@FormatAmount(_openingBalance)</td></tr>
-                    <tr><th>+ Cleared inflow</th><td>@FormatAmount(_clearedInflow)</td></tr>
-                    <tr><th>− Cleared outflow</th><td>@FormatAmount(_clearedOutflow)</td></tr>
+                    <tr><th>+ @IncreaseLabel</th><td>@FormatAmount(_clearedIncrease)</td></tr>
+                    <tr><th>- @DecreaseLabel</th><td>@FormatAmount(_clearedDecrease)</td></tr>
                     <tr><th>Calculated ending</th><td>@FormatAmount(_calculatedEnding)</td></tr>
                     <tr><th>Statement ending</th><td>@FormatAmount(_endingBalance)</td></tr>
                     <tr>
@@ -147,22 +145,18 @@
         <section class="citus-panel">
             <h2 class="citus-panel__title">Complete reconciliation</h2>
             <p class="text-fg-muted text-sm mb-3">
-                Per spec §8, completion is only allowed when the difference is exactly zero. Toggle Cleared on each row until inflow and outflow match the statement.
+                Completion locks the selected posted ledger entries and writes a reconciliation snapshot. It is only available when the difference is zero.
             </p>
-            @* The HTTP write surface for reconciliation is not wired yet —
-               clicking Complete used to fire a success-shaped toast and
-               post nothing, which is the worst possible failure mode for
-               an accounting product. The button stays in place but is
-               permanently disabled with a visible "Coming soon" notice
-               until the backend route ships. *@
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true" Disabled="true">
-                Complete reconciliation
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Block="true"
+                         Disabled="@(!CanComplete)"
+                         OnClick="CompleteAsync">
+                @(_isCompleting ? "Completing..." : "Complete reconciliation")
             </CitusButton>
-            <p class="text-fg-subtle text-xs mt-2">
-                <strong>Coming soon.</strong> The completion endpoint is still in development.
-                Use this page today to compute the difference; come back to mark periods reconciled
-                once the backend route ships in the next release.
-            </p>
+            @if (!IsZero(_difference))
+            {
+                <p class="text-fg-subtle text-xs mt-2">Adjust selected entries or statement balances until the difference is zero.</p>
+            }
         </section>
     </div>
 </div>
@@ -170,35 +164,137 @@
 @code {
     private readonly PageHeaderModel _header = new()
     {
-        Eyebrow = "Accounting",
+        Eyebrow = "Banking",
         Title = "Reconciliation",
-        Subtitle = "Match the bank statement against company-side cash truth. Completion locks until difference is zero."
+        Subtitle = "Match posted bank, cash, or credit-card ledger entries to the statement and lock them when the difference is zero."
     };
 
-    private string _account = string.Empty;
     private DateTime? _statementDate = DateTime.Today;
     private decimal _openingBalance;
     private decimal _endingBalance;
-    private readonly List<RecRow> _inflows = new() { new RecRow { Date = DateTime.Today } };
-    private readonly List<RecRow> _outflows = new() { new RecRow { Date = DateTime.Today } };
+    private string _notes = string.Empty;
+    private string? _error;
+    private bool _isLoading;
+    private bool _isCompleting;
+    private Guid? _selectedAccountId;
+    private IReadOnlyList<AccountSummary> _bankAccounts = Array.Empty<AccountSummary>();
+    private readonly List<ReconciliationRow> _rows = new();
+    private BankReconciliationSummaryDto? _completed;
 
-    private decimal _clearedInflow => _inflows.Where(r => r.Cleared).Sum(r => r.Amount);
-    private decimal _clearedOutflow => _outflows.Where(r => r.Cleared).Sum(r => r.Amount);
-    private decimal _calculatedEnding => _openingBalance + _clearedInflow - _clearedOutflow;
+    private AccountSummary? SelectedAccount => _selectedAccountId is { } id
+        ? _bankAccounts.FirstOrDefault(a => a.Id == id)
+        : null;
+    private bool SelectedAccountIsCreditCard => SelectedAccount?.DetailType == "credit_card";
+    private string IncreaseLabel => SelectedAccountIsCreditCard ? "Charges" : "Inflow";
+    private string DecreaseLabel => SelectedAccountIsCreditCard ? "Payments / credits" : "Outflow";
+    private int _selectedCount => _rows.Count(r => r.Selected);
+    private decimal _clearedIncrease => _rows.Where(r => r.Selected && r.Entry.SignedAmountBase > 0m).Sum(r => r.Entry.SignedAmountBase);
+    private decimal _clearedDecrease => _rows.Where(r => r.Selected && r.Entry.SignedAmountBase < 0m).Sum(r => Math.Abs(r.Entry.SignedAmountBase));
+    private decimal _calculatedEnding => _openingBalance + _clearedIncrease - _clearedDecrease;
     private decimal _difference => _endingBalance - _calculatedEnding;
+    private DateOnly StatementDate => DateOnly.FromDateTime((_statementDate ?? DateTime.Today).Date);
+    private bool CanComplete =>
+        _selectedAccountId.HasValue &&
+        _selectedCount > 0 &&
+        IsZero(_difference) &&
+        !_isCompleting &&
+        !ShellState.AreWritesBlocked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var accounts = await AccountClient.ListAsync(rootType: "asset");
+        _bankAccounts = accounts
+            .Where(a => a.IsActive && ((a.RootType == "asset" && a.DetailType is "bank" or "cash") ||
+                                       (a.RootType == "liability" && a.DetailType == "credit_card")))
+            .OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private void OnAccountChanged(ChangeEventArgs args)
+    {
+        _completed = null;
+        _rows.Clear();
+        _selectedAccountId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
+    }
+
+    private async Task LoadEntriesAsync()
+    {
+        if (!_selectedAccountId.HasValue)
+        {
+            _error = "Select a bank, cash, or credit card account first.";
+            return;
+        }
+
+        _error = null;
+        _isLoading = true;
+        try
+        {
+            var outcome = await ReconciliationClient.ListLedgerEntriesAsync(_selectedAccountId.Value, StatementDate);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage;
+                return;
+            }
+
+            _rows.Clear();
+            _rows.AddRange(outcome.Entries.Select(static e => new ReconciliationRow(e)));
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task CompleteAsync()
+    {
+        if (!CanComplete || !_selectedAccountId.HasValue)
+        {
+            return;
+        }
+
+        _error = null;
+        _completed = null;
+        _isCompleting = true;
+        try
+        {
+            var payload = new BankReconciliationCompletePayload(
+                _selectedAccountId.Value,
+                StatementDate,
+                _openingBalance,
+                _endingBalance,
+                _rows.Where(r => r.Selected).Select(r => r.Entry.LedgerEntryId).ToArray(),
+                string.IsNullOrWhiteSpace(_notes) ? null : _notes.Trim());
+
+            var outcome = await ReconciliationClient.CompleteAsync(payload);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage;
+                return;
+            }
+
+            _completed = outcome.Summary;
+            await Message.SuccessAsync("Reconciliation completed.");
+            await LoadEntriesAsync();
+        }
+        finally
+        {
+            _isCompleting = false;
+        }
+    }
 
     private static bool IsZero(decimal value) => Math.Abs(value) < 0.005m;
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
-
-    private static void AddRow(List<RecRow> rows) => rows.Add(new RecRow { Date = DateTime.Today });
-    private static void Remove(List<RecRow> rows, int i) { if (i >= 0 && i < rows.Count) rows.RemoveAt(i); }
-    private static void Update(List<RecRow> rows, int i, Func<RecRow, RecRow> mutate) { if (i >= 0 && i < rows.Count) rows[i] = mutate(rows[i]); }
-
-    private sealed record class RecRow
+    private static string FormatAccountKind(AccountSummary account) => account.DetailType switch
     {
-        public DateTime? Date { get; init; }
-        public string Memo { get; init; } = string.Empty;
-        public decimal Amount { get; init; }
-        public bool Cleared { get; init; }
+        "bank" => "Bank",
+        "cash" => "Cash",
+        "credit_card" => "Credit card",
+        _ => "Account"
+    };
+
+    private sealed class ReconciliationRow(BankReconciliationLedgerEntrySummary entry)
+    {
+        public BankReconciliationLedgerEntrySummary Entry { get; } = entry;
+        public bool Selected { get; set; }
     }
 }

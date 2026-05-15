@@ -14,34 +14,26 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        const string sql = """
-            create table if not exists vendor_shipping_address_book (
-                id uuid primary key default gen_random_uuid(),
-                company_id char(7) not null references companies(id) on delete cascade,
-                vendor_id uuid not null references vendors(id) on delete cascade,
-                label text,
-                address_line text not null default '',
-                city text not null default '',
-                province_state text not null default '',
-                postal_code text not null default '',
-                country text not null default '',
-                is_default boolean not null default false,
-                created_at timestamptz not null default now(),
-                updated_at timestamptz not null default now()
-            );
-
-            create index if not exists ix_vendor_shipping_address_book_vendor
-                on vendor_shipping_address_book (company_id, vendor_id);
-
-            create unique index if not exists uq_vendor_shipping_address_book_default
-                on vendor_shipping_address_book (company_id, vendor_id)
-                where is_default;
-            """;
-
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlCounterpartySchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "vendor_shipping_address_book",
+            new[]
+            {
+                "id",
+                "company_id",
+                "vendor_id",
+                "label",
+                "address_line",
+                "city",
+                "province_state",
+                "postal_code",
+                "country",
+                "is_default",
+                "created_at",
+                "updated_at"
+            },
+            "Vendor shipping address book schema has not been installed. Apply database migrations before using vendor shipping addresses.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<VendorShippingAddressBookEntry>> ListAsync(

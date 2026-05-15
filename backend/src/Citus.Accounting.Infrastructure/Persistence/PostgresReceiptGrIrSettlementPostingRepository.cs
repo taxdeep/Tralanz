@@ -39,7 +39,6 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureSchemaAsync(scope, cancellationToken);
         await RefreshJournalStatusAsync(scope, companyId, settlementBatchId, cancellationToken);
         await AcquireSettlementPostingLockAsync(scope, companyId, settlementBatchId, cancellationToken);
 
@@ -73,7 +72,6 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureSchemaAsync(scope, cancellationToken);
 
         await using var command = scope.CreateCommand(
             """
@@ -106,6 +104,21 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
     // skips the dual TableExists round-trip and the seven ALTERs.
     // Same pattern as commit 2ef2640.
     private static volatile bool _schemaEnsured;
+
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+        if (!await TableExistsAsync(scope, "receipt_grir_ap_settlement_batches", cancellationToken) ||
+            !await TableExistsAsync(scope, "receipt_grir_ap_settlement_batch_lines", cancellationToken))
+        {
+            return;
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+    }
 
     private static async Task EnsureSchemaAsync(
         PostgresCommandScope scope,

@@ -18,7 +18,6 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsurePermissionsColumnAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -59,7 +58,6 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureAuditLogsTableAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -70,7 +68,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               al.actor_id,
               actor.email as actor_email,
               actor.username as actor_username,
-              al.entity_id as membership_id,
+              al.entity_id::uuid as membership_id,
               target_user.id as target_user_id,
               target_user.email as target_email,
               target_user.username as target_username,
@@ -79,7 +77,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             from audit_logs al
             left join users actor on actor.id = al.actor_id
             left join company_memberships target_membership
-              on target_membership.id = al.entity_id
+              on target_membership.id::text = al.entity_id
              and target_membership.company_id = al.company_id
             left join users target_user on target_user.id = target_membership.user_id
             where al.company_id = @company_id
@@ -107,7 +105,6 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsurePermissionsColumnAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -143,7 +140,6 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsurePermissionsColumnAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -179,8 +175,6 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsurePermissionsColumnAsync(connection, cancellationToken);
-        await EnsureAuditLogsTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         IReadOnlyList<string> previousTokens;
@@ -361,7 +355,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         auditCommand.Parameters.AddWithValue("id", Guid.NewGuid());
         auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
         auditCommand.Parameters.AddWithValue("actor_id", actorUserId.Value);
-        auditCommand.Parameters.AddWithValue("entity_id", membershipId);
+        auditCommand.Parameters.AddWithValue("entity_id", membershipId.ToString("D"));
         auditCommand.Parameters.AddWithValue("payload", payload);
         await auditCommand.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -425,41 +419,6 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             IsActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
             UpdatedAt = CoerceTimestamp(reader.GetValue(reader.GetOrdinal("updated_at")))
         };
-    }
-
-    private static async Task EnsurePermissionsColumnAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            alter table company_memberships
-              add column if not exists permissions jsonb not null default '[]'::jsonb;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task EnsureAuditLogsTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            create table if not exists audit_logs (
-              id uuid primary key,
-              company_id char(7) not null,
-              actor_type text not null,
-              actor_id uuid null,
-              entity_type text not null,
-              entity_id uuid not null,
-              action text not null,
-              payload jsonb not null,
-              created_at timestamptz not null default now()
-            );
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static IReadOnlyList<string> ParsePermissionTokens(string? json)

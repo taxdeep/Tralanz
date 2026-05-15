@@ -31,7 +31,6 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureJournalEntryLineAuditColumnsAsync(scope, cancellationToken);
 
         var idempotencyKey = context.IdempotencyKey?.Trim();
         if (string.IsNullOrWhiteSpace(idempotencyKey))
@@ -334,19 +333,6 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
-
-    private static async Task EnsureJournalEntryLineAuditColumnsAsync(
-        PostgresCommandScope scope,
-        CancellationToken cancellationToken)
-    {
-        await using var command = scope.CreateCommand(
-            """
-            alter table journal_entry_lines
-              add column if not exists posting_role text null,
-              add column if not exists source_line_number integer null;
-            """);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
 
     private static async Task<JournalEntryWriteResult?> TryFindExistingByIdempotencyKeyAsync(
         PostgresCommandScope scope,
@@ -663,14 +649,14 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                                                                       from audit_logs requested
                                                                       where requested.company_id = @company_id
                                                                         and requested.entity_type = 'open_item_adjustment_request'
-                                                                        and requested.entity_id = @source_id
+                                                                        and requested.entity_id = @source_id::text
                                                                         and requested.action = 'open_item_adjustment_requested'
                                                                       and exists (
                                                                         select 1
                                                                         from audit_logs submitted
                                                                         where submitted.company_id = @company_id
                                                                           and submitted.entity_type = 'open_item_adjustment_request'
-                                                                          and submitted.entity_id = @source_id
+                                                                          and submitted.entity_id = @source_id::text
                                                                           and submitted.action = 'open_item_adjustment_request_submitted'
                                                                       )
                                                                       and not exists (
@@ -678,7 +664,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                                                                         from audit_logs completed
                                                                         where completed.company_id = @company_id
                                                                           and completed.entity_type = 'open_item_adjustment_request'
-                                                                          and completed.entity_id = @source_id
+                                                                          and completed.entity_id = @source_id::text
                                                                           and completed.action = 'open_item_adjustment_execution_completed'
                                                                       );
                                                                       """,

@@ -143,7 +143,7 @@ public sealed class PostgresPlatformSmtpConfigStore : IPlatformSmtpConfigStore
         command.Parameters.AddWithValue("username", request.Username?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("password_protected",
             (object?)newPasswordProtected ?? DBNull.Value);
-        command.Parameters.AddWithValue("updated_by_user_id", updatedByUserId);
+        command.Parameters.AddWithValue("updated_by_user_id", updatedByUserId.Value);
 
         // Npgsql 6+ reads timestamptz as DateTime (UTC kind) by default,
         // not DateTimeOffset — the direct cast on the boxed scalar

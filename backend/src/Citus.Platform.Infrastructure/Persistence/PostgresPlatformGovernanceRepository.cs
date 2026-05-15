@@ -275,8 +275,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         int limit,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         var normalizedLimit = Math.Clamp(limit, 1, 200);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -320,7 +318,7 @@ public sealed class PostgresPlatformGovernanceRepository(
               on entity_sysadmin.id = al.entity_id
              and al.entity_type = 'sysadmin_account'
             left join company_memberships membership
-              on membership.id = al.entity_id
+              on membership.id::text = al.entity_id
              and al.entity_type = 'company_membership'
             left join users membership_user on membership_user.id = membership.user_id
             where al.action = any(@actions)
@@ -345,8 +343,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         int limit,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         var normalizedLimit = Math.Clamp(limit, 1, 50);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -390,7 +386,7 @@ public sealed class PostgresPlatformGovernanceRepository(
               on entity_sysadmin.id = al.entity_id
              and al.entity_type = 'sysadmin_account'
             left join company_memberships membership
-              on membership.id = al.entity_id
+              on membership.id::text = al.entity_id
              and al.entity_type = 'company_membership'
             left join users membership_user on membership_user.id = membership.user_id
             where al.entity_type = 'platform_account'
@@ -399,7 +395,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             order by al.created_at desc
             limit @limit;
             """;
-        command.Parameters.AddWithValue("account_id", accountId);
+        command.Parameters.AddWithValue("account_id", accountId.Value);
         command.Parameters.AddWithValue(
             "actions",
             new[]
@@ -426,8 +422,6 @@ public sealed class PostgresPlatformGovernanceRepository(
     public async Task<IReadOnlyList<ManagedPlatformAccountSummary>> ListManagedUsersAsync(
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -488,8 +482,6 @@ public sealed class PostgresPlatformGovernanceRepository(
     public async Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListOpenMfaRecoveryRequestsAsync(
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -547,8 +539,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         int limit,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         var normalizedLimit = Math.Clamp(limit, 1, 50);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -624,8 +614,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         EnsureAllowed(normalizedStatus, CompanyStatuses, "company status");
         var normalizedReason = NormalizeReason(reason, "Company status updated by SysAdmin.");
 
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -699,8 +687,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         var normalizedStatus = NormalizeRequired(status, "Account status");
         EnsureAllowed(normalizedStatus, AccountStatuses, "account status");
         var normalizedReason = NormalizeReason(reason, "Account status updated by SysAdmin.");
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -781,8 +767,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         CancellationToken cancellationToken)
     {
         var normalizedReason = NormalizeReason(reason, "Password reset requested by SysAdmin.");
-
-        await EnsureSchemaAsync(cancellationToken);
 
         var notificationReadiness = await runtimeStateRepository.GetNotificationReadinessStateAsync(cancellationToken);
         if (notificationReadiness is null || !notificationReadiness.IsVerificationDeliveryReady)
@@ -981,8 +965,6 @@ public sealed class PostgresPlatformGovernanceRepository(
     {
         var normalizedReason = NormalizeReason(reason, "MFA reset by SysAdmin.");
 
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -1026,8 +1008,6 @@ public sealed class PostgresPlatformGovernanceRepository(
     {
         var normalizedDecision = NormalizeRecoveryDecision(decision);
         var normalizedReason = NormalizeReason(reason, $"MFA recovery {normalizedDecision} by SysAdmin.");
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -1122,8 +1102,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         CancellationToken cancellationToken)
     {
         var normalizedReason = NormalizeReason(reason, "Approved MFA recovery executed by SysAdmin.");
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -1592,7 +1570,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             ActorDisplayName = ResolveActorDisplayName(reader),
             ActorEmail = ResolveActorEmail(reader),
             EntityType = entityType,
-            EntityId = reader.GetGuid(reader.GetOrdinal("entity_id")),
+            EntityId = TryReadAuditEntityGuid(reader),
             EntityLabel = ResolveEntityLabel(entityType, reader),
             Action = action,
             ActionLabel = PlatformAuditEvent.GetActionLabel(action),
@@ -1635,6 +1613,12 @@ public sealed class PostgresPlatformGovernanceRepository(
         }
 
         return reader.GetString(reader.GetOrdinal("actor_email")).Trim();
+    }
+
+    private static Guid TryReadAuditEntityGuid(NpgsqlDataReader reader)
+    {
+        var raw = reader.GetString(reader.GetOrdinal("entity_id")).Trim();
+        return Guid.TryParse(raw, out var value) ? value : Guid.Empty;
     }
 
     private static string ResolveEntityLabel(string entityType, NpgsqlDataReader reader) =>

@@ -99,6 +99,9 @@ public sealed class PostReceiptGrIrCommandHandlerTests
     {
         public int RefreshCalls { get; private set; }
 
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public Task<ReceiptGrIrBridgeSummary> RefreshReceiptGrIrBridgeAsync(
             CompanyId companyId,
             UserId userId,
@@ -153,6 +156,9 @@ public sealed class PostReceiptGrIrCommandHandlerTests
         public int CompleteCalls { get; private set; }
 
         public Guid? LastGrIrClearingAccountId { get; private set; }
+
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
 
         public Task<ReceiptGrIrPostingDocument> PreparePostingDocumentAsync(
             CompanyId companyId,

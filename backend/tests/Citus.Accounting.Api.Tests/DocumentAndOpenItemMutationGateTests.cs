@@ -1,4 +1,7 @@
+using Citus.Platform.Core.Abstractions;
+using Citus.Platform.Core.Accounts;
 using Citus.Platform.Core.Runtime;
+using Citus.Ui.Shared.Business;
 using Microsoft.AspNetCore.Http;
 using Modules.CompanyAccess.SessionContext;
 using SharedKernel.CompanyAccess;
@@ -318,7 +321,8 @@ public sealed class DocumentAndOpenItemMutationGateTests
             new BusinessRequestContractGuard(),
             new BusinessSessionDirectory(
                 Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions()),
-                new StubCompanySessionContextWorkflow(context)));
+                new StubCompanySessionContextWorkflow(context)),
+            new StubPlatformBusinessSessionRepository());
 
     // Test-local fixture. Production directory no longer carries built-ins.
     private static BusinessSessionOptions CreateFixtureOptions() => new()
@@ -351,6 +355,7 @@ public sealed class DocumentAndOpenItemMutationGateTests
     private static HeaderDictionary CreateHeaders(UserId userId, CompanyId companyId) =>
         new()
         {
+            [BusinessAuthHeaderNames.SessionToken] = "session-test",
             [BusinessSessionHeaders.UserId] = userId.ToString(),
             [BusinessSessionHeaders.ActiveCompanyId] = companyId.ToString()
         };
@@ -395,5 +400,49 @@ public sealed class DocumentAndOpenItemMutationGateTests
             CompanyId? preferredActiveCompanyId,
             CancellationToken cancellationToken) =>
             Task.FromResult(context);
+    }
+
+    private sealed class StubPlatformBusinessSessionRepository : IPlatformBusinessSessionRepository
+    {
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<PlatformBusinessSessionResult> AuthenticateAsync(
+            string login,
+            string password,
+            TimeSpan sessionLifetime,
+            string? remoteIp,
+            string? userAgent,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<PlatformBusinessSessionResult> ValidateSessionAsync(
+            string sessionToken,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new PlatformBusinessSessionResult
+            {
+                Succeeded = string.Equals(sessionToken, "session-test", StringComparison.Ordinal),
+                UserId = UserId,
+                ActiveCompanyId = CompanyId
+            });
+
+        public Task<PlatformBusinessSessionResult> SwitchActiveCompanyAsync(
+            string sessionToken,
+            CompanyId activeCompanyId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<PlatformBusinessSessionResult> CompleteSecondFactorAsync(
+            Guid challengeId,
+            string verificationCode,
+            TimeSpan sessionLifetime,
+            string? remoteIp,
+            string? userAgent,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RevokeSessionAsync(
+            string sessionToken,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }

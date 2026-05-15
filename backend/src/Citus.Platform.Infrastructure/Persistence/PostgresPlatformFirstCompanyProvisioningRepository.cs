@@ -304,9 +304,6 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             normalized.Industry);
         var provisionedAtUtc = DateTimeOffset.UtcNow;
 
-        await EnsureSchemaAsync(cancellationToken);
-        await runtimeStateRepository.EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -1909,6 +1906,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         int year,
         CancellationToken cancellationToken)
     {
+        await EnsurePlatformEntityNumberSequenceInstalledAsync(connection, transaction, cancellationToken);
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
@@ -1947,20 +1946,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         int year,
         CancellationToken cancellationToken)
     {
-        await using (var ensureSequence = connection.CreateCommand())
-        {
-            ensureSequence.Transaction = transaction;
-            ensureSequence.CommandText =
-                """
-                create table if not exists company_entity_number_sequences (
-                  company_id char(7) not null,
-                  entity_year integer not null,
-                  next_ordinal bigint not null,
-                  primary key (company_id, entity_year)
-                );
-                """;
-            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await EnsureCompanyEntityNumberSequenceInstalledAsync(connection, transaction, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -1997,22 +1983,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        await using (var ensureSequence = connection.CreateCommand())
-        {
-            ensureSequence.Transaction = transaction;
-            ensureSequence.CommandText =
-                """
-                create table if not exists platform_user_id_sequence (
-                  singleton_key boolean primary key default true,
-                  next_ordinal bigint not null,
-                  check (singleton_key = true)
-                );
-                insert into platform_user_id_sequence (singleton_key, next_ordinal)
-                values (true, 1)
-                on conflict (singleton_key) do nothing;
-                """;
-            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await EnsurePlatformUserIdSequenceInstalledAsync(connection, transaction, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -2034,22 +2005,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        await using (var ensureSequence = connection.CreateCommand())
-        {
-            ensureSequence.Transaction = transaction;
-            ensureSequence.CommandText =
-                """
-                create table if not exists platform_company_id_sequence (
-                  singleton_key boolean primary key default true,
-                  next_ordinal bigint not null,
-                  check (singleton_key = true)
-                );
-                insert into platform_company_id_sequence (singleton_key, next_ordinal)
-                values (true, 1)
-                on conflict (singleton_key) do nothing;
-                """;
-            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await EnsurePlatformCompanyIdSequenceInstalledAsync(connection, transaction, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -2062,5 +2018,97 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             """;
         var ordinal = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
         return CompanyId.FromOrdinal(ordinal);
+    }
+
+    private static async Task EnsureCompanyEntityNumberSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasTableColumnsAsync(
+                connection,
+                transaction,
+                "company_entity_number_sequences",
+                new[] { "company_id", "entity_year", "next_ordinal" },
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Company entity number sequence schema has not been installed. Apply database migrations before first-company provisioning.");
+        }
+    }
+
+    private static async Task EnsurePlatformEntityNumberSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasTableColumnsAsync(
+                connection,
+                transaction,
+                "platform_entity_number_sequences",
+                new[] { "entity_year", "next_number" },
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Platform entity number sequence schema has not been installed. Apply database migrations before first-company provisioning.");
+        }
+    }
+
+    private static async Task EnsurePlatformUserIdSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasTableColumnsAsync(
+                connection,
+                transaction,
+                "platform_user_id_sequence",
+                new[] { "singleton_key", "next_ordinal" },
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Platform user id sequence schema has not been installed. Apply database migrations before first-company provisioning.");
+        }
+    }
+
+    private static async Task EnsurePlatformCompanyIdSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasTableColumnsAsync(
+                connection,
+                transaction,
+                "platform_company_id_sequence",
+                new[] { "singleton_key", "next_ordinal" },
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Platform company id sequence schema has not been installed. Apply database migrations before first-company provisioning.");
+        }
+    }
+
+    private static async Task<bool> HasTableColumnsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string tableName,
+        IReadOnlyCollection<string> columnNames,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select count(*)::integer
+            from information_schema.columns
+            where table_schema = current_schema()
+              and table_name = @table_name
+              and column_name = any(@column_names);
+            """;
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.AddWithValue("column_names", columnNames.ToArray());
+
+        var matchedColumns = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
+        return matchedColumns == columnNames.Count;
     }
 }

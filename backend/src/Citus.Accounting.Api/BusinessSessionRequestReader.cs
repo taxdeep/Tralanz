@@ -1,3 +1,4 @@
+using Citus.Ui.Shared.Business;
 using Microsoft.Extensions.Primitives;
 
 namespace Citus.Accounting.Api;
@@ -9,15 +10,23 @@ public sealed class BusinessSessionRequestReader
         context = null;
         error = null;
 
-        if (!TryReadHeaderValue(headers, BusinessSessionHeaders.UserId, out var userIdValue))
+        if (!TryReadHeaderValue(
+                headers,
+                BusinessSessionHeaders.UserId,
+                BusinessSessionHeaderNames.LegacyUserId,
+                out var userIdValue))
         {
-            error = $"Missing required business session header '{BusinessSessionHeaders.UserId}'.";
+            error = $"Missing required business session header '{BusinessSessionHeaders.UserId}' or '{BusinessSessionHeaderNames.LegacyUserId}'.";
             return false;
         }
 
-        if (!TryReadHeaderValue(headers, BusinessSessionHeaders.ActiveCompanyId, out var companyIdValue))
+        if (!TryReadHeaderValue(
+                headers,
+                BusinessSessionHeaders.ActiveCompanyId,
+                BusinessSessionHeaderNames.LegacyActiveCompanyId,
+                out var companyIdValue))
         {
-            error = $"Missing required business session header '{BusinessSessionHeaders.ActiveCompanyId}'.";
+            error = $"Missing required business session header '{BusinessSessionHeaders.ActiveCompanyId}' or '{BusinessSessionHeaderNames.LegacyActiveCompanyId}'.";
             return false;
         }
 
@@ -42,11 +51,25 @@ public sealed class BusinessSessionRequestReader
         return true;
     }
 
-    private static bool TryReadHeaderValue(IHeaderDictionary headers, string key, out string value)
+    public bool TryReadSessionToken(IHeaderDictionary headers, out string token)
+    {
+        return TryReadHeaderValue(
+            headers,
+            BusinessAuthHeaderNames.SessionToken,
+            BusinessAuthHeaderNames.LegacySessionToken,
+            out token);
+    }
+
+    private static bool TryReadHeaderValue(
+        IHeaderDictionary headers,
+        string primaryKey,
+        string legacyKey,
+        out string value)
     {
         value = string.Empty;
 
-        if (!headers.TryGetValue(key, out StringValues values))
+        if (!headers.TryGetValue(primaryKey, out StringValues values) &&
+            !headers.TryGetValue(legacyKey, out values))
         {
             return false;
         }

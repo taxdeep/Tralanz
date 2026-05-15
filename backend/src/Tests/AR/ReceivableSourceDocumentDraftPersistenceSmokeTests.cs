@@ -4050,17 +4050,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         // dead state by the time we reach this point. Drop it before
         // inserting ours.
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
-        await using (var cleanup = connection.CreateCommand())
-        {
-            cleanup.CommandText =
-                """
-                delete from journal_entries
-                where company_id = @company_id
-                  and display_number = 'JE-SMOKE-001';
-                """;
-            cleanup.Parameters.AddWithValue("company_id", companyId.Value);
-            await cleanup.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await ReleaseJournalDisplayNumberAsync(connection, null, companyId, "JE-SMOKE-001", cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -4155,6 +4145,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await ReleaseJournalDisplayNumberAsync(connection, transaction, companyId, displayNumber, cancellationToken);
 
         await using (var headerCommand = connection.CreateCommand())
         {
@@ -4286,6 +4278,27 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
         await transaction.CommitAsync(cancellationToken);
         return journalEntryId;
+    }
+
+    private static async Task ReleaseJournalDisplayNumberAsync(
+        Npgsql.NpgsqlConnection connection,
+        Npgsql.NpgsqlTransaction? transaction,
+        CompanyId companyId,
+        string displayNumber,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update journal_entries
+            set display_number = display_number || '-STALE-' || left(replace(id::text, '-', ''), 8)
+            where company_id = @company_id
+              and display_number = @display_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("display_number", displayNumber);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task CleanupJournalEntryAsync(
@@ -4641,13 +4654,13 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             delete from audit_logs
             where entity_type = 'source_document_reverse_request'
               and (
-                entity_id = @document_id
+                entity_id = @document_id::text
                 or payload ->> 'DocumentId' = @document_id_text
                 or payload ->> 'RequestId' in (
                   select payload ->> 'RequestId'
                   from audit_logs
                   where entity_type = 'source_document_reverse_request'
-                    and (entity_id = @document_id or payload ->> 'DocumentId' = @document_id_text)
+                    and (entity_id = @document_id::text or payload ->> 'DocumentId' = @document_id_text)
                 )
               )
               or (
@@ -4657,7 +4670,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
               or (
                 entity_type = 'open_item_adjustment_request'
                 and (
-                  entity_id = @document_id
+                  entity_id = @document_id::text
                   or payload ->> 'OpenItemId' = @document_id_text
                 )
               );

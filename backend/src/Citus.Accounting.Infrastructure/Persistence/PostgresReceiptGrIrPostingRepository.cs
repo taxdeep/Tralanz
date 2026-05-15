@@ -42,7 +42,6 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireReceiptPostingLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
         await EnsureActiveAccountAsync(scope, companyId, grIrClearingAccountId, "GR/IR clearing account", cancellationToken);
 
@@ -130,7 +129,6 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureSchemaAsync(scope, cancellationToken);
 
         await using (var batchCommand = scope.CreateCommand(
                          """
@@ -185,6 +183,20 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
     // ALTERs once the latest column added is observed on the live
     // schema. Same pattern as commit 2ef2640.
     private static volatile bool _schemaEnsured;
+
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+        if (!await TableExistsAsync(scope, "receipt_grir_bridge_lines", cancellationToken))
+        {
+            return;
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+    }
 
     private static async Task EnsureSchemaAsync(
         PostgresCommandScope scope,

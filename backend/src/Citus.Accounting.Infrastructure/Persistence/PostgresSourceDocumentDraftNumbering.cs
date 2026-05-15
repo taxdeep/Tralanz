@@ -233,6 +233,8 @@ internal static class PostgresSourceDocumentDraftNumbering
         long seedNumber,
         CancellationToken cancellationToken)
     {
+        await EnsureCompanyNumberingSequenceInstalledAsync(connection, transaction, cancellationToken);
+
         await using (var seedCommand = connection.CreateCommand())
         {
             seedCommand.Transaction = transaction;
@@ -282,6 +284,49 @@ internal static class PostgresSourceDocumentDraftNumbering
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task EnsureCompanyNumberingSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              to_regclass('company_numbering_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'scope_key')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'next_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_numbering_sequences'
+                  and column_name = 'suggestion_enabled');
+            """;
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Company numbering schema has not been installed. Apply database migrations before reserving document numbers.");
+        }
+    }
+
     // Per-company entity-number reservation. Targets the same
     // company_entity_number_sequences table that PostgresNumberingSequences
     // uses, so source-document draft writers (vendor credits, tax returns,
@@ -300,7 +345,7 @@ internal static class PostgresSourceDocumentDraftNumbering
         long seedNumber,
         CancellationToken cancellationToken)
     {
-        await EnsureCompanyEntityNumberSequenceAsync(connection, transaction, cancellationToken);
+        await EnsureCompanyEntityNumberSequenceInstalledAsync(connection, transaction, cancellationToken);
 
         await using (var seedCommand = connection.CreateCommand())
         {
@@ -337,7 +382,7 @@ internal static class PostgresSourceDocumentDraftNumbering
         return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
-    private static async Task EnsureCompanyEntityNumberSequenceAsync(
+    private static async Task EnsureCompanyEntityNumberSequenceInstalledAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -346,14 +391,32 @@ internal static class PostgresSourceDocumentDraftNumbering
         command.Transaction = transaction;
         command.CommandText =
             """
-            create table if not exists company_entity_number_sequences (
-              company_id char(7) not null,
-              entity_year integer not null,
-              next_ordinal bigint not null,
-              primary key (company_id, entity_year)
-            );
+            select
+              to_regclass('company_entity_number_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'entity_year')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'next_ordinal');
             """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Entity number sequence schema has not been installed. Apply database migrations before posting source documents.");
+        }
     }
 
     private static int? TryParseEntityNumberYear(string scopeKey, string prefix)

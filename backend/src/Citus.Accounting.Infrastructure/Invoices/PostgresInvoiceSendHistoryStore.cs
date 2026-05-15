@@ -14,30 +14,25 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        const string sql = """
-            create table if not exists invoice_send_history (
-              id uuid primary key default gen_random_uuid(),
-              company_id char(7) not null,
-              invoice_id uuid not null,
-              sent_at timestamptz not null default now(),
-              sent_by_user_id char(7) not null,
-              to_email text not null,
-              cc_emails text not null default '',
-              bcc_emails text not null default '',
-              subject text not null,
-              status text not null,
-              error_message text,
-              constraint invoice_send_history_status_chk check (status in ('sent', 'failed'))
-            );
-
-            create index if not exists invoice_send_history_invoice_idx
-              on invoice_send_history (invoice_id, sent_at desc);
-            """;
-
-        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await PostgresSchemaChecks.EnsureTableColumnsAsync(
+            _connections,
+            "invoice_send_history",
+            new[]
+            {
+                "id",
+                "company_id",
+                "invoice_id",
+                "sent_at",
+                "sent_by_user_id",
+                "to_email",
+                "cc_emails",
+                "bcc_emails",
+                "subject",
+                "status",
+                "error_message"
+            },
+            "Invoice send history schema has not been installed. Apply database migrations before sending invoices.",
+            cancellationToken);
     }
 
     public async Task<InvoiceSendHistoryRecord> RecordAsync(

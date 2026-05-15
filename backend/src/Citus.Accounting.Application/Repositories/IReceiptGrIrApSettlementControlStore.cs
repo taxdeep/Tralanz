@@ -4,6 +4,8 @@ namespace Citus.Accounting.Application.Repositories;
 
 public interface IReceiptGrIrApSettlementControlStore
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<ReceiptGrIrApSettlementSummary> RefreshReceiptSettlementControlAsync(
         CompanyId companyId,
         UserId userId,

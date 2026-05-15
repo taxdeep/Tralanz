@@ -142,6 +142,8 @@ public sealed record VendorCreditListItem(
 
 public interface IReceiptDocumentRepository
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<ReceiptDocument?> GetAsync(
         CompanyId companyId,
         Guid documentId,
@@ -165,6 +167,8 @@ public interface IReceiptDocumentRepository
 
 public interface IPurchaseOrderDocumentRepository
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<PurchaseOrderDocument?> GetAsync(
         CompanyId companyId,
         Guid documentId,
@@ -292,6 +296,8 @@ public interface IPurchaseOrderDocumentRepository
 
 public interface IBillReceiptMatchingRepository
 {
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
     Task<BillReceiptMatchingLaneSummary> GetBillLaneSummaryAsync(
         CompanyId companyId,
         Guid billDocumentId,

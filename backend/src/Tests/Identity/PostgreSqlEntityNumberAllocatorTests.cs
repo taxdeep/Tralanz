@@ -20,6 +20,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
             var company = CompanyId.FromOrdinal(1);
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsureEntityNumberSequenceTableAsync(connection);
             await using var tx = await connection.BeginTransactionAsync();
 
             var en = await allocator.AllocateAsync(connection, tx, company, 2026, CancellationToken.None);
@@ -50,6 +51,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
             var companyB = CompanyId.FromOrdinal(2);
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsureEntityNumberSequenceTableAsync(connection);
 
             EntityNumber a1, a2, b1;
             await using (var tx = await connection.BeginTransactionAsync())
@@ -84,6 +86,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
             var company = CompanyId.FromOrdinal(1);
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsureEntityNumberSequenceTableAsync(connection);
 
             EntityNumber y2026, y2027;
             await using (var tx = await connection.BeginTransactionAsync())
@@ -118,6 +121,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
             var company = CompanyId.FromOrdinal(1);
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsureEntityNumberSequenceTableAsync(connection);
 
             EntityNumber aborted;
             await using (var tx1 = await connection.BeginTransactionAsync())

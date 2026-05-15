@@ -1,16 +1,14 @@
 -- Stage-1.4 batch 3: extract PostgresReceiptGrIrPostingRepository.EnsureSchemaAsync.
 -- Adds late lifecycle columns to receipt_grir_bridge_lines and
--- creates the two posting-batch tables. The inline helper still
--- exists (cached) for fresh test databases.
+-- creates the two posting-batch tables. Base emission / bridge control
+-- tables are covered by the 2026-05-13 receipt-grir bridge foundation
+-- migration and the explicit startup schema hook.
 --
 -- The whole block is wrapped in a `do $$ if to_regclass(...) is not
 -- null` guard because the prerequisite table (receipt_grir_bridge_lines)
--- is created on-demand by PostgreSqlReceiptGrIrBridgeStore — pilot
--- deployments that haven't used GR/IR yet won't have it. When that
--- helper does run for the first time and creates the table, this
--- migration will already be marked applied; the helper handles the
--- column ADDs / table CREATEs in its own EnsureSchemaAsync, so we
--- don't lose anything by letting this one no-op on cold installs.
+-- may be absent on pilot deployments that have not enabled Inventory / GR/IR
+-- yet. The 2026-05-13 migration owns the base table creation; this migration
+-- remains guarded so it is safe to apply against older partial schemas.
 
 do $$
 begin

@@ -7,89 +7,73 @@ namespace Infrastructure.PostgreSQL.AP.Expenses;
 /// <summary>
 /// PostgreSQL backing for <see cref="IExpenseStore"/>. Owns the
 /// <c>expenses</c> + <c>expense_lines</c> tables. EnsureSchemaAsync
-/// also runs a one-time idempotent migration that flips legacy
-/// "Cash on Hand" rows from <c>detail_type='bank'</c> to
-/// <c>detail_type='cash'</c> so the Payment Account picker can group
-/// Bank / Cash / Credit Card cleanly.
+/// verifies the migration-installed schema instead of applying DDL or
+/// data migrations from the application process.
 /// </summary>
 public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connections) : IExpenseStore
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS expenses (
-                id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                company_id                      char(7) NOT NULL,
-                expense_number                  TEXT NOT NULL,
-                status                          TEXT NOT NULL DEFAULT 'posted',
-                payee_kind                      TEXT NOT NULL,
-                payee_id                        UUID NULL,
-                payee_name_freeform             TEXT NOT NULL DEFAULT '',
-                payment_account_id              UUID NOT NULL,
-                payment_method                  TEXT NOT NULL,
-                cheque_number                   TEXT NULL,
-                ref_no                          TEXT NULL,
-                transaction_currency_code       CHAR(3) NOT NULL,
-                base_currency_code              CHAR(3) NOT NULL,
-                fx_rate                         NUMERIC(18,8) NOT NULL DEFAULT 1,
-                fx_source                       TEXT NOT NULL DEFAULT 'identity',
-                payment_date                    DATE NOT NULL,
-                source_purchase_order_id        UUID NULL,
-                source_purchase_order_number    TEXT NULL,
-                tax_mode                        TEXT NOT NULL DEFAULT 'exclusive',
-                discount_kind                   TEXT NULL,
-                discount_value                  NUMERIC(18,4) NULL,
-                subtotal_amount                 NUMERIC(18,4) NOT NULL DEFAULT 0,
-                discount_amount                 NUMERIC(18,4) NOT NULL DEFAULT 0,
-                tax_amount                      NUMERIC(18,4) NOT NULL DEFAULT 0,
-                total_amount                    NUMERIC(18,4) NOT NULL DEFAULT 0,
-                memo                            TEXT NULL,
-                internal_note                   TEXT NULL,
-                posted_journal_entry_id         UUID NULL,
-                voided_at                       TIMESTAMPTZ NULL,
-                created_by_user_id              char(7) NOT NULL,
-                created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_expenses_company_expense_number
-                ON expenses (company_id, expense_number);
-            CREATE INDEX IF NOT EXISTS idx_expenses_company_status_date
-                ON expenses (company_id, status, payment_date DESC);
-            CREATE INDEX IF NOT EXISTS idx_expenses_company_payee
-                ON expenses (company_id, payee_id);
-            CREATE INDEX IF NOT EXISTS idx_expenses_source_po
-                ON expenses (source_purchase_order_id) WHERE source_purchase_order_id IS NOT NULL;
+        await PostgreSqlSchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "expenses",
+            new[]
+            {
+                "id",
+                "company_id",
+                "expense_number",
+                "status",
+                "payee_kind",
+                "payee_id",
+                "payee_name_freeform",
+                "payment_account_id",
+                "payment_method",
+                "cheque_number",
+                "ref_no",
+                "transaction_currency_code",
+                "base_currency_code",
+                "fx_rate",
+                "fx_source",
+                "payment_date",
+                "source_purchase_order_id",
+                "source_purchase_order_number",
+                "tax_mode",
+                "discount_kind",
+                "discount_value",
+                "subtotal_amount",
+                "discount_amount",
+                "tax_amount",
+                "total_amount",
+                "memo",
+                "internal_note",
+                "posted_journal_entry_id",
+                "voided_at",
+                "created_by_user_id",
+                "created_at",
+                "updated_at"
+            },
+            "Expense schema has not been installed. Apply database migrations before using expenses.",
+            cancellationToken).ConfigureAwait(false);
 
-            CREATE TABLE IF NOT EXISTS expense_lines (
-                id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                expense_id          UUID NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
-                sequence            INTEGER NOT NULL,
-                service_date        DATE NULL,
-                item_id             UUID NULL,
-                expense_account_id  UUID NOT NULL,
-                description         TEXT NOT NULL DEFAULT '',
-                quantity            NUMERIC(18,4) NOT NULL DEFAULT 0,
-                unit_price          NUMERIC(18,4) NOT NULL DEFAULT 0,
-                tax_code_id         UUID NULL,
-                line_total          NUMERIC(18,4) NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS idx_expense_lines_expense
-                ON expense_lines (expense_id, sequence);
-
-            -- One-time idempotent migration: legacy seed data put "Cash on
-            -- Hand" under detail_type='bank'. The Payment Account picker
-            -- in Tralanz Books groups by detail_type, so we move it under
-            -- 'cash' to match. Matches by name to be safe across already-
-            -- provisioned companies; only fires when the row is still on
-            -- the old label.
-            UPDATE accounts
-               SET detail_type = 'cash'
-             WHERE name = 'Cash on Hand'
-               AND detail_type = 'bank';
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlSchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "expense_lines",
+            new[]
+            {
+                "id",
+                "expense_id",
+                "sequence",
+                "service_date",
+                "item_id",
+                "expense_account_id",
+                "description",
+                "quantity",
+                "unit_price",
+                "tax_code_id",
+                "line_total"
+            },
+            "Expense line schema has not been installed. Apply database migrations before using expenses.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<ExpenseSummary>> ListAsync(

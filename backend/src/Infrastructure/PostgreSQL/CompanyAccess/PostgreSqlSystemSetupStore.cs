@@ -18,7 +18,6 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureTableAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -50,7 +49,6 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureTableAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -79,23 +77,6 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
         var updatedAt = CoerceTimestamp(await command.ExecuteScalarAsync(cancellationToken));
 
         return new SystemSetupPreference(userId, numberDisplayMode, updatedAt);
-    }
-
-    private static async Task EnsureTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            create table if not exists user_preferences (
-              user_id char(7) primary key,
-              number_display_mode text not null,
-              created_at timestamptz not null default now(),
-              updated_at timestamptz not null default now()
-            );
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static DateTimeOffset CoerceTimestamp(object? value)

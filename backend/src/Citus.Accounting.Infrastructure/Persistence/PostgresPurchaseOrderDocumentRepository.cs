@@ -38,8 +38,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-
         await using var headerCommand = scope.CreateCommand(
             $"""
             select
@@ -151,8 +149,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-
         await using var command = scope.CreateCommand(
             $"""
             select
@@ -231,8 +227,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
         if (!await TableExistsAsync(scope, "audit_logs", cancellationToken))
         {
             return Array.Empty<PurchaseOrderLifecycleAuditEntry>();
@@ -242,7 +236,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             """
             select
               id,
-              entity_id,
+              entity_id::uuid as entity_id,
               action,
               actor_type,
               actor_id,
@@ -254,7 +248,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             from audit_logs
             where company_id = @company_id
               and entity_type = 'purchase_order'
-              and entity_id = @document_id
+              and entity_id = @document_id::text
               and action = any(@actions::text[])
             order by created_at desc, id desc
             limit @take;
@@ -306,8 +300,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
         await EnsureApprovalAuditAvailableAsync(scope, cancellationToken);
 
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
@@ -376,8 +368,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
         if (!await TableExistsAsync(scope, "audit_logs", cancellationToken))
         {
             return null;
@@ -396,8 +386,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
         if (!await TableExistsAsync(scope, "audit_logs", cancellationToken))
         {
             return Array.Empty<PurchaseOrderApprovalRequestRecord>();
@@ -432,8 +420,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
         await EnsureApprovalAuditAvailableAsync(scope, cancellationToken);
 
         var request = await GetApprovalRequestAsync(scope, companyId, documentId, requestId, cancellationToken);
@@ -514,8 +500,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
         await EnsureApprovalAuditAvailableAsync(scope, cancellationToken);
 
         var request = await GetApprovalRequestAsync(scope, companyId, documentId, requestId, cancellationToken);
@@ -576,8 +560,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
 
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         string entityNumber;
@@ -768,8 +750,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     {
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
@@ -833,8 +813,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     {
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
@@ -898,8 +876,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     {
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
@@ -962,8 +938,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     {
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
@@ -1034,8 +1008,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     {
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
@@ -1105,8 +1077,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     {
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, transaction, cancellationToken);
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
@@ -1181,8 +1151,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
 
         if (!await TableExistsAsync(scope, "bills", cancellationToken) ||
             !await TableExistsAsync(scope, "bill_lines", cancellationToken))
@@ -1375,8 +1343,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-
         if (!await TableExistsAsync(scope, "receipt_lines", cancellationToken) ||
             !await TableExistsAsync(scope, PurchaseVarianceLinesTableName, cancellationToken))
         {
@@ -1459,8 +1425,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
-
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
 
         var distinctIds = purchaseOrderIds.Where(static id => id != Guid.Empty).Distinct().ToArray();
         if (distinctIds.Length == 0)
@@ -1664,8 +1628,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-
         var existing = await LoadExistingQuantityDiscrepancyReviewStateAsync(
             scope,
             companyId,
@@ -1825,8 +1787,6 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             _executionContextAccessor,
             cancellationToken);
 
-        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-
         await using var command = scope.CreateCommand(
             $"""
             update {QuantityDiscrepanciesTableName}
@@ -1904,7 +1864,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_id", actorId);
-        command.Parameters.AddWithValue("entity_id", requestId);
+        command.Parameters.AddWithValue("entity_id", requestId.ToString("D"));
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload, JsonOptions));
 
@@ -1958,7 +1918,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await using var command = scope.CreateCommand(
             """
             select
-              entity_id,
+              entity_id::uuid as entity_id,
               actor_type,
               actor_id,
               coalesce(payload ->> 'purchaseOrderId', payload ->> 'PurchaseOrderId') as purchase_order_id,
@@ -1977,7 +1937,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               and entity_type = 'purchase_order_approval_request'
               and action = 'purchase_order_approval_requested'
               and coalesce(payload ->> 'purchaseOrderId', payload ->> 'PurchaseOrderId') = @purchase_order_id
-              and (@request_id is null or entity_id = @request_id)
+              and (@request_id is null or entity_id = @request_id::text)
             order by created_at desc, id desc
             limit 1;
             """);
@@ -2006,7 +1966,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await using var command = scope.CreateCommand(
             """
             select
-              entity_id,
+              entity_id::uuid as entity_id,
               actor_type,
               actor_id,
               coalesce(payload ->> 'purchaseOrderId', payload ->> 'PurchaseOrderId') as purchase_order_id,
@@ -2120,7 +2080,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             from audit_logs
             where company_id = @company_id
               and entity_type = 'purchase_order_approval_request'
-              and entity_id = @request_id
+              and entity_id = @request_id::text
               and action = @action
             order by created_at desc, id desc
             limit 1;
@@ -2444,7 +2404,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_id", actorId);
-        command.Parameters.AddWithValue("entity_id", documentId);
+        command.Parameters.AddWithValue("entity_id", documentId.ToString("D"));
         command.Parameters.AddWithValue("action", action);
         var payload = new Dictionary<string, object?>
         {
@@ -2710,6 +2670,12 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     // never re-emerges on the read path post-warmup. Same pattern as
     // commit 2ef2640.
     private static volatile bool _schemaEnsured;
+
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, null, cancellationToken);
+    }
 
     private static async Task EnsureSchemaAsync(
         NpgsqlConnection connection,

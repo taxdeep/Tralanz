@@ -5,8 +5,6 @@ namespace Infrastructure.PostgreSQL.UnitySearch;
 
 public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory connections) : IUnitySearchStatsStore
 {
-    private int _schemaEnsured;
-
     public async Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(
         CompanyId companyId,
         UserId userId,
@@ -14,7 +12,6 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         int take,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         var items = new List<UnitySearchRecentQueryRecord>();
 
         await using var connection = await connections.OpenAsync(cancellationToken);
@@ -55,7 +52,6 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         int take,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         var items = new List<UnitySearchRecentSelectionRecord>();
 
         await using var connection = await connections.OpenAsync(cancellationToken);
@@ -122,8 +118,6 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         {
             return;
         }
-
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -201,8 +195,6 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         Guid sourceId,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
-
         await using var connection = await connections.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -238,44 +230,4 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
-    {
-        if (Volatile.Read(ref _schemaEnsured) == 1)
-        {
-            return;
-        }
-
-        await using var connection = await connections.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            create table if not exists search_recent_queries (
-              company_id char(7) not null,
-              user_id char(7) not null,
-              context text not null,
-              query_text text not null,
-              used_at_utc timestamptz not null,
-              primary key (company_id, user_id, context, query_text)
-            );
-
-            create index if not exists ix_search_recent_queries_lookup
-              on search_recent_queries (company_id, user_id, context, used_at_utc desc);
-
-            create table if not exists search_click_stats (
-              company_id char(7) not null,
-              user_id char(7) not null,
-              context text not null,
-              entity_type text not null,
-              source_id uuid not null,
-              click_count integer not null default 0,
-              last_clicked_at_utc timestamptz not null,
-              primary key (company_id, user_id, context, entity_type, source_id)
-            );
-
-            create index if not exists ix_search_click_stats_lookup
-              on search_click_stats (company_id, user_id, context, last_clicked_at_utc desc);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        Volatile.Write(ref _schemaEnsured, 1);
-    }
 }

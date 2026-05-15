@@ -40,25 +40,22 @@ public sealed class PostgresFxRateCacheRepository : IFxRateCacheRepository
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists fx_rates_daily (
-                id              uuid primary key default gen_random_uuid(),
-                rate_date       date not null,
-                base_code       char(3) not null,
-                quote_code      char(3) not null,
-                rate            numeric(20, 10) not null,
-                source          text not null,
-                fetched_at      timestamptz not null default now(),
-                constraint fx_rates_daily_unique unique (rate_date, base_code, quote_code)
-            );
-            create index if not exists idx_fx_rates_daily_pair_date
-                on fx_rates_daily (base_code, quote_code, rate_date desc);
-            alter table fx_rates_daily
-                add column if not exists value_basis text not null default 'frankfurter';
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgresSchemaChecks.EnsureTableColumnsAsync(
+            _connectionFactory,
+            "fx_rates_daily",
+            new[]
+            {
+                "id",
+                "rate_date",
+                "base_code",
+                "quote_code",
+                "rate",
+                "source",
+                "fetched_at",
+                "value_basis"
+            },
+            "FX rate cache schema has not been installed. Apply database migrations before using recommended FX rates.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<FxRateCacheRow?> GetAsync(

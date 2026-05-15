@@ -1,3 +1,4 @@
+using Citus.Platform.Core.Abstractions;
 using Citus.Ui.Shared.Business;
 using Citus.Platform.Core.Runtime;
 
@@ -6,7 +7,8 @@ namespace Citus.Accounting.Api;
 public sealed class BusinessRouteGuard(
     BusinessSessionRequestReader sessionReader,
     BusinessRequestContractGuard contractGuard,
-    BusinessSessionDirectory sessionDirectory)
+    BusinessSessionDirectory sessionDirectory,
+    IPlatformBusinessSessionRepository sessionRepository)
 {
     public async Task<BusinessRequestGuardResult> EvaluateAsync(
         string httpMethod,
@@ -35,6 +37,19 @@ public sealed class BusinessRouteGuard(
         {
             return BusinessRequestGuardResult.Reject(
                 "Business session context could not be resolved from the request headers.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        var tokenResult = await ValidateSessionTokenAsync(headers, cancellationToken);
+        if (!tokenResult.Allowed)
+        {
+            return tokenResult;
+        }
+
+        if (tokenResult.Session is null || tokenResult.Session.UserId != session.UserId)
+        {
+            return BusinessRequestGuardResult.Reject(
+                "The business session token does not match the requested user context.",
                 StatusCodes.Status401Unauthorized);
         }
 
@@ -97,33 +112,10 @@ public sealed class BusinessRouteGuard(
                 StatusCodes.Status401Unauthorized);
         }
 
-        if (!sessionDirectory.TryResolve(session, out var resolution, out var directoryError))
-        {
-            return BusinessRequestGuardResult.Reject(
-                directoryError ?? "The business session is not authorized for the requested company context.",
-                StatusCodes.Status403Forbidden);
-        }
+        return BusinessRequestGuardResult.Reject(
+            "Business session token validation requires the asynchronous accounting route guard.",
+            StatusCodes.Status500InternalServerError);
 
-        var companyWriteGate = EvaluateCompanyStatusForWrite(httpMethod, resolution?.ActiveCompany);
-        if (companyWriteGate is not null)
-        {
-            return companyWriteGate with
-            {
-                Resolution = resolution
-            };
-        }
-
-        var resolvedSession = session with
-        {
-            Roles = resolution?.User.Roles ?? Array.Empty<string>()
-        };
-
-        var validation = contractGuard.Validate(arguments, resolvedSession);
-        return validation with
-        {
-            Session = resolvedSession,
-            Resolution = resolution
-        };
     }
 
     private static bool IsWriteMethod(string httpMethod) =>
@@ -131,6 +123,40 @@ public sealed class BusinessRouteGuard(
         HttpMethods.IsPut(httpMethod) ||
         HttpMethods.IsPatch(httpMethod) ||
         HttpMethods.IsDelete(httpMethod);
+
+    private async Task<BusinessRequestGuardResult> ValidateSessionTokenAsync(
+        IHeaderDictionary headers,
+        CancellationToken cancellationToken)
+    {
+        if (!sessionReader.TryReadSessionToken(headers, out var token))
+        {
+            return BusinessRequestGuardResult.Reject(
+                $"Missing required business session token header '{BusinessAuthHeaderNames.SessionToken}' or '{BusinessAuthHeaderNames.LegacySessionToken}'.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        var result = await sessionRepository.ValidateSessionAsync(token, cancellationToken);
+        if (!result.Succeeded)
+        {
+            return BusinessRequestGuardResult.Reject(
+                string.IsNullOrWhiteSpace(result.FailureMessage)
+                    ? "The business session token is invalid or expired."
+                    : result.FailureMessage,
+                StatusCodes.Status401Unauthorized);
+        }
+
+        return new BusinessRequestGuardResult
+        {
+            Allowed = true,
+            StatusCode = StatusCodes.Status200OK,
+            Session = new BusinessSessionContext
+            {
+                UserId = result.UserId,
+                ActiveCompanyId = result.ActiveCompanyId
+            },
+            Resolution = null
+        };
+    }
 
     private static BusinessRequestGuardResult? EvaluateCompanyStatusForWrite(
         string httpMethod,

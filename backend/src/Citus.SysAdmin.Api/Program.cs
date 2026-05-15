@@ -164,6 +164,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+var runtimeSchemaManagementEnabled = ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment);
 
 await using (var startupScope = app.Services.CreateAsyncScope())
 {
@@ -176,13 +177,30 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var aiProviderConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformAiProviderConfigStore>();
     var databaseAdminService = startupScope.ServiceProvider.GetRequiredService<IPlatformDatabaseAdminService>();
     var lockoutPolicy = startupScope.ServiceProvider.GetRequiredService<IPlatformLoginLockoutPolicy>();
+    var metadataRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformMetadataRepository>();
+    var governanceRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformGovernanceRepository>();
+    var firstCompanyProvisioningRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformFirstCompanyProvisioningRepository>();
 
-    await runtimeRepository.EnsureSchemaAsync(CancellationToken.None);
-    await authRepository.EnsureSchemaAsync(CancellationToken.None);
-    await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
-    await aiProviderConfigStore.EnsureSchemaAsync(CancellationToken.None);
-    await databaseAdminService.EnsureSchemaAsync(CancellationToken.None);
-    await lockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
+    if (runtimeSchemaManagementEnabled)
+    {
+        app.Logger.LogWarning(
+            "Runtime schema management is enabled for Citus.SysAdmin.Api. Production deployments should run migrations externally and leave this disabled.");
+
+        await runtimeRepository.EnsureSchemaAsync(CancellationToken.None);
+        await authRepository.EnsureSchemaAsync(CancellationToken.None);
+        await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
+        await aiProviderConfigStore.EnsureSchemaAsync(CancellationToken.None);
+        await databaseAdminService.EnsureSchemaAsync(CancellationToken.None);
+        await lockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
+        await metadataRepository.EnsureSchemaAsync(CancellationToken.None);
+        await governanceRepository.EnsureSchemaAsync(CancellationToken.None);
+        await firstCompanyProvisioningRepository.EnsureSchemaAsync(CancellationToken.None);
+    }
+    else
+    {
+        app.Logger.LogInformation(
+            "Runtime schema management is disabled for Citus.SysAdmin.Api; database migrations must be applied before startup.");
+    }
 
     if (authOptions.Bootstrap.IsActive(builder.Environment.IsDevelopment()))
     {
@@ -439,7 +457,7 @@ core.MapGet(
     "/",
     async (IPlatformMetadataRepository repository, IPlatformMetadataService service, CancellationToken cancellationToken) =>
     {
-        await repository.EnsureSchemaAsync(cancellationToken);
+        await EnsurePlatformMetadataSchemaIfAllowedAsync(repository, runtimeSchemaManagementEnabled, cancellationToken);
         var modules = await service.ListModulesAsync(cancellationToken);
         var entities = await service.ListEntitiesAsync(cancellationToken);
 
@@ -470,7 +488,7 @@ core.MapGet(
     "/modules",
     async (IPlatformMetadataRepository repository, IPlatformMetadataService service, CancellationToken cancellationToken) =>
     {
-        await repository.EnsureSchemaAsync(cancellationToken);
+        await EnsurePlatformMetadataSchemaIfAllowedAsync(repository, runtimeSchemaManagementEnabled, cancellationToken);
         var modules = await service.ListModulesAsync(cancellationToken);
 
         return Results.Ok(modules.Select(module => new
@@ -490,7 +508,7 @@ core.MapGet(
     "/entities",
     async (IPlatformMetadataRepository repository, IPlatformMetadataService service, CancellationToken cancellationToken) =>
     {
-        await repository.EnsureSchemaAsync(cancellationToken);
+        await EnsurePlatformMetadataSchemaIfAllowedAsync(repository, runtimeSchemaManagementEnabled, cancellationToken);
         var entities = await service.ListEntitiesAsync(cancellationToken);
 
         return Results.Ok(entities.Select(entity => new
@@ -511,7 +529,7 @@ core.MapGet(
     "/entities/{name}",
     async (string name, IPlatformMetadataRepository repository, IPlatformMetadataService service, CancellationToken cancellationToken) =>
     {
-        await repository.EnsureSchemaAsync(cancellationToken);
+        await EnsurePlatformMetadataSchemaIfAllowedAsync(repository, runtimeSchemaManagementEnabled, cancellationToken);
         var entity = await service.GetEntityAsync(name, cancellationToken);
 
         return entity is null
@@ -526,7 +544,7 @@ core.MapPost(
     "/entities",
     async (UpsertCoreEntityHttpRequest request, IPlatformMetadataRepository repository, IPlatformMetadataService service, CancellationToken cancellationToken) =>
     {
-        await repository.EnsureSchemaAsync(cancellationToken);
+        await EnsurePlatformMetadataSchemaIfAllowedAsync(repository, runtimeSchemaManagementEnabled, cancellationToken);
 
         try
         {
@@ -1619,6 +1637,24 @@ static PlatformMfaTimelineEntrySummary ToPlatformMfaTimelineEntrySummary(Platfor
         ActorDisplayName = auditEvent.ActorDisplayName,
         CreatedAtUtc = auditEvent.CreatedAtUtc
     };
+
+static bool ShouldApplyRuntimeSchemaManagement(
+    IConfiguration configuration,
+    IHostEnvironment environment)
+{
+    var configured = configuration.GetValue<bool?>("SchemaManagement:ApplyOnStartup")
+        ?? configuration.GetValue<bool?>("Tralanz:SchemaManagement:ApplyOnStartup");
+
+    return configured ?? environment.IsDevelopment();
+}
+
+static Task EnsurePlatformMetadataSchemaIfAllowedAsync(
+    IPlatformMetadataRepository repository,
+    bool runtimeSchemaManagementEnabled,
+    CancellationToken cancellationToken) =>
+    runtimeSchemaManagementEnabled
+        ? repository.EnsureSchemaAsync(cancellationToken)
+        : Task.CompletedTask;
 
 file sealed class FirstCompanySetupDecisionRequest
 {

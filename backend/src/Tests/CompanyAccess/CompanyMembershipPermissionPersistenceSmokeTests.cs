@@ -78,16 +78,43 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
               add column if not exists permissions jsonb not null default '[]'::jsonb;
 
             create table if not exists audit_logs (
-              id uuid primary key,
+              id uuid primary key default gen_random_uuid(),
               company_id char(7) not null,
               actor_type text not null,
-              actor_id uuid null,
+              actor_id char(7) null,
               entity_type text not null,
-              entity_id uuid not null,
+              entity_id text not null,
               action text not null,
-              payload jsonb not null,
+              payload jsonb not null default '{}'::jsonb,
               created_at timestamptz not null default now()
             );
+
+            do $$
+            begin
+              if exists (
+                select 1
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'audit_logs'
+                  and column_name = 'actor_id'
+                  and udt_name = 'uuid'
+              ) then
+                alter table audit_logs
+                  alter column actor_id type char(7) using null;
+              end if;
+
+              if exists (
+                select 1
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'audit_logs'
+                  and column_name = 'entity_id'
+                  and udt_name = 'uuid'
+              ) then
+                alter table audit_logs
+                  alter column entity_id type text using entity_id::text;
+              end if;
+            end $$;
 
             insert into companies (
               id,

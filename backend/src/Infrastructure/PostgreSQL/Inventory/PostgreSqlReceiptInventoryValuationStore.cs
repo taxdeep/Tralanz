@@ -23,6 +23,13 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(
         CompanyId companyId,
         UserId userId,
@@ -32,7 +39,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         if (!await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken) ||
             !await TableExistsAsync(connection, MatchingAllocationsTableName, cancellationToken))
@@ -77,7 +84,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
         var hasMatchingAllocations = await TableExistsAsync(connection, MatchingAllocationsTableName, cancellationToken);
 
@@ -102,7 +109,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         }
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
         var hasMatchingAllocations = await TableExistsAsync(connection, MatchingAllocationsTableName, cancellationToken);
 
@@ -380,11 +387,24 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await TableExistsAsync(connection, ValuationLinesTableName, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Receipt inventory valuation schema has not been installed. Apply database migrations before valuing receipts.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -392,6 +412,12 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await TableExistsAsync(connection, ValuationLinesTableName, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 

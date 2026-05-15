@@ -19,6 +19,7 @@ public sealed class PostgreSqlCompanyIdAllocatorTests
             var allocator = new PostgreSqlCompanyIdAllocator();
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsurePlatformCompanyIdSequenceAsync(connection);
 
             var id = await allocator.AllocateAsync(connection, null, CancellationToken.None);
 
@@ -45,6 +46,8 @@ public sealed class PostgreSqlCompanyIdAllocatorTests
             var companyAllocator = new PostgreSqlCompanyIdAllocator();
             await using var connection = new NpgsqlConnection(schemaConn);
             await connection.OpenAsync();
+            await IdentityTestSchema.EnsurePlatformUserIdSequenceAsync(connection);
+            await IdentityTestSchema.EnsurePlatformCompanyIdSequenceAsync(connection);
 
             await userAllocator.AllocateAsync(connection, null, CancellationToken.None); // U000001
             await userAllocator.AllocateAsync(connection, null, CancellationToken.None); // U000002

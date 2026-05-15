@@ -20,6 +20,13 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
     }
 
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        await _foundationStore.EnsureSchemaAsync(cancellationToken);
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: true);
+    }
+
     public async Task<InventoryPurchaseReceiptDashboard> GetDashboardAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
@@ -27,7 +34,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, null, companyId, cancellationToken);
         var activeItems = await LoadActiveItemsAsync(connection, null, companyId, cancellationToken);
@@ -50,7 +57,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         var (billInboundLineCount, billInboundQuantity) = await LoadBillInboundSummaryAsync(
             connection,
@@ -161,7 +168,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -265,7 +272,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         _ = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
-        await EnsureSchemaAsync(connection, cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -653,11 +660,24 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCreate)
     {
         if (_schemaEnsured)
         {
             return;
+        }
+
+        if (await CoreSchemaExistsAsync(connection, cancellationToken))
+        {
+            _schemaEnsured = true;
+            return;
+        }
+
+        if (!allowCreate)
+        {
+            throw new InvalidOperationException(
+                "Inventory receipt schema has not been installed. Apply database migrations before using inventory receipts.");
         }
 
         await _schemaLock.WaitAsync(cancellationToken);
@@ -665,6 +685,12 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             if (_schemaEnsured)
             {
+                return;
+            }
+
+            if (await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                _schemaEnsured = true;
                 return;
             }
 
@@ -685,6 +711,26 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         {
             _schemaLock.Release();
         }
+    }
+
+    private static async Task<bool> CoreSchemaExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              to_regclass('inventory_documents') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'document_number');
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
     }
 
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(

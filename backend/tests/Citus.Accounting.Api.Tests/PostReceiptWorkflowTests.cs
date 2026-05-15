@@ -106,6 +106,9 @@ public sealed class PostReceiptWorkflowTests
 
         public int PostCalls { get; private set; }
 
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public Task<ReceiptDocument?> GetAsync(CompanyId companyId, Guid documentId, CancellationToken cancellationToken) =>
             Task.FromResult<ReceiptDocument?>(_document is not null && _document.Id == documentId ? _document : null);
 
@@ -138,6 +141,9 @@ public sealed class PostReceiptWorkflowTests
         public int ValidateCalls { get; private set; }
 
         public int ActivateCalls { get; private set; }
+
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
 
         public Task ValidateCanActivateAsync(CompanyId companyId, Guid receiptDocumentId, CancellationToken cancellationToken)
         {
@@ -174,6 +180,9 @@ public sealed class PostReceiptWorkflowTests
     {
         public int RefreshCalls { get; private set; }
 
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(CompanyId companyId, UserId userId, Guid receiptDocumentId, CancellationToken cancellationToken)
         {
             RefreshCalls++;
@@ -199,6 +208,9 @@ public sealed class PostReceiptWorkflowTests
     private sealed class FakeReceiptInventoryCostLayerEmissionStore : IReceiptInventoryCostLayerEmissionStore
     {
         public int EmitCalls { get; private set; }
+
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
 
         public Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersAsync(CompanyId companyId, UserId userId, Guid receiptDocumentId, CancellationToken cancellationToken)
         {

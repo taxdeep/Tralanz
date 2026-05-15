@@ -9,6 +9,7 @@ using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Companies;
 using Citus.Accounting.Application.Invoices;
 using Citus.Accounting.Application.Queries;
+using Citus.Accounting.Application.Reconciliation;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
@@ -33,6 +34,7 @@ using Citus.Modules.Inventory.Domain.Shared;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Accounts;
 using Infrastructure.PostgreSQL.BusinessAuth;
+using Infrastructure.PostgreSQL.Banking;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.AP.Bills;
@@ -241,6 +243,7 @@ builder.Services.AddScoped<PrepareFxRevaluationUnwindBatchCommandHandler>();
 builder.Services.AddScoped<PrepareFxRevaluationCascadeUnwindBatchCommandHandler>();
 builder.Services.AddScoped<PostFxRevaluationBatchCommandHandler>();
 builder.Services.AddScoped<PostFxRevaluationCascadeUnwindCommandHandler>();
+builder.Services.AddSingleton<IBankReconciliationStore, PostgreSqlBankReconciliationStore>();
 builder.Services.AddSingleton<UnitySearchPolicyRegistry>();
 builder.Services.AddSingleton<IUnitySearchProjectionStore, PostgreSqlUnitySearchProjectionStore>();
 builder.Services.AddSingleton<IUnitySearchQueryService, PostgreSqlUnitySearchQueryService>();
@@ -513,7 +516,7 @@ builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCen
     sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
 builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCenterTaskProvider(
     name: "bank_unmatched_transactions",
-    missingDomain: "banking / reconciliation module not yet present",
+    missingDomain: "bank reconciliation task aggregate not yet exposed",
     sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
 builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCenterTaskProvider(
     name: "sales_tax_filing_due",
@@ -552,74 +555,115 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-await using (var startupScope = app.Services.CreateAsyncScope())
+if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
 {
-    var runtimeStateRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformRuntimeStateRepository>();
-    var adjustmentAccountMappingRepository = startupScope.ServiceProvider.GetRequiredService<IOpenItemAdjustmentAccountMappingRepository>();
-    var unitySearchProjectionStore = startupScope.ServiceProvider.GetRequiredService<IUnitySearchProjectionStore>();
-    var unityAiSchemaInitializer = startupScope.ServiceProvider.GetRequiredService<PostgreSqlUnityAiSchemaInitializer>();
-    var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
-    var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
-    var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
-    var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
-    var customerShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<ICustomerShippingAddressBookStore>();
-    var vendorShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<IVendorShippingAddressBookStore>();
-    var vendorStore = startupScope.ServiceProvider.GetRequiredService<IVendorStore>();
-    var paymentTermStore = startupScope.ServiceProvider.GetRequiredService<IPaymentTermStore>();
-    var quoteStore = startupScope.ServiceProvider.GetRequiredService<IQuoteStore>();
-    var salesOrderStore = startupScope.ServiceProvider.GetRequiredService<ISalesOrderStore>();
-    var billStore = startupScope.ServiceProvider.GetRequiredService<IBillStore>();
-    var purchaseOrderStore = startupScope.ServiceProvider.GetRequiredService<IPurchaseOrderStore>();
-    var expenseStore = startupScope.ServiceProvider.GetRequiredService<IExpenseStore>();
-    var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
-    var invoiceSendHistoryStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceSendHistoryStore>();
-    var invoiceTemplateStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceTemplateStore>();
-    var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformSmtpConfigStore>();
-    var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
-    var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
-    var businessPasswordResetService = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService>();
-    var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
-    var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
-    var v1WriteFlowSchema = startupScope.ServiceProvider.GetRequiredService<PostgresV1WriteFlowSchemaBootstrap>();
-    await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
-    // Platform tables (currency_catalog, companies, users, company_memberships,
-    // company_books, etc.) must exist FIRST because the master entity tables
-    // below (customers, vendors, accounts) and v1WriteFlow all FK to companies.
-    // On a fresh DB the earlier ordering blew up with 42P01: relation "companies"
-    // does not exist.
-    await platformSchema.EnsureAsync(CancellationToken.None);
-    // Master entities: must exist before v1WriteFlow which FKs / indexes them.
-    await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
-    await accountStore.EnsureSchemaAsync(CancellationToken.None);
-    await customerStore.EnsureSchemaAsync(CancellationToken.None);
-    await customerShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
-    await vendorStore.EnsureSchemaAsync(CancellationToken.None);
-    await vendorShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
-    await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
-    // fxRateCache creates `company_fx_rate_snapshots` which v1WriteFlow indexes.
-    await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
-    // Transactional tables in v1WriteFlow (invoices, bills, receive_payments,
-    // credit_notes, etc.) FK back to customers / vendors / accounts. Then
-    // customerDepositSchema ALTERs receive_payments to add extra_deposit_amount.
-    await v1WriteFlowSchema.EnsureSchemaAsync(CancellationToken.None);
-    await customerDepositSchema.EnsureSchemaAsync(CancellationToken.None);
-    await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
-    await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
-    await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
-    await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
-    await quoteStore.EnsureSchemaAsync(CancellationToken.None);
-    await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
-    await billStore.EnsureSchemaAsync(CancellationToken.None);
-    await purchaseOrderStore.EnsureSchemaAsync(CancellationToken.None);
-    await expenseStore.EnsureSchemaAsync(CancellationToken.None);
-    await invoiceSendHistoryStore.EnsureSchemaAsync(CancellationToken.None);
-    await invoiceTemplateStore.EnsureSchemaAsync(CancellationToken.None);
-    await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
-    // business_sessions / mfa_challenges / mfa_enrollments tables need
-    // to exist before /auth/login can issue tokens or fetch user records.
-    await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
-    await businessPasswordResetService.EnsureSchemaAsync(CancellationToken.None);
-    await loginLockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
+    app.Logger.LogWarning(
+        "Runtime schema management is enabled for Citus.Accounting.Api. Production deployments should run migrations externally and leave this disabled.");
+
+    await using (var startupScope = app.Services.CreateAsyncScope())
+    {
+        var runtimeStateRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformRuntimeStateRepository>();
+        var accountingPeriodRepository = startupScope.ServiceProvider.GetRequiredService<IAccountingPeriodRepository>();
+        var receiptDocumentRepository = startupScope.ServiceProvider.GetRequiredService<IReceiptDocumentRepository>();
+        var purchaseOrderDocumentRepository = startupScope.ServiceProvider.GetRequiredService<IPurchaseOrderDocumentRepository>();
+        var billReceiptMatchingRepository = startupScope.ServiceProvider.GetRequiredService<IBillReceiptMatchingRepository>();
+        var inventoryFoundationStore = startupScope.ServiceProvider.GetRequiredService<IInventoryFoundationStore>();
+        var inventoryReceiptStore = startupScope.ServiceProvider.GetRequiredService<IInventoryReceiptStore>();
+        var inventoryIssueStore = startupScope.ServiceProvider.GetRequiredService<IInventoryIssueStore>();
+        var inventoryShipmentStore = startupScope.ServiceProvider.GetRequiredService<IInventoryShipmentStore>();
+        var receiptInventoryActivationStore = startupScope.ServiceProvider.GetRequiredService<IReceiptInventoryActivationStore>();
+        var receiptInventoryValuationStore = startupScope.ServiceProvider.GetRequiredService<IReceiptInventoryValuationStore>();
+        var receiptInventoryCostLayerEmissionStore = startupScope.ServiceProvider.GetRequiredService<IReceiptInventoryCostLayerEmissionStore>();
+        var receiptGrIrBridgeStore = startupScope.ServiceProvider.GetRequiredService<IReceiptGrIrBridgeStore>();
+        var receiptGrIrPostingRepository = startupScope.ServiceProvider.GetRequiredService<IReceiptGrIrPostingRepository>();
+        var receiptGrIrSettlementStore = startupScope.ServiceProvider.GetRequiredService<IReceiptGrIrApSettlementControlStore>();
+        var receiptGrIrSettlementPostingRepository = startupScope.ServiceProvider.GetRequiredService<IReceiptGrIrSettlementPostingRepository>();
+        var adjustmentAccountMappingRepository = startupScope.ServiceProvider.GetRequiredService<IOpenItemAdjustmentAccountMappingRepository>();
+        var unitySearchProjectionStore = startupScope.ServiceProvider.GetRequiredService<IUnitySearchProjectionStore>();
+        var unityAiSchemaInitializer = startupScope.ServiceProvider.GetRequiredService<PostgreSqlUnityAiSchemaInitializer>();
+        var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
+        var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
+        var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
+        var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
+        var customerShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<ICustomerShippingAddressBookStore>();
+        var vendorShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<IVendorShippingAddressBookStore>();
+        var vendorStore = startupScope.ServiceProvider.GetRequiredService<IVendorStore>();
+        var paymentTermStore = startupScope.ServiceProvider.GetRequiredService<IPaymentTermStore>();
+        var quoteStore = startupScope.ServiceProvider.GetRequiredService<IQuoteStore>();
+        var salesOrderStore = startupScope.ServiceProvider.GetRequiredService<ISalesOrderStore>();
+        var billStore = startupScope.ServiceProvider.GetRequiredService<IBillStore>();
+        var purchaseOrderStore = startupScope.ServiceProvider.GetRequiredService<IPurchaseOrderStore>();
+        var expenseStore = startupScope.ServiceProvider.GetRequiredService<IExpenseStore>();
+        var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
+        var invoiceSendHistoryStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceSendHistoryStore>();
+        var invoiceTemplateStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceTemplateStore>();
+        var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformSmtpConfigStore>();
+        var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
+        var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
+        var businessPasswordResetService = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService>();
+        var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
+        var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
+        var v1WriteFlowSchema = startupScope.ServiceProvider.GetRequiredService<PostgresV1WriteFlowSchemaBootstrap>();
+        await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
+        // Platform tables (currency_catalog, companies, users, company_memberships,
+        // company_books, etc.) must exist FIRST because the master entity tables
+        // below (customers, vendors, accounts) and v1WriteFlow all FK to companies.
+        // On a fresh DB the earlier ordering blew up with 42P01: relation "companies"
+        // does not exist.
+        await platformSchema.EnsureAsync(CancellationToken.None);
+        // Master entities: must exist before v1WriteFlow which FKs / indexes them.
+        await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
+        await accountStore.EnsureSchemaAsync(CancellationToken.None);
+        await customerStore.EnsureSchemaAsync(CancellationToken.None);
+        await customerShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
+        await vendorStore.EnsureSchemaAsync(CancellationToken.None);
+        await vendorShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
+        await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
+        // fxRateCache creates `company_fx_rate_snapshots` which v1WriteFlow indexes.
+        await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
+        // Transactional tables in v1WriteFlow (invoices, bills, receive_payments,
+        // credit_notes, etc.) FK back to customers / vendors / accounts. Then
+        // customerDepositSchema ALTERs receive_payments to add extra_deposit_amount.
+        await v1WriteFlowSchema.EnsureSchemaAsync(CancellationToken.None);
+        await customerDepositSchema.EnsureSchemaAsync(CancellationToken.None);
+        await accountingPeriodRepository.EnsureSchemaAsync(CancellationToken.None);
+        await receiptDocumentRepository.EnsureSchemaAsync(CancellationToken.None);
+        await purchaseOrderDocumentRepository.EnsureSchemaAsync(CancellationToken.None);
+        await billReceiptMatchingRepository.EnsureSchemaAsync(CancellationToken.None);
+        await inventoryFoundationStore.EnsureSchemaAsync(CancellationToken.None);
+        await inventoryReceiptStore.EnsureSchemaAsync(CancellationToken.None);
+        await inventoryIssueStore.EnsureSchemaAsync(CancellationToken.None);
+        await inventoryShipmentStore.EnsureSchemaAsync(CancellationToken.None);
+        await receiptInventoryActivationStore.EnsureSchemaAsync(CancellationToken.None);
+        await receiptInventoryValuationStore.EnsureSchemaAsync(CancellationToken.None);
+        await receiptInventoryCostLayerEmissionStore.EnsureSchemaAsync(CancellationToken.None);
+        await receiptGrIrBridgeStore.EnsureSchemaAsync(CancellationToken.None);
+        await receiptGrIrPostingRepository.EnsureSchemaAsync(CancellationToken.None);
+        await receiptGrIrSettlementStore.EnsureSchemaAsync(CancellationToken.None);
+        await receiptGrIrSettlementPostingRepository.EnsureSchemaAsync(CancellationToken.None);
+        await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
+        await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
+        await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
+        await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
+        await quoteStore.EnsureSchemaAsync(CancellationToken.None);
+        await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
+        await billStore.EnsureSchemaAsync(CancellationToken.None);
+        await purchaseOrderStore.EnsureSchemaAsync(CancellationToken.None);
+        await expenseStore.EnsureSchemaAsync(CancellationToken.None);
+        await invoiceSendHistoryStore.EnsureSchemaAsync(CancellationToken.None);
+        await invoiceTemplateStore.EnsureSchemaAsync(CancellationToken.None);
+        await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
+        // business_sessions / mfa_challenges / mfa_enrollments tables need
+        // to exist before /auth/login can issue tokens or fetch user records.
+        await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
+        await businessPasswordResetService.EnsureSchemaAsync(CancellationToken.None);
+        await loginLockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
+    }
+}
+else
+{
+    app.Logger.LogInformation(
+        "Runtime schema management is disabled for Citus.Accounting.Api; database migrations must be applied before startup.");
 }
 
 // ---------------------------------------------------------------------------
@@ -717,14 +761,7 @@ app.MapGet(
         Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
         CancellationToken cancellationToken) =>
     {
-        if (!httpContext.Request.Headers.TryGetValue(
-                Citus.Ui.Shared.Business.BusinessAuthHeaderNames.SessionToken,
-                out var tokenValues))
-        {
-            return Results.Unauthorized();
-        }
-
-        var token = tokenValues.FirstOrDefault();
+        var token = ReadBusinessSessionToken(httpContext);
         if (string.IsNullOrWhiteSpace(token))
         {
             return Results.Unauthorized();
@@ -751,15 +788,10 @@ app.MapPost(
         Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository repository,
         CancellationToken cancellationToken) =>
     {
-        if (httpContext.Request.Headers.TryGetValue(
-                Citus.Ui.Shared.Business.BusinessAuthHeaderNames.SessionToken,
-                out var tokenValues))
+        var token = ReadBusinessSessionToken(httpContext);
+        if (!string.IsNullOrWhiteSpace(token))
         {
-            var token = tokenValues.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(token))
-            {
-                await repository.RevokeSessionAsync(token, cancellationToken);
-            }
+            await repository.RevokeSessionAsync(token, cancellationToken);
         }
 
         return Results.NoContent();
@@ -878,6 +910,25 @@ static TimeSpan ResolveBusinessSessionLifetime(IConfiguration configuration)
     return TimeSpan.FromHours(hours);
 }
 
+static string? ReadBusinessSessionToken(HttpContext httpContext)
+{
+    if (httpContext.Request.Headers.TryGetValue(
+            Citus.Ui.Shared.Business.BusinessAuthHeaderNames.SessionToken,
+            out var tokenValues))
+    {
+        return tokenValues.FirstOrDefault();
+    }
+
+    if (httpContext.Request.Headers.TryGetValue(
+            Citus.Ui.Shared.Business.BusinessAuthHeaderNames.LegacySessionToken,
+            out tokenValues))
+    {
+        return tokenValues.FirstOrDefault();
+    }
+
+    return null;
+}
+
 static async Task<Citus.Ui.Shared.Business.BusinessAuthSessionSummary?> BuildBusinessSessionSummaryAsync(
     Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
     UserId userId,
@@ -926,6 +977,16 @@ static Citus.Ui.Shared.Business.BusinessCompanySummary ToBusinessCompanySummary(
         IsReadOnly = company.IsReadOnly
     };
 
+static bool ShouldApplyRuntimeSchemaManagement(
+    IConfiguration configuration,
+    IHostEnvironment environment)
+{
+    var configured = configuration.GetValue<bool?>("SchemaManagement:ApplyOnStartup")
+        ?? configuration.GetValue<bool?>("Tralanz:SchemaManagement:ApplyOnStartup");
+
+    return configured ?? environment.IsDevelopment();
+}
+
 var accounting = app.MapGroup("/accounting");
 
 accounting.AddEndpointFilterFactory(
@@ -956,6 +1017,7 @@ accounting.AddEndpointFilterFactory(
                         scheduledUntilUtc = maintenanceState?.ScheduledUntilUtc,
                         requiredHeaders = new[]
                         {
+                            Citus.Ui.Shared.Business.BusinessAuthHeaderNames.SessionToken,
                             BusinessSessionHeaders.UserId,
                             BusinessSessionHeaders.ActiveCompanyId
                         }
@@ -6557,11 +6619,9 @@ static SalesOrderUpsertInput MapSalesOrderInput(SalesOrderUpsertHttpRequest requ
 // ===========================================================================
 // Bills (vendor invoices) — AP-side document lifecycle.
 //
-// V1 surface: list / get / create-as-draft / edit-draft / post / void.
-// Post is a pure status transition in V1; the heavy posting pipeline
-// (PostBillCommandHandler — FX snapshot, AP open item, journal entry)
-// gets wired in alongside the PO + Inventory batch. Void is also pure
-// status today; reversing the GL entries lands with the same batch.
+// Legacy surface: list / get / create-as-draft / edit-draft / draft void.
+// Posting is intentionally blocked here. Bills must not become "posted"
+// unless the canonical posting engine writes the journal and AP open item.
 // ===========================================================================
 
 accounting.MapGet(
@@ -6684,22 +6744,14 @@ accounting.MapPost(
     "/ap/bills/{billId:guid}/post",
     async (
         Guid billId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBillStore store,
         CancellationToken cancellationToken) =>
     {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        try
+        await Task.CompletedTask;
+        return Results.Conflict(new
         {
-            var saved = await store.PostAsync(session.ActiveCompanyId, billId, cancellationToken);
-            return saved is null ? Results.NotFound() : Results.Ok(saved);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
+            code = "legacy_bill_posting_disabled",
+            message = "Bill posting is disabled on this legacy Bills page because it would not create the required journal entry and AP open item. Use the canonical bill posting workflow."
+        });
     });
 
 accounting.MapPost(
@@ -7289,6 +7341,130 @@ static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => n
             UnitPrice: l.UnitPrice,
             TaxCodeId: l.TaxCodeId))
         .ToArray());
+
+// ===========================================================================
+// Bank Reconciliation
+//
+// This surface reconciles posted ledger_entries for one bank, cash, or
+// credit-card statement account.
+// Completion is backend-owned: the store re-loads selected ledger rows inside
+// a serializable transaction, locks them, rejects non-zero differences, then
+// inserts immutable reconciliation header + line snapshots.
+// ===========================================================================
+
+accounting.MapGet(
+    "/reconciliation/ledger",
+    async (
+        Guid accountId,
+        DateOnly? statementDate,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (accountId == Guid.Empty) return Results.BadRequest(new { message = "Statement account is required." });
+        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var rows = await store.ListUnreconciledLedgerEntriesAsync(
+                session.ActiveCompanyId,
+                accountId,
+                statementDate ?? DateOnly.FromDateTime(DateTime.Today),
+                cancellationToken);
+            return Results.Ok(new BankReconciliationLedgerResponse(rows));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/reconciliation/complete",
+    async (
+        BankReconciliationCompleteHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "complete");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var validation = ValidateBankReconciliationRequest(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var summary = await store.CompleteAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                new BankReconciliationCompleteInput(
+                    request.BankAccountId,
+                    request.StatementDate,
+                    request.OpeningBalance,
+                    request.EndingBalance,
+                    request.LedgerEntryIds,
+                    request.Notes),
+                cancellationToken);
+            return Results.Ok(summary);
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.Conflict(new
+            {
+                message = "This statement or one of its ledger entries has already been reconciled.",
+                constraint = ex.ConstraintName
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+static string? ValidateBankReconciliationRequest(BankReconciliationCompleteHttpRequest request)
+{
+    if (request.BankAccountId == Guid.Empty) return "Statement account is required.";
+    if (request.StatementDate == default) return "Statement date is required.";
+    if (request.LedgerEntryIds is null || request.LedgerEntryIds.Count == 0) return "Select at least one ledger entry.";
+    if (request.LedgerEntryIds.Any(id => id == Guid.Empty)) return "Selected ledger entries must be valid ids.";
+    return null;
+}
+
+static IResult? RequireBankReconciliationAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluateBankReconciliationAccess(session, transitionCode);
+    if (decision.Allowed)
+    {
+        return null;
+    }
+
+    return Results.Json(
+        new
+        {
+            message = decision.Message,
+            outcomeCode = decision.OutcomeCode
+        },
+        statusCode: decision.OutcomeCode == "blocked_session_required"
+            ? StatusCodes.Status401Unauthorized
+            : StatusCodes.Status403Forbidden);
+}
 
 // ===========================================================================
 // Chart of Accounts (per-company)

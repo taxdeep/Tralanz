@@ -24,7 +24,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureSchemaAsync(scope, cancellationToken);
+        await EnsureSchemaInstalledAsync(scope, cancellationToken);
 
         await using var command = scope.CreateCommand(
             """
@@ -59,7 +59,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
             _connections,
             _executionContextAccessor,
             cancellationToken);
-        await EnsureSchemaAsync(scope, cancellationToken);
+        await EnsureSchemaInstalledAsync(scope, cancellationToken);
         await EnsureActiveAccountAsync(scope, companyId, grIrClearingAccountId, cancellationToken);
 
         await using var command = scope.CreateCommand(
@@ -118,19 +118,43 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
         }
     }
 
-    private static async Task EnsureSchemaAsync(
+    private static async Task EnsureSchemaInstalledAsync(
         PostgresCommandScope scope,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
             """
-            create table if not exists receipt_grir_clearing_account_policies (
-              company_id char(7) primary key references companies(id) on delete cascade,
-              grir_clearing_account_id uuid not null references accounts(id),
-              updated_by_user_id char(7) not null,
-              updated_at timestamptz not null default now()
-            );
+            select
+              to_regclass('receipt_grir_clearing_account_policies') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'receipt_grir_clearing_account_policies'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'receipt_grir_clearing_account_policies'
+                  and column_name = 'grir_clearing_account_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'receipt_grir_clearing_account_policies'
+                  and column_name = 'updated_by_user_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'receipt_grir_clearing_account_policies'
+                  and column_name = 'updated_at');
             """);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "GR/IR clearing account policy schema has not been installed. Apply database migrations before configuring the policy.");
+        }
     }
 }

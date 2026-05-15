@@ -75,7 +75,7 @@ public sealed class PostgresAuditLogReader : IAuditLogReader
                 ActorId: reader.IsDBNull(3) ? (UserId?)null : UserId.Parse(reader.GetString(3)),
                 ActorDisplay: reader.IsDBNull(4) ? null : reader.GetString(4),
                 EntityType: reader.GetString(5),
-                EntityId: reader.GetGuid(6),
+                EntityId: Guid.Parse(reader.GetString(6)),
                 Action: reader.GetString(7),
                 PayloadJson: reader.IsDBNull(8) ? "{}" : reader.GetString(8),
                 CreatedAt: reader.GetFieldValue<DateTimeOffset>(9)));

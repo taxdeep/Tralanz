@@ -18,34 +18,26 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        const string sql = """
-            create table if not exists customer_shipping_address_book (
-                id uuid primary key default gen_random_uuid(),
-                company_id char(7) not null references companies(id) on delete cascade,
-                customer_id uuid not null references customers(id) on delete cascade,
-                label text,
-                address_line text not null default '',
-                city text not null default '',
-                province_state text not null default '',
-                postal_code text not null default '',
-                country text not null default '',
-                is_default boolean not null default false,
-                created_at timestamptz not null default now(),
-                updated_at timestamptz not null default now()
-            );
-
-            create index if not exists ix_customer_shipping_address_book_customer
-                on customer_shipping_address_book (company_id, customer_id);
-
-            create unique index if not exists uq_customer_shipping_address_book_default
-                on customer_shipping_address_book (company_id, customer_id)
-                where is_default;
-            """;
-
-        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlCounterpartySchemaChecks.EnsureTableColumnsAsync(
+            connections,
+            "customer_shipping_address_book",
+            new[]
+            {
+                "id",
+                "company_id",
+                "customer_id",
+                "label",
+                "address_line",
+                "city",
+                "province_state",
+                "postal_code",
+                "country",
+                "is_default",
+                "created_at",
+                "updated_at"
+            },
+            "Customer shipping address book schema has not been installed. Apply database migrations before using customer shipping addresses.",
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<CustomerShippingAddressBookEntry>> ListAsync(

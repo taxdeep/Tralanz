@@ -487,20 +487,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
         int year,
         CancellationToken cancellationToken)
     {
-        await using (var ensureSequence = connection.CreateCommand())
-        {
-            ensureSequence.Transaction = transaction;
-            ensureSequence.CommandText =
-                """
-                create table if not exists company_entity_number_sequences (
-                  company_id char(7) not null,
-                  entity_year integer not null,
-                  next_ordinal bigint not null,
-                  primary key (company_id, entity_year)
-                );
-                """;
-            await ensureSequence.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await EnsureCompanyEntityNumberSequenceInstalledAsync(connection, transaction, cancellationToken);
 
         var seedNumber = await FindEntitySeedNumberAsync(connection, transaction, companyId, year, cancellationToken);
 
@@ -535,6 +522,43 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
 
         var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
         return $"EN{year}{Base36.Encode(issuedNumber, 5)}";
+    }
+
+    private static async Task EnsureCompanyEntityNumberSequenceInstalledAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              to_regclass('company_entity_number_sequences') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'company_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'entity_year')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'company_entity_number_sequences'
+                  and column_name = 'next_ordinal');
+            """;
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException(
+                "Entity number sequence schema has not been installed. Apply database migrations before provisioning currency control accounts.");
+        }
     }
 
     private static async Task<long> FindEntitySeedNumberAsync(
