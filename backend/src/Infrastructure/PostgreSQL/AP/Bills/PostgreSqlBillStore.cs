@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Repositories;
+using Modules.AP;
 using Modules.AP.Bills;
 using Npgsql;
 using NpgsqlTypes;
@@ -394,7 +395,11 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     {
         var documentCurrency = input.DocumentCurrencyCode.Trim().ToUpperInvariant();
         var sameCurrency = string.Equals(documentCurrency, baseCurrencyCode, StringComparison.Ordinal);
-        var fxRate = input.FxRate ?? (sameCurrency ? 1m : 1m);
+        var fxRate = FxRatePostingPolicy.ResolveTransactionToBaseRate(
+            input.FxRate,
+            documentCurrency,
+            baseCurrencyCode,
+            "bill");
         var fxSource = sameCurrency ? "identity" : "manual";
 
         var (subtotal, tax, total) = ComputeTotals(input);

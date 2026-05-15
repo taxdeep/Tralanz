@@ -1,6 +1,8 @@
 using Modules.AP.Expenses;
+using Modules.AP;
 using Npgsql;
 using NpgsqlTypes;
+using Infrastructure.PostgreSQL.Numbering;
 
 namespace Infrastructure.PostgreSQL.AP.Expenses;
 
@@ -183,7 +185,11 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         var (subtotal, discount, tax, total) = ComputeTotals(input);
         var transactionCurrency = input.TransactionCurrencyCode.Trim().ToUpperInvariant();
         var sameCurrency = string.Equals(transactionCurrency, baseCurrencyCode, StringComparison.Ordinal);
-        var fxRate = input.FxRate ?? (sameCurrency ? 1m : 1m);
+        var fxRate = FxRatePostingPolicy.ResolveTransactionToBaseRate(
+            input.FxRate,
+            transactionCurrency,
+            baseCurrencyCode,
+            "expense");
         var fxSource = sameCurrency ? "identity" : "manual";
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -249,7 +255,42 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             expenseId = (Guid)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         }
 
-        await InsertLinesAsync(connection, transaction, expenseId, input.Lines, cancellationToken).ConfigureAwait(false);
+        var activeLines = input.Lines
+            .Where(static line => line.ExpenseAccountId != Guid.Empty && (line.Quantity > 0m || line.UnitPrice > 0m))
+            .ToArray();
+
+        await InsertLinesAsync(connection, transaction, expenseId, activeLines, cancellationToken).ConfigureAwait(false);
+        var journalEntryId = await InsertPostedExpenseJournalAsync(
+            connection,
+            transaction,
+            companyId,
+            createdByUserId,
+            expenseId,
+            entityNumber,
+            input,
+            activeLines,
+            transactionCurrency,
+            baseCurrencyCode,
+            fxRate,
+            total,
+            discount,
+            cancellationToken).ConfigureAwait(false);
+
+        await using (var updateJournalCommand = connection.CreateCommand())
+        {
+            updateJournalCommand.Transaction = transaction;
+            updateJournalCommand.CommandText = """
+                UPDATE expenses
+                   SET posted_journal_entry_id = @journal_entry_id,
+                       updated_at = NOW()
+                 WHERE company_id = @company_id AND id = @id;
+                """;
+            updateJournalCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+            updateJournalCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            updateJournalCommand.Parameters.AddWithValue("id", expenseId);
+            await updateJournalCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         var saved = await GetByIdAsync(companyId, expenseId, cancellationToken).ConfigureAwait(false);
@@ -262,39 +303,73 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE expenses
-               SET status     = 'voided',
-                   voided_at  = NOW(),
-                   updated_at = NOW()
-             WHERE company_id = @company_id AND id = @id AND status = 'posted'
-            RETURNING id;
-            """;
-        command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("id", expenseId);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        if (result is null)
+        ExpenseRecord expense;
+        await using (var checkCmd = connection.CreateCommand())
         {
-            await using var checkCmd = connection.CreateCommand();
-            checkCmd.CommandText = "SELECT status FROM expenses WHERE company_id = @company_id AND id = @id LIMIT 1;";
+            checkCmd.Transaction = transaction;
+            checkCmd.CommandText = SelectColumns + " WHERE e.company_id = @company_id AND e.id = @id FOR UPDATE OF e;";
             checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
             checkCmd.Parameters.AddWithValue("id", expenseId);
-            var status = (string?)await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            if (status is null) return null;
-            throw new InvalidOperationException($"Expense in status '{status}' cannot be voided.");
+            await using var reader = await checkCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+            expense = MapRecord(reader, lines: Array.Empty<ExpenseLineRecord>());
         }
+
+        if (!string.Equals(expense.Status, ExpenseStatus.Posted, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Expense in status '{expense.Status}' cannot be voided.");
+        }
+
+        var lines = await ReadLinesAsync(connection, expenseId, cancellationToken, transaction).ConfigureAwait(false);
+        expense = expense with { Lines = lines };
+
+        if (expense.PostedJournalEntryId is { })
+        {
+            await InsertVoidedExpenseJournalAsync(
+                connection,
+                transaction,
+                expense,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE expenses
+                   SET status     = 'voided',
+                       voided_at  = NOW(),
+                       updated_at = NOW()
+                 WHERE company_id = @company_id AND id = @id AND status = 'posted';
+                """;
+            command.Parameters.AddWithValue("company_id", companyId.Value);
+            command.Parameters.AddWithValue("id", expenseId);
+
+            var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (affectedRows != 1)
+            {
+                throw new InvalidOperationException("Expense could not be marked voided.");
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return await GetByIdAsync(companyId, expenseId, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<ExpenseLineRecord>> ReadLinesAsync(
         NpgsqlConnection connection,
         Guid expenseId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
         var lines = new List<ExpenseLineRecord>();
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT id, expense_id, sequence, service_date, item_id, expense_account_id,
                    description, quantity, unit_price, tax_code_id, line_total
@@ -386,6 +461,518 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
 
         return (subtotal, discount, tax, total);
     }
+
+    private static async Task<Guid> InsertPostedExpenseJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId userId,
+        Guid expenseId,
+        string expenseNumber,
+        ExpenseUpsertInput input,
+        IReadOnlyList<ExpenseLineInput> activeLines,
+        string transactionCurrency,
+        string baseCurrencyCode,
+        decimal fxRate,
+        decimal totalTx,
+        decimal discountTx,
+        CancellationToken cancellationToken)
+    {
+        if (activeLines.Count == 0)
+        {
+            throw new InvalidOperationException("At least one active expense line is required.");
+        }
+
+        var journalEntryId = Guid.NewGuid();
+        var postedAt = DateTimeOffset.UtcNow;
+        var totalBase = RoundBase(totalTx * fxRate);
+        var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, companyId, cancellationToken).ConfigureAwait(false);
+        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, companyId, input.PaymentDate.Year, cancellationToken).ConfigureAwait(false);
+        var idempotencyKey = $"expense:{expenseId:D}";
+
+        await using (var insertEntryCommand = connection.CreateCommand())
+        {
+            insertEntryCommand.Transaction = transaction;
+            insertEntryCommand.CommandText = """
+                INSERT INTO journal_entries (
+                  id, company_id, entity_number, display_number, status,
+                  source_type, source_id,
+                  transaction_currency_code, base_currency_code,
+                  exchange_rate, exchange_rate_date, exchange_rate_source,
+                  fx_rate_snapshot_id,
+                  total_tx_debit, total_tx_credit, total_debit, total_credit,
+                  posting_run_id, idempotency_key, posted_at, created_by_user_id, created_at
+                )
+                VALUES (
+                  @id, @company_id, @entity_number, @display_number, 'posted',
+                  'expense', @source_id,
+                  @transaction_currency_code, @base_currency_code,
+                  @exchange_rate, @exchange_rate_date, @exchange_rate_source,
+                  NULL,
+                  @total_tx_debit, @total_tx_credit, @total_debit, @total_credit,
+                  @posting_run_id, @idempotency_key, @posted_at, @created_by_user_id, NOW()
+                )
+                ON CONFLICT (company_id, idempotency_key) DO NOTHING;
+                """;
+            insertEntryCommand.Parameters.AddWithValue("id", journalEntryId);
+            insertEntryCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
+            insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
+            insertEntryCommand.Parameters.AddWithValue("source_id", expenseId);
+            insertEntryCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrency);
+            insertEntryCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate", RoundRate(fxRate));
+            insertEntryCommand.Parameters.Add("exchange_rate_date", NpgsqlDbType.Date).Value = input.PaymentDate.ToDateTime(TimeOnly.MinValue);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate_source", string.Equals(transactionCurrency, baseCurrencyCode, StringComparison.Ordinal) ? "identity" : "manual");
+            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", RoundTx(totalTx));
+            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", RoundTx(totalTx));
+            insertEntryCommand.Parameters.AddWithValue("total_debit", totalBase);
+            insertEntryCommand.Parameters.AddWithValue("total_credit", totalBase);
+            insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
+            insertEntryCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+            insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
+            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
+            var insertedRows = await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (insertedRows != 1)
+            {
+                return await ReadExistingJournalEntryIdAsync(connection, transaction, companyId, idempotencyKey, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var lineAllocations = AllocateExpenseLines(activeLines, totalTx, discountTx, fxRate);
+        var lineNumber = 1;
+        foreach (var allocation in lineAllocations)
+        {
+            await InsertJournalAndLedgerLineAsync(
+                connection,
+                transaction,
+                companyId,
+                journalEntryId,
+                lineNumber++,
+                allocation.Line.ExpenseAccountId,
+                input.PayeeKind,
+                input.PayeeId,
+                allocation.Description(expenseNumber),
+                transactionCurrency,
+                txDebit: allocation.TxAmount,
+                txCredit: 0m,
+                debit: allocation.BaseAmount,
+                credit: 0m,
+                postingDate: input.PaymentDate,
+                postingRole: "source_line:expense",
+                sourceLineNumber: allocation.Line.Sequence,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await InsertJournalAndLedgerLineAsync(
+            connection,
+            transaction,
+            companyId,
+            journalEntryId,
+            lineNumber,
+            input.PaymentAccountId,
+            input.PayeeKind,
+            input.PayeeId,
+            $"Payment for expense {expenseNumber}",
+            transactionCurrency,
+            txDebit: 0m,
+            txCredit: totalTx,
+            debit: 0m,
+            credit: totalBase,
+            postingDate: input.PaymentDate,
+            postingRole: "control:payment_account",
+            sourceLineNumber: null,
+            cancellationToken).ConfigureAwait(false);
+
+        return journalEntryId;
+    }
+
+    private static async Task InsertVoidedExpenseJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ExpenseRecord expense,
+        CancellationToken cancellationToken)
+    {
+        if (expense.Lines.Count == 0)
+        {
+            throw new InvalidOperationException("Expense has no lines to reverse.");
+        }
+
+        var journalEntryId = Guid.NewGuid();
+        var postedAt = DateTimeOffset.UtcNow;
+        var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, expense.CompanyId, cancellationToken).ConfigureAwait(false);
+        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, expense.CompanyId, expense.PaymentDate.Year, cancellationToken).ConfigureAwait(false);
+        var idempotencyKey = $"expense-void:{expense.Id:D}";
+        var totalTx = RoundTx(expense.TotalAmount);
+        var totalBase = RoundBase(expense.TotalAmount * expense.FxRate);
+        var createdByUserId = await ReadJournalCreatedByUserIdAsync(
+            connection,
+            transaction,
+            expense.CompanyId,
+            expense.PostedJournalEntryId!.Value,
+            cancellationToken).ConfigureAwait(false);
+
+        await using (var insertEntryCommand = connection.CreateCommand())
+        {
+            insertEntryCommand.Transaction = transaction;
+            insertEntryCommand.CommandText = """
+                INSERT INTO journal_entries (
+                  id, company_id, entity_number, display_number, status,
+                  source_type, source_id,
+                  transaction_currency_code, base_currency_code,
+                  exchange_rate, exchange_rate_date, exchange_rate_source,
+                  fx_rate_snapshot_id,
+                  total_tx_debit, total_tx_credit, total_debit, total_credit,
+                  posting_run_id, idempotency_key, posted_at, created_by_user_id, created_at
+                )
+                VALUES (
+                  @id, @company_id, @entity_number, @display_number, 'posted',
+                  'expense_void', @source_id,
+                  @transaction_currency_code, @base_currency_code,
+                  @exchange_rate, @exchange_rate_date, @exchange_rate_source,
+                  NULL,
+                  @total_tx_debit, @total_tx_credit, @total_debit, @total_credit,
+                  @posting_run_id, @idempotency_key, @posted_at, @created_by_user_id, NOW()
+                )
+                ON CONFLICT (company_id, idempotency_key) DO NOTHING;
+                """;
+            insertEntryCommand.Parameters.AddWithValue("id", journalEntryId);
+            insertEntryCommand.Parameters.AddWithValue("company_id", expense.CompanyId.Value);
+            insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
+            insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
+            insertEntryCommand.Parameters.AddWithValue("source_id", expense.Id);
+            insertEntryCommand.Parameters.AddWithValue("transaction_currency_code", expense.TransactionCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("base_currency_code", expense.BaseCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate", RoundRate(expense.FxRate));
+            insertEntryCommand.Parameters.Add("exchange_rate_date", NpgsqlDbType.Date).Value = expense.PaymentDate.ToDateTime(TimeOnly.MinValue);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate_source", expense.FxSource);
+            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", totalTx);
+            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", totalTx);
+            insertEntryCommand.Parameters.AddWithValue("total_debit", totalBase);
+            insertEntryCommand.Parameters.AddWithValue("total_credit", totalBase);
+            insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
+            insertEntryCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+            insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
+            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+            var insertedRows = await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (insertedRows != 1)
+            {
+                return;
+            }
+        }
+
+        await InsertJournalAndLedgerLineAsync(
+            connection,
+            transaction,
+            expense.CompanyId,
+            journalEntryId,
+            lineNumber: 1,
+            expense.PaymentAccountId,
+            expense.PayeeKind,
+            expense.PayeeId,
+            $"Void payment for expense {expense.ExpenseNumber}",
+            expense.TransactionCurrencyCode,
+            txDebit: totalTx,
+            txCredit: 0m,
+            debit: totalBase,
+            credit: 0m,
+            postingDate: expense.PaymentDate,
+            postingRole: "void:payment_account",
+            sourceLineNumber: null,
+            cancellationToken).ConfigureAwait(false);
+
+        var activeLines = expense.Lines
+            .Where(static line => line.LineTotal > 0m)
+            .Select(static line => new ExpenseLineInput(
+                line.Sequence,
+                line.ServiceDate,
+                line.ItemId,
+                line.ExpenseAccountId,
+                line.Description,
+                line.Quantity,
+                line.UnitPrice,
+                line.TaxCodeId))
+            .ToArray();
+        var allocations = AllocateExpenseLines(activeLines, expense.TotalAmount, expense.DiscountAmount, expense.FxRate);
+        var lineNumber = 2;
+        foreach (var allocation in allocations)
+        {
+            await InsertJournalAndLedgerLineAsync(
+                connection,
+                transaction,
+                expense.CompanyId,
+                journalEntryId,
+                lineNumber++,
+                allocation.Line.ExpenseAccountId,
+                expense.PayeeKind,
+                expense.PayeeId,
+                $"Void {allocation.Description(expense.ExpenseNumber)}",
+                expense.TransactionCurrencyCode,
+                txDebit: 0m,
+                txCredit: allocation.TxAmount,
+                debit: 0m,
+                credit: allocation.BaseAmount,
+                postingDate: expense.PaymentDate,
+                postingRole: "void:expense",
+                sourceLineNumber: allocation.Line.Sequence,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task InsertJournalAndLedgerLineAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        int lineNumber,
+        Guid accountId,
+        string? partyType,
+        Guid? partyId,
+        string description,
+        string transactionCurrencyCode,
+        decimal txDebit,
+        decimal txCredit,
+        decimal debit,
+        decimal credit,
+        DateOnly postingDate,
+        string postingRole,
+        int? sourceLineNumber,
+        CancellationToken cancellationToken)
+    {
+        var journalEntryLineId = Guid.NewGuid();
+
+        await using (var insertLineCommand = connection.CreateCommand())
+        {
+            insertLineCommand.Transaction = transaction;
+            insertLineCommand.CommandText = """
+                INSERT INTO journal_entry_lines (
+                  id, company_id, journal_entry_id, line_number,
+                  account_id, description, party_type, party_id,
+                  tx_debit, tx_credit, debit, credit,
+                  tax_component_type, control_role, posting_role, source_line_number,
+                  created_at
+                )
+                VALUES (
+                  @id, @company_id, @journal_entry_id, @line_number,
+                  @account_id, @description, @party_type, @party_id,
+                  @tx_debit, @tx_credit, @debit, @credit,
+                  NULL, NULL, @posting_role, @source_line_number,
+                  NOW()
+                );
+                """;
+            insertLineCommand.Parameters.AddWithValue("id", journalEntryLineId);
+            insertLineCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            insertLineCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+            insertLineCommand.Parameters.AddWithValue("line_number", lineNumber);
+            insertLineCommand.Parameters.AddWithValue("account_id", accountId);
+            insertLineCommand.Parameters.AddWithValue("description", description);
+            insertLineCommand.Parameters.AddWithValue("party_type", string.IsNullOrWhiteSpace(partyType) ? DBNull.Value : partyType);
+            insertLineCommand.Parameters.AddWithValue("party_id", (object?)partyId ?? DBNull.Value);
+            insertLineCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
+            insertLineCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
+            insertLineCommand.Parameters.AddWithValue("debit", RoundBase(debit));
+            insertLineCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+            insertLineCommand.Parameters.AddWithValue("posting_role", postingRole);
+            insertLineCommand.Parameters.AddWithValue("source_line_number", (object?)sourceLineNumber ?? DBNull.Value);
+            await insertLineCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var insertLedgerCommand = connection.CreateCommand();
+        insertLedgerCommand.Transaction = transaction;
+        insertLedgerCommand.CommandText = """
+            INSERT INTO ledger_entries (
+              id, company_id, journal_entry_id, journal_entry_line_id,
+              posting_date, account_id, debit, credit,
+              transaction_currency_code, tx_debit, tx_credit,
+              created_at
+            )
+            VALUES (
+              @id, @company_id, @journal_entry_id, @journal_entry_line_id,
+              @posting_date, @account_id, @debit, @credit,
+              @transaction_currency_code, @tx_debit, @tx_credit,
+              NOW()
+            );
+            """;
+        insertLedgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+        insertLedgerCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        insertLedgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+        insertLedgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
+        insertLedgerCommand.Parameters.AddWithValue("posting_date", postingDate);
+        insertLedgerCommand.Parameters.AddWithValue("account_id", accountId);
+        insertLedgerCommand.Parameters.AddWithValue("debit", RoundBase(debit));
+        insertLedgerCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+        insertLedgerCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        insertLedgerCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
+        insertLedgerCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
+        await insertLedgerCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IReadOnlyList<ExpenseLineAllocation> AllocateExpenseLines(
+        IReadOnlyList<ExpenseLineInput> activeLines,
+        decimal totalTx,
+        decimal discountTx,
+        decimal fxRate)
+    {
+        var subtotalTx = activeLines.Sum(static line => Math.Round(line.Quantity * line.UnitPrice, 4));
+        if (subtotalTx <= 0m)
+        {
+            throw new InvalidOperationException("Expense total must be greater than zero.");
+        }
+
+        var allocations = new List<ExpenseLineAllocation>(activeLines.Count);
+        var remainingTx = RoundTx(totalTx);
+        var remainingBase = RoundBase(totalTx * fxRate);
+
+        for (var i = 0; i < activeLines.Count; i++)
+        {
+            var line = activeLines[i];
+            var lineGross = Math.Round(line.Quantity * line.UnitPrice, 4);
+            decimal lineTx;
+            decimal lineBase;
+            if (i == activeLines.Count - 1)
+            {
+                lineTx = remainingTx;
+                lineBase = remainingBase;
+            }
+            else
+            {
+                var lineDiscount = discountTx == 0m ? 0m : Math.Round(discountTx * (lineGross / subtotalTx), 6, MidpointRounding.ToEven);
+                lineTx = RoundTx(lineGross - lineDiscount);
+                lineBase = RoundBase(lineTx * fxRate);
+                remainingTx -= lineTx;
+                remainingBase -= lineBase;
+            }
+
+            if (lineTx <= 0m)
+            {
+                continue;
+            }
+
+            allocations.Add(new ExpenseLineAllocation(
+                line,
+                lineTx,
+                lineBase,
+                number => $"Expense {number} line {line.Sequence}: {line.Description}".TrimEnd()));
+        }
+
+        if (allocations.Count == 0)
+        {
+            throw new InvalidOperationException("Expense total must be greater than zero.");
+        }
+
+        return allocations;
+    }
+
+    private static async Task<Guid> ReadExistingJournalEntryIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id
+              FROM journal_entries
+             WHERE company_id = @company_id
+               AND idempotency_key = @idempotency_key
+             LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+        return (Guid)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Posted expense journal entry could not be resolved."));
+    }
+
+    private static async Task<string> ReserveJournalDisplayNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var seedCommand = connection.CreateCommand();
+        seedCommand.Transaction = transaction;
+        seedCommand.CommandText = """
+            SELECT COALESCE(
+                MAX(
+                    CASE
+                        WHEN display_number ~ '^JE-[0-9]+$'
+                        THEN substring(display_number from 4)::bigint
+                        ELSE NULL
+                    END),
+                0) + 1
+              FROM journal_entries
+             WHERE company_id = @company_id;
+            """;
+        seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        var seedNumber = Convert.ToInt64(await seedCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 1L);
+
+        return await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "journal-entry-display",
+            "JE-",
+            6,
+            seedNumber,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReserveEntityNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        int year,
+        CancellationToken cancellationToken)
+    {
+        return await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            $"entity-number:all:{year}",
+            $"EN{year}",
+            5,
+            1,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReadJournalCreatedByUserIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT created_by_user_id
+              FROM journal_entries
+             WHERE company_id = @company_id
+               AND id = @journal_entry_id
+             LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+        return (string)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Posted expense journal entry could not be found for reversal."));
+    }
+
+    private static decimal RoundTx(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static decimal RoundBase(decimal value) =>
+        Math.Round(value, 2, MidpointRounding.ToEven);
+
+    private static decimal RoundRate(decimal value) =>
+        Math.Round(value, 10, MidpointRounding.ToEven);
+
+    private sealed record ExpenseLineAllocation(
+        ExpenseLineInput Line,
+        decimal TxAmount,
+        decimal BaseAmount,
+        Func<string, string> Description);
 
     private static async Task<string> ReadBaseCurrencyAsync(
         NpgsqlConnection connection,
