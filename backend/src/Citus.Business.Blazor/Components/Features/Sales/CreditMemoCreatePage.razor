@@ -7,6 +7,7 @@
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
 @inject InvoiceClient InvoiceClient
+@inject TaskClient TaskClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -47,6 +48,23 @@
 @if (!string.IsNullOrWhiteSpace(_validation))
 {
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@* Task-rollback warning. When this credit memo carries lines with
+   task_id (typically from the "Credit invoice" prefill path) the
+   server-side Step 2 hook will roll those tasks Billed -> Completed
+   after post. Surface that side-effect up-front so the operator
+   doesn't get surprised — and so they can edit task allocations on
+   the originating invoice before reversing if they don't actually
+   intend the rollback. *@
+@if (ShellState.IsModuleEnabled("task") && _impactedTaskIds.Count > 0)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <strong>Posting this credit memo will roll back @_impactedTaskIds.Count task@(_impactedTaskIds.Count == 1 ? "" : "s") to Completed:</strong>
+            <span class="ms-1">@TaskLabelList()</span>
+        </MessageTemplate>
+    </CitusAlert>
 }
 
 <WriteFlowResultAlert Result="@_lastResult" />
@@ -291,6 +309,13 @@
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+    // Distinct task ids the operator's current lines will roll back on
+    // post. Populated by the "From invoice" prefill (or by any future
+    // path that attributes per-line task_id); displayed in the
+    // task-rollback warning banner above the form so the side-effect
+    // isn't hidden behind a Post click.
+    private IReadOnlyDictionary<Guid, string> _taskLabels = new Dictionary<Guid, string>();
+    private IReadOnlyList<Guid> _impactedTaskIds = Array.Empty<Guid>();
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
@@ -370,7 +395,40 @@
         {
             _lines.Add(new CreditMemoLineEditState());
         }
+
+        // Resolve "TSK-000123 - Title" labels for any per-line task_ids
+        // the prefill carried over, so the rollback warning banner
+        // shows real task numbers rather than raw GUIDs.
+        await RefreshImpactedTaskLabelsAsync();
     }
+
+    /// <summary>
+    /// Recomputes <see cref="_impactedTaskIds"/> + <see cref="_taskLabels"/>
+    /// from the current line set. Cheap on no-op (no task ids → no
+    /// HTTP call); single batched lookup when ids are present.
+    /// </summary>
+    private async Task RefreshImpactedTaskLabelsAsync()
+    {
+        var distinct = _lines
+            .Where(l => l.TaskId.HasValue && l.HasContent)
+            .Select(l => l.TaskId!.Value)
+            .Distinct()
+            .ToArray();
+
+        _impactedTaskIds = distinct;
+        if (distinct.Length == 0)
+        {
+            _taskLabels = new Dictionary<Guid, string>();
+            return;
+        }
+
+        _taskLabels = await TaskClient.LookupDisplayAsync(distinct);
+    }
+
+    /// <summary>Comma-separated list of resolved task labels (or short-GUID fallbacks).</summary>
+    private string TaskLabelList() =>
+        string.Join(", ", _impactedTaskIds.Select(id =>
+            _taskLabels.TryGetValue(id, out var label) ? label : $"task {id:D}"[..13] + "…"));
 
     private async Task OnCustomerSelected(UnitySearchPickerOption option)
     {
