@@ -106,6 +106,49 @@ public sealed class TaskClient(HttpClient httpClient, ILogger<TaskClient> logger
         CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Post, $"accounting/tasks/{taskId:D}/cancel", new { Reason = reason }, cancellationToken);
 
+    /// <summary>
+    /// Batch resolves a set of task ids to "TSK-000123 - Title" display
+    /// labels. Empty input returns an empty dictionary without a HTTP
+    /// roundtrip. Used by edit pages (bill / expense / credit-memo) to
+    /// render the per-line TaskPicker with the real label on first
+    /// render rather than a placeholder short-GUID.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, string>> LookupDisplayAsync(
+        IEnumerable<Guid> taskIds,
+        CancellationToken cancellationToken = default)
+    {
+        var distinct = taskIds
+            .Where(static id => id != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (distinct.Length == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        try
+        {
+            // Repeated query param binding: ASP.NET binds ?ids=g1&ids=g2&...
+            // into Guid[]. Same shape on both sides keeps the wire simple.
+            var query = string.Join('&', distinct.Select(id => $"ids={id:D}"));
+            var rows = await httpClient.GetFromJsonAsync<TaskDisplayLookupDto[]>(
+                $"accounting/tasks/lookup?{query}",
+                cancellationToken);
+            if (rows is null) return new Dictionary<Guid, string>();
+            return rows.ToDictionary(
+                static r => r.TaskId,
+                static r => string.IsNullOrWhiteSpace(r.Title) ? r.TaskNo : $"{r.TaskNo} - {r.Title}");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to batch-resolve task display labels.");
+            return new Dictionary<Guid, string>();
+        }
+    }
+
+    /// <summary>Wire shape of one row from <c>GET /accounting/tasks/lookup</c>.</summary>
+    private sealed record TaskDisplayLookupDto(Guid TaskId, string TaskNo, string Title);
+
     private async Task<TaskMutationOutcome> SendAsync(
         HttpMethod method,
         string path,

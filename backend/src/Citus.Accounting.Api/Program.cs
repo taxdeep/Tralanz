@@ -2244,6 +2244,31 @@ accounting.MapGet(
     .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
     .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
 
+// Batch display-label resolver for task ids. Used by the bill /
+// expense / credit-memo edit pages so the per-line TaskPicker can
+// render "TSK-000123 -- Title" instead of a short-GUID placeholder
+// when the page first loads with persisted task_ids. Repeated query
+// parameter binding: ?ids=guid1&ids=guid2&...
+accounting.MapGet(
+    "/tasks/lookup",
+    async (
+        Guid[]? ids,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var rows = await store.LookupDisplayAsync(
+            session.ActiveCompanyId,
+            ids ?? Array.Empty<Guid>(),
+            cancellationToken);
+        return Results.Ok(rows);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
+
 // Per-task reverse rollup of every linked AR / AP document. Same
 // double-gate (module + permission) as the rest of the surface.
 // Read-only; the page just displays what the line tables already

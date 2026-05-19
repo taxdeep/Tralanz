@@ -12,6 +12,7 @@
 @inject TaxCodeClient TaxCodeClient
 @inject PaymentTermClient PaymentTermClient
 @inject BillClient BillClient
+@inject TaskClient TaskClient
 @inject ItemClient ItemClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
@@ -380,13 +381,13 @@ else
                     _validation = "Bill not found.";
                     return;
                 }
-                ApplyExisting(bill);
+                await ApplyExisting(bill);
             }
         }
         finally { _isLoading = false; }
     }
 
-    private void ApplyExisting(BillRecordDto bill)
+    private async Task ApplyExisting(BillRecordDto bill)
     {
         _billNumberDisplay = bill.EntityNumber;
         _status = bill.Status;
@@ -415,10 +416,32 @@ else
             TaxCodeId = l.TaxCodeId,
             TaxAmount = l.TaxAmount,
             TaskId = l.TaskId,
-            // No up-front task lookup — render the short id as a
-            // placeholder. Operator re-picks to see the full label.
-            TaskDisplay = l.TaskId is { } tid ? $"Task {tid:D}"[..13] + "…" : string.Empty,
+            // TaskDisplay is filled in below by a single batch call to
+            // /accounting/tasks/lookup. Start empty and let the lookup
+            // populate "TSK-000123 - Title" labels in one round trip.
+            TaskDisplay = string.Empty,
         }).ToList();
+
+        // Resolve real task display labels for any persisted task_ids
+        // on this bill's lines. Single HTTP call, regardless of line
+        // count. Missing ids (deleted tasks etc.) silently fall back
+        // to an empty label.
+        var distinctTaskIds = _lines
+            .Where(l => l.TaskId.HasValue)
+            .Select(l => l.TaskId!.Value)
+            .Distinct()
+            .ToArray();
+        if (distinctTaskIds.Length > 0)
+        {
+            var labels = await TaskClient.LookupDisplayAsync(distinctTaskIds);
+            foreach (var line in _lines)
+            {
+                if (line.TaskId is { } tid && labels.TryGetValue(tid, out var label))
+                {
+                    line.TaskDisplay = label;
+                }
+            }
+        }
         if (_lines.Count == 0) _lines.Add(new LineDraft());
     }
 

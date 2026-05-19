@@ -349,5 +349,8 @@ public class TaskBillingCoordinatorTests
                 .ToArray();
             return Task.FromResult<IReadOnlyList<TaskSummary>>(hits);
         }
+
+        public Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(CompanyId companyId, IReadOnlyList<Guid> taskIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<TaskDisplayLookup>>(Array.Empty<TaskDisplayLookup>());
     }
 }

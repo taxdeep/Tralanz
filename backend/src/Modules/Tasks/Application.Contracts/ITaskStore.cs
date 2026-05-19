@@ -100,4 +100,25 @@ public interface ITaskStore
         CompanyId companyId,
         Guid invoiceId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Batch display-label resolver for known task ids — used by edit
+    /// pages (bill / expense / credit-memo) to render the per-line
+    /// TaskPicker with the real "TSK-000123 — Title" label instead of
+    /// a placeholder short-GUID. Unknown ids are silently dropped from
+    /// the result (operator sees the empty picker as if no attribution
+    /// was persisted, which is the safest fallback).
+    /// </summary>
+    Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(
+        CompanyId companyId,
+        IReadOnlyList<Guid> taskIds,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Minimal display label pair returned by
+/// <see cref="ITaskStore.LookupDisplayAsync"/>. Stays separate from
+/// <see cref="TaskSummary"/> so the lookup path doesn't have to load
+/// columns it doesn't need (currency, dates, totals).
+/// </summary>
+public sealed record class TaskDisplayLookup(Guid TaskId, string TaskNo, string Title);

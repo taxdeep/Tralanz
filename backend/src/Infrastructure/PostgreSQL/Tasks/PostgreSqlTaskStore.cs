@@ -526,6 +526,52 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
         return rows;
     }
 
+    public async Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(
+        CompanyId companyId,
+        IReadOnlyList<Guid> taskIds,
+        CancellationToken cancellationToken)
+    {
+        if (taskIds is null || taskIds.Count == 0)
+        {
+            return Array.Empty<TaskDisplayLookup>();
+        }
+
+        // Distinct + non-empty filter: callers (Bill / CreditMemo edit
+        // pages) may pass the raw per-line array which can contain
+        // duplicates or empties.
+        var ids = taskIds
+            .Where(static id => id != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return Array.Empty<TaskDisplayLookup>();
+        }
+
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select id, task_no, title
+            from tasks
+            where company_id = @company_id
+              and id = any(@ids);
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("ids", ids);
+
+        var rows = new List<TaskDisplayLookup>(ids.Length);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new TaskDisplayLookup(
+                TaskId: reader.GetGuid(0),
+                TaskNo: reader.GetString(1).Trim(),
+                Title: reader.GetString(2)));
+        }
+        return rows;
+    }
+
     public async Task<IReadOnlyList<TaskStateTransitionRecord>> ListTransitionsAsync(
         CompanyId companyId,
         Guid taskId,

@@ -228,6 +228,9 @@ public class TaskSearchProjectionContractTests
         public Task<IReadOnlyList<TaskSummary>> ListByBilledInvoiceAsync(CompanyId companyId, Guid invoiceId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<TaskSummary>>(Array.Empty<TaskSummary>());
 
+        public Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(CompanyId companyId, IReadOnlyList<Guid> taskIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<TaskDisplayLookup>>(Array.Empty<TaskDisplayLookup>());
+
         private static TaskRecord Build(Guid id, TaskStatus status, string currency = "USD") =>
             new()
             {
