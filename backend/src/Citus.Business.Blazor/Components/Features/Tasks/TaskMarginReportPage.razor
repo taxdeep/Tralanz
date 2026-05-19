@@ -2,6 +2,8 @@
 
 @using Citus.Modules.Tasks.Domain.Shared
 @using Citus.Modules.Tasks.Domain.Shared.Reports
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
 
 @inject BusinessShellState ShellState
@@ -58,6 +60,30 @@ else
             <div>
                 <label class="text-sm font-medium block mb-1">To</label>
                 <input type="date" class="citus-form-field__input" @bind="_toDate" @bind:after="ReloadAsync" />
+            </div>
+            <div style="min-width: 16rem;">
+                <label class="text-sm font-medium block mb-1">Customer</label>
+                <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                Placeholder="Any customer"
+                                Take="8"
+                                SourceRoute="/tasks/reports/margin"
+                                SelectedId="@_customerId"
+                                SelectedDisplayText="@_customerDisplay"
+                                OnCustomerSelected="OnCustomerSelectedAsync"
+                                OnCleared="OnCustomerClearedAsync" />
+            </div>
+            <div>
+                @* Assignee filter: simple "only mine" toggle. A full user
+                   picker would need a UnitySearch user.picker policy + a
+                   reusable UserPicker component — landing in its own
+                   batch alongside any other "who" filters (audit log,
+                   notification rules, etc). *@
+                <label class="text-sm font-medium block mb-1">Assignee</label>
+                <label class="inline-flex items-center gap-2" style="height: 2.25rem;">
+                    <input type="checkbox" @bind="_onlyMine" @bind:after="ReloadAsync" />
+                    <span class="text-sm">Only tasks assigned to me</span>
+                </label>
             </div>
             <CitusButton Size="CitusButtonSize.Small" Variant="CitusButtonVariant.Ghost" OnClick="ReloadAsync">
                 Refresh
@@ -190,11 +216,18 @@ else
     private string _modeText = "operational";
     private DateTime? _fromDate;
     private DateTime? _toDate;
+    private Guid? _customerId;
+    private string _customerDisplay = string.Empty;
+    private bool _onlyMine;
     private TaskMarginReportResult _result = Empty(TaskMarginReportMode.Operational);
 
     private bool CanView => ShellState.User.Roles.Contains("task.report.margin", StringComparer.Ordinal);
 
-    private bool HasAnyFilter => _fromDate.HasValue || _toDate.HasValue;
+    private bool HasAnyFilter =>
+        _fromDate.HasValue
+        || _toDate.HasValue
+        || _customerId.HasValue
+        || _onlyMine;
 
     private TaskMarginReportMode ParsedMode =>
         string.Equals(_modeText, "billed", StringComparison.OrdinalIgnoreCase)
@@ -225,10 +258,15 @@ else
         _isLoading = true;
         try
         {
+            var assigneeId = _onlyMine && !string.IsNullOrEmpty(ShellState.User.Id.Value)
+                ? ShellState.User.Id.Value
+                : null;
             _result = await ReportClient.GetReportAsync(
                 ParsedMode,
                 _fromDate.HasValue ? DateOnly.FromDateTime(_fromDate.Value) : null,
-                _toDate.HasValue ? DateOnly.FromDateTime(_toDate.Value) : null);
+                _toDate.HasValue ? DateOnly.FromDateTime(_toDate.Value) : null,
+                customerId: _customerId,
+                assigneeId: assigneeId);
         }
         finally
         {
@@ -236,10 +274,27 @@ else
         }
     }
 
+    private Task OnCustomerSelectedAsync(UnitySearchPickerOption option)
+    {
+        _customerId = option.SourceId;
+        _customerDisplay = option.DisplayText;
+        return ReloadAsync();
+    }
+
+    private Task OnCustomerClearedAsync()
+    {
+        _customerId = null;
+        _customerDisplay = string.Empty;
+        return ReloadAsync();
+    }
+
     private Task ClearFiltersAsync()
     {
         _fromDate = null;
         _toDate = null;
+        _customerId = null;
+        _customerDisplay = string.Empty;
+        _onlyMine = false;
         return ReloadAsync();
     }
 
