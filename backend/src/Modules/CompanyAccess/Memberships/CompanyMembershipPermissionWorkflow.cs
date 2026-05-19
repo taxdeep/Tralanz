@@ -12,6 +12,9 @@ public sealed class CompanyMembershipPermissionWorkflow : ICompanyMembershipPerm
     public IReadOnlyList<CompanyMembershipPermissionOption> GetAvailablePermissions() =>
         CompanyMembershipPermissionCatalog.Options;
 
+    public IReadOnlyList<CompanyMembershipPermissionPresetOption> GetAvailablePresets() =>
+        CompanyMembershipPermissionPresets.Options;
+
     public Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
         CompanyId companyId,
         CancellationToken cancellationToken)
@@ -100,5 +103,94 @@ public sealed class CompanyMembershipPermissionWorkflow : ICompanyMembershipPerm
             CompanyMembershipPermissionCatalog.Options,
             "permissions_saved",
             "Company membership permissions were saved from CompanyAccess truth.");
+    }
+
+    public Task<CompanyMembershipPermissionSaveResult> ApplyPresetAsync(
+        CompanyId companyId,
+        Guid membershipId,
+        UserId actorUserId,
+        string presetCode,
+        bool replaceExistingTokens,
+        CancellationToken cancellationToken) =>
+        ApplyPresetCoreAsync(
+            companyId,
+            membershipId,
+            presetCode,
+            replaceExistingTokens,
+            (tokens, ct) => SavePermissionsAsync(companyId, membershipId, actorUserId, tokens, ct),
+            cancellationToken);
+
+    public Task<CompanyMembershipPermissionSaveResult> ApplyPresetFromSysAdminAsync(
+        CompanyId companyId,
+        Guid membershipId,
+        UserId? sysAdminAccountId,
+        string presetCode,
+        bool replaceExistingTokens,
+        CancellationToken cancellationToken) =>
+        ApplyPresetCoreAsync(
+            companyId,
+            membershipId,
+            presetCode,
+            replaceExistingTokens,
+            async (tokens, ct) =>
+            {
+                var normalizedTokens = CompanyMembershipPermissionCatalog.NormalizeTokens(tokens);
+                var saved = await _store.SavePermissionsFromSysAdminAsync(
+                    companyId,
+                    membershipId,
+                    sysAdminAccountId,
+                    normalizedTokens,
+                    ct);
+
+                if (saved is null)
+                {
+                    throw new InvalidOperationException("Company membership was not found while applying the preset.");
+                }
+
+                return new CompanyMembershipPermissionSaveResult(
+                    saved,
+                    CompanyMembershipPermissionCatalog.Options,
+                    "permissions_preset_applied",
+                    $"Permission preset '{presetCode}' applied by SysAdmin governance.");
+            },
+            cancellationToken);
+
+    private async Task<CompanyMembershipPermissionSaveResult> ApplyPresetCoreAsync(
+        CompanyId companyId,
+        Guid membershipId,
+        string presetCode,
+        bool replaceExistingTokens,
+        Func<IReadOnlyList<string>, CancellationToken, Task<CompanyMembershipPermissionSaveResult>> persist,
+        CancellationToken cancellationToken)
+    {
+        if (companyId.Value is null)
+        {
+            throw new InvalidOperationException("Company context is required to apply a permission preset.");
+        }
+
+        if (!CompanyMembershipPermissionPresets.IsKnown(presetCode))
+        {
+            throw new InvalidOperationException($"Unknown permission preset '{presetCode}'.");
+        }
+
+        var presetTokens = CompanyMembershipPermissionPresets.Expand(presetCode);
+
+        IReadOnlyList<string> targetTokens;
+        if (replaceExistingTokens)
+        {
+            targetTokens = presetTokens;
+        }
+        else
+        {
+            var existing = await _store.GetAsync(companyId, membershipId, cancellationToken)
+                ?? throw new InvalidOperationException("Company membership was not found in the active company context.");
+            targetTokens = presetTokens
+                .Concat(existing.PermissionTokens)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static t => t, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        return await persist(targetTokens, cancellationToken);
     }
 }

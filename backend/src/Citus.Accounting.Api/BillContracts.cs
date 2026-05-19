@@ -29,4 +29,10 @@ public sealed record BillLineHttpRequest(
     string? Description,
     decimal LineAmount,
     Guid? TaxCodeId,
-    decimal? TaxAmount);
+    decimal? TaxAmount,
+    // Optional Task this line bills against. When non-null the route
+    // calls ITaskLineLinkValidator before writing so the link can never
+    // settle on a billed / canceled / cross-company task. Persists into
+    // bill_lines.task_id (column added by Batch 8) and feeds the Batch 10
+    // margin-report direct-cost rollup.
+    Guid? TaskId = null);

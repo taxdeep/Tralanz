@@ -1838,6 +1838,16 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             LastSysAdminAccountId = sysAdminAccountId;
             return OnChangeRole(companyId, membershipId, role, reason, sysAdminAccountId, cancellationToken);
         }
+
+        public Task<CompanyMembershipOwnershipTransferResult> TransferOwnershipFromSysAdminAsync(
+            CompanyId companyId,
+            Guid fromMembershipId,
+            Guid toMembershipId,
+            string reason,
+            UserId? sysAdminAccountId,
+            CancellationToken cancellationToken) =>
+            throw new NotImplementedException(
+                "Ownership transfer is not exercised by these notification-readiness contract tests.");
     }
 
     private sealed class FakePlatformNotificationReadinessWorkflow : IPlatformNotificationReadinessWorkflow

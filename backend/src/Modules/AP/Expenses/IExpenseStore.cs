@@ -123,7 +123,11 @@ public sealed record ExpenseLineRecord(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    decimal LineTotal);
+    decimal LineTotal,
+    // Optional Task back-link, persisted in expense_lines.task_id. Read
+    // path surfaces it so the edit page can pre-fill the per-line
+    // TaskPicker; write path persists it after the validator clears.
+    Guid? TaskId = null);
 
 public sealed record ExpenseUpsertInput(
     string PayeeKind,
@@ -153,7 +157,9 @@ public sealed record ExpenseLineInput(
     string Description,
     decimal Quantity,
     decimal UnitPrice,
-    Guid? TaxCodeId);
+    Guid? TaxCodeId,
+    // See ExpenseLineRecord.TaskId.
+    Guid? TaskId = null);
 
 public static class ExpenseStatus
 {

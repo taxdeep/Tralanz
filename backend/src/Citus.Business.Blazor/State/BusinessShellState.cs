@@ -41,6 +41,23 @@ public sealed class BusinessShellState
                 ? $"Company {ActiveCompany.CompanyName} is {NormalizeStatus(ActiveCompany.Status)} and currently read-only."
                 : "Business writes are available.";
 
+    public IReadOnlyDictionary<string, bool> ModuleFlags { get; private set; } =
+        new Dictionary<string, bool>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// True when the named per-company module flag is on. Drives the
+    /// nav menu and any in-page "Send to {module}" affordances.
+    /// Defaults to false (fail-closed) for unknown keys so a missed
+    /// module-flag fetch never silently exposes a hidden module.
+    /// </summary>
+    public bool IsModuleEnabled(string moduleKey)
+    {
+        if (string.IsNullOrWhiteSpace(moduleKey)) return true;
+        return ModuleFlags.TryGetValue(moduleKey.Trim().ToLowerInvariant(), out var enabled) && enabled;
+    }
+
+    public void ApplyModuleFlags(IReadOnlyDictionary<string, bool> flags) => ModuleFlags = flags;
+
     public IReadOnlyList<NavSection> NavigationSections { get; } =
     [
         new NavSection
@@ -52,6 +69,19 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Journal Entry", Href = "journal-entry", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Invoices", Href = "invoices", Icon = IconName.FileInvoice },
                 new NavMenuItem { Title = "Bills", Href = "bills", Icon = IconName.Receipt }
+            ]
+        },
+        new NavSection
+        {
+            // Per-company opt-in module. Every item below carries
+            // ModuleKey="task"; BusinessNavMenu hides items whose
+            // ModuleKey is set but not enabled. The whole section
+            // disappears when none of its items survive the filter.
+            Title = "Tasks",
+            Items =
+            [
+                new NavMenuItem { Title = "Tasks", Href = "tasks", Icon = IconName.Activity, ModuleKey = "task" },
+                new NavMenuItem { Title = "Margin Report", Href = "tasks/reports/margin", Icon = IconName.ReportAnalytics, ModuleKey = "task" }
             ]
         },
         new NavSection

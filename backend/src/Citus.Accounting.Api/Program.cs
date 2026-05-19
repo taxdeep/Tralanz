@@ -2,6 +2,7 @@ using Citus.Accounting.Api;
 using static Citus.Accounting.Api.CompanyCurrencyResponseMapper;
 using static Citus.Accounting.Api.InventoryItemRequestMapper;
 using Citus.Accounting.Api.Initialization;
+using Citus.Accounting.Api.Tasks;
 using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.CoaTemplates;
@@ -30,7 +31,15 @@ using Citus.Modules.UnityAi.Application;
 using Citus.Modules.UnityAi.Application.Contracts;
 using Citus.Modules.UnityAi.Domain.Shared;
 using Citus.Modules.Inventory.Application.Contracts;
+using Citus.Modules.Inventory.Application.Contracts.Pricing;
+using Citus.Modules.Inventory.Application.Pricing;
 using Citus.Modules.Inventory.Domain.Shared;
+using Citus.Modules.Inventory.Domain.Shared.Pricing;
+using Citus.Modules.Tasks.Application;
+using Citus.Modules.Tasks.Application.Contracts;
+using Citus.Modules.Tasks.Domain.Shared;
+using Citus.Modules.Tasks.Domain.Shared.Reports;
+using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Accounts;
 using Infrastructure.PostgreSQL.BusinessAuth;
@@ -53,8 +62,11 @@ using Infrastructure.PostgreSQL.UnitySearch;
 using Infrastructure.PostgreSQL.UnityAi;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
+using Citus.Accounting.Api.Authorization;
+using Modules.CompanyAccess.Memberships;
 using Modules.CompanyAccess.SessionContext;
 using Npgsql;
+using Modules.Company.FeatureManagement;
 using Modules.Company.MultiBook;
 using Modules.Company.MultiCurrency;
 using System.Text;
@@ -187,6 +199,41 @@ builder.Services.AddScoped<ICompanyBookPolicyStore, PostgreSqlCompanyBookPolicyS
 builder.Services.AddScoped<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
 builder.Services.AddScoped<ICompanyCurrencyProvisioningStore, PostgreSqlCompanyCurrencyProvisioningStore>();
 builder.Services.AddScoped<ICompanyCurrencyGovernanceWorkflow, CompanyCurrencyGovernanceWorkflow>();
+// Per-company module-flag gate. Singletons because the cache lives
+// across requests; see Citus.SysAdmin.Api/Program.cs for the matching
+// registration that owns the write-side governance UI.
+builder.Services.AddSingleton<Modules.Company.FeatureManagement.ICompanyModuleFlagStore,
+    Infrastructure.PostgreSQL.Company.PostgreSqlCompanyModuleFlagStore>();
+builder.Services.AddSingleton<Modules.Company.FeatureManagement.ICompanyModuleFlagWorkflow,
+    Modules.Company.FeatureManagement.CompanyModuleFlagWorkflow>();
+// Inventory item pricing (Batch 4). The store is stateless beyond
+// the connection factory; the resolver is a thin normalizer. Both
+// singletons.
+builder.Services.AddSingleton<IInventoryItemPriceStore,
+    Infrastructure.PostgreSQL.Inventory.PostgreSqlInventoryItemPriceStore>();
+builder.Services.AddSingleton<IItemPriceResolver, ItemPriceResolver>();
+// Tasks module (Batch 5). Singletons — the store is stateless and
+// the workflow only adds state-machine validation.
+builder.Services.AddSingleton<ITaskStore, Infrastructure.PostgreSQL.Tasks.PostgreSqlTaskStore>();
+builder.Services.AddSingleton<ITaskWorkflow, TaskWorkflow>();
+// Batch 8: AR / AP line-link validator + per-table task_id column
+// initializer. Stateless singletons; the schema initializer runs at
+// startup to add the task_id column to every line table.
+builder.Services.AddSingleton<ITaskLineLinkValidator, TaskLineLinkValidator>();
+builder.Services.AddSingleton<Infrastructure.PostgreSQL.Tasks.PostgresTaskLinkSchemaInitializer>();
+// Batch 9: AR invoice <-> Task billing coordinator. Bookkeeping only --
+// AR's draft/post path stays untouched; callers invoke MarkAsBilledAsync
+// after a successful post and RollbackBillingAsync after a void.
+builder.Services.AddSingleton<ITaskBillingCoordinator, TaskBillingCoordinator>();
+// Batch 10: Task operational + billed margin read model. Live SQL
+// aggregation over bill_lines + expense_lines; no materialised view.
+builder.Services.AddSingleton<ITaskMarginReportService,
+    Infrastructure.PostgreSQL.Tasks.PostgreSqlTaskMarginReportService>();
+// TaskDetailPage reverse view: per-task rollup of every linked AR /
+// AP document. Single SQL UNION across the 4 *_lines tables Batch 8
+// stamped with task_id.
+builder.Services.AddSingleton<ITaskRelatedDocumentsService,
+    Infrastructure.PostgreSQL.Tasks.PostgreSqlTaskRelatedDocumentsService>();
 builder.Services.AddScoped<IArOpenItemRepository, PostgresArOpenItemRepository>();
 builder.Services.AddScoped<IApOpenItemRepository, PostgresApOpenItemRepository>();
 builder.Services.AddScoped<IOpenItemAdjustmentAccountMappingRepository, PostgresOpenItemAdjustmentAccountMappingRepository>();
@@ -604,6 +651,11 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
         var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
         var v1WriteFlowSchema = startupScope.ServiceProvider.GetRequiredService<PostgresV1WriteFlowSchemaBootstrap>();
+        var companyModuleFlagStore = startupScope.ServiceProvider.GetRequiredService<ICompanyModuleFlagStore>();
+        var companyMembershipPermissionStoreSchema = startupScope.ServiceProvider.GetRequiredService<Modules.CompanyAccess.Memberships.ICompanyMembershipPermissionStore>();
+        var inventoryItemPriceStore = startupScope.ServiceProvider.GetRequiredService<IInventoryItemPriceStore>();
+        var taskStore = startupScope.ServiceProvider.GetRequiredService<ITaskStore>();
+        var taskLinkSchema = startupScope.ServiceProvider.GetRequiredService<Infrastructure.PostgreSQL.Tasks.PostgresTaskLinkSchemaInitializer>();
         await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
         // Platform tables (currency_catalog, companies, users, company_memberships,
         // company_books, etc.) must exist FIRST because the master entity tables
@@ -658,6 +710,21 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
         await businessPasswordResetService.EnsureSchemaAsync(CancellationToken.None);
         await loginLockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
+        // company_module_flags is a small, stateless table; safe to bootstrap
+        // last. The SysAdmin API also runs this same bootstrap, so first-to-boot
+        // wins — both calls are no-ops on subsequent boots.
+        await companyModuleFlagStore.EnsureSchemaAsync(CancellationToken.None);
+        // One-time expansion of legacy coarse permission tokens into
+        // their fine-grained equivalents. Whichever API boots first
+        // performs the rewrite; both calls are then no-ops.
+        await companyMembershipPermissionStoreSchema.EnsureSchemaAsync(CancellationToken.None);
+        await inventoryItemPriceStore.EnsureSchemaAsync(CancellationToken.None);
+        await taskStore.EnsureSchemaAsync(CancellationToken.None);
+        // Batch 8: must come after every AR/AP line-table bootstrap
+        // above so the ALTER lands on tables that already exist. The
+        // initializer uses ALTER TABLE IF EXISTS so missing parents
+        // are silently skipped — re-runs on next boot pick them up.
+        await taskLinkSchema.EnsureSchemaAsync(CancellationToken.None);
     }
 }
 else
@@ -1087,6 +1154,27 @@ accounting.MapGet(
 
         var profile = await workflow.GetProfileAsync(session.ActiveCompanyId, cancellationToken);
         return Results.Ok(MapCurrencyProfile(profile));
+    });
+
+// -----------------------------------------------------------------------
+// Per-company module-flag list for the active company. Read-only on
+// the business side — the SysAdmin owns the write surface. Returns
+// the full catalog merged with persisted state (Enabled=false when the
+// company has never been switched on). Consumed by the Blazor shell
+// to decide which menus to render and by future Task module pages.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/company/module-flags",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyModuleFlagWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var flags = await workflow.ListAsync(session.ActiveCompanyId, cancellationToken);
+        return Results.Ok(flags);
     });
 
 // -----------------------------------------------------------------------
@@ -1916,6 +2004,551 @@ accounting.MapPost(
             return Results.NotFound(new { message = ex.Message });
         }
     });
+
+// ---------------------------------------------------------------------------
+// Inventory item pricing (Batch 4).
+//
+// CRUD + resolve over `inventory_item_prices`. Read paths require
+// `inventory.price.view`; write paths require `inventory.price.edit`.
+// First real consumer of the [HasPermission] decorator pattern
+// introduced in Batch 3 — owners get implicit access via the
+// session-load Union (Batch 3.6).
+//
+// Resolution semantics (see InventoryItemPriceQuery + the SQL in the
+// store): customer-specific > price-list-specific > highest matching
+// quantity tier > most recent effective_from. Caller passes
+// document-date as `asOf` so resolution is deterministic over time.
+// ---------------------------------------------------------------------------
+accounting.MapGet(
+    "/items/{itemId:guid}/prices",
+    async (
+        Guid itemId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryItemPriceStore priceStore,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var rows = await priceStore.ListAsync(
+            session.ActiveCompanyId,
+            itemId,
+            includeInactive ?? false,
+            cancellationToken);
+        return Results.Ok(rows);
+    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceView);
+
+accounting.MapPost(
+    "/items/{itemId:guid}/prices",
+    async (
+        Guid itemId,
+        InventoryItemPriceUpsertRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryItemPriceStore priceStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            // Force create — ignore any Id the caller put on the body
+            // so POST is unambiguously "new row". Updates use PUT.
+            var saved = await priceStore.UpsertAsync(
+                session.ActiveCompanyId,
+                itemId,
+                request with { Id = null },
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceEdit);
+
+accounting.MapPut(
+    "/items/{itemId:guid}/prices/{priceId:guid}",
+    async (
+        Guid itemId,
+        Guid priceId,
+        InventoryItemPriceUpsertRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryItemPriceStore priceStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var saved = await priceStore.UpsertAsync(
+                session.ActiveCompanyId,
+                itemId,
+                request with { Id = priceId },
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceEdit);
+
+accounting.MapDelete(
+    "/items/{itemId:guid}/prices/{priceId:guid}",
+    async (
+        Guid itemId,
+        Guid priceId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryItemPriceStore priceStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var deleted = await priceStore.SoftDeleteAsync(
+            session.ActiveCompanyId,
+            priceId,
+            cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceEdit);
+
+accounting.MapGet(
+    "/items/{itemId:guid}/price/resolve",
+    async (
+        Guid itemId,
+        string? currency,
+        DateOnly? asOf,
+        Guid? customerId,
+        string? priceListCode,
+        decimal? quantity,
+        BusinessSessionContextAccessor sessionAccessor,
+        IItemPriceResolver resolver,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(currency))
+        {
+            return Results.BadRequest(new { message = "currency is required." });
+        }
+
+        try
+        {
+            var resolution = await resolver.ResolveAsync(
+                new InventoryItemPriceQuery
+                {
+                    CompanyId = session.ActiveCompanyId,
+                    ItemId = itemId,
+                    CurrencyCode = currency,
+                    AsOf = asOf ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                    CustomerId = customerId,
+                    PriceListCode = priceListCode,
+                    Quantity = quantity ?? 1m,
+                },
+                cancellationToken);
+
+            // Null = no matching price. Callers fall back to their
+            // own default (e.g. inventory_item.unit_price, manual
+            // entry). 404 keeps the contract honest: a "missing
+            // price" is not an error, it's just absence.
+            return resolution is null ? Results.NotFound() : Results.Ok(resolution);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceView);
+
+// ---------------------------------------------------------------------------
+// Tasks (Batch 5).
+//
+// Service-delivery execution units, per Tralance Task Module Authority
+// Summary. State machine: open → completed → billed (Batch 9 wires
+// the AR → bill transition); open or completed → canceled. Edits are
+// accepted only in open. Caller without `task.view.all` only sees the
+// rows assigned to themselves; owner Union (Batch 3.6) grants the
+// full-view permission automatically.
+//
+// Every endpoint is double-gated: RequireModuleEnabled("task")
+// returns 404 if the company hasn't switched the module on, then
+// RequirePermission(...) returns 403 on permission shortfall. The
+// company-isolation guard already applies via the existing route
+// guard pipeline.
+// ---------------------------------------------------------------------------
+accounting.MapGet(
+    "/tasks",
+    async (
+        TaskStatus? status,
+        Guid? customerId,
+        int? take,
+        int? skip,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        // If the caller can't see-all, narrow the SQL to "assigned to
+        // me" before it ever hits the DB — defence-in-depth on top of
+        // any UI filtering. Owners always pass via the catalog Union.
+        var canSeeAll = session.Roles.Contains(CompanyMembershipPermissionCatalog.TaskViewAll, StringComparer.Ordinal);
+        var query = new TaskQuery
+        {
+            CompanyId = session.ActiveCompanyId,
+            Status = status,
+            CustomerId = customerId,
+            OnlyAssignedToUserId = canSeeAll ? null : session.UserId,
+            Take = take ?? 50,
+            Skip = skip ?? 0,
+        };
+
+        var rows = await workflow.ListAsync(query, cancellationToken);
+        return Results.Ok(rows);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
+
+accounting.MapGet(
+    "/tasks/{taskId:guid}",
+    async (
+        Guid taskId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var record = await workflow.GetAsync(session.ActiveCompanyId, taskId, cancellationToken);
+        if (record is null) return Results.NotFound();
+
+        // Visibility check: if the caller lacks `task.view.all`, they
+        // can only see a task that is assigned to them. Same gate as
+        // the list endpoint — applied here too because direct-URL
+        // access bypasses the list narrowing. Unassigned tasks are
+        // hidden from narrow-scope viewers as well (no implicit
+        // "everyone can see unowned tasks").
+        var canSeeAll = session.Roles.Contains(CompanyMembershipPermissionCatalog.TaskViewAll, StringComparer.Ordinal);
+        if (!canSeeAll && record.AssignedToUserId != session.UserId)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(record);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
+
+// Per-task reverse rollup of every linked AR / AP document. Same
+// double-gate (module + permission) as the rest of the surface.
+// Read-only; the page just displays what the line tables already
+// contain (no extra state).
+accounting.MapGet(
+    "/tasks/{taskId:guid}/related-documents",
+    async (
+        Guid taskId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        ITaskRelatedDocumentsService service,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        // Re-run the same visibility gate the GET /tasks/{id} endpoint
+        // applies. Without this an operator without task.view.all could
+        // browse the related-docs list of a task they aren't assigned
+        // to by guessing its id.
+        var task = await workflow.GetAsync(session.ActiveCompanyId, taskId, cancellationToken);
+        if (task is null) return Results.NotFound();
+
+        var canSeeAll = session.Roles.Contains(CompanyMembershipPermissionCatalog.TaskViewAll, StringComparer.Ordinal);
+        if (!canSeeAll && task.AssignedToUserId != session.UserId)
+        {
+            return Results.NotFound();
+        }
+
+        var rows = await service.ListForTaskAsync(session.ActiveCompanyId, taskId, cancellationToken);
+        return Results.Ok(rows);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
+
+accounting.MapPost(
+    "/tasks",
+    async (
+        TaskCreateRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var created = await workflow.CreateAsync(session.ActiveCompanyId, session.UserId, request, cancellationToken);
+            return Results.Created($"/accounting/tasks/{created.Id:D}", created);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskCreate);
+
+accounting.MapPut(
+    "/tasks/{taskId:guid}",
+    async (
+        Guid taskId,
+        TaskUpdateRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var updated = await workflow.UpdateAsync(session.ActiveCompanyId, taskId, session.UserId, request, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskEdit);
+
+accounting.MapPost(
+    "/tasks/{taskId:guid}/lines",
+    async (
+        Guid taskId,
+        TaskLineUpsertRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var updated = await workflow.AddLineAsync(session.ActiveCompanyId, taskId, session.UserId, request, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskEdit);
+
+accounting.MapDelete(
+    "/tasks/{taskId:guid}/lines/{lineId:guid}",
+    async (
+        Guid taskId,
+        Guid lineId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var updated = await workflow.RemoveLineAsync(session.ActiveCompanyId, taskId, lineId, session.UserId, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskEdit);
+
+accounting.MapPost(
+    "/tasks/{taskId:guid}/complete",
+    async (
+        Guid taskId,
+        TaskStateChangeRequest? request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var updated = await workflow.CompleteAsync(session.ActiveCompanyId, taskId, session.UserId, request?.Reason, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskComplete);
+
+accounting.MapPost(
+    "/tasks/{taskId:guid}/cancel",
+    async (
+        Guid taskId,
+        TaskStateChangeRequest? request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var updated = await workflow.CancelAsync(session.ActiveCompanyId, taskId, session.UserId, request?.Reason, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskCancel);
+
+// Batch 9: Task <-> AR invoice billing bookkeeping. These two
+// endpoints are the only canonical way to flip a task into / out of
+// the `Billed` terminal state. They are invoked by the AR post-success
+// path (mark) and the AR void path (rollback). Neither endpoint
+// touches AR documents -- they exist purely so the Task module knows
+// which tasks are currently locked behind an invoice. Same double-gate
+// pattern as the rest of the surface.
+accounting.MapPost(
+    "/tasks/billing/mark",
+    async (
+        TaskMarkBilledRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskBillingCoordinator coordinator,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var result = await coordinator.MarkAsBilledAsync(
+                session.ActiveCompanyId,
+                request.InvoiceId,
+                request.CustomerId,
+                request.TaskIds,
+                session.UserId,
+                cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskBill);
+
+accounting.MapPost(
+    "/tasks/billing/rollback",
+    async (
+        TaskRollbackBillingRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskBillingCoordinator coordinator,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        try
+        {
+            var result = await coordinator.RollbackBillingAsync(
+                session.ActiveCompanyId,
+                request.InvoiceId,
+                session.UserId,
+                request.Reason,
+                cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskBill);
+
+// Batch 10: Task gross-margin report. One endpoint, two modes:
+//   mode=operational (default) -> open/completed/billed tasks, filtered by service_date
+//   mode=billed                -> billed-only, filtered by billed_at
+// Filters (from/to/customerId/assigneeId/take/skip) are all optional.
+// The summary in the response always reflects the unpaged filtered set,
+// not just the visible page.
+accounting.MapGet(
+    "/tasks/reports/margin",
+    async (
+        string? mode,
+        DateOnly? from,
+        DateOnly? to,
+        Guid? customerId,
+        string? assigneeId,
+        int? take,
+        int? skip,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskMarginReportService reportService,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        TaskMarginReportMode parsedMode;
+        switch ((mode ?? "operational").Trim().ToLowerInvariant())
+        {
+            case "operational":
+                parsedMode = TaskMarginReportMode.Operational;
+                break;
+            case "billed":
+                parsedMode = TaskMarginReportMode.Billed;
+                break;
+            default:
+                return Results.BadRequest(new { message = $"Unknown report mode '{mode}'. Use 'operational' or 'billed'." });
+        }
+
+        UserId? parsedAssignee = string.IsNullOrWhiteSpace(assigneeId) ? null : UserId.Parse(assigneeId.Trim());
+
+        var query = new TaskMarginReportQuery
+        {
+            CompanyId = session.ActiveCompanyId,
+            Mode = parsedMode,
+            FromDate = from,
+            ToDate = to,
+            CustomerId = customerId,
+            AssignedToUserId = parsedAssignee,
+            Take = take ?? 200,
+            Skip = skip ?? 0,
+        };
+
+        var result = await reportService.GetReportAsync(query, cancellationToken);
+        return Results.Ok(result);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
+    .RequirePermission(CompanyMembershipPermissionCatalog.TaskReportMargin);
 
 accounting.MapGet(
     "/company-books",
@@ -5237,6 +5870,14 @@ accounting.MapGet(
         IUnitySearchEngine engine,
         CancellationToken cancellationToken) =>
     {
+        // Permission tokens flow from the current business session into
+        // the query so the SQL gate can hide rows whose
+        // required_permissions[] don't overlap with what the caller
+        // actually holds. Callers without a session (rare — most paths
+        // require auth) get an empty list, which means they see only
+        // static / public rows.
+        var permissions = sessionAccessor.Current?.Roles ?? Array.Empty<string>();
+
         var result = await engine.SearchAsync(
             new UnitySearchQuery
             {
@@ -5244,7 +5885,8 @@ accounting.MapGet(
                 UserId = query.UserId ?? sessionAccessor.Current?.UserId,
                 Context = string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
                 SearchText = query.Query ?? string.Empty,
-                Take = query.Take ?? 10
+                Take = query.Take ?? 10,
+                Permissions = permissions
             },
             cancellationToken);
 
@@ -6670,6 +7312,7 @@ accounting.MapPost(
         BillUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IBillStore store,
+        ITaskLineLinkValidator taskLinkValidator,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -6681,12 +7324,25 @@ accounting.MapPost(
 
         try
         {
+            // Validate task links before insert. Rejects billed /
+            // canceled / cross-company tasks so the link can never
+            // settle on a non-attributable target.
+            await ValidateBillExpenseTaskLinksAsync(
+                taskLinkValidator,
+                session.ActiveCompanyId,
+                (request.Lines ?? Array.Empty<BillLineHttpRequest>()).Select(l => l.TaskId),
+                cancellationToken);
+
             var saved = await store.CreateAsync(
                 session.ActiveCompanyId,
                 session.UserId,
                 MapBillInput(request),
                 cancellationToken);
             return Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
         catch (PostgresException ex) when (ex.SqlState == "23505")
         {
@@ -6705,6 +7361,7 @@ accounting.MapPut(
         BillUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IBillStore store,
+        ITaskLineLinkValidator taskLinkValidator,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -6715,6 +7372,12 @@ accounting.MapPut(
 
         try
         {
+            await ValidateBillExpenseTaskLinksAsync(
+                taskLinkValidator,
+                session.ActiveCompanyId,
+                (request.Lines ?? Array.Empty<BillLineHttpRequest>()).Select(l => l.TaskId),
+                cancellationToken);
+
             var saved = await store.UpdateAsync(
                 session.ActiveCompanyId,
                 billId,
@@ -6795,6 +7458,30 @@ static string? ValidateBillInput(BillUpsertHttpRequest request)
     return null;
 }
 
+/// <summary>
+/// Runs <see cref="ITaskLineLinkValidator"/> against the distinct
+/// non-null Task ids on a bill / expense upsert. No-ops when no lines
+/// carry a task. Throws <see cref="InvalidOperationException"/> on
+/// the first invalid link — the route catches it and returns 400 with
+/// the validator's user-facing message.
+/// </summary>
+static async Task ValidateBillExpenseTaskLinksAsync(
+    ITaskLineLinkValidator validator,
+    CompanyId companyId,
+    IEnumerable<Guid?> lineTaskIds,
+    CancellationToken cancellationToken)
+{
+    var distinct = lineTaskIds
+        .Where(static id => id.HasValue && id.Value != Guid.Empty)
+        .Select(static id => id!.Value)
+        .Distinct()
+        .ToArray();
+    foreach (var taskId in distinct)
+    {
+        await validator.ValidateAsync(companyId, taskId, cancellationToken);
+    }
+}
+
 static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
     new(
         BillNumber: request.BillNumber,
@@ -6814,7 +7501,8 @@ static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
                 Description: l.Description ?? string.Empty,
                 LineAmount: l.LineAmount,
                 TaxCodeId: l.TaxCodeId,
-                TaxAmount: l.TaxAmount ?? 0m))
+                TaxAmount: l.TaxAmount ?? 0m,
+                TaskId: l.TaskId))
             .ToArray(),
         ExpectedUpdatedAt: request.ExpectedUpdatedAt);
 
@@ -7150,6 +7838,7 @@ accounting.MapPost(
         ExpenseUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IExpenseStore store,
+        ITaskLineLinkValidator taskLinkValidator,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -7161,6 +7850,12 @@ accounting.MapPost(
 
         try
         {
+            await ValidateBillExpenseTaskLinksAsync(
+                taskLinkValidator,
+                session.ActiveCompanyId,
+                (request.Lines ?? Array.Empty<ExpenseLineHttpRequest>()).Select(l => l.TaskId),
+                cancellationToken);
+
             var saved = await store.CreateAsync(
                 session.ActiveCompanyId,
                 session.UserId,
@@ -7339,7 +8034,8 @@ static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => n
             Description: l.Description ?? string.Empty,
             Quantity: l.Quantity,
             UnitPrice: l.UnitPrice,
-            TaxCodeId: l.TaxCodeId))
+            TaxCodeId: l.TaxCodeId,
+            TaskId: l.TaskId))
         .ToArray());
 
 // ===========================================================================
@@ -8646,7 +9342,8 @@ accounting.MapPost(
                         line.TaxAmount,
                         line.ItemId,
                         line.WarehouseId,
-                        line.UomCode)).ToArray(),
+                        line.UomCode,
+                        line.TaskId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
                     request.SalesOrderId),
                 cancellationToken);
@@ -8690,7 +9387,8 @@ accounting.MapPut(
                         line.TaxAmount,
                         line.ItemId,
                         line.WarehouseId,
-                        line.UomCode)).ToArray(),
+                        line.UomCode,
+                        line.TaskId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
                     request.SalesOrderId,
                     request.ExpectedUpdatedAt),
@@ -8781,7 +9479,8 @@ accounting.MapGet(
                 line.UnitPrice,
                 line.LineAmount,
                 line.TaxAmount,
-                line.PayableTaxAccountId
+                line.PayableTaxAccountId,
+                line.TaskId
             })
         });
     });
@@ -8884,7 +9583,8 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray()),
+                        line.TaxAmount,
+                        line.TaskId)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -8923,7 +9623,8 @@ accounting.MapPut(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray()),
+                        line.TaxAmount,
+                        line.TaskId)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -12035,7 +12736,8 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray(),
+                        line.TaxAmount,
+                        line.TaskId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
@@ -13554,6 +14256,11 @@ internal sealed record class CreditMemoLineHttpRequest
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
+    // Optional Task back-link. Propagated by "Credit invoice" pre-fill
+    // from the source invoice line's task_id; surfaces on the wire and
+    // gets persisted into credit_note_lines.task_id so the post handler
+    // can roll the linked tasks back to Completed.
+    public Guid? TaskId { get; init; }
 }
 
 internal sealed record class VendorCreditSaveAndPostHttpRequest

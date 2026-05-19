@@ -210,7 +210,10 @@ public sealed record ExpenseLineDto(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    decimal LineTotal);
+    decimal LineTotal,
+    // Optional Task back-link surfaced on read so the expense detail
+    // view (and any future edit form) can show the attribution.
+    Guid? TaskId = null);
 
 public sealed record ExpenseUpsertPayload(
     string PayeeKind,
@@ -240,6 +243,9 @@ public sealed record ExpenseLinePayload(
     string Description,
     decimal Quantity,
     decimal UnitPrice,
-    Guid? TaxCodeId);
+    Guid? TaxCodeId,
+    // Optional Task back-link sent on write. Server validates via
+    // ITaskLineLinkValidator and persists to expense_lines.task_id.
+    Guid? TaskId = null);
 
 public sealed record ExpenseMutationOutcome(bool Succeeded, ExpenseRecordDto? Saved, string? ErrorMessage);

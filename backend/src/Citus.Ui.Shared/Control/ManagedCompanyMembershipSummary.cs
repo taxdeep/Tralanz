@@ -20,5 +20,11 @@ public sealed record class ManagedCompanyMembershipSummary
 
     public bool IsActive { get; init; }
 
+    /// <summary>
+    /// Batch 3.5: authoritative owner flag. Do not derive from
+    /// <see cref="Role"/> — the role string is a display label only.
+    /// </summary>
+    public bool IsOwner { get; init; }
+
     public DateTimeOffset UpdatedAt { get; init; }
 }

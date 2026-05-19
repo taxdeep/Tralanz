@@ -98,4 +98,8 @@ public sealed record InvoiceLineDto(
     decimal UnitPrice,
     decimal LineAmount,
     decimal TaxAmount,
-    Guid? PayableTaxAccountId);
+    Guid? PayableTaxAccountId,
+    // Surfaced so the CreditMemoCreatePage "From invoice" pre-fill
+    // can propagate per-line task attribution. New invoices created
+    // without a Task source emit null here.
+    Guid? TaskId = null);

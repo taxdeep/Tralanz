@@ -40,6 +40,48 @@ public sealed class CompanyMembershipGovernanceWorkflow(
             throw new InvalidOperationException("Company membership was not found in the target company context.");
     }
 
+    public async Task<CompanyMembershipOwnershipTransferResult> TransferOwnershipFromSysAdminAsync(
+        CompanyId companyId,
+        Guid fromMembershipId,
+        Guid toMembershipId,
+        string reason,
+        UserId? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        if (companyId.Value is null)
+        {
+            throw new InvalidOperationException("Company context is required to transfer ownership.");
+        }
+
+        if (fromMembershipId == Guid.Empty || toMembershipId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Both source and target membership ids are required.");
+        }
+
+        if (fromMembershipId == toMembershipId)
+        {
+            throw new InvalidOperationException("Ownership transfer requires distinct source and target memberships.");
+        }
+
+        var normalizedReason = string.IsNullOrWhiteSpace(reason)
+            ? "Company ownership transferred by SysAdmin governance."
+            : reason.Trim();
+
+        var ownerTokens = CompanyMembershipPermissionPresets.Expand(CompanyMembershipPermissionPresets.Owner);
+
+        var result = await store.TransferOwnershipFromSysAdminAsync(
+            companyId,
+            fromMembershipId,
+            toMembershipId,
+            normalizedReason,
+            sysAdminAccountId,
+            ownerTokens,
+            cancellationToken);
+
+        return result ??
+            throw new InvalidOperationException("Ownership transfer failed: one or both memberships were not found.");
+    }
+
     private static string NormalizeRole(string role)
     {
         if (string.IsNullOrWhiteSpace(role))

@@ -370,9 +370,12 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         var lines = new List<ExpenseLineRecord>();
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        // task_id column added by PostgresTaskLinkSchemaInitializer
+        // (Batch 8). Reading it here lets the edit page pre-fill the
+        // per-line TaskPicker.
         command.CommandText = """
             SELECT id, expense_id, sequence, service_date, item_id, expense_account_id,
-                   description, quantity, unit_price, tax_code_id, line_total
+                   description, quantity, unit_price, tax_code_id, line_total, task_id
               FROM expense_lines
              WHERE expense_id = @expense_id
              ORDER BY sequence;
@@ -392,7 +395,8 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 Quantity: reader.GetDecimal(7),
                 UnitPrice: reader.GetDecimal(8),
                 TaxCodeId: reader.IsDBNull(9) ? null : reader.GetGuid(9),
-                LineTotal: reader.GetDecimal(10)));
+                LineTotal: reader.GetDecimal(10),
+                TaskId: reader.IsDBNull(11) ? null : reader.GetGuid(11)));
         }
         return lines;
     }
@@ -415,11 +419,11 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 INSERT INTO expense_lines (
                     expense_id, sequence, service_date,
                     item_id, expense_account_id, description,
-                    quantity, unit_price, tax_code_id, line_total)
+                    quantity, unit_price, tax_code_id, line_total, task_id)
                 VALUES (
                     @expense_id, @sequence, @service_date,
                     @item_id, @expense_account_id, @description,
-                    @quantity, @unit_price, @tax_code_id, @line_total);
+                    @quantity, @unit_price, @tax_code_id, @line_total, @task_id);
                 """;
             command.Parameters.AddWithValue("expense_id", expenseId);
             command.Parameters.AddWithValue("sequence", line.Sequence);
@@ -432,6 +436,10 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             command.Parameters.AddWithValue("unit_price", line.UnitPrice);
             command.Parameters.AddWithValue("tax_code_id", (object?)line.TaxCodeId ?? DBNull.Value);
             command.Parameters.AddWithValue("line_total", Math.Round(line.Quantity * line.UnitPrice, 4));
+            // task_id column added by PostgresTaskLinkSchemaInitializer
+            // (Batch 8). Validator already rejected billed / canceled /
+            // cross-company task ids at the route layer.
+            command.Parameters.AddWithValue("task_id", (object?)line.TaskId ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }

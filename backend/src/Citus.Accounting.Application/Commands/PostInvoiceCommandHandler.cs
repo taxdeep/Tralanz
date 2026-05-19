@@ -2,6 +2,7 @@ using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Posting;
 using Citus.Modules.Inventory.Application.Contracts;
+using Citus.Modules.Tasks.Application.Contracts;
 
 namespace Citus.Accounting.Application.Commands;
 
@@ -14,6 +15,7 @@ public sealed class PostInvoiceCommandHandler
     private readonly PostSalesIssueCogsCommandHandler _cogsHandler;
     private readonly PostInvoiceDropShipCogsCommandHandler _dropShipCogsHandler;
     private readonly ApplyCustomerDepositsToInvoiceCommandHandler _depositApplicationHandler;
+    private readonly ITaskBillingCoordinator _taskBilling;
     private readonly IUnitOfWork _unitOfWork;
 
     public PostInvoiceCommandHandler(
@@ -24,6 +26,7 @@ public sealed class PostInvoiceCommandHandler
         PostSalesIssueCogsCommandHandler cogsHandler,
         PostInvoiceDropShipCogsCommandHandler dropShipCogsHandler,
         ApplyCustomerDepositsToInvoiceCommandHandler depositApplicationHandler,
+        ITaskBillingCoordinator taskBilling,
         IUnitOfWork unitOfWork)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
@@ -33,6 +36,7 @@ public sealed class PostInvoiceCommandHandler
         _cogsHandler = cogsHandler ?? throw new ArgumentNullException(nameof(cogsHandler));
         _dropShipCogsHandler = dropShipCogsHandler ?? throw new ArgumentNullException(nameof(dropShipCogsHandler));
         _depositApplicationHandler = depositApplicationHandler ?? throw new ArgumentNullException(nameof(depositApplicationHandler));
+        _taskBilling = taskBilling ?? throw new ArgumentNullException(nameof(taskBilling));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -116,12 +120,89 @@ public sealed class PostInvoiceCommandHandler
         // later (M5 iter 5+ workbench) or via a future re-run endpoint.
         var depositOutcome = await TryApplyCustomerDepositsAsync(command, cancellationToken);
 
+        // Step 5 — Batch 9/10: if any invoice line has task_id, flip the
+        // source tasks Completed -> Billed via the Task billing
+        // coordinator. Soft-failure: a task that's already billed by a
+        // different invoice (data drift) blocks just its own flip; the
+        // rest of the invoice stays posted and the operator resolves
+        // from the Tasks page.
+        var taskBillingOutcome = await TryMarkLinkedTasksBilledAsync(command, cancellationToken);
+
         return invoicePostResult with
         {
             AutoPostedCogs = cogsOutcomes,
             AppliedCustomerDeposits = depositOutcome,
             DropShipCogs = dropShipCogsOutcome,
+            TaskBilling = taskBillingOutcome,
         };
+    }
+
+    /// <summary>
+    /// Step 5 hook. Returns null when the invoice has no task-linked
+    /// lines (the common case for direct-create invoices). Otherwise
+    /// returns the per-task outcome counts; ErrorMessage non-null
+    /// signals a soft failure — invoice already committed.
+    /// </summary>
+    private async Task<InvoiceTaskBillingOutcome?> TryMarkLinkedTasksBilledAsync(
+        PostInvoiceCommand command,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Guid> taskIds;
+        try
+        {
+            taskIds = await _documents.ListLinkedTaskIdsAsync(
+                command.CompanyId,
+                command.DocumentId,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return new InvoiceTaskBillingOutcome(0, 0, ex.Message);
+        }
+
+        if (taskIds.Count == 0)
+        {
+            return null;
+        }
+
+        // Re-load just enough header data to pass the customer guard.
+        // GetForPostingAsync is safe to call after post; we only need
+        // CustomerId for the cross-customer-protection check.
+        Guid? customerId = null;
+        try
+        {
+            var document = await _documents.GetForPostingAsync(
+                command.CompanyId,
+                command.DocumentId,
+                cancellationToken);
+            // PartyId on an invoice doc is the customer id.
+            customerId = document?.PartyId;
+        }
+        catch
+        {
+            // Best effort — fall through with null customerId. The
+            // coordinator treats null as "skip the per-task customer
+            // match" so the flip still happens.
+        }
+
+        try
+        {
+            var result = await _taskBilling.MarkAsBilledAsync(
+                command.CompanyId,
+                command.DocumentId,
+                customerId,
+                taskIds,
+                command.UserId,
+                cancellationToken);
+            return new InvoiceTaskBillingOutcome(
+                ProcessedCount: result.ProcessedTasks.Count,
+                SkippedCount: result.SkippedTasks.Count,
+                ErrorMessage: null);
+        }
+        catch (Exception ex)
+        {
+            return new InvoiceTaskBillingOutcome(0, 0, ex.Message);
+        }
     }
 
     /// <summary>

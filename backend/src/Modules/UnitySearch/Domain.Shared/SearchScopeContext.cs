@@ -43,4 +43,12 @@ public static class SearchScopeContext
     /// the document type up front.
     /// </summary>
     public const string JournalEntryNamePicker = "journal_entry.name_picker";
+
+    /// <summary>
+    /// Picker for selecting a Task from AR / AP line-item editors
+    /// (Batch 8 will wire this into invoice / bill / expense / PO
+    /// lines so postings can attribute themselves to a Task for the
+    /// gross-margin read model).
+    /// </summary>
+    public const string TaskPicker = "task.picker";
 }

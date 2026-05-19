@@ -1,0 +1,269 @@
+@page "/tasks"
+
+@using Citus.Modules.Tasks.Application.Contracts
+@using Citus.Modules.Tasks.Domain.Shared
+@using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
+
+@inject BusinessShellState ShellState
+@inject TaskClient TaskClient
+@inject CitusToastService Message
+@inject NavigationManager NavigationManager
+
+<PageTitle>Tasks | Tralanz Books</PageTitle>
+
+@if (!ShellState.IsModuleEnabled("task"))
+{
+    @* Belt-and-suspenders: the nav menu already hides this section
+       when the module is off, but a direct URL hit would otherwise
+       just render an empty grid. *@
+    <CitusPageHeader Model="_disabledHeader" />
+    <CitusEmptyState
+        Icon="IconName.Puzzle"
+        Title="Task module is not enabled"
+        Message="Ask your platform administrator to enable the Task module for this company in SysAdmin → Companies → Features."
+        ActionLabel="Back to dashboard"
+        ActionHref="dashboard" />
+}
+else
+{
+    <CitusPageHeader Model="_header">
+        <Actions>
+            @if (CanViewMargin)
+            {
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             LeadingIcon="IconName.ReportAnalytics"
+                             OnClick="@(() => NavigationManager.NavigateTo("tasks/reports/margin"))">
+                    Margin report
+                </CitusButton>
+            }
+            @if (CanCreate)
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.Plus"
+                             OnClick="StartCreate">New task</CitusButton>
+            }
+        </Actions>
+    </CitusPageHeader>
+
+    <div class="flex flex-wrap gap-2 mb-4">
+        <select class="citus-form-field__input citus-input--small" @bind="_statusFilter" @bind:after="ReloadAsync">
+            <option value="">All statuses</option>
+            <option value="0">Open</option>
+            <option value="1">Completed</option>
+            <option value="2">Billed</option>
+            <option value="3">Canceled</option>
+        </select>
+        <CitusButton Size="CitusButtonSize.Small" Variant="CitusButtonVariant.Ghost" OnClick="ReloadAsync">
+            Refresh
+        </CitusButton>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div class="mb-4"><CitusLoadingBar /></div>
+    }
+    else if (_tasks.Count == 0)
+    {
+        <CitusEmptyState
+            Icon="IconName.Activity"
+            Title="No tasks yet"
+            Message="@(string.IsNullOrEmpty(_statusFilter) ? "Create the first task to start tracking billable work." : "No tasks match the selected status. Clear the filter to see everything.")" />
+    }
+    else
+    {
+        <section class="citus-panel">
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Task #</th>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Service date</th>
+                        <th class="text-right">Billable value</th>
+                        <th>Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var task in _tasks)
+                    {
+                        <tr class="cursor-pointer" @onclick="@(() => OpenTask(task.Id))">
+                            <td>@task.TaskNo</td>
+                            <td>@task.Title</td>
+                            <td>
+                                <CitusBadge Color="@StatusBadgeColor(task.Status)">
+                                    @StatusLabel(task.Status)
+                                </CitusBadge>
+                            </td>
+                            <td>@(task.ServiceDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            <td class="text-right">@($"{task.TotalBillableValue:N2} {task.CurrencyCode}")</td>
+                            <td>@task.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    <CitusDrawer IsOpen="@_isCreating"
+                 Width="CitusDrawerWidth.Medium"
+                 Title="New task"
+                 SaveLabel="Create"
+                 SaveDisabled="@_isSaving"
+                 OnSave="SaveCreateAsync"
+                 OnCancel="CancelCreate">
+        @if (!string.IsNullOrWhiteSpace(_validation))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-3" />
+        }
+        <div class="grid grid-cols-1 gap-3">
+            <div>
+                <label class="text-sm font-medium block mb-1">Title</label>
+                <CitusInput TValue="string" @bind-Value="_draft.Title" Placeholder="Q2 audit prep" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Currency</label>
+                <CitusInput TValue="string" @bind-Value="_draft.CurrencyCode" Placeholder="@ShellState.ActiveCompany.BaseCurrencyCode" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Service date</label>
+                <input type="date" class="citus-form-field__input" @bind="_draft.ServiceDate" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Description (optional)</label>
+                <CitusInput TValue="string" @bind-Value="_draft.Description" Placeholder="Optional" />
+            </div>
+        </div>
+    </CitusDrawer>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Tasks",
+        Subtitle = "Service-delivery execution units. Records billable work, ready-to-bill, and (later) directly-attributed AP cost."
+    };
+
+    private readonly PageHeaderModel _disabledHeader = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Tasks",
+        Subtitle = "The Task module is not enabled for this company."
+    };
+
+    private bool _isLoading = true;
+    private bool _isCreating;
+    private bool _isSaving;
+    private string? _statusFilter;
+    private string? _validation;
+    private IReadOnlyList<TaskSummary> _tasks = Array.Empty<TaskSummary>();
+    private NewTaskDraft _draft = new();
+
+    private bool CanCreate => ShellState.User.Roles.Contains("task.create", StringComparer.Ordinal);
+
+    private bool CanViewMargin => ShellState.User.Roles.Contains("task.report.margin", StringComparer.Ordinal);
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            TaskStatus? status = !string.IsNullOrEmpty(_statusFilter) && int.TryParse(_statusFilter, out var raw)
+                ? (TaskStatus)raw
+                : null;
+            _tasks = await TaskClient.ListAsync(status: status);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void StartCreate()
+    {
+        _draft = new NewTaskDraft
+        {
+            CurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode,
+            ServiceDate = DateOnly.FromDateTime(DateTime.UtcNow),
+        };
+        _validation = null;
+        _isCreating = true;
+    }
+
+    private void CancelCreate()
+    {
+        _isCreating = false;
+        _validation = null;
+    }
+
+    private async Task SaveCreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_draft.Title))
+        {
+            _validation = "Title is required.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_draft.CurrencyCode))
+        {
+            _validation = "Currency is required.";
+            return;
+        }
+
+        _isSaving = true;
+        _validation = null;
+        try
+        {
+            var outcome = await TaskClient.CreateAsync(new TaskCreateRequest
+            {
+                Title = _draft.Title!,
+                Description = _draft.Description,
+                CurrencyCode = _draft.CurrencyCode!,
+                ServiceDate = _draft.ServiceDate,
+            });
+
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Unable to create the task.";
+                return;
+            }
+
+            await Message.SuccessAsync($"Task {outcome.Saved.TaskNo} created.");
+            _isCreating = false;
+            NavigationManager.NavigateTo($"tasks/{outcome.Saved.Id:D}");
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private void OpenTask(Guid taskId) => NavigationManager.NavigateTo($"tasks/{taskId:D}");
+
+    private static string StatusLabel(TaskStatus status) => status switch
+    {
+        TaskStatus.Open => "Open",
+        TaskStatus.Completed => "Completed",
+        TaskStatus.Billed => "Billed",
+        TaskStatus.Canceled => "Canceled",
+        _ => status.ToString(),
+    };
+
+    private static string StatusBadgeColor(TaskStatus status) => status switch
+    {
+        TaskStatus.Open => "blue",
+        TaskStatus.Completed => "green",
+        TaskStatus.Billed => "gold",
+        TaskStatus.Canceled => "default",
+        _ => "default",
+    };
+
+    private sealed class NewTaskDraft
+    {
+        public string? Title { get; set; }
+        public string? Description { get; set; }
+        public string? CurrencyCode { get; set; }
+        public DateOnly? ServiceDate { get; set; }
+    }
+}

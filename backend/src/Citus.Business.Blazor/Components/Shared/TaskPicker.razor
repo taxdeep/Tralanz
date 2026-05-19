@@ -1,0 +1,260 @@
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
+@inject BusinessShellState ShellState
+@inject UnitySearchPickerService PickerService
+
+@*
+    TaskPicker — typeahead for attributing an AR / AP line to a Task.
+    Wraps UnitySearchPickerService with the `task.picker` policy
+    (registered in UnitySearchPolicyRegistry, Batch 7) so the API gate
+    enforces task.view + module-enabled + assignee-or-override before
+    a row reaches the dropdown.
+
+    Hidden when the active company hasn't enabled the Task module —
+    drawer / form callers don't have to gate this themselves.
+*@
+
+@if (!ShellState.IsModuleEnabled("task"))
+{
+    @* Tasks aren't enabled for this company; render nothing at all
+       so the surrounding line editor stays compact. The host page
+       decides what (if anything) to show in place — typically just
+       skipping the column. *@
+}
+else
+{
+    <div class="citus-task-picker @(Disabled ? "citus-task-picker--disabled" : null)">
+        <div class="citus-task-picker__control" @onclick="HandleControlClickAsync">
+            <input class="citus-task-picker__input"
+                   type="text"
+                   autocomplete="off"
+                   value="@_searchText"
+                   placeholder="@Placeholder"
+                   disabled="@Disabled"
+                   @ref="_inputRef"
+                   @oninput="HandleInputAsync"
+                   @onfocus="HandleFocusAsync"
+                   @onblur="HandleBlurAsync"
+                   @onkeydown="HandleKeyDownAsync" />
+            <i class="ti ti-chevron-down citus-task-picker__chevron" aria-hidden="true"></i>
+            @if (AllowClear && !Disabled && (!string.IsNullOrWhiteSpace(_searchText) || SelectedId.HasValue))
+            {
+                <button type="button"
+                        class="citus-task-picker__clear"
+                        @onmousedown:preventDefault
+                        @onclick="ClearAsync"
+                        aria-label="Clear">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            }
+        </div>
+
+        @if (_showResults)
+        {
+            <div class="citus-task-picker__panel" role="listbox">
+                @if (_loading)
+                {
+                    <div class="citus-task-picker__empty">Loading...</div>
+                }
+                else if (_results.Count == 0)
+                {
+                    <div class="citus-task-picker__empty">
+                        @(string.IsNullOrWhiteSpace(_searchText)
+                            ? "Type to search tasks..."
+                            : "No matching tasks.")
+                    </div>
+                }
+                else
+                {
+                    @for (var idx = 0; idx < _results.Count; idx++)
+                    {
+                        var i = idx;
+                        var row = _results[i];
+                        <button type="button"
+                                class="citus-task-picker__option @(i == _highlightedIndex ? "is-active" : null)"
+                                @onmousedown:preventDefault
+                                @onclick="@(() => SelectAsync(row))"
+                                @onmouseover="@(() => _highlightedIndex = i)">
+                            <span class="citus-task-picker__option-copy">
+                                <span class="citus-task-picker__option-primary">@row.PrimaryText</span>
+                                <span class="citus-task-picker__option-secondary">@row.SecondaryText</span>
+                            </span>
+                            <span class="citus-task-picker__option-kind">Task</span>
+                        </button>
+                    }
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public string? SelectedDisplayText { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Attribute to task...";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool AllowClear { get; set; } = true;
+    [Parameter] public int Take { get; set; } = 8;
+    [Parameter] public EventCallback<UnitySearchPickerOption> OnTaskSelected { get; set; }
+    [Parameter] public EventCallback OnCleared { get; set; }
+
+    private ElementReference _inputRef;
+    private string _searchText = string.Empty;
+    private bool _isFocused;
+    private bool _showResults;
+    private bool _loading;
+    private int _highlightedIndex = -1;
+    private IReadOnlyList<UnitySearchPickerOption> _results = Array.Empty<UnitySearchPickerOption>();
+    private CancellationTokenSource? _blurCts;
+    private CancellationTokenSource? _searchCts;
+
+    protected override void OnParametersSet()
+    {
+        if (!_isFocused)
+        {
+            _searchText = SelectedDisplayText ?? string.Empty;
+        }
+    }
+
+    private async Task HandleFocusAsync(FocusEventArgs _)
+    {
+        _isFocused = true;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        _blurCts = null;
+        await SearchAsync(_searchText);
+        _showResults = true;
+        StateHasChanged();
+    }
+
+    private async Task HandleControlClickAsync()
+    {
+        if (Disabled) return;
+        if (!_showResults)
+        {
+            await _inputRef.FocusAsync();
+            await HandleFocusAsync(default!);
+        }
+    }
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _highlightedIndex = -1;
+        await SearchAsync(_searchText);
+        _showResults = true;
+        StateHasChanged();
+    }
+
+    private async Task SearchAsync(string query)
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+
+        _loading = true;
+        try
+        {
+            // Small debounce so a fast typer doesn't fire one call
+            // per keystroke.
+            await Task.Delay(120, cts.Token);
+            var trimmed = query.Trim();
+            // Empty query still hits the policy so the user sees
+            // recent / top-ranked tasks on first focus.
+            var ranked = await PickerService.SearchAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.User.Id,
+                SearchScopeContext.TaskPicker,
+                trimmed,
+                Math.Clamp(Take, 1, 20),
+                cts.Token);
+
+            if (cts.IsCancellationRequested) return;
+
+            _results = ranked
+                .Where(static option =>
+                    string.Equals(option.EntityType, SearchDocumentType.Task, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            _highlightedIndex = _results.Count > 0 ? 0 : -1;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (!cts.IsCancellationRequested) _loading = false;
+        }
+    }
+
+    private async Task HandleBlurAsync(FocusEventArgs _)
+    {
+        _isFocused = false;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _blurCts = cts;
+
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                _showResults = false;
+                _highlightedIndex = -1;
+                _searchText = SelectedDisplayText ?? _searchText;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _showResults = false;
+            _highlightedIndex = -1;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!_showResults || _results.Count == 0) return;
+
+        if (e.Key == "ArrowDown")
+        {
+            _highlightedIndex = Math.Min(_highlightedIndex + 1, _results.Count - 1);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _highlightedIndex = Math.Max(_highlightedIndex - 1, 0);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "Enter" && _highlightedIndex >= 0 && _highlightedIndex < _results.Count)
+        {
+            await SelectAsync(_results[_highlightedIndex]);
+        }
+    }
+
+    private async Task SelectAsync(UnitySearchPickerOption option)
+    {
+        _showResults = false;
+        _highlightedIndex = -1;
+        _searchText = option.DisplayText;
+        await OnTaskSelected.InvokeAsync(option);
+        StateHasChanged();
+    }
+
+    private async Task ClearAsync()
+    {
+        _searchText = string.Empty;
+        _showResults = false;
+        _highlightedIndex = -1;
+        await OnCleared.InvokeAsync();
+        StateHasChanged();
+    }
+}

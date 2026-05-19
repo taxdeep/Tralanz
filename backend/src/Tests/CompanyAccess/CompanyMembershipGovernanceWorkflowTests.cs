@@ -108,5 +108,15 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
                     Reason = reason
                 });
         }
+
+        public Task<CompanyMembershipOwnershipTransferResult?> TransferOwnershipFromSysAdminAsync(
+            CompanyId companyId,
+            Guid fromMembershipId,
+            Guid toMembershipId,
+            string reason,
+            UserId? sysAdminAccountId,
+            IReadOnlyList<string> newOwnerPermissions,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<CompanyMembershipOwnershipTransferResult?>(null);
     }
 }

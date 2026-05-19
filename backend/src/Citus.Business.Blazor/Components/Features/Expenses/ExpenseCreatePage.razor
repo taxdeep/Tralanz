@@ -169,6 +169,10 @@ else
                             <th style="width: 3rem">#</th>
                             <th style="width: 16rem">Category</th>
                             <th>Description</th>
+                            @if (ShellState.IsModuleEnabled("task"))
+                            {
+                                <th style="width: 14rem">Task</th>
+                            }
                             <th style="width: 6rem" class="text-right">Qty</th>
                             <th style="width: 8rem" class="text-right">Rate</th>
                             <th style="width: 9rem">Tax</th>
@@ -199,6 +203,16 @@ else
                                                 Value="@line.Description"
                                                 ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
                                 </td>
+                                @if (ShellState.IsModuleEnabled("task"))
+                                {
+                                    <td>
+                                        <TaskPicker SelectedId="@line.TaskId"
+                                                    SelectedDisplayText="@line.TaskDisplay"
+                                                    Placeholder="Optional…"
+                                                    OnTaskSelected="@(option => UpdateLine(index, l => l with { TaskId = option.SourceId, TaskDisplay = option.DisplayText }))"
+                                                    OnCleared="@(() => UpdateLine(index, l => l with { TaskId = null, TaskDisplay = string.Empty }))" />
+                                    </td>
+                                }
                                 <td>
                                     <RadzenNumeric TValue="decimal" Value="@line.Quantity"
                                                    Change="@(v => UpdateLine(index, l => l with { Quantity = v }))"
@@ -473,6 +487,8 @@ else
         current.Quantity = updated.Quantity;
         current.UnitPrice = updated.UnitPrice;
         current.TaxCodeId = updated.TaxCodeId;
+        current.TaskId = updated.TaskId;
+        current.TaskDisplay = updated.TaskDisplay;
     }
 
     private void AddLine() => _lines.Add(new LineDraft());
@@ -554,7 +570,8 @@ else
                         Description: l.Description ?? string.Empty,
                         Quantity: l.Quantity,
                         UnitPrice: l.UnitPrice,
-                        TaxCodeId: l.TaxCodeId))
+                        TaxCodeId: l.TaxCodeId,
+                        TaskId: l.TaskId))
                     .ToArray());
 
             var outcome = await ExpenseClient.CreateAsync(payload);
@@ -585,6 +602,9 @@ else
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
         public Guid? TaxCodeId { get; set; }
+        // Optional Task back-link, mirrors the bill page pattern.
+        public Guid? TaskId { get; set; }
+        public string TaskDisplay { get; set; } = string.Empty;
     }
 
     private sealed record PaymentAccountOption(Guid Id, string Label, string? DetailType, string CurrencyCode);

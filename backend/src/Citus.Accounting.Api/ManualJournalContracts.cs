@@ -253,7 +253,13 @@ public sealed record SaveInvoiceDraftLineHttpRequest(
     decimal TaxAmount,
     Guid? ItemId = null,
     Guid? WarehouseId = null,
-    string? UomCode = null);
+    string? UomCode = null,
+    // Per-line back-link to the Task this line is billing. When non-null
+    // the line persists into invoice_lines.task_id (column added by the
+    // Batch 8 PostgresTaskLinkSchemaInitializer), and the post handler
+    // uses these distinct task_ids to flip the source tasks
+    // Completed -> Billed after the invoice posts.
+    Guid? TaskId = null);
 
 public sealed record InvoiceLookupQuery(CompanyId CompanyId);
 
@@ -285,7 +291,12 @@ public sealed record SaveCreditNoteDraftLineHttpRequest(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    decimal TaxAmount);
+    decimal TaxAmount,
+    // Optional Task back-link. When non-null and the credit note is
+    // posted, the Task billing coordinator rolls every linked task
+    // currently in Billed status back to Completed. Persists into
+    // credit_note_lines.task_id (column added by Batch 8).
+    Guid? TaskId = null);
 
 public sealed record CreditNoteLookupQuery(CompanyId CompanyId);
 

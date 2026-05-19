@@ -102,6 +102,10 @@ else
                             <th style="width: 14rem">Item / Service</th>
                             <th style="width: 14rem">Category</th>
                             <th>Description</th>
+                            @if (ShellState.IsModuleEnabled("task"))
+                            {
+                                <th style="width: 14rem">Task</th>
+                            }
                             <th style="width: 8rem">Tax</th>
                             <th class="text-right" style="width: 8rem">Tax amt</th>
                             <th class="text-right" style="width: 10rem">Amount</th>
@@ -151,6 +155,20 @@ else
                                                 Value="@line.Description"
                                                 ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
                                 </td>
+                                @if (ShellState.IsModuleEnabled("task"))
+                                {
+                                    <td>
+                                        @* Per-line Task attribution. TaskPicker
+                                           hides itself when the module is off,
+                                           but the column is also gated above
+                                           so the table stays compact. *@
+                                        <TaskPicker SelectedId="@line.TaskId"
+                                                    SelectedDisplayText="@line.TaskDisplay"
+                                                    Placeholder="Optional…"
+                                                    OnTaskSelected="@(option => UpdateLine(index, l => l with { TaskId = option.SourceId, TaskDisplay = option.DisplayText }))"
+                                                    OnCleared="@(() => UpdateLine(index, l => l with { TaskId = null, TaskDisplay = string.Empty }))" />
+                                    </td>
+                                }
                                 <td>
                                     <RadzenDropDown TValue="Guid?"
                                                     Data="@_taxCodes"
@@ -395,7 +413,11 @@ else
             Description = l.Description,
             LineAmount = l.LineAmount,
             TaxCodeId = l.TaxCodeId,
-            TaxAmount = l.TaxAmount
+            TaxAmount = l.TaxAmount,
+            TaskId = l.TaskId,
+            // No up-front task lookup — render the short id as a
+            // placeholder. Operator re-picks to see the full label.
+            TaskDisplay = l.TaskId is { } tid ? $"Task {tid:D}"[..13] + "…" : string.Empty,
         }).ToList();
         if (_lines.Count == 0) _lines.Add(new LineDraft());
     }
@@ -438,6 +460,8 @@ else
         current.LineAmount = updated.LineAmount;
         current.TaxCodeId = updated.TaxCodeId;
         current.TaxAmount = updated.TaxAmount;
+        current.TaskId = updated.TaskId;
+        current.TaskDisplay = updated.TaskDisplay;
     }
 
     private void OnItemPicked(int index, UnitySearchPickerOption option)
@@ -529,7 +553,8 @@ else
                         Description: l.Description ?? string.Empty,
                         LineAmount: l.LineAmount,
                         TaxCodeId: l.TaxCodeId,
-                        TaxAmount: l.TaxAmount))
+                        TaxAmount: l.TaxAmount,
+                        TaskId: l.TaskId))
                     .ToArray(),
                 ExpectedUpdatedAt: _billId is null ? null : _expectedUpdatedAt);
 
@@ -587,6 +612,12 @@ else
         public decimal LineAmount { get; set; }
         public Guid? TaxCodeId { get; set; }
         public decimal TaxAmount { get; set; }
+        // Optional Task back-link. Edit-page loads it from
+        // BillLineDto.TaskId; new lines start blank. Display text falls
+        // back to a short GUID on load since we don't fetch task
+        // summaries up-front — re-pick to see the full label.
+        public Guid? TaskId { get; set; }
+        public string TaskDisplay { get; set; } = string.Empty;
     }
 
     private sealed record AccountOption(Guid Id, string Label);

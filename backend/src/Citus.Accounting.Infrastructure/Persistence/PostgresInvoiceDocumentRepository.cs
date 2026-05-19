@@ -168,7 +168,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                            tc.payable_account_id,
                            l.item_id,
                            l.warehouse_id,
-                           l.uom_code
+                           l.uom_code,
+                           l.task_id
                          from invoice_lines l
                          left join tax_codes tc
                            on tc.id = l.tax_code_id
@@ -203,7 +204,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                     taxCodeId,
                     reader.IsDBNull(reader.GetOrdinal("item_id")) ? null : reader.GetGuid(reader.GetOrdinal("item_id")),
                     reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : reader.GetGuid(reader.GetOrdinal("warehouse_id")),
-                    reader.IsDBNull(reader.GetOrdinal("uom_code")) ? null : reader.GetString(reader.GetOrdinal("uom_code"))));
+                    reader.IsDBNull(reader.GetOrdinal("uom_code")) ? null : reader.GetString(reader.GetOrdinal("uom_code")),
+                    reader.IsDBNull(reader.GetOrdinal("task_id")) ? null : reader.GetGuid(reader.GetOrdinal("task_id"))));
             }
         }
 
@@ -509,6 +511,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   item_id,
                   warehouse_id,
                   uom_code,
+                  task_id,
                   created_at,
                   updated_at
                 )
@@ -527,6 +530,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   @item_id,
                   @warehouse_id,
                   @uom_code,
+                  @task_id,
                   now(),
                   now()
                 );
@@ -545,12 +549,43 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("item_id", NpgsqlDbType.Uuid) { TypedValue = line.ItemId });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("warehouse_id", NpgsqlDbType.Uuid) { TypedValue = line.WarehouseId });
             insertLineCommand.Parameters.AddWithValue("uom_code", string.IsNullOrWhiteSpace(line.UomCode) ? (object)DBNull.Value : line.UomCode.Trim().ToUpperInvariant());
+            // task_id column is added by PostgresTaskLinkSchemaInitializer
+            // (Batch 8). When the invoice is created via "Bill this task"
+            // every line carries the source task id; otherwise null.
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select distinct task_id
+            from invoice_lines
+            where company_id = @company_id
+              and invoice_id = @invoice_id
+              and task_id is not null;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("invoice_id", invoiceId);
+
+        var ids = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            ids.Add(reader.GetGuid(0));
+        }
+        return ids;
     }
 
     public async Task<SourceDocumentDraftSaveResult> SubmitDraftAsync(

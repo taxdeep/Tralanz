@@ -1,0 +1,174 @@
+@page "/companies/{CompanyIdRaw}/features"
+
+@inject CitusToastService Message
+@inject SysAdminControlClient SysAdminControlClient
+
+<PageTitle>Company Features | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="companies">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to companies</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!_companyIdValid)
+{
+    <CitusEmptyState
+        Icon="IconName.BuildingSkyscraper"
+        Title="Company id not recognized"
+        Message="The route segment is not a valid company id. Return to the companies list and pick a company."
+        ActionLabel="Back to companies"
+        ActionHref="companies" />
+}
+else if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+else if (_flags.Count == 0)
+{
+    <CitusEmptyState
+        Icon="IconName.Puzzle"
+        Title="No toggleable modules"
+        Message="The platform has not registered any opt-in modules yet. Modules ship in later batches; this page is intentionally empty for now."
+        ActionLabel="Back to companies"
+        ActionHref="companies" />
+}
+else
+{
+    <section class="citus-panel">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Module</th>
+                    <th>Description</th>
+                    <th>Enabled</th>
+                    <th>Last changed</th>
+                    <th>Changed by</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var flag in _flags)
+                {
+                    <tr>
+                        <td>
+                            <div>@flag.DisplayName</div>
+                            <div class="text-fg-subtle text-xs">@flag.ModuleKey</div>
+                        </td>
+                        <td>@flag.Description</td>
+                        <td>
+                            @if (flag.Enabled)
+                            {
+                                <CitusBadge Color="@("green")">Enabled</CitusBadge>
+                            }
+                            else
+                            {
+                                <CitusBadge Color="@("default")">Disabled</CitusBadge>
+                            }
+                        </td>
+                        <td>
+                            @(flag.UpdatedAtUtc.HasValue ? flag.UpdatedAtUtc.Value.ToString("yyyy-MM-dd HH:mm 'UTC'") : "—")
+                        </td>
+                        <td>@(flag.UpdatedByUserId.HasValue ? flag.UpdatedByUserId.Value.ToString() : "—")</td>
+                        <td class="text-right">
+                            @if (flag.Enabled)
+                            {
+                                <CitusButton Size="CitusButtonSize.Small"
+                                             Danger="true"
+                                             Disabled="@IsBusy(flag.ModuleKey)"
+                                             OnClick="@(() => SetEnabledAsync(flag, enabled: false))">
+                                    Disable
+                                </CitusButton>
+                            }
+                            else
+                            {
+                                <CitusButton Size="CitusButtonSize.Small"
+                                             Disabled="@IsBusy(flag.ModuleKey)"
+                                             OnClick="@(() => SetEnabledAsync(flag, enabled: true))">
+                                    Enable
+                                </CitusButton>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <p class="text-fg-subtle text-xs mt-4">
+        Disabling a module hides its menu, blocks its API, and removes its rows from
+        global search for this company. Historical data is preserved.
+    </p>
+}
+
+@code {
+    [Parameter] public string CompanyIdRaw { get; set; } = string.Empty;
+
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Company Features",
+        Subtitle = "Per-company module toggles. Disabling preserves history but hides surfaces."
+    };
+
+    private bool _isLoading = true;
+    private bool _companyIdValid;
+    private CompanyId _companyId;
+    private IReadOnlyList<CompanyModuleFlagSummary> _flags = Array.Empty<CompanyModuleFlagSummary>();
+    private readonly HashSet<string> _busyKeys = new(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!CompanyId.TryParse(CompanyIdRaw, out _companyId))
+        {
+            _companyIdValid = false;
+            _isLoading = false;
+            return;
+        }
+
+        _companyIdValid = true;
+        _flags = await SysAdminControlClient.ListCompanyModuleFlagsAsync(_companyId);
+        _isLoading = false;
+    }
+
+    private bool IsBusy(string moduleKey) => _busyKeys.Contains(moduleKey);
+
+    private async Task SetEnabledAsync(CompanyModuleFlagSummary flag, bool enabled)
+    {
+        _busyKeys.Add(flag.ModuleKey);
+
+        try
+        {
+            var reason = enabled
+                ? $"SysAdmin enabled the {flag.DisplayName} module from the company features page."
+                : $"SysAdmin disabled the {flag.DisplayName} module from the company features page.";
+
+            var outcome = await SysAdminControlClient.SetCompanyModuleFlagAsync(
+                _companyId,
+                flag.ModuleKey,
+                enabled,
+                reason);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(
+                    string.IsNullOrWhiteSpace(outcome.Message)
+                        ? $"Unable to update {flag.DisplayName}."
+                        : outcome.Message);
+                return;
+            }
+
+            _flags = await SysAdminControlClient.ListCompanyModuleFlagsAsync(_companyId);
+            await Message.SuccessAsync(
+                enabled
+                    ? $"{flag.DisplayName} enabled."
+                    : $"{flag.DisplayName} disabled.");
+        }
+        finally
+        {
+            _busyKeys.Remove(flag.ModuleKey);
+        }
+    }
+}

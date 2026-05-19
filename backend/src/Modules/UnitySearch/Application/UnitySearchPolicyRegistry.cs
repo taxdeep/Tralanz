@@ -26,7 +26,8 @@ public sealed class UnitySearchPolicyRegistry
                     SearchDocumentType.CreditNote,
                     SearchDocumentType.VendorCredit,
                     SearchDocumentType.JournalEntry,
-                    SearchDocumentType.Account
+                    SearchDocumentType.Account,
+                    SearchDocumentType.Task
                 },
                 EnforceActiveOnly: false,
                 EnforceBusinessEligibility: false),
@@ -49,10 +50,16 @@ public sealed class UnitySearchPolicyRegistry
                     SearchDocumentType.CreditNote,
                     SearchDocumentType.VendorCredit,
                     SearchDocumentType.JournalEntry,
-                    SearchDocumentType.Account
+                    SearchDocumentType.Account,
+                    SearchDocumentType.Task
                 },
                 EnforceActiveOnly: false,
                 EnforceBusinessEligibility: false),
+            [SearchScopeContext.TaskPicker] = new(
+                SearchScopeContext.TaskPicker,
+                new[] { SearchDocumentType.Task },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
             [SearchScopeContext.QuoteCustomerPicker] = new(
                 SearchScopeContext.QuoteCustomerPicker,
                 new[] { SearchDocumentType.Customer },

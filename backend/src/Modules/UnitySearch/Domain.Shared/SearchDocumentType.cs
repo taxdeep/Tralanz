@@ -19,4 +19,5 @@ public static class SearchDocumentType
     public const string VendorCredit = "vendor_credit";
     public const string JournalEntry = "journal_entry";
     public const string Account = "account";
+    public const string Task = "task";
 }

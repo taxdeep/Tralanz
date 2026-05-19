@@ -1,6 +1,7 @@
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
 @inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
 @inject Citus.Business.Blazor.Services.BusinessAuthenticationClient BusinessAuthenticationClient
+@inject Citus.Business.Blazor.Services.ModuleFlagsClient ModuleFlagsClient
 @inject CitusToastService Message
 @inject IThemeService ThemeService
 @inject IJSRuntime JS
@@ -244,6 +245,20 @@ else
             }
 
             ShellState.ApplySessionContext(context);
+
+            // Pull the per-company module flags after the session is in
+            // place so the nav menu can hide modules the company hasn't
+            // switched on. Best-effort — if it fails the menu falls
+            // back to "module disabled", which is the safer default.
+            try
+            {
+                var flags = await ModuleFlagsClient.GetAsync();
+                ShellState.ApplyModuleFlags(flags);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Module-flag fetch failed; nav menu defaults to module-off.");
+            }
         }
         finally
         {

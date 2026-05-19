@@ -367,6 +367,85 @@ public sealed class SysAdminControlClient(
         return outcome.Succeeded;
     }
 
+    public async Task<IReadOnlyList<CompanyModuleFlagSummary>> ListCompanyModuleFlagsAsync(
+        CompanyId companyId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ApplySessionHeader();
+            return await httpClient.GetFromJsonAsync<IReadOnlyList<CompanyModuleFlagSummary>>(
+                    $"control/companies/{companyId}/module-flags",
+                    cancellationToken) ??
+                Array.Empty<CompanyModuleFlagSummary>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load module flags for company {CompanyId}.", companyId);
+            return Array.Empty<CompanyModuleFlagSummary>();
+        }
+    }
+
+    public async Task<CommandOutcome> SetCompanyModuleFlagAsync(
+        CompanyId companyId,
+        string moduleKey,
+        bool enabled,
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        await SendGovernanceCommandWithOutcomeAsync(
+            static (client, request, token) => client.PutAsJsonAsync(request.Path, request.Payload, token),
+            new GovernanceCommandRequest(
+                $"control/companies/{companyId}/module-flags/{moduleKey}",
+                new CompanyModuleFlagUpdatePayload(enabled, reason)),
+            "Company module flag update",
+            cancellationToken);
+
+    public async Task<IReadOnlyList<CompanyMembershipPermissionPresetSummary>> ListMembershipPermissionPresetsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ApplySessionHeader();
+            return await httpClient.GetFromJsonAsync<IReadOnlyList<CompanyMembershipPermissionPresetSummary>>(
+                    "control/membership-permission-presets",
+                    cancellationToken) ??
+                Array.Empty<CompanyMembershipPermissionPresetSummary>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load membership permission presets.");
+            return Array.Empty<CompanyMembershipPermissionPresetSummary>();
+        }
+    }
+
+    public Task<CommandOutcome> ApplyMembershipPermissionPresetAsync(
+        CompanyId companyId,
+        Guid membershipId,
+        string presetCode,
+        bool replace,
+        CancellationToken cancellationToken = default) =>
+        SendGovernanceCommandWithOutcomeAsync(
+            static (client, request, token) => client.PutAsJsonAsync(request.Path, request.Payload, token),
+            new GovernanceCommandRequest(
+                $"control/companies/{companyId}/memberships/{membershipId}/permissions/preset",
+                new CompanyMembershipPresetApplyPayload(presetCode, replace)),
+            "Membership permission preset apply",
+            cancellationToken);
+
+    public Task<CommandOutcome> TransferCompanyOwnershipAsync(
+        CompanyId companyId,
+        Guid fromMembershipId,
+        Guid toMembershipId,
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        SendGovernanceCommandWithOutcomeAsync(
+            static (client, request, token) => client.PutAsJsonAsync(request.Path, request.Payload, token),
+            new GovernanceCommandRequest(
+                $"control/companies/{companyId}/memberships/{fromMembershipId}/transfer-ownership",
+                new CompanyOwnershipTransferPayload(toMembershipId, reason)),
+            "Company ownership transfer",
+            cancellationToken);
+
     private async Task<CommandOutcome> SendGovernanceCommandWithOutcomeAsync(
         Func<HttpClient, GovernanceCommandRequest, CancellationToken, Task<HttpResponseMessage>> sendAsync,
         GovernanceCommandRequest request,
@@ -457,6 +536,12 @@ public sealed class SysAdminControlClient(
     private sealed record MfaRecoveryExecutePayload(string Reason);
 
     private sealed record CompanyMembershipRoleUpdatePayload(string Role, string Reason);
+
+    private sealed record CompanyModuleFlagUpdatePayload(bool Enabled, string Reason);
+
+    private sealed record CompanyMembershipPresetApplyPayload(string PresetCode, bool Replace);
+
+    private sealed record CompanyOwnershipTransferPayload(Guid ToMembershipId, string Reason);
 
     public sealed record CommandOutcome(bool Succeeded, string Message);
 }

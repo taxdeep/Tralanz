@@ -88,6 +88,8 @@ public sealed class CompanyMembershipPermissionWorkflowTests
     {
         public IReadOnlyList<string> SavedTokens { get; private set; } = Array.Empty<string>();
 
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
         public Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
             CompanyId companyId,
             CancellationToken cancellationToken) =>
@@ -121,6 +123,24 @@ public sealed class CompanyMembershipPermissionWorkflowTests
             CompanyId companyId,
             Guid membershipId,
             UserId actorUserId,
+            IReadOnlyList<string> permissionTokens,
+            CancellationToken cancellationToken)
+        {
+            SavedTokens = permissionTokens;
+            return Task.FromResult<CompanyMembershipPermissionListItem?>(
+                target is null
+                    ? null
+                    : target with
+                    {
+                        PermissionTokens = permissionTokens,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    });
+        }
+
+        public Task<CompanyMembershipPermissionListItem?> SavePermissionsFromSysAdminAsync(
+            CompanyId companyId,
+            Guid membershipId,
+            UserId? sysAdminAccountId,
             IReadOnlyList<string> permissionTokens,
             CancellationToken cancellationToken)
         {

@@ -18,7 +18,8 @@ public sealed record PostInvoiceCommandResult(
     IReadOnlyList<string> Warnings,
     IReadOnlyList<InvoiceAutoCogsOutcome> AutoPostedCogs,
     InvoiceDepositApplicationOutcome? AppliedCustomerDeposits,
-    InvoiceDropShipCogsOutcome? DropShipCogs)
+    InvoiceDropShipCogsOutcome? DropShipCogs,
+    InvoiceTaskBillingOutcome? TaskBilling = null)
 {
     public static PostInvoiceCommandResult FromPostingResult(PostingResult result) =>
         new(
@@ -29,8 +30,25 @@ public sealed record PostInvoiceCommandResult(
             result.Warnings,
             Array.Empty<InvoiceAutoCogsOutcome>(),
             AppliedCustomerDeposits: null,
-            DropShipCogs: null);
+            DropShipCogs: null,
+            TaskBilling: null);
 }
+
+/// <summary>
+/// Outcome of the Step 5 Task-billing flip
+/// (<c>Completed -> Billed</c>) triggered after a successful invoice
+/// post when the invoice has lines linked to one or more tasks. Null on
+/// the result when the invoice carries no task_id-linked lines (the
+/// common case). When non-null, the invoice posted successfully and
+/// some attempt was made to flip the source tasks; per-task outcomes
+/// are summarised in the count fields. Soft-failure: a failure here
+/// does NOT roll back the invoice — the operator can resolve via the
+/// Tasks page (manual mark-billed or rollback).
+/// </summary>
+public sealed record InvoiceTaskBillingOutcome(
+    int ProcessedCount,
+    int SkippedCount,
+    string? ErrorMessage);
 
 /// <summary>
 /// Per-invoice summary of M5 iter 4 deposit clearing. Null on the

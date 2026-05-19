@@ -4,6 +4,10 @@
     migration: the previous menu primitives are gone; the
     `.active` class that NavLink toggles drives the selected style via
     shell.css's .citus-nav-menu__link.active rule.
+
+    Batch 6: items carrying a ModuleKey are filtered against
+    ShellState.ModuleFlags. A section whose items all fail the filter
+    is suppressed entirely so the sidebar doesn't show empty headers.
 *@
 
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
@@ -11,10 +15,19 @@
 <nav class="citus-nav-menu @(Collapsed ? "citus-nav-menu--collapsed" : null)">
     @foreach (var navSection in ShellState.NavigationSections)
     {
+        var visibleItems = navSection.Items
+            .Where(item => string.IsNullOrEmpty(item.ModuleKey) || ShellState.IsModuleEnabled(item.ModuleKey))
+            .ToArray();
+
+        if (visibleItems.Length == 0)
+        {
+            continue;
+        }
+
         <div class="citus-nav-menu__group">
             <div class="citus-nav-menu__group-title">@navSection.Title</div>
             <ul class="citus-nav-menu__items">
-                @foreach (var item in navSection.Items)
+                @foreach (var item in visibleItems)
                 {
                     <li>
                         <NavLink class="citus-nav-menu__link"

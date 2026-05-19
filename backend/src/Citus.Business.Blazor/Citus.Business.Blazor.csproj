@@ -11,6 +11,11 @@
     <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
     <ProjectReference Include="..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
     <ProjectReference Include="..\Modules\UnitySearch\Blazor\Citus.Modules.UnitySearch.Blazor.csproj" />
+    <!-- Task pages deserialize TaskRecord / TaskSummary off the wire
+         and dispatch on TaskStatus; reference Domain.Shared directly
+         so the Blazor host doesn't mirror DTOs that already exist. -->
+    <ProjectReference Include="..\Modules\Tasks\Domain.Shared\Citus.Modules.Tasks.Domain.Shared.csproj" />
+    <ProjectReference Include="..\Modules\Tasks\Application.Contracts\Citus.Modules.Tasks.Application.Contracts.csproj" />
   </ItemGroup>
 
   <!-- Phase-gated migration: see UI_LIBRARY_MIGRATION_PLAN.md.

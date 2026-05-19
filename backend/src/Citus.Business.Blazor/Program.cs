@@ -282,6 +282,38 @@ builder.Services.AddHttpClient<ItemClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// Batch 6: per-company module-flag fetch + Task module HTTP client.
+// Both ride the same business-session header handler so they
+// authenticate as the active company.
+builder.Services.AddHttpClient<ModuleFlagsClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<TaskClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<TaskMarginReportClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<TaskRelatedDocumentsClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<InventoryActivationClient>(
         (serviceProvider, client) =>
         {

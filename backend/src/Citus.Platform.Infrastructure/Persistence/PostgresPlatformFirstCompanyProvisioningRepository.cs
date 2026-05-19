@@ -1413,6 +1413,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               user_id,
               role,
               is_active,
+              is_owner,
               permissions,
               created_at,
               updated_at
@@ -1422,6 +1423,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @company_id,
               @user_id,
               'owner',
+              true,
               true,
               @permissions::jsonb,
               @created_at,

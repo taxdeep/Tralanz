@@ -1,5 +1,6 @@
 using Citus.Modules.UnitySearch.Application.Contracts;
 using Citus.Modules.UnitySearch.Domain.Shared;
+using Modules.Company.FeatureManagement;
 using Npgsql;
 
 namespace Infrastructure.PostgreSQL.UnitySearch;
@@ -40,6 +41,11 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                 doc.is_voided,
                 doc.rank_boost,
                 doc.version,
+                doc.module_key,
+                doc.required_permissions,
+                doc.owner_user_id,
+                doc.visibility_scope,
+                doc.visibility_override_permission,
                 (
                   -- L1 amount-exact (200) and L2 amount-tolerance (120) tiers.
                   -- Capped well above text-match scores so an amount hit
@@ -121,6 +127,40 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                 and not doc.is_voided
                 and (not @enforce_active_only or doc.is_active)
                 and (not @enforce_business_eligibility or (doc.is_active and not doc.is_voided))
+                -- Per-company module gate. Only "toggleable" module keys
+                -- (the FeatureManagement catalog) go through the
+                -- company_module_flags lookup; always-on modules like
+                -- ar/ap/gl/inventory/core skip the join.
+                and (
+                  not (doc.module_key = any(@toggleable_module_keys))
+                  or exists (
+                    select 1 from company_module_flags f
+                    where f.company_id = doc.company_id
+                      and f.module_key = doc.module_key
+                      and f.enabled = true
+                  )
+                )
+                -- Permission gate. Empty required_permissions[] = no
+                -- restriction (e.g. static "jump to" rows); non-empty
+                -- requires at least one overlap with the caller's
+                -- @user_permissions set.
+                and (
+                  coalesce(cardinality(doc.required_permissions), 0) = 0
+                  or doc.required_permissions && @user_permissions
+                )
+                -- Visibility scope. 'assignee_only' rows (per-user
+                -- task assignments etc.) hide unless owner_user_id
+                -- matches the caller — OR the caller holds the row's
+                -- visibility_override_permission (the
+                -- "task.view.all"-style "I can see everyone's"
+                -- token). Batch 7 added the override branch.
+                and (
+                  doc.visibility_scope = 'company'
+                  or (doc.visibility_scope = 'assignee_only' and doc.owner_user_id = @user_id)
+                  or (doc.visibility_scope = 'assignee_only'
+                      and doc.visibility_override_permission is not null
+                      and doc.visibility_override_permission = any(@user_permissions))
+                )
                 and (
                   doc.exact_code_norm = @normalized_query
                   or doc.exact_code_norm like @exact_prefix
@@ -151,7 +191,12 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
               is_voided,
               rank_boost,
               version,
-              computed_score
+              computed_score,
+              module_key,
+              required_permissions,
+              owner_user_id,
+              visibility_scope,
+              visibility_override_permission
             from ranked_results
             order by
               computed_score desc,
@@ -173,10 +218,28 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         command.Parameters.AddWithValue("numeric_query", numericValue);
         command.Parameters.AddWithValue("query_class", hints.QueryClassTag);
         command.Parameters.AddWithValue("take", take);
+        // Single source of truth for "which module keys are toggleable"
+        // — sourced from the FeatureManagement catalog so adding a new
+        // toggleable module is purely a C# change.
+        command.Parameters.AddWithValue("toggleable_module_keys", CompanyModuleFlagCatalog.KnownKeys.ToArray());
+        command.Parameters.AddWithValue("user_permissions", query.Permissions.ToArray());
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var ownerOrdinal = reader.GetOrdinal("owner_user_id");
+            UserId? ownerUserId = reader.IsDBNull(ownerOrdinal)
+                ? null
+                : UserId.Parse(reader.GetString(ownerOrdinal).Trim());
+            var requiredPermissionsOrdinal = reader.GetOrdinal("required_permissions");
+            IReadOnlyList<string> requiredPermissions = reader.IsDBNull(requiredPermissionsOrdinal)
+                ? Array.Empty<string>()
+                : reader.GetFieldValue<string[]>(requiredPermissionsOrdinal);
+            var overridePermissionOrdinal = reader.GetOrdinal("visibility_override_permission");
+            string? visibilityOverridePermission = reader.IsDBNull(overridePermissionOrdinal)
+                ? null
+                : reader.GetString(overridePermissionOrdinal).Trim();
+
             results.Add(new SearchDocumentRecord(
                 CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("entity_type")),
@@ -198,7 +261,12 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                 reader.GetBoolean(reader.GetOrdinal("is_voided")),
                 reader.GetDecimal(reader.GetOrdinal("rank_boost")),
                 reader.GetInt64(reader.GetOrdinal("version")),
-                reader.GetDecimal(reader.GetOrdinal("computed_score"))));
+                reader.GetDecimal(reader.GetOrdinal("computed_score")),
+                reader.GetString(reader.GetOrdinal("module_key")),
+                requiredPermissions,
+                ownerUserId,
+                reader.GetString(reader.GetOrdinal("visibility_scope")),
+                visibilityOverridePermission));
         }
 
         return results;

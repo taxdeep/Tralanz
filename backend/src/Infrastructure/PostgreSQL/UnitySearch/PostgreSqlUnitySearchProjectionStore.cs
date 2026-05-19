@@ -49,9 +49,36 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               is_voided boolean not null default false,
               rank_boost numeric(18, 6) not null default 0,
               version bigint not null default 1,
+              -- Batch-2 isolation columns. See SearchDocumentRecord doc
+              -- comment for the role of each: module on/off, permission
+              -- gate, per-user assignee scope.
+              module_key text not null default 'core',
+              required_permissions text[] not null default array[]::text[],
+              owner_user_id char(7) null,
+              visibility_scope text not null default 'company',
+              -- Batch-7 override: when visibility_scope='assignee_only'
+              -- and the caller holds this permission token, the row is
+              -- visible even if owner_user_id doesn't match. Lets us
+              -- model "task.view (only mine)" vs "task.view.all
+              -- (everyone)" without doubling the index.
+              visibility_override_permission text null,
               updated_at timestamptz not null default now(),
               primary key (company_id, entity_type, source_id)
             );
+
+            -- In-place upgrade for deployments that pre-date Batch 2.
+            -- Each ADD COLUMN IF NOT EXISTS is idempotent so re-running
+            -- the bootstrap is safe.
+            alter table search_documents
+              add column if not exists module_key text not null default 'core';
+            alter table search_documents
+              add column if not exists required_permissions text[] not null default array[]::text[];
+            alter table search_documents
+              add column if not exists owner_user_id char(7) null;
+            alter table search_documents
+              add column if not exists visibility_scope text not null default 'company';
+            alter table search_documents
+              add column if not exists visibility_override_permission text null;
 
             create index if not exists ix_search_documents_company_group
               on search_documents (company_id, group_key, entity_type);
@@ -61,6 +88,13 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
 
             create index if not exists ix_search_documents_search_vector
               on search_documents using gin (search_vector);
+
+            create index if not exists ix_search_documents_company_module
+              on search_documents (company_id, module_key);
+
+            create index if not exists ix_search_documents_company_owner
+              on search_documents (company_id, owner_user_id)
+              where owner_user_id is not null;
 
             -- Numeric-amount lookup path. The topbar's amount search resolves
             -- "11039.18" to a JE / Invoice / Bill via doc.amount; B-tree on
@@ -241,6 +275,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             await RunSeedStepAsync(connection, transaction, companyId, "vendor_credit", SeedVendorCreditDocumentsAsync, cancellationToken);
             await RunSeedStepAsync(connection, transaction, companyId, "journal_entry", SeedJournalEntryDocumentsAsync, cancellationToken);
             await RunSeedStepAsync(connection, transaction, companyId, "account", SeedAccountDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "task", SeedTaskDocumentsAsync, cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
         }
@@ -406,7 +441,12 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               is_active,
               is_voided,
               rank_boost,
-              version
+              version,
+              module_key,
+              required_permissions,
+              owner_user_id,
+              visibility_scope,
+              visibility_override_permission
             )
             values (
               @company_id,
@@ -425,7 +465,12 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               @is_active,
               @is_voided,
               @rank_boost,
-              @version
+              @version,
+              @module_key,
+              @required_permissions,
+              @owner_user_id,
+              @visibility_scope,
+              @visibility_override_permission
             );
             """;
         command.Parameters.AddWithValue("company_id", document.CompanyId.Value);
@@ -444,6 +489,17 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         command.Parameters.AddWithValue("is_voided", document.IsVoided);
         command.Parameters.AddWithValue("rank_boost", document.RankBoost);
         command.Parameters.AddWithValue("version", document.Version);
+        command.Parameters.AddWithValue("module_key", document.ModuleKey);
+        command.Parameters.AddWithValue(
+            "required_permissions",
+            (document.RequiredPermissions ?? Array.Empty<string>()).ToArray());
+        command.Parameters.AddWithValue(
+            "owner_user_id",
+            document.OwnerUserId.HasValue ? (object)document.OwnerUserId.Value.Value : DBNull.Value);
+        command.Parameters.AddWithValue("visibility_scope", document.VisibilityScope);
+        command.Parameters.AddWithValue(
+            "visibility_override_permission",
+            document.VisibilityOverridePermission is null ? DBNull.Value : (object)document.VisibilityOverridePermission);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -461,7 +517,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               c.company_id,
@@ -480,7 +537,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               c.is_active,
               false,
               30,
-              1
+              1,
+              'ar', array['ar']::text[], null, 'company', null
             from customers c
             where c.company_id = @company_id;
             """,
@@ -501,7 +559,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               v.company_id,
@@ -520,7 +579,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               v.is_active,
               false,
               30,
-              1
+              1,
+              'ap', array['ap']::text[], null, 'company', null
             from vendors v
             where v.company_id = @company_id;
             """,
@@ -541,7 +601,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               item.company_id,
@@ -560,7 +621,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               item.is_active,
               false,
               25,
-              1
+              1,
+              'inventory', array['ar','ap']::text[], null, 'company', null
             from company_product_service_catalog item
             where item.company_id = @company_id;
             """,
@@ -581,7 +643,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               item.company_id,
@@ -600,7 +663,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               item.is_active,
               false,
               24,
-              1
+              1,
+              'inventory', array['ar','ap']::text[], null, 'company', null
             from inventory_items item
             where item.company_id = @company_id;
             """,
@@ -628,7 +692,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               item.company_id,
@@ -647,7 +712,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               item.is_active,
               false,
               24,
-              1
+              1,
+              'inventory', array['ap']::text[], null, 'company', null
             from inventory_items item
             where item.company_id = @company_id
               and item.item_kind in ('stock', 'drop_ship');
@@ -669,7 +735,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               warehouse.company_id,
@@ -688,7 +755,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               warehouse.is_active,
               false,
               22,
-              1
+              1,
+              'inventory', array['ar','ap']::text[], null, 'company', null
             from inventory_warehouses warehouse
             where warehouse.company_id = @company_id;
             """,
@@ -718,7 +786,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             $"""
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               doc.company_id,
@@ -737,7 +806,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               true,
               false,
               36,
-              1
+              1,
+              'ar', array['ar']::text[], null, 'company', null
             from web_shell_sales_commercial_documents doc
             where doc.company_id = @company_id
               and doc.document_type = '{documentType}';
@@ -759,7 +829,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               po.company_id,
@@ -778,7 +849,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               true,
               po.status in ('cancelled'),
               38,
-              1
+              1,
+              'ap', array['ap']::text[], null, 'company', null
             from purchase_orders po
             left join vendors v
               on v.company_id = po.company_id
@@ -802,7 +874,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               i.company_id,
@@ -826,7 +899,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               true,
               i.status in ('voided', 'reversed'),
               44,
-              1
+              1,
+              'ar', array['ar']::text[], null, 'company', null
             from invoices i
             left join customers c
               on c.company_id = i.company_id
@@ -850,7 +924,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               b.company_id,
@@ -870,7 +945,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               true,
               b.status in ('voided', 'reversed'),
               44,
-              1
+              1,
+              'ap', array['ap']::text[], null, 'company', null
             from bills b
             left join vendors v
               on v.company_id = b.company_id
@@ -894,7 +970,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               note.company_id,
@@ -914,7 +991,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               true,
               note.status in ('voided', 'reversed'),
               40,
-              1
+              1,
+              'ar', array['ar']::text[], null, 'company', null
             from credit_notes note
             left join customers c
               on c.company_id = note.company_id
@@ -938,7 +1016,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               vc.company_id,
@@ -958,7 +1037,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               true,
               vc.status in ('voided', 'reversed'),
               40,
-              1
+              1,
+              'ap', array['ap']::text[], null, 'company', null
             from vendor_credits vc
             left join vendors v
               on v.company_id = vc.company_id
@@ -982,7 +1062,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               je.company_id,
@@ -1006,9 +1087,66 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               true,
               je.status in ('voided', 'reversed'),
               42,
-              1
+              1,
+              'gl', array['reports']::text[], null, 'company', null
             from journal_entries je
             where je.company_id = @company_id;
+            """,
+            cancellationToken);
+    }
+
+    private static async Task SeedTaskDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "public.tasks", cancellationToken))
+        {
+            return;
+        }
+
+        // Tasks land in the Transactions group alongside invoices and
+        // bills. visibility_scope='assignee_only' + owner=assignee
+        // gives narrow-view users (task.view only) sight of just their
+        // own rows; the override permission 'task.view.all' lets a
+        // manager search every row without doubling the index.
+        await ExecuteCompanyProjectionStepAsync(
+            connection,
+            transaction,
+            companyId,
+            """
+            insert into search_documents (
+              company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
+            )
+            select
+              t.company_id,
+              'task',
+              t.id,
+              'transactions',
+              t.task_no,
+              concat_ws(' | ', initcap(t.status), coalesce(c.display_name, ''), t.currency_code),
+              concat_ws(' ', t.task_no, t.title, coalesce(t.description, ''), coalesce(c.display_name, '')),
+              to_tsvector('simple', concat_ws(' ', t.task_no, t.title, coalesce(t.description, ''), coalesce(c.display_name, ''))),
+              lower(t.task_no),
+              '/tasks/' || t.id::text,
+              jsonb_build_object('status', t.status, 'customerId', t.customer_id, 'customerName', c.display_name, 'assignedTo', t.assigned_to_user_id),
+              t.service_date,
+              t.total_billable_value,
+              -- Treat canceled and is_voided tasks as inactive (hide
+              -- from "active-only" pickers) and voided in the search
+              -- output. is_voided wins as the public flag because
+              -- canceled is the user-facing concept for tasks.
+              not (t.is_voided or t.status = 'canceled'),
+              (t.is_voided or t.status = 'canceled'),
+              40,
+              1,
+              'task',
+              array['task.view']::text[],
+              t.assigned_to_user_id,
+              'assignee_only',
+              'task.view.all'
+            from tasks t
+            left join customers c on c.company_id = t.company_id and c.id = t.customer_id
+            where t.company_id = @company_id;
             """,
             cancellationToken);
     }
@@ -1027,7 +1165,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             """
             insert into search_documents (
               company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
-              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
             )
             select
               a.company_id,
@@ -1046,7 +1185,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               a.is_active,
               false,
               28,
-              1
+              1,
+              'gl', array['reports']::text[], null, 'company', null
             from accounts a
             where a.company_id = @company_id;
             """,

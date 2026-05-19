@@ -15,7 +15,8 @@ public sealed record PostCreditNoteCommandResult(
     string JournalEntryDisplayNumber,
     string Status,
     DateTimeOffset PostedAt,
-    IReadOnlyList<string> Warnings)
+    IReadOnlyList<string> Warnings,
+    CreditNoteTaskRollbackOutcome? TaskRollback = null)
 {
     public static PostCreditNoteCommandResult FromPostingResult(PostingResult result) =>
         new(
@@ -23,5 +24,19 @@ public sealed record PostCreditNoteCommandResult(
             result.JournalEntryDisplayNumber,
             result.Status,
             result.PostedAt,
-            result.Warnings);
+            result.Warnings,
+            TaskRollback: null);
 }
+
+/// <summary>
+/// Outcome of the Step 2 Task-billing rollback (<c>Billed -> Completed</c>)
+/// triggered after a successful credit-note post when the credit note
+/// has lines linked to one or more tasks. Null on the result when the
+/// credit note carries no task_id-linked lines (the common case for a
+/// standalone customer credit). Soft-failure: failure here does NOT
+/// roll back the credit note — operator resolves via the Tasks page.
+/// </summary>
+public sealed record CreditNoteTaskRollbackOutcome(
+    int ProcessedCount,
+    int SkippedCount,
+    string? ErrorMessage);

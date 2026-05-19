@@ -39,6 +39,19 @@ public interface IInvoiceDocumentRepository
         UserId userId,
         Guid documentId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the distinct non-null <c>task_id</c> values across this
+    /// invoice's lines. Used by the post handler's Step 5 (Task billing
+    /// mark) to discover which tasks the invoice bills without dragging
+    /// task semantics into <see cref="InvoiceDocument"/>. Empty when the
+    /// invoice has no task-linked lines (the common case for direct-create
+    /// invoices).
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record InvoiceListItem(
@@ -70,6 +83,18 @@ public interface ICreditNoteDocumentRepository
 
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         CreditNoteDraftSaveModel draft,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the distinct non-null <c>task_id</c> values across this
+    /// credit note's lines. Used by the post handler's Step 2 (Task
+    /// billing rollback) hook to discover which tasks the credit reverses.
+    /// Empty when the credit note has no task-linked lines (the common
+    /// case for standalone customer credits unrelated to a task).
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
+        CompanyId companyId,
+        Guid creditNoteId,
         CancellationToken cancellationToken);
 }
 
@@ -358,7 +383,11 @@ public sealed record InvoiceDraftLineSaveModel(
     decimal TaxAmount,
     Guid? ItemId = null,
     Guid? WarehouseId = null,
-    string? UomCode = null);
+    string? UomCode = null,
+    // Per-line back-link to the Task this line bills. Persists into
+    // invoice_lines.task_id; the post handler aggregates distinct
+    // task_ids to flip source tasks Completed -> Billed on post.
+    Guid? TaskId = null);
 
 public sealed record CreditNoteDraftSaveModel(
     Guid? DocumentId,
@@ -384,7 +413,11 @@ public sealed record CreditNoteDraftLineSaveModel(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    decimal TaxAmount);
+    decimal TaxAmount,
+    // Per-line back-link to the Task the credit reverses. Persists into
+    // credit_note_lines.task_id; the post handler rolls these tasks
+    // back to Completed.
+    Guid? TaskId = null);
 
 public sealed record BillDraftSaveModel(
     Guid? DocumentId,

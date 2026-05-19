@@ -7,10 +7,106 @@ namespace Infrastructure.PostgreSQL.CompanyAccess;
 public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembershipPermissionStore
 {
     private readonly PostgreSqlConnectionFactory _connections;
+    private int _schemaEnsured;
 
     public PostgreSqlCompanyMembershipPermissionStore(PostgreSqlConnectionFactory connections)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
+    }
+
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        // Cheap intra-process guard: the only call site is app startup,
+        // so an in-memory flag is enough to avoid re-scanning every
+        // membership on a second EnsureSchemaAsync from another caller.
+        if (Volatile.Read(ref _schemaEnsured) == 1)
+        {
+            return;
+        }
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+
+        // Batch-3.5 schema: surface owner-ship as an explicit
+        // is_owner flag (not a role string match), with a partial
+        // unique index that guarantees at most one active owner per
+        // company at any time. Idempotent — re-run is a no-op.
+        await using (var schemaCommand = connection.CreateCommand())
+        {
+            schemaCommand.CommandText =
+                """
+                alter table company_memberships
+                  add column if not exists is_owner boolean not null default false;
+
+                create unique index if not exists uq_company_memberships_one_owner
+                  on company_memberships (company_id)
+                  where is_owner = true;
+
+                -- Backfill: every membership currently flagged as
+                -- role='owner' becomes is_owner=true. Safe to run
+                -- repeatedly — the where-clause skips rows already
+                -- aligned, so subsequent boots write nothing.
+                update company_memberships
+                set is_owner = true,
+                    updated_at = now()
+                where role = 'owner'
+                  and is_owner = false;
+                """;
+            await schemaCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // Stream every membership's current permissions and, for any
+        // row whose legacy tokens haven't been expanded yet, write
+        // back the expanded set. No batch SQL because the legacy →
+        // fine-grained mapping lives in C# and is the single source
+        // of truth; doing it in the language keeps drift impossible.
+        await using (var readCommand = connection.CreateCommand())
+        {
+            readCommand.CommandText =
+                """
+                select id, company_id, permissions::text as permissions
+                from company_memberships
+                where permissions is not null;
+                """;
+
+            var pending = new List<(Guid Id, string CompanyId, string Json)>();
+            await using (var reader = await readCommand.ExecuteReaderAsync(cancellationToken))
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var id = reader.GetGuid(reader.GetOrdinal("id"));
+                    var companyId = reader.GetString(reader.GetOrdinal("company_id"));
+                    var json = reader.GetString(reader.GetOrdinal("permissions"));
+                    var current = ParsePermissionTokens(json);
+
+                    if (!CompanyMembershipPermissionLegacyExpansion.NeedsExpansion(current))
+                    {
+                        continue;
+                    }
+
+                    var expanded = CompanyMembershipPermissionLegacyExpansion.Expand(current);
+                    pending.Add((id, companyId, JsonSerializer.Serialize(expanded)));
+                }
+            }
+
+            foreach (var (id, companyId, json) in pending)
+            {
+                await using var updateCommand = connection.CreateCommand();
+                updateCommand.CommandText =
+                    """
+                    update company_memberships
+                    set permissions = @permissions::jsonb,
+                        updated_at = now()
+                    where company_id = @company_id
+                      and id = @membership_id;
+                    """;
+                updateCommand.Parameters.AddWithValue("company_id", companyId);
+                updateCommand.Parameters.AddWithValue("membership_id", id);
+                updateCommand.Parameters.AddWithValue("permissions", json);
+                await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
+        Volatile.Write(ref _schemaEnsured, 1);
     }
 
     public async Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
@@ -31,12 +127,13 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               m.role,
               m.permissions::text as permissions,
               m.is_active,
+              m.is_owner,
               m.updated_at
             from company_memberships m
             inner join users u on u.id = m.user_id
             where m.company_id = @company_id
             order by
-              case when m.role = 'owner' then 0 else 1 end,
+              case when m.is_owner then 0 else 1 end,
               u.email,
               u.username;
             """;
@@ -118,6 +215,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               m.role,
               m.permissions::text as permissions,
               m.is_active,
+              m.is_owner,
               m.updated_at
             from company_memberships m
             inner join users u on u.id = m.user_id
@@ -167,10 +265,39 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             ParsePermissionTokens(reader.GetString(reader.GetOrdinal("permissions"))));
     }
 
-    public async Task<CompanyMembershipPermissionListItem?> SavePermissionsAsync(
+    public Task<CompanyMembershipPermissionListItem?> SavePermissionsAsync(
         CompanyId companyId,
         Guid membershipId,
         UserId actorUserId,
+        IReadOnlyList<string> permissionTokens,
+        CancellationToken cancellationToken) =>
+        PersistPermissionsAsync(
+            companyId,
+            membershipId,
+            actorUserId,
+            actorType: "user",
+            permissionTokens,
+            cancellationToken);
+
+    public Task<CompanyMembershipPermissionListItem?> SavePermissionsFromSysAdminAsync(
+        CompanyId companyId,
+        Guid membershipId,
+        UserId? sysAdminAccountId,
+        IReadOnlyList<string> permissionTokens,
+        CancellationToken cancellationToken) =>
+        PersistPermissionsAsync(
+            companyId,
+            membershipId,
+            sysAdminAccountId,
+            actorType: "sysadmin",
+            permissionTokens,
+            cancellationToken);
+
+    private async Task<CompanyMembershipPermissionListItem?> PersistPermissionsAsync(
+        CompanyId companyId,
+        Guid membershipId,
+        UserId? actorUserId,
+        string actorType,
         IReadOnlyList<string> permissionTokens,
         CancellationToken cancellationToken)
     {
@@ -180,12 +307,13 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         IReadOnlyList<string> previousTokens;
         UserId targetUserId;
         string targetRole;
+        bool targetIsOwner;
         await using (var previousCommand = connection.CreateCommand())
         {
             previousCommand.Transaction = transaction;
             previousCommand.CommandText =
                 """
-                select user_id, role, permissions::text as permissions
+                select user_id, role, permissions::text as permissions, is_owner
                 from company_memberships
                 where company_id = @company_id
                   and id = @membership_id
@@ -204,6 +332,19 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             targetUserId = UserId.Parse(previousReader.GetString(previousReader.GetOrdinal("user_id")));
             targetRole = previousReader.GetString(previousReader.GetOrdinal("role")).Trim().ToLowerInvariant();
             previousTokens = ParsePermissionTokens(previousReader.GetString(previousReader.GetOrdinal("permissions")));
+            targetIsOwner = previousReader.GetBoolean(previousReader.GetOrdinal("is_owner"));
+        }
+
+        // Owner permissions are governance-locked: the owner always
+        // holds the full catalog (see CompanyMembershipPermissionPresets.Owner)
+        // and any direct edit is rejected. To change who has owner
+        // power, callers must use the transfer-ownership pathway,
+        // which atomically swaps is_owner and reassigns permissions.
+        if (targetIsOwner)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException(
+                "Owner permissions are immutable. Transfer ownership before changing this membership's permissions.");
         }
 
         await using var command = connection.CreateCommand();
@@ -222,6 +363,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
               role,
               permissions::text as permissions,
               is_active,
+              is_owner,
               updated_at;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -234,6 +376,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         string? savedRole = null;
         string? savedPermissions = null;
         bool savedIsActive = false;
+        bool savedIsOwner = false;
         DateTimeOffset savedUpdatedAt = DateTimeOffset.UtcNow;
 
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
@@ -249,6 +392,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             savedRole = reader.GetString(reader.GetOrdinal("role"));
             savedPermissions = reader.GetString(reader.GetOrdinal("permissions"));
             savedIsActive = reader.GetBoolean(reader.GetOrdinal("is_active"));
+            savedIsOwner = reader.GetBoolean(reader.GetOrdinal("is_owner"));
             savedUpdatedAt = CoerceTimestamp(reader.GetValue(reader.GetOrdinal("updated_at")));
         }
 
@@ -257,6 +401,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             transaction,
             companyId,
             membershipId,
+            actorType,
             actorUserId,
             targetUserId,
             targetRole,
@@ -298,6 +443,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             Role = savedRole!.Trim().ToLowerInvariant(),
             PermissionTokens = ParsePermissionTokens(savedPermissions),
             IsActive = savedIsActive,
+            IsOwner = savedIsOwner,
             UpdatedAt = savedUpdatedAt
         };
     }
@@ -307,7 +453,8 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         NpgsqlTransaction transaction,
         CompanyId companyId,
         Guid membershipId,
-        UserId actorUserId,
+        string actorType,
+        UserId? actorUserId,
         UserId targetUserId,
         string targetRole,
         IReadOnlyList<string> previousTokens,
@@ -344,7 +491,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             values (
               @id,
               @company_id,
-              'user',
+              @actor_type,
               @actor_id,
               'company_membership',
               @entity_id,
@@ -354,7 +501,10 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             """;
         auditCommand.Parameters.AddWithValue("id", Guid.NewGuid());
         auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
-        auditCommand.Parameters.AddWithValue("actor_id", actorUserId.Value);
+        auditCommand.Parameters.AddWithValue("actor_type", actorType);
+        auditCommand.Parameters.AddWithValue(
+            "actor_id",
+            actorUserId.HasValue ? (object)actorUserId.Value.Value : DBNull.Value);
         auditCommand.Parameters.AddWithValue("entity_id", membershipId.ToString("D"));
         auditCommand.Parameters.AddWithValue("payload", payload);
         await auditCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -417,6 +567,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             Role = reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
             PermissionTokens = ParsePermissionTokens(reader.GetString(reader.GetOrdinal("permissions"))),
             IsActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
+            IsOwner = reader.GetBoolean(reader.GetOrdinal("is_owner")),
             UpdatedAt = CoerceTimestamp(reader.GetValue(reader.GetOrdinal("updated_at")))
         };
     }

@@ -71,7 +71,12 @@ else
                     <CitusIcon Name="IconName.Cash" Size="IconSize.Inline" />
                     <span>Receive payment</span>
                 </a>
-                <a class="citus-button citus-button--ghost" href="@($"sales-receipts/new")">Issue credit memo</a>
+                @* "Credit invoice" pre-fills the credit-memo create page
+                   with the invoice's customer, currency, and reverse
+                   lines. When any source line carried a task_id, the
+                   credit-note post handler rolls those tasks back to
+                   Completed. *@
+                <a class="citus-button citus-button--ghost" href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")">Issue credit memo</a>
                 <span class="text-fg-muted text-sm">Settlement happens in Receive Payment.</span>
             }
             else if (_invoice.Status == "draft")

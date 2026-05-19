@@ -329,9 +329,12 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     {
         var lines = new List<BillLineRecord>();
         await using var command = connection.CreateCommand();
+        // task_id column added by PostgresTaskLinkSchemaInitializer
+        // (Batch 8). Reading it here lets the edit page pre-fill the
+        // per-line TaskPicker.
         command.CommandText = """
             SELECT id, bill_id, line_number, expense_account_id, description,
-                   line_amount, tax_code_id, tax_amount
+                   line_amount, tax_code_id, tax_amount, task_id
               FROM bill_lines
              WHERE bill_id = @bill_id
              ORDER BY line_number;
@@ -348,7 +351,8 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                 Description: reader.GetString(4),
                 LineAmount: reader.GetDecimal(5),
                 TaxCodeId: reader.IsDBNull(6) ? null : reader.GetGuid(6),
-                TaxAmount: reader.GetDecimal(7)));
+                TaxAmount: reader.GetDecimal(7),
+                TaskId: reader.IsDBNull(8) ? null : reader.GetGuid(8)));
         }
         return lines;
     }
@@ -370,10 +374,10 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
             command.CommandText = """
                 INSERT INTO bill_lines (
                     company_id, bill_id, line_number, expense_account_id, description,
-                    line_amount, tax_code_id, tax_amount, is_tax_recoverable)
+                    line_amount, tax_code_id, tax_amount, is_tax_recoverable, task_id)
                 VALUES (
                     @company_id, @bill_id, @line_number, @expense_account_id, @description,
-                    @line_amount, @tax_code_id, @tax_amount, FALSE);
+                    @line_amount, @tax_code_id, @tax_amount, FALSE, @task_id);
                 """;
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("bill_id", billId);
@@ -383,6 +387,10 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
             command.Parameters.AddWithValue("line_amount", line.LineAmount);
             command.Parameters.AddWithValue("tax_code_id", (object?)line.TaxCodeId ?? DBNull.Value);
             command.Parameters.AddWithValue("tax_amount", line.TaxAmount);
+            // task_id column added by PostgresTaskLinkSchemaInitializer
+            // (Batch 8). Validator already rejected billed / canceled /
+            // cross-company task ids at the route layer.
+            command.Parameters.AddWithValue("task_id", (object?)line.TaskId ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }

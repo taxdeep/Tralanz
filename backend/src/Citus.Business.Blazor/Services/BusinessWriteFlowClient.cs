@@ -166,6 +166,7 @@ public sealed class BusinessWriteFlowClient
                 unitPrice = l.UnitPrice,
                 taxCodeId = l.TaxCodeId,
                 taxAmount = l.TaxAmount,
+                taskId = l.TaskId,
             }).ToArray(),
             customerPoNumber = string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? null : draft.CustomerPoNumber.Trim(),
             salesOrderId = draft.SalesOrderId,
@@ -870,6 +871,14 @@ public sealed record InvoiceLineDraft
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
+
+    /// <summary>
+    /// Per-line back-link to the Task this line bills. Set when the
+    /// invoice was opened via "Bill this task" — the server persists
+    /// it on invoice_lines.task_id, and the post handler aggregates
+    /// distinct task_ids to flip source tasks Completed -> Billed.
+    /// </summary>
+    public Guid? TaskId { get; init; }
 }
 
 /// <summary>
@@ -978,6 +987,14 @@ public sealed record CreditMemoLineDraft
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
+
+    /// <summary>
+    /// Optional Task back-link. Set when the credit memo was pre-filled
+    /// from a "Credit invoice" flow that propagates the source invoice
+    /// line's task_id. After the credit note posts, the server-side
+    /// hook rolls every linked task back to Completed.
+    /// </summary>
+    public Guid? TaskId { get; init; }
 }
 
 /// <summary>

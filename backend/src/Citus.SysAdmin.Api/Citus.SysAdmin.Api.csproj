@@ -9,6 +9,7 @@
     <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
     <ProjectReference Include="..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
     <ProjectReference Include="..\Modules\CompanyAccess\Modules.CompanyAccess.csproj" />
+    <ProjectReference Include="..\Modules\Company\Modules.Company.csproj" />
     <ProjectReference Include="..\Modules\UnityAi\Application.Contracts\Citus.Modules.UnityAi.Application.Contracts.csproj" />
   </ItemGroup>
 </Project>

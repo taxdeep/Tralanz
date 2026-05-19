@@ -1,0 +1,557 @@
+@page "/tasks/{TaskIdRaw}"
+
+@using Citus.Modules.Tasks.Application.Contracts
+@using Citus.Modules.Tasks.Domain.Shared
+@using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
+
+@inject BusinessShellState ShellState
+@inject TaskClient TaskClient
+@inject TaskRelatedDocumentsClient RelatedDocsClient
+@inject CitusToastService Message
+@inject NavigationManager NavigationManager
+
+<PageTitle>Task | Tralanz Books</PageTitle>
+
+@if (!ShellState.IsModuleEnabled("task"))
+{
+    <CitusEmptyState
+        Icon="IconName.Puzzle"
+        Title="Task module is not enabled"
+        Message="Ask your platform administrator to enable the Task module for this company in SysAdmin → Companies → Features."
+        ActionLabel="Back to dashboard"
+        ActionHref="dashboard" />
+}
+else if (!_isTaskIdValid)
+{
+    <CitusEmptyState
+        Icon="IconName.AlertCircle"
+        Title="Invalid task id"
+        Message="The route segment is not a valid task id."
+        ActionLabel="Back to tasks"
+        ActionHref="tasks" />
+}
+else if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+else if (_task is null)
+{
+    <CitusEmptyState
+        Icon="IconName.AlertCircle"
+        Title="Task not found"
+        Message="This task either does not exist, has been cancelled, or you do not have permission to view it."
+        ActionLabel="Back to tasks"
+        ActionHref="tasks" />
+}
+else
+{
+    <CitusPageHeader Model="@GetHeader(_task)">
+        <Actions>
+            <a class="citus-button citus-button--ghost" href="tasks">
+                <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+                <span>Back to tasks</span>
+            </a>
+
+            @if (_task.Status == TaskStatus.Open && CanComplete && _task.Lines.Count > 0)
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.CircleCheck"
+                             Disabled="@_isBusy"
+                             OnClick="@(() => ChangeStateAsync("complete"))">Mark completed</CitusButton>
+            }
+            @if (_task.Status == TaskStatus.Completed && CanBill && _task.CustomerId.HasValue)
+            {
+                @* "Bill this task" hand-off. Navigates to the AR invoice
+                   create page with ?FromTaskId — the create page pre-fills
+                   customer + lines + currency from the task, every line
+                   carries the task id, and the post handler flips the
+                   task to Billed automatically on a successful post. *@
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.FileInvoice"
+                             Disabled="@_isBusy"
+                             OnClick="@(() => NavigationManager.NavigateTo($"invoices/new?FromTaskId={_task.Id:D}"))">
+                    Create invoice
+                </CitusButton>
+            }
+            @if ((_task.Status == TaskStatus.Open || _task.Status == TaskStatus.Completed) && CanCancel)
+            {
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             LeadingIcon="IconName.X"
+                             Danger="true"
+                             Disabled="@_isBusy"
+                             OnClick="@(() => ChangeStateAsync("cancel"))">Cancel task</CitusButton>
+            }
+        </Actions>
+    </CitusPageHeader>
+
+    @if (!string.IsNullOrWhiteSpace(_outcomeMessage))
+    {
+        <CitusAlert Severity="@(_outcomeOk ? CitusAlertSeverity.Success : CitusAlertSeverity.Error)"
+                    Message="@_outcomeMessage" ShowIcon="true" Class="mb-4" />
+    }
+
+    <div class="flex flex-wrap gap-2 mb-4">
+        <CitusBadge Color="@StatusBadgeColor(_task.Status)">@StatusLabel(_task.Status)</CitusBadge>
+        <CitusBadge Color="@("default")">@_task.CurrencyCode</CitusBadge>
+        @if (_task.ServiceDate.HasValue)
+        {
+            <CitusBadge Color="@("default")">Service date @_task.ServiceDate.Value.ToString("yyyy-MM-dd")</CitusBadge>
+        }
+        @if (_task.BilledInvoiceId.HasValue)
+        {
+            <a href="@($"invoices/{_task.BilledInvoiceId.Value:D}")"
+               class="citus-badge citus-badge--gold"
+               style="text-decoration: none;">
+                Billed via invoice @(_task.BilledInvoiceId.Value.ToString("D")[..8])…
+            </a>
+        }
+    </div>
+
+    <section class="citus-panel mb-4">
+        <h2 class="citus-panel__title">Description</h2>
+        <p class="text-fg-subtle">@(_task.Description ?? "—")</p>
+    </section>
+
+    <section class="citus-panel mb-4">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="citus-panel__title">Billable lines</h2>
+            @if (_task.Status == TaskStatus.Open && CanEdit)
+            {
+                <CitusButton Size="CitusButtonSize.Small"
+                             LeadingIcon="IconName.Plus"
+                             Disabled="@_isBusy"
+                             OnClick="StartAddLine">Add line</CitusButton>
+            }
+        </div>
+        @if (_task.Lines.Count == 0)
+        {
+            <p class="text-fg-subtle">No lines yet.</p>
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Item</th>
+                        <th>Description</th>
+                        <th class="text-right">Qty</th>
+                        <th class="text-right">Unit price</th>
+                        <th class="text-right">Amount</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _task.Lines)
+                    {
+                        <tr>
+                            <td>@line.LineNo</td>
+                            <td>@(line.ItemId.ToString("D")[..8])…</td>
+                            <td>@(line.Description ?? "—")</td>
+                            <td class="text-right">@line.Quantity</td>
+                            <td class="text-right">@($"{line.UnitPrice:N2}")</td>
+                            <td class="text-right">@($"{line.LineAmount:N2}")</td>
+                            <td class="text-right">
+                                @if (_task.Status == TaskStatus.Open && CanEdit)
+                                {
+                                    <CitusButton Size="CitusButtonSize.Small"
+                                                 Variant="CitusButtonVariant.Link"
+                                                 Danger="true"
+                                                 Disabled="@_isBusy"
+                                                 OnClick="@(() => RemoveLineAsync(line.Id))">Remove</CitusButton>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    <tr>
+                        <td colspan="5" class="text-right font-medium">Total billable</td>
+                        <td class="text-right font-medium">@($"{_task.TotalBillableValue:N2} {_task.CurrencyCode}")</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @* Related documents — every AR / AP doc that has at least one line
+       attributing itself to this task. Read-only rollup; click a row to
+       open that document. Sorted server-side by document_date desc. *@
+    <section class="citus-panel mb-4">
+        <h2 class="citus-panel__title">Related documents</h2>
+        @if (_isLoadingRelated)
+        {
+            <div class="mb-2"><CitusLoadingBar /></div>
+        }
+        else if (_relatedDocs.Count == 0)
+        {
+            <p class="text-fg-subtle mb-0">
+                No invoices, credit notes, bills, or expenses have been
+                attributed to this task yet. Use the per-line TaskPicker
+                on the bill / expense / invoice forms to attribute work.
+            </p>
+        }
+        else
+        {
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-3">
+                <div>
+                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Revenue (incl. credits)</div>
+                    <div style="font-size: 1.15rem; font-weight: 600;">
+                        @FormatAmount(RevenueTotal) @_task.CurrencyCode
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Direct cost</div>
+                    <div style="font-size: 1.15rem; font-weight: 600;">
+                        @FormatAmount(CostTotal) @_task.CurrencyCode
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Gross margin</div>
+                    <div style="@MarginStyle(RevenueTotal - CostTotal)">
+                        @FormatAmount(RevenueTotal - CostTotal) @_task.CurrencyCode
+                    </div>
+                </div>
+            </div>
+            @if (HasMixedCurrencies)
+            {
+                <p class="mb-3" style="font-size: 0.75rem; color: var(--citus-color-warning);">
+                    Note: linked documents span multiple currencies. Totals
+                    above sum raw amounts — no FX conversion is applied.
+                </p>
+            }
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 8rem">Type</th>
+                        <th style="width: 12rem">Number</th>
+                        <th style="width: 8rem">Date</th>
+                        <th style="width: 8rem">Status</th>
+                        <th class="text-right" style="width: 10rem">Amount</th>
+                        <th style="width: 5rem">Currency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var doc in _relatedDocs)
+                    {
+                        <tr class="cursor-pointer" @onclick="@(() => NavigationManager.NavigateTo(doc.NavigationHref))">
+                            <td>
+                                <CitusBadge Color="@RelatedDocBadgeColor(doc.DocumentType)">
+                                    @RelatedDocLabel(doc.DocumentType)
+                                </CitusBadge>
+                            </td>
+                            <td>@doc.DisplayNumber</td>
+                            <td>@doc.DocumentDate.ToString("yyyy-MM-dd")</td>
+                            <td>@doc.Status</td>
+                            <td class="text-right">@FormatAmount(doc.TaskAmount)</td>
+                            <td>@doc.CurrencyCode</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <CitusDrawer IsOpen="@_isAddingLine"
+                 Width="CitusDrawerWidth.Medium"
+                 Title="Add line"
+                 SaveLabel="Add"
+                 SaveDisabled="@_isBusy"
+                 OnSave="SaveAddLineAsync"
+                 OnCancel="CancelAddLine">
+        @if (!string.IsNullOrWhiteSpace(_lineValidation))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_lineValidation" ShowIcon="true" Class="mb-3" />
+        }
+        <div class="grid grid-cols-1 gap-3">
+            <div>
+                <label class="text-sm font-medium block mb-1">Item id (uuid)</label>
+                <CitusInput TValue="string" @bind-Value="_lineDraft.ItemIdRaw" Placeholder="Paste an item id" />
+                <p class="text-fg-subtle text-xs mt-1">
+                    SmartPicker integration ships in a later batch; for now paste an item id from Products &amp; Services.
+                </p>
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Description</label>
+                <CitusInput TValue="string" @bind-Value="_lineDraft.Description" Placeholder="Optional" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Quantity</label>
+                    <CitusInput TValue="string" @bind-Value="_lineDraft.QuantityRaw" Placeholder="1" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Unit price (optional)</label>
+                    <CitusInput TValue="string" @bind-Value="_lineDraft.UnitPriceRaw" Placeholder="Auto from price book" />
+                </div>
+            </div>
+        </div>
+    </CitusDrawer>
+}
+
+@code {
+    [Parameter] public string TaskIdRaw { get; set; } = string.Empty;
+
+    private bool _isTaskIdValid;
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private bool _isAddingLine;
+    private TaskRecord? _task;
+    private Guid _taskId;
+    private string? _outcomeMessage;
+    private bool _outcomeOk;
+    private string? _lineValidation;
+    private NewLineDraft _lineDraft = new();
+    private bool _isLoadingRelated;
+    private IReadOnlyList<TaskRelatedDocument> _relatedDocs = Array.Empty<TaskRelatedDocument>();
+
+    // Revenue = invoices (positive) + credit notes (negative — they
+    // reverse revenue). Cost = bills + expenses. Matches the margin
+    // report's semantics.
+    private decimal RevenueTotal => _relatedDocs.Sum(d => d.DocumentType switch
+    {
+        TaskRelatedDocumentType.Invoice => d.TaskAmount,
+        TaskRelatedDocumentType.CreditNote => -d.TaskAmount,
+        _ => 0m,
+    });
+
+    private decimal CostTotal => _relatedDocs.Sum(d => d.DocumentType switch
+    {
+        TaskRelatedDocumentType.Bill => d.TaskAmount,
+        TaskRelatedDocumentType.Expense => d.TaskAmount,
+        _ => 0m,
+    });
+
+    private bool HasMixedCurrencies =>
+        _relatedDocs
+            .Select(d => d.CurrencyCode)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.Ordinal)
+            .Count() > 1;
+
+    private bool CanEdit => ShellState.User.Roles.Contains("task.edit", StringComparer.Ordinal);
+    private bool CanComplete => ShellState.User.Roles.Contains("task.complete", StringComparer.Ordinal);
+    private bool CanCancel => ShellState.User.Roles.Contains("task.cancel", StringComparer.Ordinal);
+    private bool CanBill => ShellState.User.Roles.Contains("task.bill", StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Guid.TryParse(TaskIdRaw, out _taskId))
+        {
+            _isTaskIdValid = false;
+            _isLoading = false;
+            return;
+        }
+        _isTaskIdValid = true;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _task = await TaskClient.GetAsync(_taskId);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+
+        // Kick off related-docs load after the task is in hand. Fire
+        // sequentially so the page's primary content is up first.
+        await ReloadRelatedDocsAsync();
+    }
+
+    private async Task ReloadRelatedDocsAsync()
+    {
+        if (_task is null) return;
+        _isLoadingRelated = true;
+        try
+        {
+            _relatedDocs = await RelatedDocsClient.ListAsync(_taskId);
+        }
+        finally
+        {
+            _isLoadingRelated = false;
+        }
+    }
+
+    private PageHeaderModel GetHeader(TaskRecord task) => new()
+    {
+        Eyebrow = task.TaskNo,
+        Title = task.Title,
+        Subtitle = task.Description ?? string.Empty,
+    };
+
+    private async Task ChangeStateAsync(string verb)
+    {
+        _isBusy = true;
+        _outcomeMessage = null;
+        try
+        {
+            var outcome = verb switch
+            {
+                "complete" => await TaskClient.CompleteAsync(_taskId, reason: null),
+                "cancel" => await TaskClient.CancelAsync(_taskId, reason: "Cancelled from Task detail."),
+                _ => new TaskMutationOutcome(false, null, $"Unknown state verb '{verb}'."),
+            };
+
+            if (!outcome.Succeeded)
+            {
+                _outcomeOk = false;
+                _outcomeMessage = outcome.ErrorMessage ?? $"Unable to {verb} this task.";
+                return;
+            }
+
+            _outcomeOk = true;
+            _outcomeMessage = verb == "complete"
+                ? "Task marked completed."
+                : "Task cancelled.";
+            _task = outcome.Saved ?? await TaskClient.GetAsync(_taskId);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void StartAddLine()
+    {
+        _lineDraft = new NewLineDraft { QuantityRaw = "1" };
+        _lineValidation = null;
+        _isAddingLine = true;
+    }
+
+    private void CancelAddLine()
+    {
+        _isAddingLine = false;
+        _lineValidation = null;
+    }
+
+    private async Task SaveAddLineAsync()
+    {
+        if (!Guid.TryParse(_lineDraft.ItemIdRaw, out var itemId))
+        {
+            _lineValidation = "Item id must be a valid UUID.";
+            return;
+        }
+        if (!decimal.TryParse(_lineDraft.QuantityRaw, out var quantity) || quantity <= 0m)
+        {
+            _lineValidation = "Quantity must be a positive number.";
+            return;
+        }
+        decimal? unitPrice = null;
+        if (!string.IsNullOrWhiteSpace(_lineDraft.UnitPriceRaw))
+        {
+            if (!decimal.TryParse(_lineDraft.UnitPriceRaw, out var parsed) || parsed < 0m)
+            {
+                _lineValidation = "Unit price must be a non-negative number.";
+                return;
+            }
+            unitPrice = parsed;
+        }
+
+        _isBusy = true;
+        _lineValidation = null;
+        try
+        {
+            var outcome = await TaskClient.AddLineAsync(_taskId, new TaskLineUpsertRequest
+            {
+                ItemId = itemId,
+                Description = _lineDraft.Description,
+                Quantity = quantity,
+                UnitPrice = unitPrice,
+            });
+
+            if (!outcome.Succeeded)
+            {
+                _lineValidation = outcome.ErrorMessage ?? "Unable to add the line.";
+                return;
+            }
+
+            _isAddingLine = false;
+            _task = outcome.Saved ?? await TaskClient.GetAsync(_taskId);
+            await Message.SuccessAsync("Line added.");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task RemoveLineAsync(Guid lineId)
+    {
+        _isBusy = true;
+        try
+        {
+            var outcome = await TaskClient.RemoveLineAsync(_taskId, lineId);
+            if (!outcome.Succeeded)
+            {
+                _outcomeOk = false;
+                _outcomeMessage = outcome.ErrorMessage ?? "Unable to remove the line.";
+                return;
+            }
+            _task = outcome.Saved ?? await TaskClient.GetAsync(_taskId);
+            await Message.SuccessAsync("Line removed.");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static string StatusLabel(TaskStatus status) => status switch
+    {
+        TaskStatus.Open => "Open",
+        TaskStatus.Completed => "Completed",
+        TaskStatus.Billed => "Billed",
+        TaskStatus.Canceled => "Canceled",
+        _ => status.ToString(),
+    };
+
+    private static string StatusBadgeColor(TaskStatus status) => status switch
+    {
+        TaskStatus.Open => "blue",
+        TaskStatus.Completed => "green",
+        TaskStatus.Billed => "gold",
+        TaskStatus.Canceled => "default",
+        _ => "default",
+    };
+
+    private static string RelatedDocLabel(string documentType) => documentType switch
+    {
+        TaskRelatedDocumentType.Invoice => "Invoice",
+        TaskRelatedDocumentType.CreditNote => "Credit memo",
+        TaskRelatedDocumentType.Bill => "Bill",
+        TaskRelatedDocumentType.Expense => "Expense",
+        _ => documentType,
+    };
+
+    private static string RelatedDocBadgeColor(string documentType) => documentType switch
+    {
+        TaskRelatedDocumentType.Invoice => "blue",
+        TaskRelatedDocumentType.CreditNote => "gold",
+        TaskRelatedDocumentType.Bill => "default",
+        TaskRelatedDocumentType.Expense => "default",
+        _ => "default",
+    };
+
+    private static string FormatAmount(decimal value) =>
+        value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string MarginStyle(decimal value)
+    {
+        var baseStyle = "font-size: 1.15rem; font-weight: 600;";
+        if (value < 0m) return baseStyle + " color: var(--citus-color-danger);";
+        if (value > 0m) return baseStyle + " color: var(--citus-color-success);";
+        return baseStyle;
+    }
+
+    private sealed class NewLineDraft
+    {
+        public string? ItemIdRaw { get; set; }
+        public string? Description { get; set; }
+        public string QuantityRaw { get; set; } = "1";
+        public string? UnitPriceRaw { get; set; }
+    }
+}

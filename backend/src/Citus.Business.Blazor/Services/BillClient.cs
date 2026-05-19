@@ -223,7 +223,10 @@ public sealed record BillLineDto(
     string Description,
     decimal LineAmount,
     Guid? TaxCodeId,
-    decimal TaxAmount);
+    decimal TaxAmount,
+    // Optional Task back-link surfaced on read so the bill edit page
+    // can pre-fill the per-line TaskPicker from the persisted value.
+    Guid? TaskId = null);
 
 public sealed record BillUpsertPayload(
     string BillNumber,
@@ -249,7 +252,11 @@ public sealed record BillLinePayload(
     string Description,
     decimal LineAmount,
     Guid? TaxCodeId,
-    decimal? TaxAmount);
+    decimal? TaxAmount,
+    // Optional Task back-link sent on write. Server validates via
+    // ITaskLineLinkValidator (Batch 8) before insert and persists the
+    // value to bill_lines.task_id.
+    Guid? TaskId = null);
 
 public sealed record BillMutationOutcome(
     bool Succeeded,

@@ -165,7 +165,12 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         Guid? taxCodeId = null,
         Guid? itemId = null,
         Guid? warehouseId = null,
-        string? uomCode = null)
+        string? uomCode = null,
+        // Optional Task back-link, surfaced on read so the credit-note
+        // create page can propagate the source line's task_id when
+        // pre-filling from an invoice. Persisted in invoice_lines.task_id;
+        // the posting engine ignores this field.
+        Guid? taskId = null)
     {
         if (lineNumber <= 0)
         {
@@ -209,6 +214,7 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         ItemId = itemId;
         WarehouseId = warehouseId;
         UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
+        TaskId = taskId;
     }
 
     public int LineNumber { get; }
@@ -234,6 +240,8 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
     public Guid? WarehouseId { get; }
 
     public string? UomCode { get; }
+
+    public Guid? TaskId { get; }
 }
 
 public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument

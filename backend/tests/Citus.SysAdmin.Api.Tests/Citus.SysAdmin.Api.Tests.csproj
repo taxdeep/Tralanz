@@ -21,6 +21,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Citus.SysAdmin.Api\Citus.SysAdmin.Api.csproj" />
+    <!-- Resolver tests live here for proximity to the rest of the
+         B1–B3.6 unit suite; Citus.SysAdmin.Api itself does not need
+         the Inventory.Application assembly at runtime. -->
+    <ProjectReference Include="..\..\src\Modules\Inventory\Application\Citus.Modules.Inventory.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Tasks\Application\Citus.Modules.Tasks.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\UnitySearch\Application\Citus.Modules.UnitySearch.Application.csproj" />
   </ItemGroup>
 
 </Project>

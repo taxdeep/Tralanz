@@ -11,9 +11,11 @@ using Citus.SysAdmin.Api;
 using Citus.Ui.Shared.Control;
 using Citus.Ui.Shared.Shell;
 using Infrastructure.PostgreSQL;
+using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
+using Modules.Company.FeatureManagement;
 using Modules.CompanyAccess.Memberships;
 using System.Threading.RateLimiting;
 
@@ -82,8 +84,16 @@ builder.Services.AddSingleton<IPlatformVerificationNotificationSender, SmtpPlatf
 builder.Services.AddSingleton<IPlatformNotificationReadinessWorkflow, PlatformNotificationReadinessWorkflow>();
 builder.Services.AddScoped<ISysAdminAuthRepository, PostgresSysAdminAuthRepository>();
 builder.Services.AddScoped<ICompanyMembershipPermissionStore, PostgreSqlCompanyMembershipPermissionStore>();
+builder.Services.AddScoped<ICompanyMembershipPermissionWorkflow, CompanyMembershipPermissionWorkflow>();
 builder.Services.AddScoped<ICompanyMembershipGovernanceStore, PostgreSqlCompanyMembershipGovernanceStore>();
 builder.Services.AddScoped<ICompanyMembershipGovernanceWorkflow, CompanyMembershipGovernanceWorkflow>();
+// Per-company module-flag toggle (SysAdmin governance entry: Companies →
+// Features). Both the store and the workflow are stateless beyond the
+// connection-factory singleton + an in-process cache, so they live for
+// the whole process — singleton workflow keeps the cache valid across
+// requests.
+builder.Services.AddSingleton<ICompanyModuleFlagStore, PostgreSqlCompanyModuleFlagStore>();
+builder.Services.AddSingleton<ICompanyModuleFlagWorkflow, CompanyModuleFlagWorkflow>();
 builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
 builder.Services.AddScoped<IPlatformFirstCompanyProvisioningRepository, PostgresPlatformFirstCompanyProvisioningRepository>();
 builder.Services.Configure<SysAdminControlOptions>(builder.Configuration.GetSection(SysAdminControlOptions.SectionName));
@@ -180,6 +190,8 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var metadataRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformMetadataRepository>();
     var governanceRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformGovernanceRepository>();
     var firstCompanyProvisioningRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformFirstCompanyProvisioningRepository>();
+    var companyModuleFlagStore = startupScope.ServiceProvider.GetRequiredService<ICompanyModuleFlagStore>();
+    var companyMembershipPermissionStore = startupScope.ServiceProvider.GetRequiredService<ICompanyMembershipPermissionStore>();
 
     if (runtimeSchemaManagementEnabled)
     {
@@ -195,6 +207,12 @@ await using (var startupScope = app.Services.CreateAsyncScope())
         await metadataRepository.EnsureSchemaAsync(CancellationToken.None);
         await governanceRepository.EnsureSchemaAsync(CancellationToken.None);
         await firstCompanyProvisioningRepository.EnsureSchemaAsync(CancellationToken.None);
+        await companyModuleFlagStore.EnsureSchemaAsync(CancellationToken.None);
+        // Backfill any existing membership rows whose permissions
+        // still hold only legacy coarse tokens, so the new
+        // fine-grained authorization paths see a consistent view.
+        // Idempotent — re-runs are no-ops once expanded.
+        await companyMembershipPermissionStore.EnsureSchemaAsync(CancellationToken.None);
     }
     else
     {
@@ -719,6 +737,7 @@ control.MapGet(
                 Role = membership.Role,
                 PermissionTokens = membership.PermissionTokens,
                 IsActive = membership.IsActive,
+                IsOwner = membership.IsOwner,
                 UpdatedAt = membership.UpdatedAt
             }));
         }
@@ -1076,6 +1095,143 @@ control.MapPut(
             {
                 message = ex.Message
             });
+        }
+    });
+
+// ---------------------------------------------------------------------------
+// Transfer company ownership.
+//
+// Atomic swap that flips is_owner between two memberships in the
+// same company and reassigns the full owner permission preset to
+// the new owner. The previous owner's permissions are left intact;
+// the new owner inherits the catalog-wide token set so the
+// in-process Permissions-are-truth model stays coherent.
+// ---------------------------------------------------------------------------
+control.MapPut(
+    "/companies/{companyId}/memberships/{fromMembershipId:guid}/transfer-ownership",
+    async (
+        CompanyId companyId,
+        Guid fromMembershipId,
+        HttpContext httpContext,
+        CompanyOwnershipTransferRequest request,
+        ICompanyMembershipGovernanceWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.TransferOwnershipFromSysAdminAsync(
+                companyId,
+                fromMembershipId,
+                request.ToMembershipId,
+                request.Reason,
+                GetAuthenticatedSession(httpContext).SysAdminAccountId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+// ---------------------------------------------------------------------------
+// Apply a permission preset to a membership (one-click bulk assign).
+//
+// Presets live in the C# catalog (CompanyMembershipPermissionPresets);
+// applying a preset expands it server-side and persists the union of
+// the expansion plus any existing tokens (or replaces if the caller
+// asks). Same audit row as a manual save lands in audit_logs.
+// ---------------------------------------------------------------------------
+control.MapGet(
+    "/membership-permission-presets",
+    (ICompanyMembershipPermissionWorkflow workflow) =>
+        Results.Ok(workflow.GetAvailablePresets()));
+
+control.MapPut(
+    "/companies/{companyId}/memberships/{membershipId:guid}/permissions/preset",
+    async (
+        CompanyId companyId,
+        Guid membershipId,
+        HttpContext httpContext,
+        CompanyMembershipPresetApplyRequest request,
+        ICompanyMembershipPermissionWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            // SysAdmin governance pathway — the SysAdmin operator's
+            // account id is recorded on the audit row (nullable);
+            // there is no in-company actor check, mirroring how
+            // ChangeRoleFromSysAdminAsync works.
+            var actor = GetAuthenticatedSession(httpContext).SysAdminAccountId;
+            var result = await workflow.ApplyPresetFromSysAdminAsync(
+                companyId,
+                membershipId,
+                actor,
+                request.PresetCode,
+                request.Replace,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+// ---------------------------------------------------------------------------
+// Per-company module flags (SysAdmin → Companies → Features).
+//
+// Catalog-driven: only keys listed in CompanyModuleFlagCatalog can be
+// toggled, and the GET response returns the full catalog merged with
+// persisted state (missing rows surface as enabled=false). The PUT
+// upserts and writes an audit_logs row in the same transaction.
+// ---------------------------------------------------------------------------
+control.MapGet(
+    "/companies/{companyId}/module-flags",
+    async (
+        CompanyId companyId,
+        ICompanyModuleFlagWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var flags = await workflow.ListAsync(companyId, cancellationToken);
+            return Results.Ok(flags);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+control.MapPut(
+    "/companies/{companyId}/module-flags/{moduleKey}",
+    async (
+        CompanyId companyId,
+        string moduleKey,
+        HttpContext httpContext,
+        CompanyModuleFlagUpdateRequest request,
+        ICompanyModuleFlagWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.SetEnabledFromSysAdminAsync(
+                companyId,
+                moduleKey,
+                request.Enabled,
+                request.Reason,
+                GetAuthenticatedSession(httpContext).SysAdminAccountId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
     });
 

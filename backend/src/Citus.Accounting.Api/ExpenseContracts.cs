@@ -32,4 +32,8 @@ public sealed record ExpenseLineHttpRequest(
     string? Description,
     decimal Quantity,
     decimal UnitPrice,
-    Guid? TaxCodeId);
+    Guid? TaxCodeId,
+    // Optional Task this line bills against. Validated server-side via
+    // ITaskLineLinkValidator before insert; persists to expense_lines.task_id
+    // (column added by Batch 8). Feeds the Batch 10 margin report.
+    Guid? TaskId = null);

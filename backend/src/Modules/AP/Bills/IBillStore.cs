@@ -134,7 +134,11 @@ public sealed record BillLineRecord(
     string Description,
     decimal LineAmount,
     Guid? TaxCodeId,
-    decimal TaxAmount);
+    decimal TaxAmount,
+    // Optional Task back-link, persisted in bill_lines.task_id when the
+    // operator attributed the line via the in-form TaskPicker. Drives
+    // the Batch 10 task margin report's direct-cost rollup.
+    Guid? TaskId = null);
 
 public sealed record BillUpsertInput(
     string BillNumber,
@@ -160,7 +164,10 @@ public sealed record BillLineInput(
     string Description,
     decimal LineAmount,
     Guid? TaxCodeId,
-    decimal TaxAmount);
+    decimal TaxAmount,
+    // See BillLineRecord.TaskId — same back-link, mirrored on the input
+    // shape so write paths can persist it.
+    Guid? TaskId = null);
 
 public static class BillStatus
 {

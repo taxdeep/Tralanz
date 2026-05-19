@@ -2,5 +2,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Citus.Accounting.Domain\Citus.Accounting.Domain.csproj" />
     <ProjectReference Include="..\Modules\Inventory\Application.Contracts\Citus.Modules.Inventory.Application.Contracts.csproj" />
+    <!-- Batch 9/10 Step 5: PostInvoiceCommandHandler calls
+         ITaskBillingCoordinator after a successful post so tasks
+         linked through invoice_lines.task_id flip Completed -> Billed. -->
+    <ProjectReference Include="..\Modules\Tasks\Application.Contracts\Citus.Modules.Tasks.Application.Contracts.csproj" />
   </ItemGroup>
 </Project>

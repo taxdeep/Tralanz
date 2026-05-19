@@ -20,5 +20,13 @@ public sealed record class CompanyMembershipPermissionListItem
 
     public bool IsActive { get; init; }
 
+    /// <summary>
+    /// True when this membership is the company's owner. Authoritative
+    /// flag (driven by <c>company_memberships.is_owner</c>) — do NOT
+    /// derive ownership from <see cref="Role"/>, which is now a display
+    /// label only.
+    /// </summary>
+    public bool IsOwner { get; init; }
+
     public DateTimeOffset UpdatedAt { get; init; }
 }

@@ -6,6 +6,7 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
+@inject InvoiceClient InvoiceClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -272,7 +273,11 @@
         string AccountDisplay = "",
         string AccountCode = "",
         Guid? TaxCodeId = null,
-        string TaxCode = "")
+        string TaxCode = "",
+        // Optional Task back-link. Propagated from the source invoice
+        // line when this credit memo was opened via "Issue credit memo"
+        // — drives the credit-note post handler's Step 2 task rollback.
+        Guid? TaskId = null)
     {
         public bool HasContent =>
             ItemId != Guid.Empty
@@ -289,7 +294,83 @@
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
-    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+    /// <summary>
+    /// Optional source-invoice id passed via query string. When present
+    /// the create page pre-fills customer + currency + lines from the
+    /// invoice, copies per-line task_id back-links, and stamps the
+    /// invoice's display number into "Applied to invoice #". Posting
+    /// then triggers the server-side Step 2 rollback that flips every
+    /// linked task back to Completed.
+    /// </summary>
+    [SupplyParameterFromQuery] public Guid? FromInvoiceId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+
+        if (FromInvoiceId is { } invoiceId && invoiceId != Guid.Empty)
+        {
+            await PrefillFromInvoiceAsync(invoiceId);
+        }
+    }
+
+    /// <summary>
+    /// Pre-fills the form from a posted invoice. Mirror of the SO / Task
+    /// prefill on InvoiceCreatePage: header copies customer + currency
+    /// + reason, lines mirror invoice lines (same quantities, same unit
+    /// prices — a full credit; operator can adjust quantities to credit
+    /// a partial invoice), and per-line task_id back-links carry over
+    /// so the post handler can roll the source tasks back to Completed.
+    /// </summary>
+    private async Task PrefillFromInvoiceAsync(Guid invoiceId)
+    {
+        var invoice = await InvoiceClient.GetByIdAsync(invoiceId, ShellState.ActiveCompany.Id);
+        if (invoice is null)
+        {
+            await Message.WarningAsync("Source invoice not found in this company; starting a blank credit memo.");
+            return;
+        }
+
+        // Header pre-fill — fetch customer for display + currency fallback.
+        var customer = await CustomerClient.GetByIdAsync(invoice.CustomerId);
+        _customerId = invoice.CustomerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = !string.IsNullOrWhiteSpace(invoice.TransactionCurrencyCode)
+            ? invoice.TransactionCurrencyCode
+            : (customer?.DefaultCurrencyCode ?? _currency);
+        _appliedToInvoiceNumber = invoice.DisplayNumber;
+        _reason = $"Credit for {invoice.DisplayNumber}";
+        _customerPoNumber = invoice.CustomerPoNumber ?? string.Empty;
+
+        _lines.Clear();
+        foreach (var line in invoice.Lines.OrderBy(l => l.LineNumber))
+        {
+            _lines.Add(new CreditMemoLineEditState(
+                ItemId: Guid.Empty,
+                ItemDisplay: string.Empty,
+                Description: line.Description ?? string.Empty,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                // RevenueAccountId comes back as a Guid? from the GET.
+                // Operator re-picks if it's missing; we copy it across
+                // best-effort but cannot show a label without an account
+                // lookup (matches the SO prefill behaviour).
+                AccountId: line.RevenueAccountId,
+                AccountDisplay: line.RevenueAccountId is { } a ? $"Account {a:D}"[..15] + "…" : string.Empty,
+                AccountCode: line.RevenueAccountId is { } ? "preset" : string.Empty,
+                TaxCodeId: null,
+                TaxCode: string.Empty,
+                TaskId: line.TaskId));
+        }
+
+        // Keep one trailing blank line so the operator can append a
+        // "restocking fee" / "shipping reversal" / etc. without an
+        // extra "Add line" click.
+        if (_lines.Count == 0 || _lines[^1].HasContent)
+        {
+            _lines.Add(new CreditMemoLineEditState());
+        }
+    }
 
     private async Task OnCustomerSelected(UnitySearchPickerOption option)
     {
@@ -413,6 +494,7 @@
                     UnitPrice = l.UnitPrice,
                     TaxCodeId = l.TaxCodeId,
                     TaxAmount = 0m,
+                    TaskId = l.TaskId,
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostCreditMemoAsync(draft);

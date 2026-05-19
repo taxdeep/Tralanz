@@ -1,0 +1,307 @@
+@page "/tasks/reports/margin"
+
+@using Citus.Modules.Tasks.Domain.Shared
+@using Citus.Modules.Tasks.Domain.Shared.Reports
+@using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
+
+@inject BusinessShellState ShellState
+@inject TaskMarginReportClient ReportClient
+@inject NavigationManager NavigationManager
+
+<PageTitle>Task margin | Tralanz Books</PageTitle>
+
+@if (!ShellState.IsModuleEnabled("task"))
+{
+    <CitusPageHeader Model="_disabledHeader" />
+    <CitusEmptyState
+        Icon="IconName.Puzzle"
+        Title="Task module is not enabled"
+        Message="Ask your platform administrator to enable the Task module for this company in SysAdmin → Companies → Features."
+        ActionLabel="Back to dashboard"
+        ActionHref="dashboard" />
+}
+else if (!CanView)
+{
+    <CitusPageHeader Model="_header" />
+    <CitusEmptyState
+        Icon="IconName.ShieldLock"
+        Title="You do not have access to the margin report"
+        Message="This report requires the task.report.margin permission. Ask your administrator to grant it on your membership."
+        ActionLabel="Back to tasks"
+        ActionHref="tasks" />
+}
+else
+{
+    <CitusPageHeader Model="_header">
+        <Actions>
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft"
+                         OnClick="@(() => NavigationManager.NavigateTo("tasks"))">
+                Back to tasks
+            </CitusButton>
+        </Actions>
+    </CitusPageHeader>
+
+    <section class="citus-panel mb-4">
+        <div class="flex flex-wrap gap-3 items-end">
+            <div>
+                <label class="text-sm font-medium block mb-1">Mode</label>
+                <select class="citus-form-field__input citus-input--small" @bind="_modeText" @bind:after="ReloadAsync">
+                    <option value="operational">Operational (open + completed + billed)</option>
+                    <option value="billed">Billed only (realised)</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">From</label>
+                <input type="date" class="citus-form-field__input" @bind="_fromDate" @bind:after="ReloadAsync" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">To</label>
+                <input type="date" class="citus-form-field__input" @bind="_toDate" @bind:after="ReloadAsync" />
+            </div>
+            <CitusButton Size="CitusButtonSize.Small" Variant="CitusButtonVariant.Ghost" OnClick="ReloadAsync">
+                Refresh
+            </CitusButton>
+            @if (HasAnyFilter)
+            {
+                <CitusButton Size="CitusButtonSize.Small" Variant="CitusButtonVariant.Ghost" OnClick="ClearFiltersAsync">
+                    Clear filters
+                </CitusButton>
+            }
+        </div>
+        <p class="mt-3 mb-0" style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">
+            @ModeHelpText
+        </p>
+    </section>
+
+    @* Summary card — always reflects the unpaged filtered set, not just
+       the visible page. *@
+    <section class="citus-panel mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div>
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Tasks</div>
+                <div style="font-size: 1.25rem; font-weight: 600;">@_result.Summary.TaskCount</div>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Total billable</div>
+                <div style="font-size: 1.25rem; font-weight: 600;">@FormatNumber(_result.Summary.TotalBillableValue)</div>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Direct cost</div>
+                <div style="font-size: 1.25rem; font-weight: 600;">@FormatNumber(_result.Summary.TotalDirectCost)</div>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Gross margin</div>
+                <div style="@MarginStyle(_result.Summary.TotalGrossMargin)">
+                    @FormatNumber(_result.Summary.TotalGrossMargin)
+                </div>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Weighted margin %</div>
+                <div style="@MarginStyle(_result.Summary.TotalGrossMargin)">
+                    @FormatPercent(_result.Summary.WeightedGrossMarginPercent)
+                </div>
+            </div>
+        </div>
+        @if (HasMixedCurrencies)
+        {
+            <p class="mt-3 mb-0" style="font-size: 0.75rem; color: var(--citus-color-warning);">
+                Note: rows span multiple currencies. Totals above are raw
+                sums — no FX conversion is applied. Filter to a single
+                currency or build a customised report for comparable
+                figures.
+            </p>
+        }
+    </section>
+
+    @if (_isLoading)
+    {
+        <div class="mb-4"><CitusLoadingBar /></div>
+    }
+    else if (_result.Rows.Count == 0)
+    {
+        <CitusEmptyState
+            Icon="IconName.ReportAnalytics"
+            Title="No tasks match the current filters"
+            Message="Widen the date range, change the mode, or clear filters to see results." />
+    }
+    else
+    {
+        <section class="citus-panel">
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Task #</th>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>@DateHeaderLabel</th>
+                        <th class="text-right">Billable</th>
+                        <th class="text-right">Direct cost</th>
+                        <th class="text-right">Margin</th>
+                        <th class="text-right">Margin %</th>
+                        <th>Currency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _result.Rows)
+                    {
+                        <tr class="cursor-pointer" @onclick="@(() => OpenTask(row.TaskId))">
+                            <td>@row.TaskNo</td>
+                            <td>@row.Title</td>
+                            <td>
+                                <CitusBadge Color="@StatusBadgeColor(row.Status)">
+                                    @StatusLabel(row.Status)
+                                </CitusBadge>
+                            </td>
+                            <td>@DateCell(row)</td>
+                            <td class="text-right">@FormatNumber(row.BillableValue)</td>
+                            <td class="text-right">@FormatNumber(row.DirectCost)</td>
+                            <td class="text-right" style="@MarginRowStyle(row.GrossMargin)">
+                                @FormatNumber(row.GrossMargin)
+                            </td>
+                            <td class="text-right" style="@MarginRowStyle(row.GrossMargin)">
+                                @FormatPercent(row.GrossMarginPercent)
+                            </td>
+                            <td>@row.CurrencyCode</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Reports",
+        Title = "Task margin",
+        Subtitle = "Billable revenue minus directly-attributed AP cost. Operational mode includes in-flight work; billed mode shows only realised margin."
+    };
+
+    private readonly PageHeaderModel _disabledHeader = new()
+    {
+        Eyebrow = "Reports",
+        Title = "Task margin",
+        Subtitle = "The Task module is not enabled for this company."
+    };
+
+    private bool _isLoading = true;
+    private string _modeText = "operational";
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private TaskMarginReportResult _result = Empty(TaskMarginReportMode.Operational);
+
+    private bool CanView => ShellState.User.Roles.Contains("task.report.margin", StringComparer.Ordinal);
+
+    private bool HasAnyFilter => _fromDate.HasValue || _toDate.HasValue;
+
+    private TaskMarginReportMode ParsedMode =>
+        string.Equals(_modeText, "billed", StringComparison.OrdinalIgnoreCase)
+            ? TaskMarginReportMode.Billed
+            : TaskMarginReportMode.Operational;
+
+    private string DateHeaderLabel =>
+        ParsedMode == TaskMarginReportMode.Billed ? "Billed at" : "Service date";
+
+    private string ModeHelpText =>
+        ParsedMode == TaskMarginReportMode.Billed
+            ? "Showing tasks whose AR invoice has been posted. Date range filters by billed_at."
+            : "Showing every non-cancelled task. Date range filters by service_date.";
+
+    private bool HasMixedCurrencies =>
+        _result.Rows
+            .Select(r => r.CurrencyCode)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.Ordinal)
+            .Count() > 1;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        if (!CanView) return;
+
+        _isLoading = true;
+        try
+        {
+            _result = await ReportClient.GetReportAsync(
+                ParsedMode,
+                _fromDate.HasValue ? DateOnly.FromDateTime(_fromDate.Value) : null,
+                _toDate.HasValue ? DateOnly.FromDateTime(_toDate.Value) : null);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private Task ClearFiltersAsync()
+    {
+        _fromDate = null;
+        _toDate = null;
+        return ReloadAsync();
+    }
+
+    private void OpenTask(Guid taskId) => NavigationManager.NavigateTo($"tasks/{taskId:D}");
+
+    private static string DateCell(TaskMarginRow row) =>
+        row.BilledAtUtc.HasValue
+            ? row.BilledAtUtc.Value.ToString("yyyy-MM-dd")
+            : (row.ServiceDate?.ToString("yyyy-MM-dd") ?? "—");
+
+    private static string FormatNumber(decimal value) =>
+        value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatPercent(decimal? value) =>
+        value.HasValue
+            ? value.Value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture) + "%"
+            : "—";
+
+    private static string MarginStyle(decimal value)
+    {
+        var baseStyle = "font-size: 1.25rem; font-weight: 600;";
+        if (value < 0m) return baseStyle + " color: var(--citus-color-danger);";
+        if (value > 0m) return baseStyle + " color: var(--citus-color-success);";
+        return baseStyle;
+    }
+
+    private static string MarginRowStyle(decimal value)
+    {
+        if (value < 0m) return "color: var(--citus-color-danger);";
+        if (value > 0m) return "color: var(--citus-color-success);";
+        return string.Empty;
+    }
+
+    private static string StatusLabel(TaskStatus status) => status switch
+    {
+        TaskStatus.Open => "Open",
+        TaskStatus.Completed => "Completed",
+        TaskStatus.Billed => "Billed",
+        TaskStatus.Canceled => "Canceled",
+        _ => status.ToString(),
+    };
+
+    private static string StatusBadgeColor(TaskStatus status) => status switch
+    {
+        TaskStatus.Open => "blue",
+        TaskStatus.Completed => "green",
+        TaskStatus.Billed => "gold",
+        TaskStatus.Canceled => "default",
+        _ => "default",
+    };
+
+    private static TaskMarginReportResult Empty(TaskMarginReportMode mode) => new()
+    {
+        Mode = mode,
+        Rows = Array.Empty<TaskMarginRow>(),
+        Summary = new TaskMarginSummary
+        {
+            TaskCount = 0,
+            TotalBillableValue = 0m,
+            TotalDirectCost = 0m,
+            TotalGrossMargin = 0m,
+            WeightedGrossMarginPercent = null,
+        },
+    };
+}

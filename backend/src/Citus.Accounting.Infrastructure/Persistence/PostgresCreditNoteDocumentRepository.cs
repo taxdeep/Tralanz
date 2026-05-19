@@ -454,6 +454,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   line_amount,
                   tax_code_id,
                   tax_amount,
+                  task_id,
                   created_at,
                   updated_at
                 )
@@ -469,6 +470,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   @line_amount,
                   @tax_code_id,
                   @tax_amount,
+                  @task_id,
                   now(),
                   now()
                 );
@@ -484,12 +486,43 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.Quantity * line.UnitPrice));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
+            // task_id column added by PostgresTaskLinkSchemaInitializer
+            // (Batch 8). When set, PostCreditNoteCommandHandler's Step 2
+            // hook rolls the linked tasks Billed -> Completed after post.
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
+        CompanyId companyId,
+        Guid creditNoteId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select distinct task_id
+            from credit_note_lines
+            where company_id = @company_id
+              and credit_note_id = @credit_note_id
+              and task_id is not null;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("credit_note_id", creditNoteId);
+
+        var ids = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            ids.Add(reader.GetGuid(0));
+        }
+        return ids;
     }
 
     private static void ValidateDraft(CreditNoteDraftSaveModel draft)

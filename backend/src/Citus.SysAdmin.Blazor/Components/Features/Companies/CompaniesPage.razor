@@ -87,6 +87,16 @@ else if (_companies.Count > 0)
                                         Archive
                                     </CitusButton>
                                 }
+
+                                <a class="citus-button citus-button--ghost citus-button--small"
+                                   href="@($"companies/{company.Id}/features")">
+                                    Features
+                                </a>
+
+                                <a class="citus-button citus-button--ghost citus-button--small"
+                                   href="@($"companies/{company.Id}/memberships")">
+                                    Memberships
+                                </a>
                             </div>
                         </td>
                     </tr>

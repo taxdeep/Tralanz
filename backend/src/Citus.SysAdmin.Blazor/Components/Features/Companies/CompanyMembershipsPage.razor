@@ -1,0 +1,241 @@
+@page "/companies/{CompanyIdRaw}/memberships"
+
+@inject CitusToastService Message
+@inject SysAdminControlClient SysAdminControlClient
+
+<PageTitle>Company Memberships | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="companies">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to companies</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!_companyIdValid)
+{
+    <CitusEmptyState
+        Icon="IconName.BuildingSkyscraper"
+        Title="Company id not recognized"
+        Message="The route segment is not a valid company id. Return to the companies list and pick a company."
+        ActionLabel="Back to companies"
+        ActionHref="companies" />
+}
+else if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+else if (_members.Count == 0)
+{
+    <CitusEmptyState
+        Icon="IconName.Users"
+        Title="No memberships found"
+        Message="This company has no membership rows yet."
+        ActionLabel="Back to companies"
+        ActionHref="companies" />
+}
+else
+{
+    <section class="citus-panel">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Member</th>
+                    <th>Role</th>
+                    <th class="text-right">Permissions</th>
+                    <th>Last updated</th>
+                    <th class="text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var member in _members)
+                {
+                    <tr>
+                        <td>
+                            <div>@member.DisplayName</div>
+                            <div class="text-fg-subtle text-xs">@member.Email</div>
+                        </td>
+                        <td>
+                            @if (member.IsOwner)
+                            {
+                                <CitusBadge Color="@("gold")">Owner</CitusBadge>
+                            }
+                            else
+                            {
+                                <CitusBadge Color="@("default")">@member.Role</CitusBadge>
+                            }
+                            @if (!member.IsActive)
+                            {
+                                <CitusBadge Color="@("red")">Inactive</CitusBadge>
+                            }
+                        </td>
+                        <td class="text-right">@member.PermissionTokens.Count</td>
+                        <td>@member.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                        <td class="text-right">
+                            <div class="flex flex-wrap gap-1 justify-end">
+                                @if (member.IsOwner)
+                                {
+                                    <span class="text-fg-subtle text-xs">Owner permissions are locked. Use "Transfer ownership" on another member.</span>
+                                }
+                                else
+                                {
+                                    <select class="citus-input citus-input--small"
+                                            @bind="_pendingPreset[member.MembershipId]"
+                                            disabled="@IsBusy(member.MembershipId)">
+                                        <option value="">Apply preset…</option>
+                                        @foreach (var preset in _presets)
+                                        {
+                                            <option value="@preset.Code">@preset.Label</option>
+                                        }
+                                    </select>
+                                    <CitusButton Size="CitusButtonSize.Small"
+                                                 Disabled="@(IsBusy(member.MembershipId) || string.IsNullOrEmpty(GetPendingPreset(member.MembershipId)))"
+                                                 OnClick="@(() => ApplyPresetAsync(member))">
+                                        Apply
+                                    </CitusButton>
+
+                                    @if (member.IsActive && CurrentOwner is not null)
+                                    {
+                                        <CitusButton Size="CitusButtonSize.Small"
+                                                     Variant="CitusButtonVariant.Link"
+                                                     Disabled="@IsBusy(member.MembershipId)"
+                                                     OnClick="@(() => TransferOwnershipToAsync(member))">
+                                            Transfer ownership
+                                        </CitusButton>
+                                    }
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <p class="text-fg-subtle text-xs mt-4">
+        Applying a preset writes the preset's token expansion into the membership's permissions
+        and preserves any manual additions. Owner permissions are governance-locked at the
+        Postgres layer; to change them, transfer ownership first.
+    </p>
+}
+
+@code {
+    [Parameter] public string CompanyIdRaw { get; set; } = string.Empty;
+
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Company Memberships",
+        Subtitle = "Apply permission presets and transfer ownership."
+    };
+
+    private bool _isLoading = true;
+    private bool _companyIdValid;
+    private CompanyId _companyId;
+    private IReadOnlyList<ManagedCompanyMembershipSummary> _members = Array.Empty<ManagedCompanyMembershipSummary>();
+    private IReadOnlyList<CompanyMembershipPermissionPresetSummary> _presets = Array.Empty<CompanyMembershipPermissionPresetSummary>();
+    private readonly HashSet<Guid> _busyMembers = new();
+    private readonly Dictionary<Guid, string> _pendingPreset = new();
+
+    private ManagedCompanyMembershipSummary? CurrentOwner =>
+        _members.FirstOrDefault(m => m.IsOwner);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!CompanyId.TryParse(CompanyIdRaw, out _companyId))
+        {
+            _companyIdValid = false;
+            _isLoading = false;
+            return;
+        }
+
+        _companyIdValid = true;
+        var presetsTask = SysAdminControlClient.ListMembershipPermissionPresetsAsync();
+        var membersTask = SysAdminControlClient.ListCompanyMembershipsAsync(_companyId);
+        await Task.WhenAll(presetsTask, membersTask);
+        _presets = await presetsTask;
+        _members = await membersTask;
+        _isLoading = false;
+    }
+
+    private bool IsBusy(Guid membershipId) => _busyMembers.Contains(membershipId);
+
+    private string GetPendingPreset(Guid membershipId) =>
+        _pendingPreset.TryGetValue(membershipId, out var value) ? value : string.Empty;
+
+    private async Task ApplyPresetAsync(ManagedCompanyMembershipSummary member)
+    {
+        var presetCode = GetPendingPreset(member.MembershipId);
+        if (string.IsNullOrEmpty(presetCode))
+        {
+            return;
+        }
+
+        _busyMembers.Add(member.MembershipId);
+        try
+        {
+            // Default replace=false so the operator's earlier manual
+            // additions on this membership are preserved.
+            var outcome = await SysAdminControlClient.ApplyMembershipPermissionPresetAsync(
+                _companyId,
+                member.MembershipId,
+                presetCode,
+                replace: false);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(
+                    string.IsNullOrWhiteSpace(outcome.Message)
+                        ? $"Unable to apply preset to {member.DisplayName}."
+                        : outcome.Message);
+                return;
+            }
+
+            _members = await SysAdminControlClient.ListCompanyMembershipsAsync(_companyId);
+            _pendingPreset.Remove(member.MembershipId);
+            await Message.SuccessAsync($"Preset applied to {member.DisplayName}.");
+        }
+        finally
+        {
+            _busyMembers.Remove(member.MembershipId);
+        }
+    }
+
+    private async Task TransferOwnershipToAsync(ManagedCompanyMembershipSummary newOwner)
+    {
+        if (CurrentOwner is null || CurrentOwner.MembershipId == newOwner.MembershipId)
+        {
+            await Message.WarningAsync("No current owner found — cannot transfer.");
+            return;
+        }
+
+        _busyMembers.Add(newOwner.MembershipId);
+        try
+        {
+            var reason = $"SysAdmin transferred ownership of {_companyId} from {CurrentOwner.DisplayName} to {newOwner.DisplayName}.";
+            var outcome = await SysAdminControlClient.TransferCompanyOwnershipAsync(
+                _companyId,
+                CurrentOwner.MembershipId,
+                newOwner.MembershipId,
+                reason);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(
+                    string.IsNullOrWhiteSpace(outcome.Message)
+                        ? $"Unable to transfer ownership to {newOwner.DisplayName}."
+                        : outcome.Message);
+                return;
+            }
+
+            _members = await SysAdminControlClient.ListCompanyMembershipsAsync(_companyId);
+            await Message.SuccessAsync($"Ownership transferred to {newOwner.DisplayName}.");
+        }
+        finally
+        {
+            _busyMembers.Remove(newOwner.MembershipId);
+        }
+    }
+}

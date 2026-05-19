@@ -19,6 +19,8 @@
     <ProjectReference Include="..\..\Modules\UnitySearch\Application.Contracts\Citus.Modules.UnitySearch.Application.Contracts.csproj" />
     <ProjectReference Include="..\..\Modules\UnitySearch\Domain.Shared\Citus.Modules.UnitySearch.Domain.Shared.csproj" />
     <ProjectReference Include="..\..\Modules\Inventory\Application.Contracts\Citus.Modules.Inventory.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\Modules\Tasks\Application.Contracts\Citus.Modules.Tasks.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\Modules\Tasks\Domain.Shared\Citus.Modules.Tasks.Domain.Shared.csproj" />
     <ProjectReference Include="..\..\Modules\CompanyAccess\Modules.CompanyAccess.csproj" />
     <ProjectReference Include="..\..\Modules\Company\Modules.Company.csproj" />
     <ProjectReference Include="..\..\Modules\GL\Modules.GL.csproj" />

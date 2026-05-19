@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Modules.CompanyAccess.Memberships;
 using Modules.CompanyAccess.SessionContext;
 using Npgsql;
 using SharedKernel.CompanyAccess;
@@ -38,16 +39,39 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         {
             User = user with
             {
-                Roles = activeCompany.PermissionTokens
-                    .Prepend(activeCompany.MembershipRole)
-                    .Where(static role => !string.IsNullOrWhiteSpace(role))
-                    .Distinct(StringComparer.Ordinal)
-                    .OrderBy(static role => role, StringComparer.Ordinal)
-                    .ToArray()
+                Roles = BuildSessionRoles(activeCompany),
             },
             ActiveCompany = ToSummary(activeCompany),
             AvailableCompanies = companies.Select(ToSummary).ToArray()
         };
+    }
+
+    /// <summary>
+    /// Owner safety net (Batch 3.6): if the membership is flagged
+    /// <c>is_owner=true</c>, append every catalog token to the
+    /// session-side Roles list, regardless of what's persisted on the
+    /// membership. Owner permissions are governance-locked at write
+    /// time (the Postgres permission store rejects edits), but the
+    /// catalog can grow between the moment ownership was assigned and
+    /// the moment a request comes in — this Union guarantees the owner
+    /// always sees the current catalog without a separate
+    /// reconciliation job.
+    /// </summary>
+    private static IReadOnlyList<string> BuildSessionRoles(CompanyMembershipCompanyRecord activeCompany)
+    {
+        IEnumerable<string> baseRoles = activeCompany.PermissionTokens
+            .Prepend(activeCompany.MembershipRole)
+            .Where(static role => !string.IsNullOrWhiteSpace(role));
+
+        if (activeCompany.IsOwner)
+        {
+            baseRoles = baseRoles.Concat(CompanyMembershipPermissionCatalog.AllTokens);
+        }
+
+        return baseRoles
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static role => role, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static CompanyAccessCompanySummary ToSummary(CompanyMembershipCompanyRecord company) =>
@@ -148,6 +172,15 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         var inventoryModuleSelect = hasInventoryModuleColumn
             ? "c.inventory_module_enabled"
             : "false as inventory_module_enabled";
+        // Same defensive pattern: is_owner is added by the Batch-3.5
+        // membership-permission EnsureSchemaAsync. If a session
+        // resolves before that ALTER ran, fall back to false — the
+        // worst case is the owner doesn't get the catalog Union for
+        // a brief window, which is the same as pre-3.6 behavior.
+        var hasIsOwnerColumn = await HasColumnAsync(connection, "company_memberships", "is_owner", cancellationToken);
+        var isOwnerSelect = hasIsOwnerColumn
+            ? "m.is_owner"
+            : "false as is_owner";
 
         await using var command = connection.CreateCommand();
         command.CommandText = hasPermissionsColumn
@@ -162,6 +195,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               {inventoryModuleSelect},
               c.status,
               m.role,
+              {isOwnerSelect},
               m.permissions::text as permissions
             from company_memberships m
             inner join companies c on c.id = m.company_id
@@ -181,6 +215,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               {inventoryModuleSelect},
               c.status,
               m.role,
+              {isOwnerSelect},
               null::text as permissions
             from company_memberships m
             inner join companies c on c.id = m.company_id
@@ -205,6 +240,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
                     reader.GetBoolean(reader.GetOrdinal("inventory_module_enabled")),
                     reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
                     reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
+                    reader.GetBoolean(reader.GetOrdinal("is_owner")),
                     ParsePermissionTokens(reader.IsDBNull(reader.GetOrdinal("permissions"))
                         ? null
                         : reader.GetString(reader.GetOrdinal("permissions")))));
@@ -338,5 +374,6 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         bool InventoryModuleEnabled,
         string Status,
         string MembershipRole,
+        bool IsOwner,
         IReadOnlyList<string> PermissionTokens);
 }
