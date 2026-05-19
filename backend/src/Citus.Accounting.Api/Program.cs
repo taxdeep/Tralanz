@@ -206,6 +206,12 @@ builder.Services.AddSingleton<Modules.Company.FeatureManagement.ICompanyModuleFl
     Infrastructure.PostgreSQL.Company.PostgreSqlCompanyModuleFlagStore>();
 builder.Services.AddSingleton<Modules.Company.FeatureManagement.ICompanyModuleFlagWorkflow,
     Modules.Company.FeatureManagement.CompanyModuleFlagWorkflow>();
+// Permission-store binding for the schema bootstrap path. The schema
+// init at startup calls EnsureSchemaAsync on this; the SysAdmin API
+// owns the write-side workflow and has its own registration. Without
+// this, Production-mode startups crash with "No service for type ..."
+// when SchemaManagement:ApplyOnStartup is true.
+builder.Services.AddScoped<ICompanyMembershipPermissionStore, PostgreSqlCompanyMembershipPermissionStore>();
 // Inventory item pricing (Batch 4). The store is stateless beyond
 // the connection factory; the resolver is a thin normalizer. Both
 // singletons.
