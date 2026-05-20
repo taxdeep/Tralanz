@@ -48,6 +48,7 @@ public static class CompanyMembershipPermissionCatalog
     public const string ArReceiptApply = "ar.receipt.apply";
     public const string ArCreditNoteView = "ar.creditnote.view";
     public const string ArCreditNoteCreate = "ar.creditnote.create";
+    public const string ArCreditNotePost = "ar.creditnote.post";
     public const string ArCustomerView = "ar.customer.view";
     public const string ArCustomerCreate = "ar.customer.create";
     public const string ArCustomerEdit = "ar.customer.edit";
@@ -66,6 +67,7 @@ public static class CompanyMembershipPermissionCatalog
     public const string ApPaymentApply = "ap.payment.apply";
     public const string ApVendorCreditView = "ap.vendorcredit.view";
     public const string ApVendorCreditCreate = "ap.vendorcredit.create";
+    public const string ApVendorCreditPost = "ap.vendorcredit.post";
     public const string ApVendorView = "ap.vendor.view";
     public const string ApVendorCreate = "ap.vendor.create";
     public const string ApVendorEdit = "ap.vendor.edit";
@@ -143,6 +145,7 @@ public static class CompanyMembershipPermissionCatalog
         new(ArReceiptApply, "AR · Receipt · Apply", "Apply receipts to invoices.", false),
         new(ArCreditNoteView, "AR · Credit Note · View", "View AR credit notes.", false),
         new(ArCreditNoteCreate, "AR · Credit Note · Create", "Create AR credit notes.", false),
+        new(ArCreditNotePost, "AR · Credit Note · Post", "Post AR credit notes to the ledger.", false),
         new(ArCustomerView, "AR · Customer · View", "View customer master.", false),
         new(ArCustomerCreate, "AR · Customer · Create", "Create customers.", false),
         new(ArCustomerEdit, "AR · Customer · Edit", "Edit customers.", false),
@@ -161,6 +164,7 @@ public static class CompanyMembershipPermissionCatalog
         new(ApPaymentApply, "AP · Payment · Apply", "Apply payments to bills.", false),
         new(ApVendorCreditView, "AP · Vendor Credit · View", "View vendor credits.", false),
         new(ApVendorCreditCreate, "AP · Vendor Credit · Create", "Create vendor credits.", false),
+        new(ApVendorCreditPost, "AP · Vendor Credit · Post", "Post vendor credits to the ledger.", false),
         new(ApVendorView, "AP · Vendor · View", "View vendor master.", false),
         new(ApVendorCreate, "AP · Vendor · Create", "Create vendors.", false),
         new(ApVendorEdit, "AP · Vendor · Edit", "Edit vendors.", false),
