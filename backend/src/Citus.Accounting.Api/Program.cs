@@ -212,6 +212,12 @@ builder.Services.AddSingleton<Modules.Company.FeatureManagement.ICompanyModuleFl
 // this, Production-mode startups crash with "No service for type ..."
 // when SchemaManagement:ApplyOnStartup is true.
 builder.Services.AddScoped<ICompanyMembershipPermissionStore, PostgreSqlCompanyMembershipPermissionStore>();
+// PR-4A: Tralanz permission model evaluator. Read-only; no consumer
+// endpoints yet (PR-4C wires the first batch). Registered here so
+// host smoke tests + future filters can resolve it from the same DI
+// container as the rest of the CompanyAccess infrastructure.
+builder.Services.AddScoped<Modules.CompanyAccess.Permissions.IPermissionEvaluator,
+    Infrastructure.PostgreSQL.CompanyAccess.PostgreSqlPermissionEvaluator>();
 // Inventory item pricing (Batch 4). The store is stateless beyond
 // the connection factory; the resolver is a thin normalizer. Both
 // singletons.
