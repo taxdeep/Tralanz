@@ -1848,6 +1848,15 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             CancellationToken cancellationToken) =>
             throw new NotImplementedException(
                 "Ownership transfer is not exercised by these notification-readiness contract tests.");
+
+        public Task<CompanyMembershipOwnershipTransferResult> TransferOwnershipFromOwnerAsync(
+            CompanyId companyId,
+            UserId currentOwnerUserId,
+            UserId targetUserId,
+            string reason,
+            CancellationToken cancellationToken) =>
+            throw new NotImplementedException(
+                "Business-side ownership transfer is not exercised by these notification-readiness contract tests.");
     }
 
     private sealed class FakePlatformNotificationReadinessWorkflow : IPlatformNotificationReadinessWorkflow
