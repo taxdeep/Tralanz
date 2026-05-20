@@ -23,7 +23,39 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            with ranked_results as (
+            -- caller_info: resolve once whether the caller is the company
+            -- Owner (implied-all-permissions) and pull the active business-
+            -- permission grants from company_user_permissions. We
+            -- materialize so the multiple references in the permission /
+            -- visibility WHERE clauses each see a stable snapshot without
+            -- re-running the joins.
+            with caller_info as materialized (
+              select
+                coalesce(
+                  (select is_owner
+                     from company_memberships
+                    where company_id = @company_id
+                      and user_id = @user_id
+                      and status = 'active'),
+                  false
+                ) as is_owner,
+                coalesce(
+                  (select array_agg(cup.permission_token)
+                     from company_user_permissions cup
+                     join permission_registry pr
+                       on pr.permission_token = cup.permission_token
+                     join company_memberships m
+                       on m.company_id = cup.company_id
+                      and m.user_id = cup.user_id
+                    where cup.company_id = @company_id
+                      and cup.user_id = @user_id
+                      and cup.is_active = true
+                      and pr.is_assignable = true
+                      and m.status = 'active'),
+                  array[]::text[]
+                ) as granted_tokens
+            ),
+            ranked_results as (
               select
                 doc.company_id,
                 doc.entity_type,
@@ -140,26 +172,34 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                       and f.enabled = true
                   )
                 )
-                -- Permission gate. Empty required_permissions[] = no
-                -- restriction (e.g. static "jump to" rows); non-empty
-                -- requires at least one overlap with the caller's
-                -- @user_permissions set.
+                -- Permission gate. Owner bypasses (implied-all-
+                -- permissions); else: empty required_permissions[] = no
+                -- restriction (static "jump to" rows); non-empty requires
+                -- at least one overlap with the caller's active grants
+                -- from company_user_permissions. NOTE: granted_tokens is
+                -- now sourced fresh from the table — NOT from the legacy
+                -- session.Roles jsonb cache — so a revocation takes
+                -- effect immediately on the next search.
                 and (
-                  coalesce(cardinality(doc.required_permissions), 0) = 0
-                  or doc.required_permissions && @user_permissions
+                  (select is_owner from caller_info) = true
+                  or coalesce(cardinality(doc.required_permissions), 0) = 0
+                  or doc.required_permissions && (select granted_tokens from caller_info)
                 )
-                -- Visibility scope. 'assignee_only' rows (per-user
-                -- task assignments etc.) hide unless owner_user_id
-                -- matches the caller — OR the caller holds the row's
-                -- visibility_override_permission (the
-                -- "task.view.all"-style "I can see everyone's"
-                -- token). Batch 7 added the override branch.
+                -- Visibility scope. Owner bypasses (sees all assignee_only
+                -- rows). Otherwise: 'assignee_only' rows hide unless
+                -- owner_user_id matches the caller — OR the caller holds
+                -- the row's visibility_override_permission (e.g.
+                -- task.view.all) as an active grant. The override token
+                -- is also sourced from granted_tokens, not session.Roles.
                 and (
-                  doc.visibility_scope = 'company'
+                  (select is_owner from caller_info) = true
+                  or doc.visibility_scope = 'company'
                   or (doc.visibility_scope = 'assignee_only' and doc.owner_user_id = @user_id)
                   or (doc.visibility_scope = 'assignee_only'
                       and doc.visibility_override_permission is not null
-                      and doc.visibility_override_permission = any(@user_permissions))
+                      and doc.visibility_override_permission = any(
+                        (select granted_tokens from caller_info)
+                      ))
                 )
                 and (
                   doc.exact_code_norm = @normalized_query
@@ -222,7 +262,12 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         // — sourced from the FeatureManagement catalog so adding a new
         // toggleable module is purely a C# change.
         command.Parameters.AddWithValue("toggleable_module_keys", CompanyModuleFlagCatalog.KnownKeys.ToArray());
-        command.Parameters.AddWithValue("user_permissions", query.Permissions.ToArray());
+        // NOTE: PR-4D removed the @user_permissions parameter — the WHERE
+        // clause now reads from the materialized caller_info CTE, which
+        // pulls grants fresh from company_user_permissions on every
+        // query. query.Permissions (sourced from session.Roles) is no
+        // longer consulted here; we leave it on the contract so legacy
+        // callers don't break, but the search SQL ignores it.
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

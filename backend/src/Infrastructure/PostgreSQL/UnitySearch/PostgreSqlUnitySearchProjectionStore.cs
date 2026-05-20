@@ -539,7 +539,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               30,
               1,
-              'ar', array['ar']::text[], null, 'company', null
+              'ar', array['ar.customer.view']::text[], null, 'company', null
             from customers c
             where c.company_id = @company_id;
             """,
@@ -581,7 +581,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               30,
               1,
-              'ap', array['ap']::text[], null, 'company', null
+              'ap', array['ap.vendor.view']::text[], null, 'company', null
             from vendors v
             where v.company_id = @company_id;
             """,
@@ -623,7 +623,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               25,
               1,
-              'inventory', array['ar','ap']::text[], null, 'company', null
+              'inventory', array['inventory.item.view']::text[], null, 'company', null
             from company_product_service_catalog item
             where item.company_id = @company_id;
             """,
@@ -665,7 +665,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               24,
               1,
-              'inventory', array['ar','ap']::text[], null, 'company', null
+              'inventory', array['inventory.item.view']::text[], null, 'company', null
             from inventory_items item
             where item.company_id = @company_id;
             """,
@@ -714,7 +714,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               24,
               1,
-              'inventory', array['ap']::text[], null, 'company', null
+              'inventory', array['inventory.stock.view']::text[], null, 'company', null
             from inventory_items item
             where item.company_id = @company_id
               and item.item_kind in ('stock', 'drop_ship');
@@ -757,7 +757,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               22,
               1,
-              'inventory', array['ar','ap']::text[], null, 'company', null
+              'inventory', array['inventory.warehouse.view']::text[], null, 'company', null
             from inventory_warehouses warehouse
             where warehouse.company_id = @company_id;
             """,
@@ -808,7 +808,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               36,
               1,
-              'ar', array['ar']::text[], null, 'company', null
+              'ar', array['ar.invoice.view']::text[], null, 'company', null
             from web_shell_sales_commercial_documents doc
             where doc.company_id = @company_id
               and doc.document_type = '{documentType}';
@@ -851,7 +851,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               po.status in ('cancelled'),
               38,
               1,
-              'ap', array['ap']::text[], null, 'company', null
+              'ap', array['ap.bill.view']::text[], null, 'company', null
             from purchase_orders po
             left join vendors v
               on v.company_id = po.company_id
@@ -901,7 +901,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               i.status in ('voided', 'reversed'),
               44,
               1,
-              'ar', array['ar']::text[], null, 'company', null
+              'ar', array['ar.invoice.view']::text[], null, 'company', null
             from invoices i
             left join customers c
               on c.company_id = i.company_id
@@ -947,7 +947,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               b.status in ('voided', 'reversed'),
               44,
               1,
-              'ap', array['ap']::text[], null, 'company', null
+              'ap', array['ap.bill.view']::text[], null, 'company', null
             from bills b
             left join vendors v
               on v.company_id = b.company_id
@@ -993,7 +993,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               note.status in ('voided', 'reversed'),
               40,
               1,
-              'ar', array['ar']::text[], null, 'company', null
+              'ar', array['ar.creditnote.view']::text[], null, 'company', null
             from credit_notes note
             left join customers c
               on c.company_id = note.company_id
@@ -1039,7 +1039,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               vc.status in ('voided', 'reversed'),
               40,
               1,
-              'ap', array['ap']::text[], null, 'company', null
+              'ap', array['ap.vendorcredit.view']::text[], null, 'company', null
             from vendor_credits vc
             left join vendors v
               on v.company_id = vc.company_id
@@ -1089,7 +1089,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               je.status in ('voided', 'reversed'),
               42,
               1,
-              'gl', array['reports']::text[], null, 'company', null
+              'gl', array['gl.journal.view']::text[], null, 'company', null
             from journal_entries je
             where je.company_id = @company_id;
             """,
@@ -1257,7 +1257,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               false,
               28,
               1,
-              'gl', array['reports']::text[], null, 'company', null
+              'gl', array['gl.account.view']::text[], null, 'company', null
             from accounts a
             where a.company_id = @company_id;
             """,
