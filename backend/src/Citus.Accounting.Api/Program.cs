@@ -218,6 +218,13 @@ builder.Services.AddScoped<ICompanyMembershipPermissionStore, PostgreSqlCompanyM
 // container as the rest of the CompanyAccess infrastructure.
 builder.Services.AddScoped<Modules.CompanyAccess.Permissions.IPermissionEvaluator,
     Infrastructure.PostgreSQL.CompanyAccess.PostgreSqlPermissionEvaluator>();
+// PR-4E: grant/revoke write path for the new permission model.
+// Workflow validates via IPermissionEvaluator.CanGrantAsync, store
+// writes to company_user_permissions + audit_logs in one transaction.
+builder.Services.AddScoped<Modules.CompanyAccess.Permissions.IPermissionGrantStore,
+    Infrastructure.PostgreSQL.CompanyAccess.PostgreSqlPermissionGrantStore>();
+builder.Services.AddScoped<Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow,
+    Modules.CompanyAccess.Permissions.PermissionGrantWorkflow>();
 // Inventory item pricing (Batch 4). The store is stateless beyond
 // the connection factory; the resolver is a thin normalizer. Both
 // singletons.
@@ -13416,6 +13423,187 @@ accounting.MapGet(
 // CreditMemo + VendorCredit reuse the existing credit_notes /
 // vendor_credits detail endpoints which already shipped in main.
 // Frontend's CreditMemoClient / VendorCreditClient just call those.
+
+// =====================================================================
+// PR-4E: Permission management endpoints.
+//
+// Three endpoints for the Tralanz permission model write path:
+//   GET    /accounting/memberships/{userId}/permissions  — snapshot
+//   POST   /accounting/memberships/{userId}/permissions/grant
+//   POST   /accounting/memberships/{userId}/permissions/revoke
+//
+// All three accept the target user_id (char(7), e.g. "U000001") in
+// the URL. Company context comes from the request body's CompanyId
+// (validated by BusinessRequestContractGuard against the session
+// active company). Actor comes from BusinessSessionContextAccessor.
+//
+// Authorization:
+//   * GET:  caller must be the Owner of this company OR the target
+//           user themselves. Anything else is 403. Non-Owner users
+//           who want to inspect someone else's grants must ask Owner.
+//   * POST: workflow validates via IPermissionEvaluator.CanGrantAsync
+//           which encodes all eight hard rules (target not Owner,
+//           not self-grant, token assignable, actor has authority,
+//           etc.). Returns 403 on denial with the precise rejection
+//           code; UI can render the reason verbatim.
+//
+// Audit: every successful grant/revoke writes an audit_logs row with
+// actor_type='business_user', action='permission_granted' /
+// 'permission_revoked', and the full triple in payload.
+// =====================================================================
+
+accounting.MapGet(
+    "/memberships/{userId}/permissions",
+    async (
+        string userId,
+        [AsParameters] V1PendingLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        Modules.CompanyAccess.Permissions.IPermissionEvaluator evaluator,
+        Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null) return Results.Unauthorized();
+
+        if (!UserId.TryParse(userId, out var targetId))
+        {
+            return Results.BadRequest(new { message = "Invalid user id." });
+        }
+
+        // Caller can read their own permissions; Owner can read
+        // anyone's. Non-Owner reading someone else's grants is 403.
+        var isSelf = string.Equals(session.UserId.Value, targetId.Value, StringComparison.Ordinal);
+        var isOwner = await evaluator.IsOwnerAsync(query.CompanyId, session.UserId, cancellationToken);
+        if (!isSelf && !isOwner)
+        {
+            return Results.Problem(
+                title: "Forbidden.",
+                detail: "Only the company owner or the user themselves can read this permission snapshot.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        var snapshot = await workflow.GetUserPermissionsAsync(query.CompanyId, targetId, cancellationToken);
+        return Results.Ok(new
+        {
+            CompanyId = snapshot.CompanyId,
+            UserId = snapshot.UserId,
+            snapshot.IsOwner,
+            ActiveGrants = snapshot.ActiveGrants.Select(g => new
+            {
+                g.PermissionToken,
+                GrantedByUserId = g.GrantedByUserId,
+                g.GrantedAtUtc,
+                g.IsActive,
+            }),
+            ActiveGrantAuthorities = snapshot.ActiveGrantAuthorities.Select(a => new
+            {
+                a.GrantablePermissionToken,
+                a.CanGrant,
+                a.CanRevoke,
+                GrantedByOwnerUserId = a.GrantedByOwnerUserId,
+                a.GrantedAtUtc,
+                a.IsActive,
+            }),
+        });
+    });
+
+accounting.MapPost(
+    "/memberships/{userId}/permissions/grant",
+    async (
+        string userId,
+        PermissionMutationHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null) return Results.Unauthorized();
+
+        if (!UserId.TryParse(userId, out var targetId))
+        {
+            return Results.BadRequest(new { message = "Invalid user id." });
+        }
+
+        var result = await workflow.GrantAsync(
+            request.CompanyId,
+            session.UserId,
+            targetId,
+            request.PermissionToken,
+            cancellationToken);
+
+        if (result.ResultCode != Modules.CompanyAccess.Permissions.GrantAuthorityResult.Allowed)
+        {
+            return Results.Problem(
+                title: "Permission grant rejected.",
+                detail: result.ResultMessage,
+                statusCode: StatusCodes.Status403Forbidden,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["resultCode"] = result.ResultCode.ToString(),
+                });
+        }
+
+        return Results.Ok(new
+        {
+            CompanyId = result.CompanyId,
+            ActorUserId = result.ActorUserId,
+            TargetUserId = result.TargetUserId,
+            result.PermissionToken,
+            result.Action,
+            result.Applied,
+            ResultCode = result.ResultCode.ToString(),
+            result.ResultMessage,
+        });
+    });
+
+accounting.MapPost(
+    "/memberships/{userId}/permissions/revoke",
+    async (
+        string userId,
+        PermissionMutationHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null) return Results.Unauthorized();
+
+        if (!UserId.TryParse(userId, out var targetId))
+        {
+            return Results.BadRequest(new { message = "Invalid user id." });
+        }
+
+        var result = await workflow.RevokeAsync(
+            request.CompanyId,
+            session.UserId,
+            targetId,
+            request.PermissionToken,
+            cancellationToken);
+
+        if (result.ResultCode != Modules.CompanyAccess.Permissions.GrantAuthorityResult.Allowed)
+        {
+            return Results.Problem(
+                title: "Permission revoke rejected.",
+                detail: result.ResultMessage,
+                statusCode: StatusCodes.Status403Forbidden,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["resultCode"] = result.ResultCode.ToString(),
+                });
+        }
+
+        return Results.Ok(new
+        {
+            CompanyId = result.CompanyId,
+            ActorUserId = result.ActorUserId,
+            TargetUserId = result.TargetUserId,
+            result.PermissionToken,
+            result.Action,
+            result.Applied,
+            ResultCode = result.ResultCode.ToString(),
+            result.ResultMessage,
+        });
+    });
 
 app.Run();
 
