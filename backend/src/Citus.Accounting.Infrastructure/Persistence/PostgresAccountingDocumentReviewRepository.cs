@@ -721,24 +721,32 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             return null;
         }
 
-        var (commandAccepted, executed, outcomeCode, message) = preview switch
-        {
-            { IsAvailable: true } => (
-                true,
-                false,
-                "ready_for_implementation",
-                "Source-owned void lifecycle preview passed, but the write-side execution flow is not implemented yet."),
-            { AvailabilityMode: "not_implemented" } => (
-                false,
-                false,
-                "not_implemented",
-                preview.Reason),
-            _ => (
-                false,
-                false,
-                "blocked",
-                preview.Reason)
-        };
+        // PR-6b (C-2): the user's locked business rules require Void
+        // to apply ONLY to unposted / draft documents — posted
+        // documents must go through Reverse so the GL + AR/AP +
+        // Task billing rollback all happen via the governed
+        // compensation flow. The preview layer surfaces this as
+        // `availability_mode='blocked_by_policy'` for posted docs and
+        // (currently) `'blocked_by_status'` for drafts (drafts use
+        // the per-type draft-void stores reachable from their own
+        // endpoints — wiring them through this unified surface is a
+        // follow-up).
+        //
+        // The previous stub returned `"ready_for_implementation"` for
+        // the IsAvailable=true case, which suggested the feature was
+        // still being built. Under the locked rules that case never
+        // exists for AttemptVoid — drafts route through their own
+        // endpoint, posted is blocked by policy — so we simplify the
+        // shape: always report blocked, with the preview's reason
+        // verbatim so the UI can render "Use Reverse".
+        var outcomeCode = string.Equals(preview.AvailabilityMode, "blocked_by_policy", StringComparison.Ordinal)
+            ? "blocked_by_policy"
+            : string.Equals(preview.AvailabilityMode, "not_implemented", StringComparison.Ordinal)
+                ? "not_implemented"
+                : "blocked";
+        var commandAccepted = false;
+        var executed = false;
+        var message = preview.Reason;
 
         return new AccountingDocumentLifecycleCommandAttempt(
             preview.SourceType,
@@ -754,7 +762,16 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             preview.ActionCode,
             preview.ActionLabel,
             preview.AvailabilityMode,
-            "skeleton_only",
+            // PR-6b (C-2): ExecutionMode reflects the policy decision
+            // — never a stub-style "skeleton_only". For posted docs we
+            // surface "policy_block" so the UI knows this is a hard
+            // semantic block (use Reverse), not a "not yet built"
+            // signal. For drafts that haven't yet wired through this
+            // surface we keep "request_recording" matching the
+            // reverse path's vocabulary.
+            string.Equals(outcomeCode, "blocked_by_policy", StringComparison.Ordinal)
+                ? "policy_block"
+                : "request_recording",
             commandAccepted,
             executed,
             null,
@@ -3551,8 +3568,15 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 new AccountingDocumentLifecycleAction("edit_draft", "Edit Draft", "blocked_by_status", false, "Posted source documents are no longer editable through the draft flow."),
                 new AccountingDocumentLifecycleAction("post_draft", "Post Draft", "blocked_by_status", false, "The source document is already posted."),
                 new AccountingDocumentLifecycleAction("reopen_document", "Reopen", "not_implemented", false, "Reopen-after-post requires governed lifecycle rules and is not implemented yet."),
-                new AccountingDocumentLifecycleAction("void_document", "Void", "not_implemented", false, "Source-owned void flow is not implemented yet. Current review is read-only."),
-                new AccountingDocumentLifecycleAction("reverse_document", "Reverse", "not_implemented", false, "Source-owned reverse flow is not implemented yet. Current review is read-only.")
+                // PR-6b (C-2): per the locked Tralanz business rules,
+                // posted documents are NEVER voided — they're reversed.
+                // Void is reserved for draft soft-cancel. Surface a
+                // clear policy block here so the UI's Void button
+                // returns "use Reverse" instead of a stubbed
+                // "not_implemented" response that suggested the
+                // feature was still coming.
+                new AccountingDocumentLifecycleAction("void_document", "Void", "blocked_by_policy", false, "Posted source documents cannot be voided. Use Reverse to post a compensating entry; the original document and journal stay intact for audit."),
+                new AccountingDocumentLifecycleAction("reverse_document", "Reverse", "available_now", true, "Posted source documents support governed reverse — submits a request, posts a compensation journal entry, rolls back AR/AP open items, and unbills linked tasks. Original document and journal stay intact for audit.")
             ],
             "historical_linked_je_voided" =>
             [
