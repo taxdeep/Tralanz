@@ -46,7 +46,8 @@ public sealed class UnitySearchPickerService(HttpClient httpClient, ILogger<Unit
                     DisplayText = string.IsNullOrWhiteSpace(item.SecondaryText)
                         ? item.PrimaryText
                         : $"{item.PrimaryText} - {item.SecondaryText}",
-                    NavigationHref = item.NavigationHref
+                    NavigationHref = item.NavigationHref,
+                    MetadataJson = item.MetadataJson
                 })
                 .ToArray();
 

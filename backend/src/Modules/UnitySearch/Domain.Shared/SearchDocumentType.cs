@@ -20,4 +20,5 @@ public static class SearchDocumentType
     public const string JournalEntry = "journal_entry";
     public const string Account = "account";
     public const string Task = "task";
+    public const string User = "user";
 }

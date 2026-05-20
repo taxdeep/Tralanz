@@ -60,6 +60,18 @@ public sealed class UnitySearchPolicyRegistry
                 new[] { SearchDocumentType.Task },
                 EnforceActiveOnly: true,
                 EnforceBusinessEligibility: true),
+            // EnforceBusinessEligibility=false because users are a
+            // platform-scope entity, not a business document — there
+            // is no "voided / posted / module-on" lifecycle to gate
+            // against. The projection still narrows to active
+            // members (users.status='active' AND
+            // company_memberships.is_active=true) so EnforceActiveOnly
+            // does the right thing.
+            [SearchScopeContext.UserPicker] = new(
+                SearchScopeContext.UserPicker,
+                new[] { SearchDocumentType.User },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: false),
             [SearchScopeContext.QuoteCustomerPicker] = new(
                 SearchScopeContext.QuoteCustomerPicker,
                 new[] { SearchDocumentType.Customer },

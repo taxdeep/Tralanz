@@ -276,6 +276,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             await RunSeedStepAsync(connection, transaction, companyId, "journal_entry", SeedJournalEntryDocumentsAsync, cancellationToken);
             await RunSeedStepAsync(connection, transaction, companyId, "account", SeedAccountDocumentsAsync, cancellationToken);
             await RunSeedStepAsync(connection, transaction, companyId, "task", SeedTaskDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "user", SeedUserDocumentsAsync, cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
         }
@@ -1147,6 +1148,76 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             from tasks t
             left join customers c on c.company_id = t.company_id and c.id = t.customer_id
             where t.company_id = @company_id;
+            """,
+            cancellationToken);
+    }
+
+    private static async Task SeedUserDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CompanyId companyId, CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "public.users", cancellationToken)
+            || !await TableExistsAsync(connection, transaction, "public.company_memberships", cancellationToken))
+        {
+            return;
+        }
+
+        // search_documents.source_id is uuid, but users.id is char(7)
+        // (the Platform Identity 'U000001' code), so we hash the user_id
+        // into a deterministic uuid for the index key and stash the
+        // real user_id in metadata_json so callers can recover the
+        // typed UserId on select. Hash is stable across re-projections.
+        //
+        // visibility_scope='company' — any active member of the company
+        // can see other members in the picker (no permission gate
+        // required). required_permissions is empty for the same reason.
+        // EnforceActiveOnly+the projection's WHERE both filter on the
+        // membership AND the platform user status so a disabled
+        // account or removed member disappears immediately.
+        await ExecuteCompanyProjectionStepAsync(
+            connection,
+            transaction,
+            companyId,
+            """
+            insert into search_documents (
+              company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version,
+              module_key, required_permissions, owner_user_id, visibility_scope, visibility_override_permission
+            )
+            select
+              m.company_id,
+              'user',
+              md5('user:' || u.id)::uuid,
+              'people',
+              coalesce(nullif(u.display_name, ''), nullif(u.username, ''), u.email),
+              concat_ws(' | ',
+                u.email,
+                case m.role when 'owner' then 'Owner' else 'Member' end),
+              concat_ws(' ',
+                u.id,
+                coalesce(u.display_name, ''),
+                coalesce(u.username, ''),
+                u.email),
+              to_tsvector('simple', concat_ws(' ',
+                u.id,
+                coalesce(u.display_name, ''),
+                coalesce(u.username, ''),
+                u.email)),
+              lower(u.id),
+              '',
+              jsonb_build_object('userId', u.id, 'role', m.role, 'email', u.email),
+              null,
+              null,
+              (u.status = 'active' and m.is_active),
+              false,
+              35,
+              1,
+              'core',
+              array[]::text[],
+              null,
+              'company',
+              null
+            from company_memberships m
+            join users u on u.id = m.user_id
+            where m.company_id = @company_id;
             """,
             cancellationToken);
     }

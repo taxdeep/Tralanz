@@ -73,17 +73,14 @@ else
                                 OnCustomerSelected="OnCustomerSelectedAsync"
                                 OnCleared="OnCustomerClearedAsync" />
             </div>
-            <div>
-                @* Assignee filter: simple "only mine" toggle. A full user
-                   picker would need a UnitySearch user.picker policy + a
-                   reusable UserPicker component — landing in its own
-                   batch alongside any other "who" filters (audit log,
-                   notification rules, etc). *@
+            <div style="min-width: 16rem;">
                 <label class="text-sm font-medium block mb-1">Assignee</label>
-                <label class="inline-flex items-center gap-2" style="height: 2.25rem;">
-                    <input type="checkbox" @bind="_onlyMine" @bind:after="ReloadAsync" />
-                    <span class="text-sm">Only tasks assigned to me</span>
-                </label>
+                <UserPicker SelectedUserId="@_assigneeUserId"
+                            SelectedDisplayText="@_assigneeDisplay"
+                            Placeholder="Any assignee"
+                            Take="8"
+                            OnUserSelected="OnAssigneeSelectedAsync"
+                            OnCleared="OnAssigneeClearedAsync" />
             </div>
             <CitusButton Size="CitusButtonSize.Small" Variant="CitusButtonVariant.Ghost" OnClick="ReloadAsync">
                 Refresh
@@ -226,7 +223,8 @@ else
     private DateTime? _toDate;
     private Guid? _customerId;
     private string _customerDisplay = string.Empty;
-    private bool _onlyMine;
+    private UserId? _assigneeUserId;
+    private string _assigneeDisplay = string.Empty;
     private TaskMarginReportResult _result = Empty(TaskMarginReportMode.Operational, "USD");
 
     private bool CanView => ShellState.User.Roles.Contains("task.report.margin", StringComparer.Ordinal);
@@ -235,7 +233,7 @@ else
         _fromDate.HasValue
         || _toDate.HasValue
         || _customerId.HasValue
-        || _onlyMine;
+        || _assigneeUserId.HasValue;
 
     private TaskMarginReportMode ParsedMode =>
         string.Equals(_modeText, "billed", StringComparison.OrdinalIgnoreCase)
@@ -266,16 +264,13 @@ else
         _isLoading = true;
         try
         {
-            var assigneeId = _onlyMine && !string.IsNullOrEmpty(ShellState.User.Id.Value)
-                ? ShellState.User.Id.Value
-                : null;
             _result = await ReportClient.GetReportAsync(
                 ParsedMode,
                 baseCurrency: ShellState.ActiveCompany.BaseCurrencyCode,
                 _fromDate.HasValue ? DateOnly.FromDateTime(_fromDate.Value) : null,
                 _toDate.HasValue ? DateOnly.FromDateTime(_toDate.Value) : null,
                 customerId: _customerId,
-                assigneeId: assigneeId);
+                assigneeId: _assigneeUserId?.Value);
         }
         finally
         {
@@ -297,13 +292,28 @@ else
         return ReloadAsync();
     }
 
+    private Task OnAssigneeSelectedAsync(UserPickerSelection selection)
+    {
+        _assigneeUserId = selection.UserId;
+        _assigneeDisplay = selection.DisplayText;
+        return ReloadAsync();
+    }
+
+    private Task OnAssigneeClearedAsync()
+    {
+        _assigneeUserId = null;
+        _assigneeDisplay = string.Empty;
+        return ReloadAsync();
+    }
+
     private Task ClearFiltersAsync()
     {
         _fromDate = null;
         _toDate = null;
         _customerId = null;
         _customerDisplay = string.Empty;
-        _onlyMine = false;
+        _assigneeUserId = null;
+        _assigneeDisplay = string.Empty;
         return ReloadAsync();
     }
 

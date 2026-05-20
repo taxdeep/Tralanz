@@ -51,4 +51,15 @@ public static class SearchScopeContext
     /// gross-margin read model).
     /// </summary>
     public const string TaskPicker = "task.picker";
+
+    /// <summary>
+    /// Picker for selecting a User (company member) — used by report
+    /// filters and any future "who" pickers (audit log, notification
+    /// rules, etc.). Backed by a synthetic uuid hashed from the
+    /// char(7) user_id; the real user_id round-trips through the
+    /// projection's metadata_json so callers can use the typed
+    /// <see cref="SharedKernel.Identity.UserId"/> instead of the
+    /// synthetic guid.
+    /// </summary>
+    public const string UserPicker = "user.picker";
 }
