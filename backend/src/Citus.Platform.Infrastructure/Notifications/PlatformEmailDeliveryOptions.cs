@@ -8,7 +8,7 @@ public sealed class PlatformEmailDeliveryOptions
 
     public string FromEmail { get; set; } = string.Empty;
 
-    public string FromDisplayName { get; set; } = "Citus";
+    public string FromDisplayName { get; set; } = "Tralanz";
 
     public SmtpOptions Smtp { get; set; } = new();
 
