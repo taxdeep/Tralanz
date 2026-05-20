@@ -1015,8 +1015,14 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
     }
 
     [Fact]
-    public async Task AttemptVoidAsync_ReturnsNotImplementedSkeletonForPostedInvoice()
+    public async Task AttemptVoidAsync_RejectsPostedInvoiceWithBlockedByPolicy()
     {
+        // PR-6b (C-2): per the locked Tralanz business rules, posted
+        // documents are NEVER voided — they're reversed. This test
+        // codifies that "Void on posted invoice" returns a hard
+        // policy block (outcome="blocked_by_policy", execution_mode=
+        // "policy_block") so the UI can render "Use Reverse instead"
+        // rather than a misleading "still being built" message.
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
@@ -1070,10 +1076,11 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
             Assert.NotNull(attempt);
             Assert.Equal("void_document", attempt!.ActionCode);
-            Assert.Equal("skeleton_only", attempt.ExecutionMode);
+            Assert.Equal("policy_block", attempt.ExecutionMode);
             Assert.False(attempt.CommandAccepted);
             Assert.False(attempt.Executed);
-            Assert.Equal("not_implemented", attempt.OutcomeCode);
+            Assert.Equal("blocked_by_policy", attempt.OutcomeCode);
+            Assert.Contains("Reverse", attempt.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
