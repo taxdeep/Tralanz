@@ -305,7 +305,8 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
                       memo,
                       created_by_user_id,
                       created_at,
-                      posted_at
+                      posted_at,
+                      idempotency_key
                     )
                     values (
                       @id,
@@ -322,7 +323,8 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
                       @memo,
                       @created_by_user_id,
                       @created_at,
-                      @posted_at
+                      @posted_at,
+                      @idempotency_key
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
@@ -337,6 +339,11 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
                 insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", createdAt);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", createdAt);
+                insertDocumentCommand.Parameters.AddWithValue(
+                    "idempotency_key",
+                    string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                        ? (object)DBNull.Value
+                        : request.IdempotencyKey.Trim());
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -598,6 +605,16 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
 
             await transaction.CommitAsync(cancellationToken);
             return summary;
+        }
+        catch (PostgresException ex) when (InventoryIdempotencyHelper.IsIdempotencyViolation(ex))
+        {
+            // PR-5 (C-4): retried POST hit the idempotency partial
+            // unique index. See PostgreSqlInventoryReceiptStore for
+            // the rationale.
+            await transaction.RollbackAsync(cancellationToken);
+            await InventoryIdempotencyHelper.ThrowReplayAsync(
+                _connections, request.CompanyId, request.IdempotencyKey!.Trim(), cancellationToken);
+            throw; // unreachable
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {

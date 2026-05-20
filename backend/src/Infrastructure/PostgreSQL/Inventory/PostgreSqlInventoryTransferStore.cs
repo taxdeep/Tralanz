@@ -309,16 +309,18 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         Guid transferId,
         UserId userId,
         DateOnly postingDate,
-        CancellationToken cancellationToken) =>
-        ShipCoreAsync(companyId, transferId, userId, postingDate, cancellationToken);
+        CancellationToken cancellationToken,
+        string? idempotencyKey = null) =>
+        ShipCoreAsync(companyId, transferId, userId, postingDate, idempotencyKey, cancellationToken);
 
     public Task<InventoryTransferSummary> ReceiveAsync(
         CompanyId companyId,
         Guid transferId,
         UserId userId,
         DateOnly postingDate,
-        CancellationToken cancellationToken) =>
-        ReceiveCoreAsync(companyId, transferId, userId, postingDate, cancellationToken);
+        CancellationToken cancellationToken,
+        string? idempotencyKey = null) =>
+        ReceiveCoreAsync(companyId, transferId, userId, postingDate, idempotencyKey, cancellationToken);
 
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
@@ -1160,6 +1162,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         Guid transferId,
         UserId userId,
         DateOnly postingDate,
+        string? idempotencyKey,
         CancellationToken cancellationToken)
     {
         var foundationSummary = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -1212,10 +1215,10 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 insertDocumentCommand.CommandText =
                     """
                     insert into inventory_documents (
-                      id, company_id, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, memo, created_by_user_id, created_at, posted_at
+                      id, company_id, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, memo, created_by_user_id, created_at, posted_at, idempotency_key
                     )
                     values (
-                      @id, @company_id, 'transfer_ship', 'shipped', 'internal', @posting_date, 'warehouse_transfer', @source_document_id, @source_document_number, @memo, @created_by_user_id, @created_at, @posted_at
+                      @id, @company_id, 'transfer_ship', 'shipped', 'internal', @posting_date, 'warehouse_transfer', @source_document_id, @source_document_number, @memo, @created_by_user_id, @created_at, @posted_at, @idempotency_key
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", shipDocumentId);
@@ -1227,6 +1230,11 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", movementTimestamp);
+                insertDocumentCommand.Parameters.AddWithValue(
+                    "idempotency_key",
+                    string.IsNullOrWhiteSpace(idempotencyKey)
+                        ? (object)DBNull.Value
+                        : idempotencyKey.Trim());
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -1373,6 +1381,13 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             return await LoadTransferSummaryAsync(connection, null, companyId, transferId, cancellationToken)
                 ?? throw new InvalidOperationException("Shipped transfer could not be reloaded.");
         }
+        catch (PostgresException ex) when (InventoryIdempotencyHelper.IsIdempotencyViolation(ex))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            await InventoryIdempotencyHelper.ThrowReplayAsync(
+                _connections, companyId, idempotencyKey!.Trim(), cancellationToken);
+            throw; // unreachable
+        }
         catch
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -1385,6 +1400,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         Guid transferId,
         UserId userId,
         DateOnly postingDate,
+        string? idempotencyKey,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -1414,10 +1430,10 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 insertDocumentCommand.CommandText =
                     """
                     insert into inventory_documents (
-                      id, company_id, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, memo, created_by_user_id, created_at, posted_at
+                      id, company_id, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, memo, created_by_user_id, created_at, posted_at, idempotency_key
                     )
                     values (
-                      @id, @company_id, 'transfer_receive', 'received', 'internal', @posting_date, 'warehouse_transfer', @source_document_id, @source_document_number, @memo, @created_by_user_id, @created_at, @posted_at
+                      @id, @company_id, 'transfer_receive', 'received', 'internal', @posting_date, 'warehouse_transfer', @source_document_id, @source_document_number, @memo, @created_by_user_id, @created_at, @posted_at, @idempotency_key
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", receiveDocumentId);
@@ -1429,6 +1445,11 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", userId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", movementTimestamp);
+                insertDocumentCommand.Parameters.AddWithValue(
+                    "idempotency_key",
+                    string.IsNullOrWhiteSpace(idempotencyKey)
+                        ? (object)DBNull.Value
+                        : idempotencyKey.Trim());
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -1535,6 +1556,13 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
 
             return await LoadTransferSummaryAsync(connection, null, companyId, transferId, cancellationToken)
                 ?? throw new InvalidOperationException("Received transfer could not be reloaded.");
+        }
+        catch (PostgresException ex) when (InventoryIdempotencyHelper.IsIdempotencyViolation(ex))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            await InventoryIdempotencyHelper.ThrowReplayAsync(
+                _connections, companyId, idempotencyKey!.Trim(), cancellationToken);
+            throw; // unreachable
         }
         catch
         {

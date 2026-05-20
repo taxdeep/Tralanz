@@ -382,7 +382,8 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                       memo,
                       created_by_user_id,
                       created_at,
-                      posted_at
+                      posted_at,
+                      idempotency_key
                     )
                     values (
                       @id,
@@ -399,7 +400,8 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                       @memo,
                       @created_by_user_id,
                       @created_at,
-                      @posted_at
+                      @posted_at,
+                      @idempotency_key
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
@@ -414,6 +416,11 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                 insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", createdAt);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", createdAt);
+                insertDocumentCommand.Parameters.AddWithValue(
+                    "idempotency_key",
+                    string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                        ? (object)DBNull.Value
+                        : request.IdempotencyKey.Trim());
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -645,6 +652,19 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
 
             await transaction.CommitAsync(cancellationToken);
             return summary;
+        }
+        catch (PostgresException ex) when (InventoryIdempotencyHelper.IsIdempotencyViolation(ex))
+        {
+            // PR-5 (C-4): retried POST hit the partial unique index on
+            // (company_id, idempotency_key). Roll back the in-flight
+            // transaction (it never produced lasting state because
+            // INSERT was the first write) and surface the existing
+            // document via a typed replay exception. ThrowReplayAsync
+            // always throws.
+            await transaction.RollbackAsync(cancellationToken);
+            await InventoryIdempotencyHelper.ThrowReplayAsync(
+                _connections, request.CompanyId, request.IdempotencyKey!.Trim(), cancellationToken);
+            throw; // unreachable — ThrowReplayAsync always throws.
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
