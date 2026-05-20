@@ -2,6 +2,26 @@ using System.Reflection;
 
 namespace Citus.Accounting.Api;
 
+/// <summary>
+/// Cross-company / cross-user safety net for minimal-API request
+/// bodies. Every body argument is reflectively scanned for properties
+/// named <c>CompanyId</c> / <c>UserId</c>:
+///
+/// <list type="bullet">
+///   <item>If a strongly-typed <see cref="CompanyId"/> / <see cref="UserId"/>
+///     property is present, its value must equal the active session's
+///     value.</item>
+///   <item><b>H-7 (PR-H2)</b>: if a property with one of those names
+///     exists but its type is NOT the strongly-typed wrapper (e.g. a
+///     raw <c>Guid</c> or <c>string</c>), the request is rejected
+///     loudly. Pre-PR-H2 the guard silently no-op'd, which would have
+///     let a future contract with <c>Guid CompanyId</c> act on any
+///     company the caller could spell — a cross-company leak surface
+///     dependent only on programmer discipline. The new check fails
+///     fast on the first request so the wrong-typed property is
+///     impossible to deploy.</item>
+/// </list>
+/// </summary>
 public sealed class BusinessRequestContractGuard
 {
     public BusinessRequestGuardResult Validate(IReadOnlyList<object?> arguments, BusinessSessionContext session)
@@ -15,61 +35,49 @@ public sealed class BusinessRequestContractGuard
 
             var type = argument.GetType();
 
-            if (TryReadCompanyIdProperty(type, argument, "CompanyId", out var companyId) &&
-                !companyId.Equals(session.ActiveCompanyId))
+            // CompanyId guard.
+            var companyIdProperty = type.GetProperty("CompanyId", BindingFlags.Instance | BindingFlags.Public);
+            if (companyIdProperty is not null)
             {
-                return BusinessRequestGuardResult.Reject(
-                    $"Request company '{companyId}' does not match the active company context '{session.ActiveCompanyId}'.");
+                if (companyIdProperty.PropertyType != typeof(CompanyId))
+                {
+                    return BusinessRequestGuardResult.Reject(
+                        $"Contract {type.Name} declares a 'CompanyId' property of type " +
+                        $"'{companyIdProperty.PropertyType.Name}', but the cross-company guard only " +
+                        $"trusts the strongly-typed CompanyId. Rename or change the property's type to " +
+                        $"CompanyId so the safety net can verify it.");
+                }
+
+                var rawValue = companyIdProperty.GetValue(argument);
+                if (rawValue is CompanyId typedCompanyId && !typedCompanyId.Equals(session.ActiveCompanyId))
+                {
+                    return BusinessRequestGuardResult.Reject(
+                        $"Request company '{typedCompanyId}' does not match the active company context '{session.ActiveCompanyId}'.");
+                }
             }
 
-            if (TryReadUserIdProperty(type, argument, "UserId", out var userId) &&
-                !userId.Equals(session.UserId))
+            // UserId guard — same shape.
+            var userIdProperty = type.GetProperty("UserId", BindingFlags.Instance | BindingFlags.Public);
+            if (userIdProperty is not null)
             {
-                return BusinessRequestGuardResult.Reject(
-                    $"Request user '{userId}' does not match the authenticated business session '{session.UserId}'.");
+                if (userIdProperty.PropertyType != typeof(UserId))
+                {
+                    return BusinessRequestGuardResult.Reject(
+                        $"Contract {type.Name} declares a 'UserId' property of type " +
+                        $"'{userIdProperty.PropertyType.Name}', but the cross-user guard only trusts the " +
+                        $"strongly-typed UserId. Rename or change the property's type to UserId so the " +
+                        $"safety net can verify it.");
+                }
+
+                var rawValue = userIdProperty.GetValue(argument);
+                if (rawValue is UserId typedUserId && !typedUserId.Equals(session.UserId))
+                {
+                    return BusinessRequestGuardResult.Reject(
+                        $"Request user '{typedUserId}' does not match the authenticated business session '{session.UserId}'.");
+                }
             }
         }
 
         return BusinessRequestGuardResult.Allow();
-    }
-
-    private static bool TryReadCompanyIdProperty(Type type, object instance, string propertyName, out CompanyId value)
-    {
-        value = default;
-
-        var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
-        if (property?.PropertyType != typeof(CompanyId))
-        {
-            return false;
-        }
-
-        var rawValue = property.GetValue(instance);
-        if (rawValue is not CompanyId typedValue)
-        {
-            return false;
-        }
-
-        value = typedValue;
-        return true;
-    }
-
-    private static bool TryReadUserIdProperty(Type type, object instance, string propertyName, out UserId value)
-    {
-        value = default;
-
-        var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
-        if (property?.PropertyType != typeof(UserId))
-        {
-            return false;
-        }
-
-        var rawValue = property.GetValue(instance);
-        if (rawValue is not UserId typedValue)
-        {
-            return false;
-        }
-
-        value = typedValue;
-        return true;
     }
 }
