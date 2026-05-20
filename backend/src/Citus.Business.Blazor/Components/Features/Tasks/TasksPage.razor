@@ -90,9 +90,7 @@ else
                             <td>@task.TaskNo</td>
                             <td>@task.Title</td>
                             <td>
-                                <CitusBadge Color="@StatusBadgeColor(task.Status)">
-                                    @StatusLabel(task.Status)
-                                </CitusBadge>
+                                <CitusDocumentStatusBadge Status="@task.Status.ToString()" />
                             </td>
                             <td>@(task.ServiceDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                             <td class="text-right">@($"{task.TotalBillableValue:N2} {task.CurrencyCode}")</td>
@@ -240,24 +238,6 @@ else
     }
 
     private void OpenTask(Guid taskId) => NavigationManager.NavigateTo($"tasks/{taskId:D}");
-
-    private static string StatusLabel(TaskStatus status) => status switch
-    {
-        TaskStatus.Open => "Open",
-        TaskStatus.Completed => "Completed",
-        TaskStatus.Billed => "Billed",
-        TaskStatus.Canceled => "Canceled",
-        _ => status.ToString(),
-    };
-
-    private static string StatusBadgeColor(TaskStatus status) => status switch
-    {
-        TaskStatus.Open => "blue",
-        TaskStatus.Completed => "green",
-        TaskStatus.Billed => "gold",
-        TaskStatus.Canceled => "default",
-        _ => "default",
-    };
 
     private sealed class NewTaskDraft
     {

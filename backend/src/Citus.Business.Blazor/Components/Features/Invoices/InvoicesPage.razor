@@ -55,7 +55,7 @@
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.Status)" Title="Status" Width="110px">
                     <Template Context="invoice">
-                        <CitusBadge Color="@StatusColor(invoice.Status)">@HumanizeStatus(invoice.Status)</CitusBadge>
+                        <CitusDocumentStatusBadge Status="@invoice.Status" />
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.CustomerPoNumber)" Title="Customer PO" Width="160px">
@@ -117,30 +117,6 @@
         }
         finally { _isLoading = false; }
     }
-
-    private static string StatusColor(string status) => status.ToLowerInvariant() switch
-    {
-        "posted" => "green",
-        "draft" => "blue",
-        "submitted" => "blue",
-        "partially_paid" => "blue",
-        "paid" => "green",
-        "voided" => "default",
-        "reversed" => "orange",
-        _ => "default"
-    };
-
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "draft" => "Draft",
-        "submitted" => "Submitted",
-        "posted" => "Posted",
-        "partially_paid" => "Partially paid",
-        "paid" => "Paid",
-        "voided" => "Voided",
-        "reversed" => "Reversed",
-        _ => status
-    };
 
     private sealed record class InvoiceListRow(
         Guid Id,
