@@ -362,6 +362,17 @@ builder.Services.AddHttpClient<AccountingPeriodClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// PR-4F: Owner-only permissions management page consumes this client
+// for all five surfaces (list members, registry, snapshot, grant,
+// revoke).
+builder.Services.AddHttpClient<PermissionManagementClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<YearEndPreCloseClient>(
         (serviceProvider, client) =>
         {
