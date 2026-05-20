@@ -11,20 +11,36 @@ namespace Infrastructure.PostgreSQL.Tasks;
 /// CTEs scan bill_lines and expense_lines filtered by company_id and
 /// non-null task_id; the partial index added by
 /// <see cref="PostgresTaskLinkSchemaInitializer"/> keeps the scans
-/// cheap as long as task attribution stays sparse (a few percent of
-/// total lines). When the report starts to dominate the cost report
-/// page latency, layer a refresh-on-write cache on top — leave this
-/// service intact as the source of truth.
+/// cheap as long as task attribution stays sparse.
 ///
-/// FX conversion: each row joins to fx_rates_daily using the task's
-/// natural "as-of" date (service_date for operational mode, billed_at
-/// for billed mode) to translate amounts into the company base
-/// currency. When the source currency already matches the base, or
-/// when no rate row exists, the conversion falls back to rate = 1
-/// and FxResolved = false so the UI can badge the row. Per-cost-line
-/// dates would give a more honest cost conversion (each bill / expense
-/// at its own posting date) — current implementation uses the task's
-/// date for the whole row, accepted as a v1 simplification.
+/// FX model is GL-aligned: each amount is converted at the rate the
+/// document was posted at, not the task's date. The task itself
+/// doesn't touch the GL — the invoice / bill / expense does.
+///
+/// <list type="bullet">
+///   <item><b>Billable side (revenue)</b>:
+///     <list type="bullet">
+///       <item>Billed task → use the linked invoice's <c>fx_rate</c>
+///         (the rate at which Cr Revenue / Dr AR actually hit the
+///         ledger). GL-truth.</item>
+///       <item>Unbilled task (open / completed, mode=operational) →
+///         use today's <c>fx_rates_daily</c> spot rate. There's no
+///         GL touch yet; this is a projection of "if we billed
+///         today, what would the base-currency revenue be?".</item>
+///       <item>Task currency == base currency → rate = 1.</item>
+///       <item>None of the above resolves → rate = 1, FxResolved =
+///         false. UI badges the row.</item>
+///     </list>
+///   </item>
+///   <item><b>Cost side</b>: each <c>bill_line</c> / <c>expense_line</c>
+///     is multiplied by its parent doc's <c>fx_rate</c> before
+///     summing. So a USD bill posted at 1.36 CAD contributes 136 CAD
+///     to the cost base regardless of today's rate or the task's
+///     date — that's the value the GL has booked. <c>DirectCost</c>
+///     (source) sums raw line amounts across whatever currencies the
+///     cost docs were in (cosmetic / approximate);
+///     <c>DirectCostBase</c> is the GL-honest base-currency sum.</item>
+/// </list>
 /// </summary>
 public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactory connections) : ITaskMarginReportService
 {
@@ -45,11 +61,6 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
         var skip = Math.Max(0, query.Skip);
         var baseCurrency = query.BaseCurrencyCode.Trim().ToUpperInvariant();
 
-        // Operational mode covers every non-cancelled task; billed
-        // mode covers billed-only. The date-filter column also shifts
-        // (service_date for in-flight context, billed_at for realised
-        // context). The status filter is a Postgres text[] passed via
-        // ANY(). dateColumn is also the as-of date for FX resolution.
         var statusTokens = query.Mode == TaskMarginReportMode.Billed
             ? new[] { TaskStatus.Billed.ToToken() }
             : new[] { TaskStatus.Open.ToToken(), TaskStatus.Completed.ToToken(), TaskStatus.Billed.ToToken() };
@@ -62,69 +73,93 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
             ? "t.billed_at desc nulls last"
             : "t.service_date desc nulls last";
 
-        // FX lookup applied to every row. LATERAL so the rate row is
-        // chosen per-task based on its own as-of date; LEFT JOIN so a
-        // missing rate doesn't drop the row. coalesce(dateColumn,
-        // current_date) handles tasks with no service/bill date by
-        // falling back to today's rate.
-        const string FxJoinClause = """
+        // Billable rate resolver. Wrapped as a LATERAL so the
+        // billed/unbilled branches each have access to t.*, and so
+        // both row + summary queries can share the same expression.
+        const string BillableFxJoinClause = """
             left join lateral (
-              select fx.rate
-              from fx_rates_daily fx
-              where fx.base_code = upper(t.currency_code)
-                and fx.quote_code = @base_currency_code
-                and fx.rate_date <= coalesce({{dateColumn}}, current_date)
-              order by fx.rate_date desc, fx.fetched_at desc
-              limit 1
-            ) fx_rate on true
+              select
+                case
+                  when upper(t.currency_code) = @base_currency_code then 1::numeric
+                  when t.status = 'billed' and t.billed_invoice_id is not null then
+                    (select i.fx_rate
+                     from invoices i
+                     where i.id = t.billed_invoice_id
+                       and i.company_id = t.company_id)
+                  else
+                    (select fx.rate
+                     from fx_rates_daily fx
+                     where fx.base_code = upper(t.currency_code)
+                       and fx.quote_code = @base_currency_code
+                       and fx.rate_date <= current_date
+                     order by fx.rate_date desc, fx.fetched_at desc
+                     limit 1)
+                end as rate,
+                case
+                  when upper(t.currency_code) = @base_currency_code then true
+                  when t.status = 'billed' and t.billed_invoice_id is not null then
+                    exists (select 1 from invoices i
+                             where i.id = t.billed_invoice_id
+                               and i.company_id = t.company_id)
+                  else
+                    exists (select 1 from fx_rates_daily fx
+                             where fx.base_code = upper(t.currency_code)
+                               and fx.quote_code = @base_currency_code
+                               and fx.rate_date <= current_date)
+                end as resolved
+            ) billable_fx on true
             """;
 
-        // Per-row computed FX rate + base-currency amounts. When
-        // currency_code already equals the base, no JOIN needed →
-        // rate=1, resolved=true. Otherwise use the JOIN result, with
-        // 1+false as fallback when no row was found.
-        const string FxProjection = """
-            case
-              when upper(t.currency_code) = @base_currency_code then 1::numeric
-              when fx_rate.rate is not null then fx_rate.rate
-              else 1::numeric
-            end as fx_rate_resolved,
-            case
-              when upper(t.currency_code) = @base_currency_code then true
-              when fx_rate.rate is not null then true
-              else false
-            end as fx_resolved
+        // Cost CTEs return BOTH source-currency sum (amt_native) and
+        // base-currency sum (amt_base, each line × its parent doc's
+        // fx_rate). The parent fx_rate is the GL-locked translation
+        // rate stamped at post time. coalesce defends against rows
+        // where fx_rate is null (shouldn't happen for posted docs,
+        // but a missing rate falls back to the line's own amount).
+        const string BillCostCte = """
+            bill_cost as (
+              select
+                bl.task_id,
+                sum(bl.line_amount) as amt_native,
+                sum(bl.line_amount * coalesce(b.fx_rate, 1)) as amt_base
+              from bill_lines bl
+              join bills b on b.id = bl.bill_id
+                            and b.company_id = bl.company_id
+                            and b.status <> 'voided'
+              where bl.company_id = @company_id
+                and bl.task_id is not null
+              group by bl.task_id
+            )
+            """;
+
+        const string ExpenseCostCte = """
+            expense_cost as (
+              -- expense_lines has no company_id of its own; isolate
+              -- via the parent expense row.
+              select
+                el.task_id,
+                sum(el.line_total) as amt_native,
+                sum(el.line_total * coalesce(e.fx_rate, 1)) as amt_base
+              from expense_lines el
+              join expenses e on e.id = el.expense_id
+                              and e.company_id = @company_id
+                              and e.status <> 'voided'
+              where el.task_id is not null
+              group by el.task_id
+            )
             """;
 
         await using var connection = await connections.OpenAsync(cancellationToken);
 
-        // Row query — paged. Includes per-row FX rate + base amounts.
+        // Row query — paged.
         var rows = new List<TaskMarginRow>();
         await using (var command = connection.CreateCommand())
         {
             command.CommandText =
                 $$"""
-                with bill_cost as (
-                  select bl.task_id, sum(bl.line_amount) as amt
-                  from bill_lines bl
-                  join bills b on b.id = bl.bill_id
-                                and b.company_id = bl.company_id
-                                and b.status <> 'voided'
-                  where bl.company_id = @company_id
-                    and bl.task_id is not null
-                  group by bl.task_id
-                ),
-                expense_cost as (
-                  -- expense_lines has no company_id of its own; isolate
-                  -- via the parent expense row.
-                  select el.task_id, sum(el.line_total) as amt
-                  from expense_lines el
-                  join expenses e on e.id = el.expense_id
-                                  and e.company_id = @company_id
-                                  and e.status <> 'voided'
-                  where el.task_id is not null
-                  group by el.task_id
-                )
+                with
+                {{BillCostCte}},
+                {{ExpenseCostCte}}
                 select
                   t.id,
                   t.task_no,
@@ -137,12 +172,14 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                   t.billed_invoice_id,
                   t.currency_code,
                   t.total_billable_value,
-                  coalesce(bc.amt, 0) + coalesce(ec.amt, 0) as direct_cost,
-                  {{FxProjection}}
+                  coalesce(bc.amt_native, 0) + coalesce(ec.amt_native, 0) as direct_cost,
+                  coalesce(bc.amt_base, 0)   + coalesce(ec.amt_base, 0)   as direct_cost_base,
+                  coalesce(billable_fx.rate, 1)        as billable_fx_rate,
+                  coalesce(billable_fx.resolved, false) as billable_fx_resolved
                 from tasks t
                 left join bill_cost    bc on bc.task_id = t.id
                 left join expense_cost ec on ec.task_id = t.id
-                {{FxJoinClause.Replace("{{dateColumn}}", dateColumn)}}
+                {{BillableFxJoinClause}}
                 where t.company_id = @company_id
                   and t.status = any(@status_tokens)
                   and (not @has_from or {{dateColumn}} >= @from_date)
@@ -161,9 +198,12 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
             {
                 var billable = reader.GetDecimal(reader.GetOrdinal("total_billable_value"));
                 var directCost = reader.GetDecimal(reader.GetOrdinal("direct_cost"));
+                var directCostBase = reader.GetDecimal(reader.GetOrdinal("direct_cost_base"));
+                var billableFx = reader.GetDecimal(reader.GetOrdinal("billable_fx_rate"));
+                var billableFxResolved = reader.GetBoolean(reader.GetOrdinal("billable_fx_resolved"));
+                var billableBase = Math.Round(billable * billableFx, 2, MidpointRounding.ToEven);
                 var margin = billable - directCost;
-                var fxRate = reader.GetDecimal(reader.GetOrdinal("fx_rate_resolved"));
-                var fxResolved = reader.GetBoolean(reader.GetOrdinal("fx_resolved"));
+                var marginBase = billableBase - directCostBase;
                 rows.Add(new TaskMarginRow
                 {
                     TaskId = reader.GetGuid(reader.GetOrdinal("id")),
@@ -191,50 +231,36 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                     GrossMargin = margin,
                     GrossMarginPercent = billable == 0m ? null : Math.Round(margin / billable * 100m, 2),
                     BaseCurrencyCode = baseCurrency,
-                    FxRate = fxRate,
-                    FxResolved = fxResolved,
-                    BillableValueBase = Math.Round(billable * fxRate, 2, MidpointRounding.ToEven),
-                    DirectCostBase = Math.Round(directCost * fxRate, 2, MidpointRounding.ToEven),
-                    GrossMarginBase = Math.Round(margin * fxRate, 2, MidpointRounding.ToEven),
+                    FxRate = billableFx,
+                    FxResolved = billableFxResolved,
+                    BillableValueBase = billableBase,
+                    DirectCostBase = directCostBase,
+                    GrossMarginBase = marginBase,
                 });
             }
         }
 
-        // Summary query — same WHERE + FX JOIN, no LIMIT, returns SUMs
-        // over the entire filtered set (not just the visible page).
+        // Summary query — same WHERE + JOINs, no LIMIT, SUMs over the
+        // entire filtered set.
         TaskMarginSummary summary;
         await using (var command = connection.CreateCommand())
         {
             command.CommandText =
                 $$"""
-                with bill_cost as (
-                  select bl.task_id, sum(bl.line_amount) as amt
-                  from bill_lines bl
-                  join bills b on b.id = bl.bill_id
-                                and b.company_id = bl.company_id
-                                and b.status <> 'voided'
-                  where bl.company_id = @company_id
-                    and bl.task_id is not null
-                  group by bl.task_id
-                ),
-                expense_cost as (
-                  select el.task_id, sum(el.line_total) as amt
-                  from expense_lines el
-                  join expenses e on e.id = el.expense_id
-                                  and e.company_id = @company_id
-                                  and e.status <> 'voided'
-                  where el.task_id is not null
-                  group by el.task_id
-                ),
+                with
+                {{BillCostCte}},
+                {{ExpenseCostCte}},
                 rows_with_fx as (
                   select
                     t.total_billable_value                                         as billable,
-                    coalesce(bc.amt, 0) + coalesce(ec.amt, 0)                      as direct_cost,
-                    {{FxProjection}}
+                    coalesce(bc.amt_native, 0) + coalesce(ec.amt_native, 0)        as direct_cost,
+                    coalesce(bc.amt_base, 0)   + coalesce(ec.amt_base, 0)          as direct_cost_base,
+                    coalesce(billable_fx.rate, 1)                                  as billable_fx_rate,
+                    coalesce(billable_fx.resolved, false)                          as billable_fx_resolved
                   from tasks t
                   left join bill_cost    bc on bc.task_id = t.id
                   left join expense_cost ec on ec.task_id = t.id
-                  {{FxJoinClause.Replace("{{dateColumn}}", dateColumn)}}
+                  {{BillableFxJoinClause}}
                   where t.company_id = @company_id
                     and t.status = any(@status_tokens)
                     and (not @has_from or {{dateColumn}} >= @from_date)
@@ -246,9 +272,9 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                   count(*)::int                                                              as task_count,
                   coalesce(sum(billable), 0)                                                 as billable_sum,
                   coalesce(sum(direct_cost), 0)                                              as cost_sum,
-                  coalesce(sum(round(billable * fx_rate_resolved, 2)), 0)                    as billable_base_sum,
-                  coalesce(sum(round(direct_cost * fx_rate_resolved, 2)), 0)                 as cost_base_sum,
-                  coalesce(sum(case when not fx_resolved then 1 else 0 end), 0)::int         as unresolved_fx_count
+                  coalesce(sum(round(billable * billable_fx_rate, 2)), 0)                    as billable_base_sum,
+                  coalesce(sum(direct_cost_base), 0)                                         as cost_base_sum,
+                  coalesce(sum(case when not billable_fx_resolved then 1 else 0 end), 0)::int as unresolved_fx_count
                 from rows_with_fx;
                 """;
             BindWhereParameters(command, query, statusTokens, baseCurrency);

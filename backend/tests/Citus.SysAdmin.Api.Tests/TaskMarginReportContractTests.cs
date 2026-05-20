@@ -122,33 +122,40 @@ public class TaskMarginReportContractTests
     }
 
     [Fact]
-    public void Row_base_amounts_track_fx_rate_when_currency_differs()
+    public void Row_billable_base_tracks_invoice_fx_rate_cost_base_is_per_doc_locked()
     {
-        // Sanity-pin the contract: BillableValueBase / DirectCostBase /
-        // GrossMarginBase are projected by the SQL using the per-row
-        // FxRate. UI relies on this rather than recomputing client-side.
+        // GL-aligned model: BillableValueBase = BillableValue × FxRate
+        // (the linked invoice's posted rate for billed tasks, or
+        // today's spot for unbilled). DirectCostBase is the sum of
+        // each cost line × its parent bill/expense's own posted
+        // fx_rate — so DirectCost × FxRate is NOT expected to equal
+        // DirectCostBase in general (different rates on different
+        // docs). UI reads DirectCostBase from the wire, never
+        // recomputes it client-side.
         var row = new TaskMarginRow
         {
             TaskId = Guid.NewGuid(),
             TaskNo = "TSK-2",
-            Title = "Cross-currency task",
-            Status = TaskStatus.Completed,
+            Title = "Cross-currency billed task",
+            Status = TaskStatus.Billed,
             CurrencyCode = "USD",
+            BilledInvoiceId = Guid.NewGuid(),
             BillableValue = 100m,
-            DirectCost = 40m,
+            DirectCost = 40m,        // sum of cost line amounts (mixed currencies, raw)
             GrossMargin = 60m,
             GrossMarginPercent = 60m,
             BaseCurrencyCode = "CAD",
-            FxRate = 1.36m,
+            FxRate = 1.36m,          // invoice's posted rate
             FxResolved = true,
-            // SQL projection rounds to 2 dp, so the test mirrors that.
-            BillableValueBase = 136m,
-            DirectCostBase = 54.40m,
-            GrossMarginBase = 81.60m,
+            BillableValueBase = 136m,    // 100 × 1.36
+            DirectCostBase = 50m,        // each cost line at its own doc's posted rate; NOT 40 × 1.36
+            GrossMarginBase = 86m,       // 136 − 50
         };
         Assert.True(row.FxResolved);
         Assert.Equal(1.36m, row.FxRate);
         Assert.Equal(136m, row.BillableValueBase);
+        Assert.NotEqual(row.DirectCost * row.FxRate, row.DirectCostBase);
+        Assert.Equal(row.BillableValueBase - row.DirectCostBase, row.GrossMarginBase);
     }
 
     [Fact]

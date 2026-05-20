@@ -56,29 +56,46 @@ public sealed record class TaskMarginRow
     public required string BaseCurrencyCode { get; init; }
 
     /// <summary>
-    /// Resolved FX rate (1 <see cref="CurrencyCode"/> = N
-    /// <see cref="BaseCurrencyCode"/>) the service used to translate
-    /// this row. <c>1</c> when CurrencyCode == BaseCurrencyCode (no
-    /// conversion needed) or when no rate could be resolved (fallback;
-    /// see <see cref="FxResolved"/>).
+    /// FX rate that translated the BILLABLE side of this row to base.
+    /// GL-aligned:
+    /// <list type="bullet">
+    ///   <item>Billed task → the linked invoice's posted <c>fx_rate</c>
+    ///     (the rate Cr Revenue actually hit the ledger at).</item>
+    ///   <item>Unbilled task → today's spot rate (projection — there's
+    ///     no GL touch yet).</item>
+    ///   <item>Task currency == BaseCurrencyCode → 1.</item>
+    /// </list>
+    /// Cost-side translation does NOT use this rate; each
+    /// <c>bill_line</c> / <c>expense_line</c> is converted at its own
+    /// parent doc's <c>fx_rate</c> at post time. Hence
+    /// <c>DirectCost × FxRate ≠ DirectCostBase</c> in general — read
+    /// <see cref="DirectCostBase"/> from the SQL directly, don't
+    /// recompute it client-side.
     /// </summary>
     public required decimal FxRate { get; init; }
 
     /// <summary>
-    /// True when a real FX rate row was found for
-    /// (CurrencyCode → BaseCurrencyCode, asOf=ServiceDate or earlier);
-    /// false when we fell back to <c>FxRate=1</c> because no rate was
-    /// available. Lets the UI badge un-converted rows so the operator
-    /// knows the totals are approximate.
+    /// True when a real FX rate was found (invoice's recorded rate for
+    /// billed tasks; an <c>fx_rates_daily</c> row for unbilled); false
+    /// when the service fell back to <c>FxRate=1</c>. Lets the UI
+    /// badge un-converted rows so the operator knows the totals are
+    /// approximate. Only describes the BILLABLE side; cost-side
+    /// missing rates fall back per-line to the line amount.
     /// </summary>
     public required bool FxResolved { get; init; }
 
     /// <summary><see cref="BillableValue"/> × <see cref="FxRate"/>.</summary>
     public required decimal BillableValueBase { get; init; }
 
-    /// <summary><see cref="DirectCost"/> × <see cref="FxRate"/>.</summary>
+    /// <summary>
+    /// Sum of every cost line's <c>amount × parent_doc.fx_rate</c>.
+    /// GL-locked: each posted bill / expense contributed at the rate
+    /// stamped on it at post time, never re-translated.
+    /// </summary>
     public required decimal DirectCostBase { get; init; }
 
-    /// <summary><see cref="GrossMargin"/> × <see cref="FxRate"/>.</summary>
+    /// <summary>
+    /// <see cref="BillableValueBase"/> − <see cref="DirectCostBase"/>.
+    /// </summary>
     public required decimal GrossMarginBase { get; init; }
 }
