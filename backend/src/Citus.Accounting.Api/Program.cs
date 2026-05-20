@@ -5124,18 +5124,136 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         GlIJournalEntryLifecycleWorkflow journalEntryLifecycleWorkflow,
+        IUnitOfWork unitOfWork,
         CancellationToken cancellationToken) =>
     {
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var actorId = sessionAccessor.Current?.UserId;
-        var result = await repository.ExecuteReverseRequestAsync(
-            query.CompanyId,
-            sourceType,
-            documentId,
-            requestId,
-            actorId,
-            asOfDate,
-            cancellationToken);
+
+        // P0-1 (C1): wrap the audit-log mutation
+        // (ExecuteReverseRequestAsync writes the "reverse_execution_requested"
+        // transition) and the cross-table state changes
+        // (CompleteReverseRequestExecutionAsync: settlement unapply +
+        // open-item void + source-doc mark + task billing audit) in a single
+        // IUnitOfWork.ExecuteAsync. Without this wrap, a failure inside
+        // CompleteReverseRequestExecutionAsync — which opens a
+        // PostgresCommandScope but no transaction in connection-only mode —
+        // could half-commit the open-item void while leaving the source
+        // document still flagged as posted. The linked-JE reverse step
+        // (journalEntryLifecycleWorkflow.ReverseAsync) keeps its own short
+        // transaction; on retry its own idempotency
+        // (TryFindExistingCompensationAsync) short-circuits cleanly inside
+        // the new outer UoW.
+        var actorRequired = false;
+        AccountingDocumentLifecycleRequestExecutionResult? result;
+        try
+        {
+            result = await unitOfWork.ExecuteAsync(async ct =>
+            {
+                var step1 = await repository.ExecuteReverseRequestAsync(
+                    query.CompanyId,
+                    sourceType,
+                    documentId,
+                    requestId,
+                    actorId,
+                    asOfDate,
+                    ct);
+
+                if (step1 is null)
+                {
+                    return null;
+                }
+
+                var step1Request = step1.Request;
+                var shouldRunLinkedJournalEntryReverse =
+                    step1Request.JournalEntryId.HasValue &&
+                    string.Equals(step1Request.ExecutionStatus, "execution_requested", StringComparison.Ordinal) &&
+                    step1Request.ExecutionCompletedAt is null;
+
+                if (!shouldRunLinkedJournalEntryReverse)
+                {
+                    return step1;
+                }
+
+                if (!actorId.HasValue)
+                {
+                    // Preserve the original behaviour: step 1's audit row
+                    // stays committed (status flips to "execution_requested"),
+                    // but step 2/3 are skipped and the caller gets BadRequest
+                    // so they can re-issue with a real business session.
+                    actorRequired = true;
+                    return step1;
+                }
+
+                var lifecycleResult = await journalEntryLifecycleWorkflow.ReverseAsync(
+                    query.CompanyId,
+                    step1Request.JournalEntryId!.Value,
+                    actorId.Value,
+                    ct);
+
+                return await repository.CompleteReverseRequestExecutionAsync(
+                        query.CompanyId,
+                        sourceType,
+                        documentId,
+                        requestId,
+                        actorId,
+                        lifecycleResult.CompensationJournalEntryId,
+                        lifecycleResult.CompensationDisplayNumber,
+                        lifecycleResult.CompensationSourceType,
+                        lifecycleResult.LifecycleAt,
+                        ct)
+                    ?? step1;
+            }, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The linked-JE reverse rejected the operation (e.g.
+            // JournalEntryLifecycleException). The UoW has rolled back step 1
+            // (audit log row) and step 3 was not reached. Re-read the current
+            // persisted state so the conflict response reflects the actual
+            // post-rollback status, not the in-flight snapshot that just got
+            // undone.
+            var current = await repository.GetReverseRequestAsync(
+                query.CompanyId,
+                sourceType,
+                documentId,
+                requestId,
+                cancellationToken);
+
+            if (current is null)
+            {
+                return Results.NotFound(new
+                {
+                    message = "Reverse request could not be found in the active company context."
+                });
+            }
+
+            return Results.Conflict(new
+            {
+                code = ResolveAccountingOperationErrorCode(ex.Message),
+                current.RequestId,
+                CompanyId = current.CompanyId,
+                current.SourceType,
+                SourceTypeLabel = MapDocumentReviewSourceLabel(current.SourceType),
+                Id = current.DocumentId,
+                current.EntityNumber,
+                current.DisplayNumber,
+                current.Status,
+                current.RequestStatus,
+                current.ExecutionStatus,
+                AsOfDate = asOfDate,
+                ExecutionMode = "governed_execution_orchestration",
+                Message = ex.Message
+            });
+        }
+
+        if (actorRequired)
+        {
+            return Results.BadRequest(new
+            {
+                message = "A business-session user is required before governed reverse execution can reverse the linked journal entry."
+            });
+        }
 
         if (result is null)
         {
@@ -5146,66 +5264,6 @@ accounting.MapPost(
         }
 
         var request = result.Request;
-        var shouldRunLinkedJournalEntryReverse =
-            request.JournalEntryId.HasValue &&
-            string.Equals(request.ExecutionStatus, "execution_requested", StringComparison.Ordinal) &&
-            request.ExecutionCompletedAt is null;
-
-        if (shouldRunLinkedJournalEntryReverse)
-        {
-            if (!actorId.HasValue)
-            {
-                return Results.BadRequest(new
-                {
-                    message = "A business-session user is required before governed reverse execution can reverse the linked journal entry."
-                });
-            }
-
-            try
-            {
-                var lifecycleResult = await journalEntryLifecycleWorkflow.ReverseAsync(
-                    query.CompanyId,
-                    request.JournalEntryId!.Value,
-                    actorId.Value,
-                    cancellationToken);
-
-                result = await repository.CompleteReverseRequestExecutionAsync(
-                        query.CompanyId,
-                        sourceType,
-                        documentId,
-                        requestId,
-                        actorId,
-                        lifecycleResult.CompensationJournalEntryId,
-                        lifecycleResult.CompensationDisplayNumber,
-                        lifecycleResult.CompensationSourceType,
-                        lifecycleResult.LifecycleAt,
-                        cancellationToken)
-                    ?? result;
-
-                request = result.Request;
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Conflict(new
-                {
-                    code = ResolveAccountingOperationErrorCode(ex.Message),
-                    request.RequestId,
-                    CompanyId = request.CompanyId,
-                    request.SourceType,
-                    SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
-                    Id = request.DocumentId,
-                    request.EntityNumber,
-                    request.DisplayNumber,
-                    request.Status,
-                    request.RequestStatus,
-                    request.ExecutionStatus,
-                    AsOfDate = asOfDate,
-                    ExecutionMode = "governed_execution_orchestration",
-                    Message = ex.Message
-                });
-            }
-        }
-
         var payload = new
         {
             request.RequestId,
