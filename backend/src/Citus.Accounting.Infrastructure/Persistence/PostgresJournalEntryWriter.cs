@@ -32,6 +32,24 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             _executionContextAccessor,
             cancellationToken);
 
+        // H-2 (PR-H3): require an ambient transaction. PostgresCommandScope
+        // falls back to a connection-only mode when no UnitOfWork is
+        // active, which would let WriteAsync run INSERT journal_entries
+        // + N INSERTs into journal_entry_lines + N INSERTs into
+        // ledger_entries + the status update without a transaction.
+        // Every Post* handler today wraps WriteAsync in
+        // IUnitOfWork.ExecuteAsync, so this fires only when a future
+        // caller invokes the engine directly. Fail loud here so the
+        // mistake surfaces in development instead of as a half-posted
+        // journal entry in production.
+        if (scope.Transaction is null)
+        {
+            throw new InvalidOperationException(
+                "PostgresJournalEntryWriter requires an ambient database transaction. " +
+                "Wrap the call in IUnitOfWork.ExecuteAsync so the JE header, lines, ledger " +
+                "entries, and source-doc status update commit or roll back together.");
+        }
+
         var idempotencyKey = context.IdempotencyKey?.Trim();
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
