@@ -1,0 +1,80 @@
+@*
+    CitusDocumentStatusBadge — single source of truth for the color +
+    label vocabulary of business-document lifecycle status (Invoice,
+    Bill, Credit Note, Purchase Order, Task, etc.).
+
+    The audit found same-named statuses ('posted', 'partially_paid')
+    rendering in different colors on different list pages because each
+    page carried its own `StatusColor` switch. Operators relied on
+    color as a semantic signal and got drift. This component owns the
+    canonical mapping so a future status added to one entity instantly
+    looks right everywhere.
+
+    Canonical color vocabulary:
+      draft / submitted (commitless)     → blue   (active, awaiting action)
+      posted / paid / closed / completed → green  (committed / settled)
+      partially_paid / partially_applied → blue   (in-progress settlement)
+      open                                → blue   (active)
+      billed                              → gold   (transitioned downstream — attention)
+      reversed                            → orange (compensating entry exists — audit)
+      voided / cancelled / canceled / void → default (explicit no-op)
+
+    To override (e.g. an entity-specific status not yet in the table),
+    pass Color and/or Label explicitly.
+*@
+
+<CitusBadge Color="@ResolvedColor" Class="@Class">@ResolvedLabel</CitusBadge>
+
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = string.Empty;
+
+    [Parameter] public string? Color { get; set; }
+
+    [Parameter] public string? Label { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private string ResolvedColor => Color ?? ResolveColor(Status);
+
+    private string ResolvedLabel => Label ?? HumanizeStatus(Status);
+
+    public static string ResolveColor(string? status) => (status ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "draft" => "blue",
+        "submitted" => "blue",
+        "open" => "blue",
+        "partially_paid" => "blue",
+        "partially_applied" => "blue",
+        "posted" => "green",
+        "paid" => "green",
+        "closed" => "green",
+        "completed" => "green",
+        "billed" => "gold",
+        "reversed" => "orange",
+        "voided" => "default",
+        "cancelled" => "default",
+        "canceled" => "default",
+        "void" => "default",
+        _ => "default",
+    };
+
+    public static string HumanizeStatus(string? status) => (status ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "draft" => "Draft",
+        "submitted" => "Submitted",
+        "open" => "Open",
+        "posted" => "Posted",
+        "partially_paid" => "Partially paid",
+        "partially_applied" => "Partially applied",
+        "paid" => "Paid",
+        "closed" => "Closed",
+        "completed" => "Completed",
+        "billed" => "Billed",
+        "reversed" => "Reversed",
+        "voided" => "Voided",
+        "cancelled" => "Cancelled",
+        "canceled" => "Canceled",
+        "void" => "Void",
+        _ => status ?? string.Empty,
+    };
+}

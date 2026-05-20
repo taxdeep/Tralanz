@@ -63,7 +63,7 @@
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.Status)" Title="Status" Width="120px">
                     <Template Context="row">
-                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                        <CitusDocumentStatusBadge Status="@row.Status" />
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.SourcePurchaseOrderNumber)" Title="Source PO" Width="140px">
@@ -116,28 +116,6 @@
         _showDrafts = (bool)(args.Value ?? true);
         await LoadAsync();
     }
-
-    private static string StatusColor(string status) => status switch
-    {
-        "draft" => "default",
-        "posted" => "blue",
-        "partially_paid" => "geekblue",
-        "paid" => "green",
-        "voided" => "default",
-        "reversed" => "orange",
-        _ => "default"
-    };
-
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "draft" => "Draft",
-        "posted" => "Posted",
-        "partially_paid" => "Partially paid",
-        "paid" => "Paid",
-        "voided" => "Voided",
-        "reversed" => "Reversed",
-        _ => status
-    };
 
     private sealed record BillRow(
         Guid Id,
