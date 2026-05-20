@@ -1129,6 +1129,15 @@ apply_backend_baseline_if_needed() {
 #
 # Anything added to deploy/migrations/ AFTER this hook lands runs once
 # on the next deploy and is recorded.
+#
+# Privilege model: migrations run as the postgres superuser via peer
+# auth on the local Unix socket. The runtime app continues to
+# connect as ${CITUS_DB_USER} with DML-only rights — migrations are
+# a deploy-time DDL operation already gated by `require_root` /
+# sudo, so granting them superuser doesn't widen the trust boundary.
+# Without this, migrations that ALTER any postgres-owned table
+# (the common case once a baseline exists) hit 42501 "must be
+# owner of table" and crash the deploy.
 apply_pending_migrations() {
   load_env_file
 
@@ -1138,48 +1147,32 @@ apply_pending_migrations() {
     return
   fi
 
+  # psql command array — peer auth, no password, no host/port. The
+  # postgres unix-domain socket lives at /var/run/postgresql by
+  # default on Ubuntu, which the postgres role is allowed to use
+  # without a password.
+  local psql_admin=(sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${CITUS_DB_NAME}")
+
   # Tracking table — id-less, name is the natural key. applied_at is
   # for human / audit purposes only; we don't sort by it.
-  PGPASSWORD="${CITUS_DB_PASSWORD}" \
-    psql \
-      -v ON_ERROR_STOP=1 \
-      -h "${CITUS_DB_HOST}" \
-      -p "${CITUS_DB_PORT}" \
-      -U "${CITUS_DB_USER}" \
-      -d "${CITUS_DB_NAME}" \
-      -tAc "create table if not exists schema_migrations (
-              name text primary key,
-              applied_at timestamptz not null default now()
-            );" >/dev/null
+  "${psql_admin[@]}" -tAc "create table if not exists schema_migrations (
+          name text primary key,
+          applied_at timestamptz not null default now()
+        );" >/dev/null
 
   # First-touch bootstrap. Only fires when schema_migrations is empty,
   # i.e. this deploy is the first to ever run the migration runner on
   # this database. Every existing .sql file gets recorded as applied
   # without being executed (rationale above).
   local bootstrap_count
-  bootstrap_count="$(
-    PGPASSWORD="${CITUS_DB_PASSWORD}" \
-      psql \
-        -tAc "select count(*) from schema_migrations;" \
-        -h "${CITUS_DB_HOST}" \
-        -p "${CITUS_DB_PORT}" \
-        -U "${CITUS_DB_USER}" \
-        -d "${CITUS_DB_NAME}"
-  )"
+  bootstrap_count="$("${psql_admin[@]}" -tAc "select count(*) from schema_migrations;")"
 
   if [[ "${bootstrap_count//[[:space:]]/}" == "0" ]]; then
     log "schema_migrations is empty — recording all existing migration files as already applied (one-time bootstrap)."
     while IFS= read -r migration_path; do
       local migration_name
       migration_name="$(basename "${migration_path}")"
-      PGPASSWORD="${CITUS_DB_PASSWORD}" \
-        psql \
-          -v ON_ERROR_STOP=1 \
-          -h "${CITUS_DB_HOST}" \
-          -p "${CITUS_DB_PORT}" \
-          -U "${CITUS_DB_USER}" \
-          -d "${CITUS_DB_NAME}" \
-          -tAc "insert into schema_migrations(name) values ('${migration_name}') on conflict do nothing;" >/dev/null
+      "${psql_admin[@]}" -tAc "insert into schema_migrations(name) values ('${migration_name}') on conflict do nothing;" >/dev/null
       log "  bootstrapped: ${migration_name}"
     done < <(find "${migrations_dir}" -maxdepth 1 -name '*.sql' -print | sort)
     return
@@ -1195,36 +1188,14 @@ apply_pending_migrations() {
     migration_name="$(basename "${migration_path}")"
 
     local already
-    already="$(
-      PGPASSWORD="${CITUS_DB_PASSWORD}" \
-        psql \
-          -tAc "select 1 from schema_migrations where name = '${migration_name}';" \
-          -h "${CITUS_DB_HOST}" \
-          -p "${CITUS_DB_PORT}" \
-          -U "${CITUS_DB_USER}" \
-          -d "${CITUS_DB_NAME}"
-    )"
+    already="$("${psql_admin[@]}" -tAc "select 1 from schema_migrations where name = '${migration_name}';")"
     if [[ "${already//[[:space:]]/}" == "1" ]]; then
       continue
     fi
 
     log "Applying migration: ${migration_name}"
-    PGPASSWORD="${CITUS_DB_PASSWORD}" \
-      psql \
-        -v ON_ERROR_STOP=1 \
-        -h "${CITUS_DB_HOST}" \
-        -p "${CITUS_DB_PORT}" \
-        -U "${CITUS_DB_USER}" \
-        -d "${CITUS_DB_NAME}" \
-        -f "${migration_path}"
-    PGPASSWORD="${CITUS_DB_PASSWORD}" \
-      psql \
-        -v ON_ERROR_STOP=1 \
-        -h "${CITUS_DB_HOST}" \
-        -p "${CITUS_DB_PORT}" \
-        -U "${CITUS_DB_USER}" \
-        -d "${CITUS_DB_NAME}" \
-        -tAc "insert into schema_migrations(name) values ('${migration_name}');" >/dev/null
+    "${psql_admin[@]}" -f "${migration_path}"
+    "${psql_admin[@]}" -tAc "insert into schema_migrations(name) values ('${migration_name}');" >/dev/null
     applied=$((applied + 1))
   done < <(find "${migrations_dir}" -maxdepth 1 -name '*.sql' -print | sort)
 
