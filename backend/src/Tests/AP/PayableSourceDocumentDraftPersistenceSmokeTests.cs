@@ -636,6 +636,89 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
     }
 
     [Fact]
+    public async Task AttemptVoidAsync_RejectsPostedBill_WithBlockedByPolicy()
+    {
+        // PR-7 (C-10): regression coverage for PR-6b's policy
+        // enforcement extended to the AP side. Locked rule: posted
+        // bills are NEVER voided — they're reversed. The matching
+        // AR-side test lives in
+        // ReceivableSourceDocumentDraftPersistenceSmokeTests.
+        // AttemptVoidAsync_RejectsPostedInvoiceWithBlockedByPolicy.
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
+
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
+        UserId userId = default;
+        Guid billId = Guid.Empty;
+        Guid journalEntryId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            payableControlAccountId = await CreatePayableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            expenseAccountId = await CreateExpenseAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            billId = (await billRepository.SaveDraftAsync(
+                new BillDraftSaveModel(
+                    null,
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
+                    VendorId,
+                    new DateOnly(2026, 4, 14),
+                    new DateOnly(2026, 5, 14),
+                    "USD",
+                    "USD",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Bill void policy block",
+                    [new BillDraftLineSaveModel(1, expenseAccountId, "Void policy", 60m, null, 0m, false)]),
+                CancellationToken.None)).DocumentId;
+            await MarkDocumentPostedAsync(connectionFactory, "bills", billId, CancellationToken.None);
+
+            // Posted bill, posted (NOT voided) journal entry. This is
+            // the configuration that hits the lifecycle_mode=
+            // 'posted_locked' / void_document='blocked_by_policy'
+            // branch I added in PR-6b.
+            journalEntryId = await InsertJournalEntryAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "bill",
+                billId,
+                "posted",
+                CancellationToken.None);
+
+            var attempt = await reviewRepository.AttemptVoidAsync(
+                CompanyId.FromOrdinal(1),
+                "bill",
+                billId,
+                CancellationToken.None);
+
+            Assert.NotNull(attempt);
+            Assert.Equal("void_document", attempt!.ActionCode);
+            Assert.Equal("policy_block", attempt.ExecutionMode);
+            Assert.False(attempt.CommandAccepted);
+            Assert.False(attempt.Executed);
+            Assert.Equal("blocked_by_policy", attempt.OutcomeCode);
+            Assert.Equal("blocked_by_policy", attempt.AvailabilityMode);
+            Assert.Contains("Reverse", attempt.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await CleanupJournalEntryAsync(connectionFactory, journalEntryId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "bill_lines", "bill_id", "bills", billId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task AttemptVoidAsync_ReturnsBlockedSkeletonForVoidedBill()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -691,7 +774,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
             Assert.NotNull(attempt);
             Assert.Equal("void_document", attempt!.ActionCode);
-            Assert.Equal("skeleton_only", attempt.ExecutionMode);
+            // PR-6b: AttemptVoidAsync no longer returns "skeleton_only".
+            // For the already-linked-JE-voided case the outcome is
+            // "blocked" (not "blocked_by_policy") so the execution
+            // mode is "request_recording" matching the reverse path's
+            // vocabulary.
+            Assert.Equal("request_recording", attempt.ExecutionMode);
             Assert.False(attempt.CommandAccepted);
             Assert.False(attempt.Executed);
             Assert.Equal("blocked", attempt.OutcomeCode);

@@ -291,7 +291,9 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.False(review.CanPostDraft);
             Assert.Contains("governed void or reverse flow", review.LifecycleReason, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(review.LifecycleActions, action => action.ActionCode == "edit_draft" && action.IsAvailable is false && action.AvailabilityMode == "blocked_by_status");
-            Assert.Contains(review.LifecycleActions, action => action.ActionCode == "void_document" && action.IsAvailable is false && action.AvailabilityMode == "not_implemented");
+            // PR-6b: posted documents now hard-block Void with a
+            // policy reason redirecting to Reverse.
+            Assert.Contains(review.LifecycleActions, action => action.ActionCode == "void_document" && action.IsAvailable is false && action.AvailabilityMode == "blocked_by_policy");
         }
         finally
         {
@@ -929,7 +931,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
             Assert.NotNull(preview);
             Assert.Equal("posted_locked", preview!.LifecycleMode);
-            Assert.Contains(preview.LifecycleActions, action => action.ActionCode == "void_document" && action.AvailabilityMode == "not_implemented");
+            // PR-6b: posted-locked now reports Void as blocked-by-policy.
+            Assert.Contains(preview.LifecycleActions, action => action.ActionCode == "void_document" && action.AvailabilityMode == "blocked_by_policy");
             Assert.Contains(preview.LifecycleActions, action => action.ActionCode == "post_draft" && action.AvailabilityMode == "blocked_by_status");
         }
         finally
@@ -1000,9 +1003,13 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.NotNull(preview);
             Assert.Equal("posted_locked", preview!.LifecycleMode);
             Assert.Equal("void_document", preview.ActionCode);
-            Assert.Equal("not_implemented", preview.AvailabilityMode);
+            // PR-6b: per the locked Tralanz business rule, posted
+            // documents are NEVER voided — they're reversed. The
+            // preview surfaces this as a policy block redirecting
+            // to Reverse.
+            Assert.Equal("blocked_by_policy", preview.AvailabilityMode);
             Assert.False(preview.IsAvailable);
-            Assert.Contains("not implemented yet", preview.Reason, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Reverse", preview.Reason, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
