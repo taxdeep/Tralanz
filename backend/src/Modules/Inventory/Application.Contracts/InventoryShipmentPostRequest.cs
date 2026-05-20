@@ -12,4 +12,8 @@ public sealed record class InventoryShipmentPostRequest(
     Guid? SourceDocumentId,
     string? SourceDocumentNumber,
     string? Memo,
-    IReadOnlyList<InventoryShipmentLineInput> Lines);
+    IReadOnlyList<InventoryShipmentLineInput> Lines)
+{
+    /// <summary>Idempotency-Key header — see InventoryPurchaseReceiptPostRequest for semantics.</summary>
+    public string? IdempotencyKey { get; init; }
+}
