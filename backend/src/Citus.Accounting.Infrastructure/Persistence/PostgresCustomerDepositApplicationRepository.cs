@@ -61,6 +61,16 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
         // item, the resolved AR + customer deposit account ids, and the
         // company's base currency in one round-trip. Returns null when the
         // invoice has no source SO (legacy direct-create path).
+        //
+        // `for update of oi` locks the invoice's ar_open_items row for the
+        // duration of this transaction. The unlocked version of this query
+        // raced with concurrent applications (e.g. retry of the same invoice
+        // posting) — both transactions read the same `open_amount_base`,
+        // both subtracted the applied amount, and the second UPDATE
+        // overwrote the first, letting deposits over-apply against the
+        // invoice. FOR UPDATE serialises the read-modify-write so the
+        // second transaction either skips the now-closed OI or sees the
+        // reduced remaining balance.
         InvoiceContext context;
         await using (var ctxCommand = connection.CreateCommand())
         {
@@ -93,7 +103,8 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
                  and dep.system_role = 'customer_deposit'
                  and dep.is_active = true
                 where i.company_id = @company_id and i.id = @invoice_id
-                limit 1;
+                limit 1
+                for update of oi;
                 """;
             ctxCommand.Parameters.AddWithValue("company_id", companyId.Value);
             ctxCommand.Parameters.AddWithValue("invoice_id", invoiceDocumentId);
@@ -139,6 +150,11 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
         }
 
         // Look up open deposits for this SO (FIFO by created_at).
+        // Same FOR UPDATE rationale as the invoice OI lock above: a deposit
+        // OI row can be raced by two concurrent applications (e.g. one for
+        // this invoice, one for a sibling invoice on the same SO). Locking
+        // each row here serialises consumption order so we never over-apply
+        // a deposit.
         var deposits = new List<DepositRow>();
         await using (var depositsCommand = connection.CreateCommand())
         {
@@ -161,7 +177,8 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
                   and cd.status in ('open', 'partially_applied')
                   and oi.status in ('open', 'partially_applied')
                   and oi.open_amount_base > 0
-                order by cd.created_at asc;
+                order by cd.created_at asc
+                for update of oi;
                 """;
             depositsCommand.Parameters.AddWithValue("company_id", companyId.Value);
             depositsCommand.Parameters.AddWithValue("so_id", context.SalesOrderId.Value);
