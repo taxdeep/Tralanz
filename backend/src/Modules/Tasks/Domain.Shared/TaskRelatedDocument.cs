@@ -26,6 +26,34 @@ public sealed record class TaskRelatedDocument
     public required string CurrencyCode { get; init; }
 
     public required string NavigationHref { get; init; }
+
+    /// <summary>
+    /// Company base currency the *Base fields are denominated in. Same
+    /// for every row in a single call — the API resolves it from the
+    /// active session's company once and stamps each row so the UI
+    /// doesn't need a side query.
+    /// </summary>
+    public required string BaseCurrencyCode { get; init; }
+
+    /// <summary>
+    /// The document's own posted FX rate (1 <see cref="CurrencyCode"/>
+    /// = N <see cref="BaseCurrencyCode"/>) — i.e. <c>invoices.fx_rate</c>,
+    /// <c>credit_notes.fx_rate</c>, <c>bills.fx_rate</c>, or
+    /// <c>expenses.fx_rate</c> depending on the doc type. This is the
+    /// rate the GL booked the doc at, so a sum over <c>TaskAmountBase</c>
+    /// reconciles against the relevant Revenue / Expense ledger
+    /// account balances. Falls back to <c>1</c> when the doc has no
+    /// recorded rate (shouldn't happen for posted docs but the SQL
+    /// is defensive).
+    /// </summary>
+    public required decimal FxRate { get; init; }
+
+    /// <summary>
+    /// <see cref="TaskAmount"/> × <see cref="FxRate"/>, rounded to 2
+    /// decimal places. The base-currency contribution this doc made to
+    /// the task's revenue or cost — what the GL actually booked.
+    /// </summary>
+    public required decimal TaskAmountBase { get; init; }
 }
 
 /// <summary>

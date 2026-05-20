@@ -14,13 +14,17 @@ public sealed class TaskRelatedDocumentsClient(HttpClient httpClient, ILogger<Ta
 {
     public async Task<IReadOnlyList<TaskRelatedDocument>> ListAsync(
         Guid taskId,
+        string? baseCurrency = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var rows = await httpClient.GetFromJsonAsync<TaskRelatedDocument[]>(
-                $"accounting/tasks/{taskId:D}/related-documents",
-                cancellationToken);
+            var url = $"accounting/tasks/{taskId:D}/related-documents";
+            if (!string.IsNullOrWhiteSpace(baseCurrency))
+            {
+                url += $"?baseCurrency={Uri.EscapeDataString(baseCurrency.Trim().ToUpperInvariant())}";
+            }
+            var rows = await httpClient.GetFromJsonAsync<TaskRelatedDocument[]>(url, cancellationToken);
             return rows ?? Array.Empty<TaskRelatedDocument>();
         }
         catch (Exception ex)

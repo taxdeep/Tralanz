@@ -2283,6 +2283,7 @@ accounting.MapGet(
     "/tasks/{taskId:guid}/related-documents",
     async (
         Guid taskId,
+        string? baseCurrency,
         BusinessSessionContextAccessor sessionAccessor,
         ITaskWorkflow workflow,
         ITaskRelatedDocumentsService service,
@@ -2304,7 +2305,20 @@ accounting.MapGet(
             return Results.NotFound();
         }
 
-        var rows = await service.ListForTaskAsync(session.ActiveCompanyId, taskId, cancellationToken);
+        // Resolve base currency for FX conversion of each related doc's
+        // task_amount. Client passes its ShellState value; default to
+        // the task's own currency if absent so the report stays
+        // numerically honest (each row converts at rate 1 within its
+        // own currency) for legacy callers.
+        var resolvedBase = string.IsNullOrWhiteSpace(baseCurrency)
+            ? task.CurrencyCode
+            : baseCurrency.Trim().ToUpperInvariant();
+        if (resolvedBase.Length != 3)
+        {
+            return Results.BadRequest(new { message = $"baseCurrency must be a 3-letter ISO code; got '{baseCurrency}'." });
+        }
+
+        var rows = await service.ListForTaskAsync(session.ActiveCompanyId, taskId, resolvedBase, cancellationToken);
         return Results.Ok(rows);
     })
     .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)

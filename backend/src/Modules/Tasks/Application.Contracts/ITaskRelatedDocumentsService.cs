@@ -18,5 +18,6 @@ public interface ITaskRelatedDocumentsService
     Task<IReadOnlyList<TaskRelatedDocument>> ListForTaskAsync(
         CompanyId companyId,
         Guid taskId,
+        string baseCurrencyCode,
         CancellationToken cancellationToken);
 }

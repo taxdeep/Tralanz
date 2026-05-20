@@ -192,31 +192,38 @@ else
         }
         else
         {
+            @* Summary tiles denominated in company base currency: each
+               row's TaskAmountBase is the parent doc's TaskAmount ×
+               the doc's own posted fx_rate — the same value the GL
+               booked. Reconciles against Revenue / Expense ledger
+               balances regardless of source-currency mix. *@
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-3">
                 <div>
-                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Revenue (incl. credits)</div>
+                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Revenue (incl. credits, @SummaryBaseCurrency)</div>
                     <div style="font-size: 1.15rem; font-weight: 600;">
-                        @FormatAmount(RevenueTotal) @_task.CurrencyCode
+                        @FormatAmount(RevenueTotalBase)
                     </div>
                 </div>
                 <div>
-                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Direct cost</div>
+                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Direct cost (@SummaryBaseCurrency)</div>
                     <div style="font-size: 1.15rem; font-weight: 600;">
-                        @FormatAmount(CostTotal) @_task.CurrencyCode
+                        @FormatAmount(CostTotalBase)
                     </div>
                 </div>
                 <div>
-                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Gross margin</div>
-                    <div style="@MarginStyle(RevenueTotal - CostTotal)">
-                        @FormatAmount(RevenueTotal - CostTotal) @_task.CurrencyCode
+                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Gross margin (@SummaryBaseCurrency)</div>
+                    <div style="@MarginStyle(RevenueTotalBase - CostTotalBase)">
+                        @FormatAmount(RevenueTotalBase - CostTotalBase)
                     </div>
                 </div>
             </div>
             @if (HasMixedCurrencies)
             {
-                <p class="mb-3" style="font-size: 0.75rem; color: var(--citus-color-warning);">
-                    Note: linked documents span multiple currencies. Totals
-                    above sum raw amounts — no FX conversion is applied.
+                <p class="mb-3" style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">
+                    Linked documents span multiple currencies. Totals
+                    above are translated to @SummaryBaseCurrency at each doc's
+                    own posted fx_rate (GL-locked), so the margin
+                    reconciles against the ledger.
                 </p>
             }
             <table class="citus-data-table">
@@ -228,6 +235,7 @@ else
                         <th style="width: 8rem">Status</th>
                         <th class="text-right" style="width: 10rem">Amount</th>
                         <th style="width: 5rem">Currency</th>
+                        <th class="text-right" style="width: 10rem">In @SummaryBaseCurrency</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -244,6 +252,7 @@ else
                             <td>@doc.Status</td>
                             <td class="text-right">@FormatAmount(doc.TaskAmount)</td>
                             <td>@doc.CurrencyCode</td>
+                            <td class="text-right">@FormatAmount(doc.TaskAmountBase)</td>
                         </tr>
                     }
                 </tbody>
@@ -305,19 +314,20 @@ else
     private IReadOnlyList<TaskRelatedDocument> _relatedDocs = Array.Empty<TaskRelatedDocument>();
 
     // Revenue = invoices (positive) + credit notes (negative — they
-    // reverse revenue). Cost = bills + expenses. Matches the margin
-    // report's semantics.
-    private decimal RevenueTotal => _relatedDocs.Sum(d => d.DocumentType switch
+    // reverse revenue). Cost = bills + expenses. Sums use *Base values
+    // so the totals are in a single comparable currency (the company
+    // base) regardless of source-currency mix on the docs.
+    private decimal RevenueTotalBase => _relatedDocs.Sum(d => d.DocumentType switch
     {
-        TaskRelatedDocumentType.Invoice => d.TaskAmount,
-        TaskRelatedDocumentType.CreditNote => -d.TaskAmount,
+        TaskRelatedDocumentType.Invoice => d.TaskAmountBase,
+        TaskRelatedDocumentType.CreditNote => -d.TaskAmountBase,
         _ => 0m,
     });
 
-    private decimal CostTotal => _relatedDocs.Sum(d => d.DocumentType switch
+    private decimal CostTotalBase => _relatedDocs.Sum(d => d.DocumentType switch
     {
-        TaskRelatedDocumentType.Bill => d.TaskAmount,
-        TaskRelatedDocumentType.Expense => d.TaskAmount,
+        TaskRelatedDocumentType.Bill => d.TaskAmountBase,
+        TaskRelatedDocumentType.Expense => d.TaskAmountBase,
         _ => 0m,
     });
 
@@ -327,6 +337,15 @@ else
             .Where(c => !string.IsNullOrWhiteSpace(c))
             .Distinct(StringComparer.Ordinal)
             .Count() > 1;
+
+    /// <summary>
+    /// Currency label to show on the summary tiles. Falls back to the
+    /// task's own currency when no related docs are loaded yet (so the
+    /// empty-state header doesn't flash an empty string).
+    /// </summary>
+    private string SummaryBaseCurrency =>
+        _relatedDocs.FirstOrDefault()?.BaseCurrencyCode
+        ?? ShellState.ActiveCompany.BaseCurrencyCode;
 
     private bool CanEdit => ShellState.User.Roles.Contains("task.edit", StringComparer.Ordinal);
     private bool CanComplete => ShellState.User.Roles.Contains("task.complete", StringComparer.Ordinal);
@@ -366,9 +385,10 @@ else
     {
         if (_task is null) return;
         _isLoadingRelated = true;
+        var baseCurrency = ShellState.ActiveCompany.BaseCurrencyCode;
         try
         {
-            _relatedDocs = await RelatedDocsClient.ListAsync(_taskId);
+            _relatedDocs = await RelatedDocsClient.ListAsync(_taskId, baseCurrency);
         }
         finally
         {
