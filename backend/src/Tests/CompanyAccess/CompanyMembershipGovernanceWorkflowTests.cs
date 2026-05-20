@@ -118,5 +118,15 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
             IReadOnlyList<string> newOwnerPermissions,
             CancellationToken cancellationToken) =>
             Task.FromResult<CompanyMembershipOwnershipTransferResult?>(null);
+
+        public Task<CompanyMembershipOwnershipTransferResult?> TransferOwnershipFromOwnerAsync(
+            CompanyId companyId,
+            UserId currentOwnerUserId,
+            UserId targetUserId,
+            string reason,
+            IReadOnlyList<string> newOwnerPermissions,
+            CancellationToken cancellationToken) =>
+            throw new NotImplementedException(
+                "Business-side ownership transfer is exercised by PermissionEvaluatorSmokeTests / CompanyOwnerTransferSmokeTests, not this stub.");
     }
 }

@@ -174,6 +174,12 @@ public class CompanyMembershipOwnerImmutabilityTests
             UserId? sysAdminAccountId, CancellationToken ct) =>
             Task.FromResult<CompanyMembershipRoleChangeResult?>(null);
 
+        public Task<CompanyMembershipOwnershipTransferResult?> TransferOwnershipFromOwnerAsync(
+            CompanyId companyId, UserId currentOwnerUserId, UserId targetUserId,
+            string reason, IReadOnlyList<string> newOwnerPermissions, CancellationToken ct) =>
+            throw new NotImplementedException(
+                "Business-side ownership transfer is out of scope for the SysAdmin owner-immutability tests.");
+
         public Task<CompanyMembershipOwnershipTransferResult?> TransferOwnershipFromSysAdminAsync(
             CompanyId companyId, Guid fromMembershipId, Guid toMembershipId,
             string reason, UserId? sysAdminAccountId,

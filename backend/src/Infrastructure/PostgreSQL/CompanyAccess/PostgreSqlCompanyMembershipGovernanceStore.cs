@@ -459,4 +459,217 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
         UserId UserId,
         bool IsActive,
         bool IsOwner);
+
+    public async Task<CompanyMembershipOwnershipTransferResult?> TransferOwnershipFromOwnerAsync(
+        CompanyId companyId,
+        UserId currentOwnerUserId,
+        UserId targetUserId,
+        string reason,
+        IReadOnlyList<string> newOwnerPermissions,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        // Lock both rows up-front; same serialization story as the
+        // SysAdmin path (the partial unique index keeps the post-
+        // commit invariant — this lock keeps concurrent transfers
+        // from racing on read-modify-write).
+        var rows = await ReadBothByUserIdForTransferAsync(
+            connection,
+            transaction,
+            companyId,
+            currentOwnerUserId,
+            targetUserId,
+            cancellationToken);
+
+        var fromRow = rows.FirstOrDefault(r => r.UserId == currentOwnerUserId);
+        var toRow = rows.FirstOrDefault(r => r.UserId == targetUserId);
+
+        if (fromRow is null || toRow is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        // Defensive: even if the endpoint layer ran
+        // CanPerformOwnerOnlyActionAsync, re-verify under the row
+        // lock. Avoids race where Owner status changed between auth
+        // and execution.
+        if (!fromRow.IsOwner)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("Caller is no longer the active owner of this company.");
+        }
+
+        if (!fromRow.IsActive)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("Caller's membership is no longer active.");
+        }
+
+        if (!toRow.IsActive)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("Cannot transfer ownership to an inactive membership.");
+        }
+
+        if (toRow.IsOwner)
+        {
+            // Defensive — the partial unique index should make this
+            // impossible, but if some legacy data slipped through
+            // we'd rather fail clearly than corrupt audit.
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("Target is already the owner of this company.");
+        }
+
+        var transferredAt = DateTimeOffset.UtcNow;
+
+        await using (var swapCommand = connection.CreateCommand())
+        {
+            swapCommand.Transaction = transaction;
+            swapCommand.CommandText =
+                """
+                update company_memberships
+                set is_owner = case
+                      when id = @to_id then true
+                      when id = @from_id then false
+                      else is_owner
+                    end,
+                    role = case
+                      when id = @to_id then 'owner'
+                      when id = @from_id then 'user'
+                      else role
+                    end,
+                    permissions = case
+                      when id = @to_id then @new_owner_permissions::jsonb
+                      else permissions
+                    end,
+                    updated_at = now()
+                where company_id = @company_id
+                  and id in (@from_id, @to_id);
+                """;
+            swapCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            swapCommand.Parameters.AddWithValue("from_id", fromRow.MembershipId);
+            swapCommand.Parameters.AddWithValue("to_id", toRow.MembershipId);
+            swapCommand.Parameters.AddWithValue(
+                "new_owner_permissions",
+                JsonSerializer.Serialize(newOwnerPermissions));
+            await swapCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertOwnerInitiatedTransferAuditAsync(
+            connection,
+            transaction,
+            companyId,
+            fromRow,
+            toRow,
+            currentOwnerUserId,
+            reason,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CompanyMembershipOwnershipTransferResult
+        {
+            CompanyId = companyId,
+            FromMembershipId = fromRow.MembershipId,
+            FromUserId = fromRow.UserId,
+            ToMembershipId = toRow.MembershipId,
+            ToUserId = toRow.UserId,
+            Reason = reason,
+            TransferredAtUtc = transferredAt,
+        };
+    }
+
+    private static async Task<IReadOnlyList<OwnershipTransferRow>> ReadBothByUserIdForTransferAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId fromUserId,
+        UserId toUserId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id, user_id, is_active, is_owner
+            from company_memberships
+            where company_id = @company_id
+              and user_id in (@from_user_id, @to_user_id)
+            order by user_id
+            for update;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("from_user_id", fromUserId.Value);
+        command.Parameters.AddWithValue("to_user_id", toUserId.Value);
+
+        var rows = new List<OwnershipTransferRow>(2);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new OwnershipTransferRow(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
+                reader.GetBoolean(reader.GetOrdinal("is_active")),
+                reader.GetBoolean(reader.GetOrdinal("is_owner"))));
+        }
+
+        return rows;
+    }
+
+    private static async Task InsertOwnerInitiatedTransferAuditAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        OwnershipTransferRow fromRow,
+        OwnershipTransferRow toRow,
+        UserId actorUserId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            CompanyId = companyId,
+            FromMembershipId = fromRow.MembershipId,
+            FromUserId = fromRow.UserId,
+            ToMembershipId = toRow.MembershipId,
+            ToUserId = toRow.UserId,
+            ActorUserId = actorUserId,
+            Reason = reason,
+        });
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            insert into audit_logs (
+              id,
+              company_id,
+              actor_type,
+              actor_id,
+              entity_type,
+              entity_id,
+              action,
+              payload
+            )
+            values (
+              @id,
+              @company_id,
+              'business_user',
+              @actor_id,
+              'company_membership',
+              @entity_id,
+              'ownership_transferred',
+              @payload::jsonb
+            );
+            """;
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("actor_id", actorUserId.Value);
+        command.Parameters.AddWithValue("entity_id", toRow.MembershipId.ToString("D"));
+        command.Parameters.AddWithValue("payload", payload);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 }

@@ -30,4 +30,23 @@ public interface ICompanyMembershipGovernanceStore
         UserId? sysAdminAccountId,
         IReadOnlyList<string> newOwnerPermissions,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Business-side equivalent of
+    /// <see cref="TransferOwnershipFromSysAdminAsync"/>. Resolves both
+    /// memberships by <see cref="UserId"/> (the shape the business
+    /// layer naturally has from the session), locks both rows, swaps
+    /// <c>is_owner</c> + <c>role</c> + <c>permissions</c> in a single
+    /// UPDATE, and appends an audit row with
+    /// <c>actor_type='business_user'</c>. Throws if the caller is not
+    /// the current owner of this company, if the target is inactive,
+    /// or if either user is not a member.
+    /// </summary>
+    Task<CompanyMembershipOwnershipTransferResult?> TransferOwnershipFromOwnerAsync(
+        CompanyId companyId,
+        UserId currentOwnerUserId,
+        UserId targetUserId,
+        string reason,
+        IReadOnlyList<string> newOwnerPermissions,
+        CancellationToken cancellationToken);
 }
