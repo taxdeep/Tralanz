@@ -3,6 +3,7 @@
 // fully-qualified type name in the body.
 using Citus.Accounting.Api;
 using Modules.CompanyAccess.Memberships;
+using Modules.CompanyAccess.Permissions;
 
 namespace Citus.Accounting.Api.Authorization;
 
@@ -109,6 +110,116 @@ public static class HasPermissionExtensions
                         detail: $"This operation requires all of: {string.Join(", ", normalized)}.",
                         statusCode: StatusCodes.Status403Forbidden);
                 }
+            }
+
+            return await next(context);
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// PR-4C entry point for the new Tralanz permission model.
+    /// Authorizes the request via <see cref="IPermissionEvaluator"/>
+    /// rather than the legacy <c>session.Roles</c> jsonb cache:
+    /// Owner bypasses (implied-all); non-Owner needs an active row in
+    /// <c>company_user_permissions</c> for the token, with
+    /// <c>is_assignable=true</c> in <c>permission_registry</c>.
+    ///
+    /// Use this for any new high-risk endpoint gate. The legacy
+    /// <see cref="RequirePermission{TBuilder}"/> remains for Task /
+    /// inventory-pricing endpoints whose tests still seed via the old
+    /// jsonb column; those will migrate in a later sweep PR.
+    ///
+    /// Status code convention identical to <c>RequirePermission</c>:
+    /// no session → 401, session present but unauthorized → 403.
+    /// </summary>
+    public static TBuilder RequireGrantedPermission<TBuilder>(this TBuilder builder, string permissionToken)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        if (string.IsNullOrWhiteSpace(permissionToken))
+        {
+            throw new ArgumentException("Permission token is required.", nameof(permissionToken));
+        }
+
+        // Normalize once at startup so per-request work is just the
+        // DB check. Throws on unknown tokens — programmer error.
+        var normalized = CompanyMembershipPermissionCatalog.NormalizeTokens(new[] { permissionToken })[0];
+
+        builder.AddEndpointFilter(async (context, next) =>
+        {
+            var session = context.HttpContext.RequestServices
+                .GetService<BusinessSessionContextAccessor>()?.Current;
+            if (session is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var evaluator = context.HttpContext.RequestServices
+                .GetRequiredService<IPermissionEvaluator>();
+
+            var allowed = await evaluator.CanAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                normalized,
+                context.HttpContext.RequestAborted);
+
+            if (!allowed)
+            {
+                return Results.Problem(
+                    title: "Missing required permission.",
+                    detail: $"This operation requires permission '{normalized}'. Ask the company owner to grant it.",
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            return await next(context);
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Gate an endpoint on one of the four Owner-only hard-coded
+    /// actions (see <see cref="OwnerOnlyActions"/>). These are NEVER
+    /// delegatable — even a User with grant authority over every
+    /// other token cannot perform them. Use for
+    /// <c>company.make_inactive</c>, <c>owner.transfer</c>,
+    /// <c>permission_grant_authority.{assign,revoke}</c>.
+    /// </summary>
+    public static TBuilder RequireOwnerOnlyAction<TBuilder>(this TBuilder builder, string ownerOnlyAction)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        if (!OwnerOnlyActions.IsOwnerOnly(ownerOnlyAction))
+        {
+            throw new ArgumentException(
+                $"'{ownerOnlyAction}' is not one of the catalogued Owner-only actions.",
+                nameof(ownerOnlyAction));
+        }
+
+        builder.AddEndpointFilter(async (context, next) =>
+        {
+            var session = context.HttpContext.RequestServices
+                .GetService<BusinessSessionContextAccessor>()?.Current;
+            if (session is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var evaluator = context.HttpContext.RequestServices
+                .GetRequiredService<IPermissionEvaluator>();
+
+            var allowed = await evaluator.CanPerformOwnerOnlyActionAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                ownerOnlyAction,
+                context.HttpContext.RequestAborted);
+
+            if (!allowed)
+            {
+                return Results.Problem(
+                    title: "Owner-only action.",
+                    detail: $"Only the company owner can perform '{ownerOnlyAction}'.",
+                    statusCode: StatusCodes.Status403Forbidden);
             }
 
             return await next(context);

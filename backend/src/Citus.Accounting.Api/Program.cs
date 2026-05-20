@@ -1819,7 +1819,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsModulesToggle);
 
 // -----------------------------------------------------------------------
 // Warehouses — list / rename for the Inventory tier's Warehouses page.
@@ -9200,7 +9200,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
 
 // Single-shot save + post for the New Journal Entry form. Builds a
 // JournalEntryDraft from the wire payload, looks up each line's account
@@ -9328,7 +9328,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
 
 accounting.MapGet(
     "/invoices/drafts/{documentId:guid}",
@@ -9570,7 +9570,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
 
 accounting.MapGet(
     "/invoices",
@@ -10147,7 +10147,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApBillPost);
 
 accounting.MapGet(
     "/purchase-orders",
@@ -11790,7 +11790,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorCreditPost);
 
 accounting.MapGet(
     "/receive-payments/{documentId:guid}",
@@ -12831,7 +12831,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCreditNotePost);
 
 // Combine the operator's free-text Reason + Memo + AppliedTo hint into
 // one persistent memo line on the credit_notes row. Future iteration
@@ -12937,7 +12937,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorCreditPost);
 
 static string? BuildVendorCreditMemo(VendorCreditSaveAndPostHttpRequest request)
 {
