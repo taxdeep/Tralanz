@@ -13452,6 +13452,104 @@ accounting.MapGet(
 // 'permission_revoked', and the full triple in payload.
 // =====================================================================
 
+// =====================================================================
+// PR-4F: Owner-only read endpoints powering the permission management UI.
+// =====================================================================
+
+accounting.MapGet(
+    "/memberships",
+    async (
+        [AsParameters] V1PendingLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        Modules.CompanyAccess.Permissions.IPermissionEvaluator evaluator,
+        PostgreSqlConnectionFactory connections,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null) return Results.Unauthorized();
+
+        // Owner-only for v1. Non-Owners managing permissions of others
+        // is a follow-up once delegated grant-authority UX lands.
+        if (!await evaluator.IsOwnerAsync(query.CompanyId, session.UserId, cancellationToken))
+        {
+            return Results.Problem(
+                title: "Forbidden.",
+                detail: "Only the company owner can list company members.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        var rows = new List<object>();
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select m.user_id, m.is_owner, m.is_active, m.status,
+                   u.email, coalesce(u.display_name, '') as display_name,
+                   coalesce(u.username, '') as username
+              from company_memberships m
+              join users u on u.id = m.user_id
+             where m.company_id = @company_id
+             order by m.is_owner desc, u.display_name asc, u.email asc;
+            """;
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new
+            {
+                UserId = reader.GetString(0),
+                IsOwner = reader.GetBoolean(1),
+                IsActive = reader.GetBoolean(2),
+                Status = reader.GetString(3),
+                Email = reader.GetString(4),
+                DisplayName = reader.GetString(5),
+                Username = reader.GetString(6),
+            });
+        }
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/permissions/registry",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        PostgreSqlConnectionFactory connections,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null) return Results.Unauthorized();
+
+        // Registry is shared across companies — no company filter
+        // needed. Any active session can read it (the UI uses it to
+        // render token labels even on read-only screens).
+        var rows = new List<object>();
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select permission_token, module_key, group_key, action_key,
+                   description, is_high_risk, is_assignable
+              from permission_registry
+             where is_assignable = true
+             order by module_key asc, group_key asc, action_key asc;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new
+            {
+                PermissionToken = reader.GetString(0),
+                ModuleKey = reader.GetString(1),
+                GroupKey = reader.GetString(2),
+                ActionKey = reader.GetString(3),
+                Description = reader.GetString(4),
+                IsHighRisk = reader.GetBoolean(5),
+                IsAssignable = reader.GetBoolean(6),
+            });
+        }
+        return Results.Ok(rows);
+    });
+
 accounting.MapGet(
     "/memberships/{userId}/permissions",
     async (
