@@ -1,5 +1,6 @@
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
+using Citus.Modules.Tasks.Application.Contracts;
 using System.Text.Json;
 
 namespace Citus.Accounting.Infrastructure.Persistence;
@@ -8,13 +9,27 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 {
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+    // PR-6a (C-3): Task billing rollback on invoice reverse. Nullable
+    // so legacy tests that construct the repository directly without
+    // wiring the coordinator can still compile. DI always populates
+    // it in the running API host.
+    private readonly ITaskBillingCoordinator? _taskBilling;
 
     public PostgresAccountingDocumentReviewRepository(
         PostgresConnectionFactory connections,
         PostgresExecutionContextAccessor executionContextAccessor)
+        : this(connections, executionContextAccessor, taskBilling: null)
+    {
+    }
+
+    public PostgresAccountingDocumentReviewRepository(
+        PostgresConnectionFactory connections,
+        PostgresExecutionContextAccessor executionContextAccessor,
+        ITaskBillingCoordinator? taskBilling)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
+        _taskBilling = taskBilling;
     }
 
     public async Task<AccountingDocumentReview?> GetSourceDocumentAsync(
@@ -1460,6 +1475,52 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             request.DocumentId,
             cancellationToken);
 
+        // PR-6a (C-3): Task billing rollback. When an invoice is
+        // reversed, every task whose billed_invoice_id matches must
+        // flip back Billed -> Completed so the operator can re-bill
+        // via a new invoice. Without this the tasks stay permanently
+        // marked as billed and TaskBillingCoordinator.MarkAsBilledAsync
+        // refuses any future re-bill attempt (drift guard).
+        //
+        // Idempotent: RollbackBillingAsync looks up tasks by
+        // billed_invoice_id and skips ones already restored, so a
+        // re-run of the reverse completion is safe.
+        //
+        // Soft-failure: the GL reversal already happened and the
+        // governed request bookkeeping is up to date by this point.
+        // If the task-side rollback throws we record the error in the
+        // audit payload but do NOT undo the source-document update —
+        // operator resolves from the Tasks page. Matches the existing
+        // PostCreditNoteCommandHandler / PostInvoiceCommandHandler
+        // "Step 5" soft-failure convention.
+        int taskRollbackProcessed = 0;
+        int taskRollbackSkipped = 0;
+        string? taskRollbackError = null;
+        var taskRollbackAttempted = _taskBilling is not null
+            && actorId.HasValue
+            && string.Equals(
+                NormalizeSourceType(request.SourceType),
+                "invoice",
+                StringComparison.Ordinal);
+        if (taskRollbackAttempted)
+        {
+            try
+            {
+                var rollback = await _taskBilling!.RollbackBillingAsync(
+                    companyId,
+                    request.DocumentId,
+                    actorId!.Value,
+                    reason: "Invoice reverse compensation (PR-6a / C-3).",
+                    cancellationToken);
+                taskRollbackProcessed = rollback.ProcessedTasks.Count;
+                taskRollbackSkipped = rollback.SkippedTasks.Count;
+            }
+            catch (Exception ex)
+            {
+                taskRollbackError = ex.Message;
+            }
+        }
+
         await AppendReverseRequestTransitionAsync(
             scope,
             companyId,
@@ -1480,6 +1541,14 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 SettlementApplicationsUnapplied = unapplyResult.ApplicationCount,
                 SettlementApplicationsUnappliedAmountTx = unapplyResult.TotalAppliedAmountTx,
                 SettlementApplicationsUnappliedAmountBase = unapplyResult.TotalAppliedAmountBase,
+                // PR-6a (C-3): task-billing rollback outcome included
+                // in the audit payload so post-incident analysis can
+                // distinguish "no tasks linked", "rollback succeeded",
+                // and "rollback failed — manual fix needed".
+                TaskBillingRollbackAttempted = taskRollbackAttempted,
+                TaskBillingRollbackProcessedCount = taskRollbackProcessed,
+                TaskBillingRollbackSkippedCount = taskRollbackSkipped,
+                TaskBillingRollbackError = taskRollbackError,
                 ExecutedAt = executedAt
             },
             cancellationToken);

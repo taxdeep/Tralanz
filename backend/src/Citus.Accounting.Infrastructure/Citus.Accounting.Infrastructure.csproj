@@ -7,6 +7,12 @@
          and both verification mail and invoice mail share the same outbound
          server, FromEmail, and FromDisplayName. -->
     <ProjectReference Include="..\Citus.Platform.Infrastructure\Citus.Platform.Infrastructure.csproj" />
+    <!-- PR-6a (C-3): the document-review repo invokes
+         ITaskBillingCoordinator.RollbackBillingAsync on invoice
+         reverse so task billing state stays in sync with AR. The
+         contract project is a leaf (no business logic), so depending
+         on it from Infrastructure is acceptable. -->
+    <ProjectReference Include="..\Modules\Tasks\Application.Contracts\Citus.Modules.Tasks.Application.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
