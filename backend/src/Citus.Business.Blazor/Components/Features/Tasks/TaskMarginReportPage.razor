@@ -101,7 +101,8 @@ else
     </section>
 
     @* Summary card — always reflects the unpaged filtered set, not just
-       the visible page. *@
+       the visible page. Numbers are denominated in the company base
+       currency (each row converted at its own service_date FX rate). *@
     <section class="citus-panel mb-4">
         <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div>
@@ -109,33 +110,40 @@ else
                 <div style="font-size: 1.25rem; font-weight: 600;">@_result.Summary.TaskCount</div>
             </div>
             <div>
-                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Total billable</div>
-                <div style="font-size: 1.25rem; font-weight: 600;">@FormatNumber(_result.Summary.TotalBillableValue)</div>
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Total billable (@_result.Summary.BaseCurrencyCode)</div>
+                <div style="font-size: 1.25rem; font-weight: 600;">@FormatNumber(_result.Summary.TotalBillableValueBase)</div>
             </div>
             <div>
-                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Direct cost</div>
-                <div style="font-size: 1.25rem; font-weight: 600;">@FormatNumber(_result.Summary.TotalDirectCost)</div>
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Direct cost (@_result.Summary.BaseCurrencyCode)</div>
+                <div style="font-size: 1.25rem; font-weight: 600;">@FormatNumber(_result.Summary.TotalDirectCostBase)</div>
             </div>
             <div>
-                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Gross margin</div>
-                <div style="@MarginStyle(_result.Summary.TotalGrossMargin)">
-                    @FormatNumber(_result.Summary.TotalGrossMargin)
+                <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Gross margin (@_result.Summary.BaseCurrencyCode)</div>
+                <div style="@MarginStyle(_result.Summary.TotalGrossMarginBase)">
+                    @FormatNumber(_result.Summary.TotalGrossMarginBase)
                 </div>
             </div>
             <div>
                 <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Weighted margin %</div>
-                <div style="@MarginStyle(_result.Summary.TotalGrossMargin)">
-                    @FormatPercent(_result.Summary.WeightedGrossMarginPercent)
+                <div style="@MarginStyle(_result.Summary.TotalGrossMarginBase)">
+                    @FormatPercent(_result.Summary.WeightedGrossMarginPercentBase)
                 </div>
             </div>
         </div>
-        @if (HasMixedCurrencies)
+        @if (_result.Summary.UnresolvedFxCount > 0)
         {
             <p class="mt-3 mb-0" style="font-size: 0.75rem; color: var(--citus-color-warning);">
-                Note: rows span multiple currencies. Totals above are raw
-                sums — no FX conversion is applied. Filter to a single
-                currency or build a customised report for comparable
-                figures.
+                @_result.Summary.UnresolvedFxCount of @_result.Summary.TaskCount task row(s) had no FX rate available for the
+                service_date → @_result.Summary.BaseCurrencyCode pair; those rows fall back to a
+                1:1 conversion. Set the missing rate in Settings → Currencies / FX to
+                refresh.
+            </p>
+        }
+        else if (HasMixedCurrencies)
+        {
+            <p class="mt-3 mb-0" style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">
+                Rows span multiple currencies. Totals above are translated
+                to @_result.Summary.BaseCurrencyCode using each row's service_date FX rate.
             </p>
         }
     </section>
@@ -219,7 +227,7 @@ else
     private Guid? _customerId;
     private string _customerDisplay = string.Empty;
     private bool _onlyMine;
-    private TaskMarginReportResult _result = Empty(TaskMarginReportMode.Operational);
+    private TaskMarginReportResult _result = Empty(TaskMarginReportMode.Operational, "USD");
 
     private bool CanView => ShellState.User.Roles.Contains("task.report.margin", StringComparer.Ordinal);
 
@@ -263,6 +271,7 @@ else
                 : null;
             _result = await ReportClient.GetReportAsync(
                 ParsedMode,
+                baseCurrency: ShellState.ActiveCompany.BaseCurrencyCode,
                 _fromDate.HasValue ? DateOnly.FromDateTime(_fromDate.Value) : null,
                 _toDate.HasValue ? DateOnly.FromDateTime(_toDate.Value) : null,
                 customerId: _customerId,
@@ -346,7 +355,7 @@ else
         _ => "default",
     };
 
-    private static TaskMarginReportResult Empty(TaskMarginReportMode mode) => new()
+    private static TaskMarginReportResult Empty(TaskMarginReportMode mode, string baseCurrency) => new()
     {
         Mode = mode,
         Rows = Array.Empty<TaskMarginRow>(),
@@ -357,6 +366,12 @@ else
             TotalDirectCost = 0m,
             TotalGrossMargin = 0m,
             WeightedGrossMarginPercent = null,
+            BaseCurrencyCode = baseCurrency,
+            TotalBillableValueBase = 0m,
+            TotalDirectCostBase = 0m,
+            TotalGrossMarginBase = 0m,
+            WeightedGrossMarginPercentBase = null,
+            UnresolvedFxCount = 0,
         },
     };
 }

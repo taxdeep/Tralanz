@@ -83,6 +83,7 @@ public class TaskMarginReportContractTests
         var query = new TaskMarginReportQuery
         {
             CompanyId = CompanyId.FromOrdinal(1),
+            BaseCurrencyCode = "USD",
             Mode = TaskMarginReportMode.Operational,
         };
         Assert.Equal(200, query.Take);
@@ -91,6 +92,7 @@ public class TaskMarginReportContractTests
         Assert.Null(query.ToDate);
         Assert.Null(query.CustomerId);
         Assert.Null(query.AssignedToUserId);
+        Assert.Equal("USD", query.BaseCurrencyCode);
     }
 
     [Fact]
@@ -107,13 +109,50 @@ public class TaskMarginReportContractTests
             DirectCost = 100m,
             GrossMargin = -100m,
             GrossMarginPercent = null,
+            BaseCurrencyCode = "USD",
+            FxRate = 1m,
+            FxResolved = true,
+            BillableValueBase = 0m,
+            DirectCostBase = 100m,
+            GrossMarginBase = -100m,
         };
         Assert.Null(row.GrossMarginPercent);
         Assert.Equal(-100m, row.GrossMargin);
+        Assert.Equal(-100m, row.GrossMarginBase);
     }
 
     [Fact]
-    public void Summary_carries_weighted_margin_percent_field()
+    public void Row_base_amounts_track_fx_rate_when_currency_differs()
+    {
+        // Sanity-pin the contract: BillableValueBase / DirectCostBase /
+        // GrossMarginBase are projected by the SQL using the per-row
+        // FxRate. UI relies on this rather than recomputing client-side.
+        var row = new TaskMarginRow
+        {
+            TaskId = Guid.NewGuid(),
+            TaskNo = "TSK-2",
+            Title = "Cross-currency task",
+            Status = TaskStatus.Completed,
+            CurrencyCode = "USD",
+            BillableValue = 100m,
+            DirectCost = 40m,
+            GrossMargin = 60m,
+            GrossMarginPercent = 60m,
+            BaseCurrencyCode = "CAD",
+            FxRate = 1.36m,
+            FxResolved = true,
+            // SQL projection rounds to 2 dp, so the test mirrors that.
+            BillableValueBase = 136m,
+            DirectCostBase = 54.40m,
+            GrossMarginBase = 81.60m,
+        };
+        Assert.True(row.FxResolved);
+        Assert.Equal(1.36m, row.FxRate);
+        Assert.Equal(136m, row.BillableValueBase);
+    }
+
+    [Fact]
+    public void Summary_carries_base_currency_fields()
     {
         var summary = new TaskMarginSummary
         {
@@ -122,9 +161,18 @@ public class TaskMarginReportContractTests
             TotalDirectCost = 600m,
             TotalGrossMargin = 400m,
             WeightedGrossMarginPercent = 40m,
+            BaseCurrencyCode = "CAD",
+            TotalBillableValueBase = 1360m,
+            TotalDirectCostBase = 816m,
+            TotalGrossMarginBase = 544m,
+            WeightedGrossMarginPercentBase = 40m,
+            UnresolvedFxCount = 0,
         };
         Assert.Equal(40m, summary.WeightedGrossMarginPercent);
         Assert.Equal(400m, summary.TotalGrossMargin);
+        Assert.Equal(544m, summary.TotalGrossMarginBase);
+        Assert.Equal("CAD", summary.BaseCurrencyCode);
+        Assert.Equal(0, summary.UnresolvedFxCount);
     }
 
     [Fact]
@@ -141,6 +189,12 @@ public class TaskMarginReportContractTests
                 TotalDirectCost = 0m,
                 TotalGrossMargin = 0m,
                 WeightedGrossMarginPercent = null,
+                BaseCurrencyCode = "USD",
+                TotalBillableValueBase = 0m,
+                TotalDirectCostBase = 0m,
+                TotalGrossMarginBase = 0m,
+                WeightedGrossMarginPercentBase = null,
+                UnresolvedFxCount = 0,
             },
         };
         Assert.Equal(TaskMarginReportMode.Billed, result.Mode);

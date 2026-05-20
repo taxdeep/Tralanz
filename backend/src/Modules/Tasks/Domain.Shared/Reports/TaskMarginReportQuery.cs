@@ -13,6 +13,13 @@ public sealed record class TaskMarginReportQuery
 {
     public required CompanyId CompanyId { get; init; }
 
+    /// <summary>
+    /// Company base currency the FX conversion targets. Resolved at
+    /// the API edge from the active session's company; passed through
+    /// so the SQL doesn't have to JOIN companies for it.
+    /// </summary>
+    public required string BaseCurrencyCode { get; init; }
+
     public required TaskMarginReportMode Mode { get; init; }
 
     public DateOnly? FromDate { get; init; }

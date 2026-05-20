@@ -14,6 +14,7 @@ public sealed class TaskMarginReportClient(HttpClient httpClient, ILogger<TaskMa
 {
     public async Task<TaskMarginReportResult> GetReportAsync(
         TaskMarginReportMode mode,
+        string baseCurrency,
         DateOnly? fromDate = null,
         DateOnly? toDate = null,
         Guid? customerId = null,
@@ -22,11 +23,16 @@ public sealed class TaskMarginReportClient(HttpClient httpClient, ILogger<TaskMa
         int skip = 0,
         CancellationToken cancellationToken = default)
     {
+        var resolvedBase = string.IsNullOrWhiteSpace(baseCurrency)
+            ? "USD"
+            : baseCurrency.Trim().ToUpperInvariant();
+
         try
         {
             var query = new List<string>
             {
                 $"mode={Uri.EscapeDataString(mode.ToString().ToLowerInvariant())}",
+                $"baseCurrency={Uri.EscapeDataString(resolvedBase)}",
                 $"take={take}",
                 $"skip={skip}",
             };
@@ -37,16 +43,16 @@ public sealed class TaskMarginReportClient(HttpClient httpClient, ILogger<TaskMa
 
             var url = "accounting/tasks/reports/margin?" + string.Join("&", query);
             var result = await httpClient.GetFromJsonAsync<TaskMarginReportResult>(url, cancellationToken);
-            return result ?? Empty(mode);
+            return result ?? Empty(mode, resolvedBase);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Unable to load task margin report.");
-            return Empty(mode);
+            return Empty(mode, resolvedBase);
         }
     }
 
-    private static TaskMarginReportResult Empty(TaskMarginReportMode mode) => new()
+    private static TaskMarginReportResult Empty(TaskMarginReportMode mode, string baseCurrency) => new()
     {
         Mode = mode,
         Rows = Array.Empty<TaskMarginRow>(),
@@ -57,6 +63,12 @@ public sealed class TaskMarginReportClient(HttpClient httpClient, ILogger<TaskMa
             TotalDirectCost = 0m,
             TotalGrossMargin = 0m,
             WeightedGrossMarginPercent = null,
+            BaseCurrencyCode = baseCurrency,
+            TotalBillableValueBase = 0m,
+            TotalDirectCostBase = 0m,
+            TotalGrossMarginBase = 0m,
+            WeightedGrossMarginPercentBase = null,
+            UnresolvedFxCount = 0,
         },
     };
 }

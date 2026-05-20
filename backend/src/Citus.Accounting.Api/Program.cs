@@ -2539,6 +2539,7 @@ accounting.MapGet(
         DateOnly? to,
         Guid? customerId,
         string? assigneeId,
+        string? baseCurrency,
         int? take,
         int? skip,
         BusinessSessionContextAccessor sessionAccessor,
@@ -2561,11 +2562,23 @@ accounting.MapGet(
                 return Results.BadRequest(new { message = $"Unknown report mode '{mode}'. Use 'operational' or 'billed'." });
         }
 
+        // Base currency targets the FX conversion. Client passes its
+        // ShellState.ActiveCompany.BaseCurrencyCode; if absent (legacy
+        // callers) default to USD so the SQL has a valid pair to query.
+        var resolvedBase = string.IsNullOrWhiteSpace(baseCurrency)
+            ? "USD"
+            : baseCurrency.Trim().ToUpperInvariant();
+        if (resolvedBase.Length != 3)
+        {
+            return Results.BadRequest(new { message = $"baseCurrency must be a 3-letter ISO code; got '{baseCurrency}'." });
+        }
+
         UserId? parsedAssignee = string.IsNullOrWhiteSpace(assigneeId) ? null : UserId.Parse(assigneeId.Trim());
 
         var query = new TaskMarginReportQuery
         {
             CompanyId = session.ActiveCompanyId,
+            BaseCurrencyCode = resolvedBase,
             Mode = parsedMode,
             FromDate = from,
             ToDate = to,
