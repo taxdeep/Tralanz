@@ -617,6 +617,31 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true
             });
     });
+    // P0-5c (C10): rate-limit invoice email send per (user, company) to
+    // prevent an authenticated user from blasting customer mailboxes (or
+    // exhausting the platform's SMTP reputation budget) via the
+    // /document-review/invoice/{id}/send endpoint. The window is generous
+    // for legitimate operator use (one invoice every two minutes is well
+    // above the realistic billing pace) and cuts off abuse fast.
+    options.AddPolicy("invoice-send", httpContext =>
+    {
+        var userId = (string?)httpContext.Request.Headers[BusinessSessionHeaders.UserId]
+            ?? (string?)httpContext.Request.Headers[BusinessSessionHeaderNames.LegacyUserId];
+        var companyId = (string?)httpContext.Request.Headers[BusinessSessionHeaders.ActiveCompanyId]
+            ?? (string?)httpContext.Request.Headers[BusinessSessionHeaderNames.LegacyActiveCompanyId];
+        var partitionKey = string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(companyId)
+            ? (httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous")
+            : $"{companyId}|{userId}";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromHours(1),
+                PermitLimit = 30,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
 });
 
 var app = builder.Build();
@@ -5679,7 +5704,9 @@ accounting.MapPost(
             toEmail = historyRecord.ToEmail,
             subject = historyRecord.Subject,
         });
-    });
+    })
+    .RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoiceSend)
+    .RequireRateLimiting("invoice-send");
 
 // ---------------------------------------------------------------------------
 // Read-only view of the invoice's send history. Powers the "Last sent"
