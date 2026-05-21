@@ -44,7 +44,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
             from company_module_flags
             where company_id = @company_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var persisted = new Dictionary<string, PersistedRow>(StringComparer.Ordinal);
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
@@ -113,7 +113,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
             where company_id = @company_id
               and module_key = @module_key;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("module_key", moduleKey);
 
         var raw = await command.ExecuteScalarAsync(cancellationToken);
@@ -158,7 +158,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
                   updated_by = excluded.updated_by
                 returning updated_at;
                 """;
-            upsertCommand.Parameters.AddWithValue("company_id", companyId);
+            upsertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             upsertCommand.Parameters.AddWithValue("module_key", moduleKey);
             upsertCommand.Parameters.AddWithValue("enabled", enabled);
             upsertCommand.Parameters.AddWithValue(
@@ -216,7 +216,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
               and module_key = @module_key
             for update;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("module_key", moduleKey);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -275,7 +275,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorType);
         command.Parameters.AddWithValue(
             "actor_id",

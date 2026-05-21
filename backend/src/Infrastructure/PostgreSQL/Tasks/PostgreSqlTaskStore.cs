@@ -204,7 +204,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", newId);
-            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             insertCommand.Parameters.AddWithValue("task_no", taskNo);
             insertCommand.Parameters.AddWithValue("title", title);
             insertCommand.Parameters.AddWithValue("description", description is null ? DBNull.Value : (object)description);
@@ -252,7 +252,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
               and id = @id
               and status = 'open';
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", taskId);
         command.Parameters.AddWithValue("title", title);
         command.Parameters.AddWithValue("description", description is null ? DBNull.Value : (object)description);
@@ -310,7 +310,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                 from task_lines
                 where company_id = @company_id and task_id = @task_id;
                 """;
-            lineNoCommand.Parameters.AddWithValue("company_id", companyId);
+            lineNoCommand.Parameters.AddWithValue("company_id", companyId.Value);
             lineNoCommand.Parameters.AddWithValue("task_id", taskId);
             nextLineNo = Convert.ToInt32(await lineNoCommand.ExecuteScalarAsync(cancellationToken) ?? 1);
         }
@@ -329,7 +329,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                   @quantity, @unit_price, @currency_code, @line_amount, @tax_code_id
                 );
                 """;
-            insertLine.Parameters.AddWithValue("company_id", companyId);
+            insertLine.Parameters.AddWithValue("company_id", companyId.Value);
             insertLine.Parameters.AddWithValue("task_id", taskId);
             insertLine.Parameters.AddWithValue("line_no", nextLineNo);
             insertLine.Parameters.AddWithValue("item_id", itemId);
@@ -378,7 +378,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                   and task_id = @task_id
                   and id = @line_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", companyId);
+            deleteCommand.Parameters.AddWithValue("company_id", companyId.Value);
             deleteCommand.Parameters.AddWithValue("task_id", taskId);
             deleteCommand.Parameters.AddWithValue("line_id", lineId);
             var affected = await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -439,7 +439,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                   and id = @id
                   and status = @from_status;
                 """;
-            updateCommand.Parameters.AddWithValue("company_id", companyId);
+            updateCommand.Parameters.AddWithValue("company_id", companyId.Value);
             updateCommand.Parameters.AddWithValue("id", taskId);
             updateCommand.Parameters.AddWithValue("from_status", fromToken);
             updateCommand.Parameters.AddWithValue("to_status", toToken);
@@ -468,7 +468,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                   @company_id, @task_id, @from_status, @to_status, @reason, @actor_user_id
                 );
                 """;
-            auditCommand.Parameters.AddWithValue("company_id", companyId);
+            auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
             auditCommand.Parameters.AddWithValue("task_id", taskId);
             auditCommand.Parameters.AddWithValue("from_status", fromToken);
             auditCommand.Parameters.AddWithValue("to_status", toToken);
@@ -497,7 +497,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             where company_id = @company_id
               and billed_invoice_id = @invoice_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("invoice_id", invoiceId);
 
         var rows = new List<TaskSummary>();
@@ -556,7 +556,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             where company_id = @company_id
               and id = any(@ids);
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("ids", ids);
 
         var rows = new List<TaskDisplayLookup>(ids.Length);
@@ -585,7 +585,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             where company_id = @company_id and task_id = @task_id
             order by occurred_at asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("task_id", taskId);
 
         var rows = new List<TaskStateTransitionRecord>();
@@ -631,7 +631,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
               else tasks_company_sequence.next_ordinal - 1
             end as allocated;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
 
         var raw = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(raw ?? 1L);
@@ -657,7 +657,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                 updated_at = now()
             where company_id = @company_id and id = @task_id;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("task_id", taskId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -672,7 +672,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = TaskHeaderSelect + " where company_id = @company_id and id = @id limit 1;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", taskId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -689,7 +689,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = TaskHeaderSelect + " where company_id = @company_id and id = @id for update;";
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", taskId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -713,7 +713,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             where company_id = @company_id and task_id = @task_id
             order by line_no asc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("task_id", taskId);
 
         var lines = new List<TaskLineRecord>();
