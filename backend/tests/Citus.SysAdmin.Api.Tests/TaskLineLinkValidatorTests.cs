@@ -89,7 +89,6 @@ public class TaskLineLinkValidatorTests
                 Status = status,
                 CurrencyCode = "USD",
                 TotalBillableValue = 0m,
-                TotalDirectCost = 0m,
                 IsVoided = false,
                 CreatedAtUtc = DateTimeOffset.UtcNow,
                 CreatedBy = Actor,

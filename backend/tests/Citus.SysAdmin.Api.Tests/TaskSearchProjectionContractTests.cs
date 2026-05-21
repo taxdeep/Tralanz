@@ -241,7 +241,6 @@ public class TaskSearchProjectionContractTests
                 Status = status,
                 CurrencyCode = currency,
                 TotalBillableValue = 0m,
-                TotalDirectCost = 0m,
                 IsVoided = false,
                 CreatedAtUtc = DateTimeOffset.UtcNow,
                 CreatedBy = Actor,

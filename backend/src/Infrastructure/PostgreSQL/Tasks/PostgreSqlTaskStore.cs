@@ -24,7 +24,6 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
           billed_invoice_id     uuid          null,
           billed_at             timestamptz   null,
           total_billable_value  numeric(20, 4) not null default 0,
-          total_direct_cost     numeric(20, 4) not null default 0,
           currency_code         char(3)       not null,
           is_voided             boolean       not null default false,
           created_at            timestamptz   not null default now(),
@@ -194,13 +193,13 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                 insert into tasks (
                   id, company_id, task_no, title, description, customer_id, project_id,
                   assigned_to_user_id, status, service_date, currency_code,
-                  total_billable_value, total_direct_cost, is_voided,
+                  total_billable_value, is_voided,
                   created_at, created_by, updated_at
                 )
                 values (
                   @id, @company_id, @task_no, @title, @description, @customer_id, @project_id,
                   @assigned_to, 'open', @service_date, @currency_code,
-                  0, 0, false,
+                  0, false,
                   now(), @created_by, now()
                 );
                 """;
@@ -742,7 +741,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
         """
         select id, company_id, task_no, title, description, customer_id, project_id,
                assigned_to_user_id, status, service_date, ready_to_bill_at,
-               billed_invoice_id, billed_at, total_billable_value, total_direct_cost,
+               billed_invoice_id, billed_at, total_billable_value,
                currency_code, is_voided, created_at, created_by, updated_at
         from tasks
         """;
@@ -769,7 +768,6 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                 ? null
                 : ToUtc(reader.GetFieldValue<DateTime>(reader.GetOrdinal("billed_at"))),
             TotalBillableValue: reader.GetDecimal(reader.GetOrdinal("total_billable_value")),
-            TotalDirectCost: reader.GetDecimal(reader.GetOrdinal("total_direct_cost")),
             CurrencyCode: reader.GetString(reader.GetOrdinal("currency_code")).Trim().ToUpperInvariant(),
             IsVoided: reader.GetBoolean(reader.GetOrdinal("is_voided")),
             CreatedAtUtc: ToUtc(reader.GetFieldValue<DateTime>(reader.GetOrdinal("created_at"))),
@@ -793,7 +791,6 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             BilledInvoiceId = h.BilledInvoiceId,
             BilledAtUtc = h.BilledAtUtc,
             TotalBillableValue = h.TotalBillableValue,
-            TotalDirectCost = h.TotalDirectCost,
             CurrencyCode = h.CurrencyCode,
             IsVoided = h.IsVoided,
             CreatedAtUtc = h.CreatedAtUtc,
@@ -820,7 +817,6 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
         Guid? BilledInvoiceId,
         DateTimeOffset? BilledAtUtc,
         decimal TotalBillableValue,
-        decimal TotalDirectCost,
         string CurrencyCode,
         bool IsVoided,
         DateTimeOffset CreatedAtUtc,

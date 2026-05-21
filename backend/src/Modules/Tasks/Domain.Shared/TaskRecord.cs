@@ -3,10 +3,11 @@ namespace Citus.Modules.Tasks.Domain.Shared;
 /// <summary>
 /// Full task aggregate — header + lines as read by the workflow and
 /// the API. <see cref="TotalBillableValue"/> is the sum of every line's
-/// <c>LineAmount</c>; <see cref="TotalDirectCost"/> is fed by AP postings
-/// (Batch 8+ wires the line-level <c>task_id</c> links and the read
-/// model). For now it stays at 0 — the column exists so AP can write
-/// into it later without a follow-up migration.
+/// <c>LineAmount</c>. Direct cost rolled up from bill_lines +
+/// expense_lines is intentionally NOT cached here — the
+/// <c>PostgreSqlTaskMarginReportService</c> computes it live from the
+/// joins; caching it on the task header would invite the same drift
+/// the H5 dead-column had before its removal.
 /// </summary>
 public sealed record class TaskRecord
 {
@@ -37,8 +38,6 @@ public sealed record class TaskRecord
     public DateTimeOffset? BilledAtUtc { get; init; }
 
     public required decimal TotalBillableValue { get; init; }
-
-    public required decimal TotalDirectCost { get; init; }
 
     public required string CurrencyCode { get; init; }
 
