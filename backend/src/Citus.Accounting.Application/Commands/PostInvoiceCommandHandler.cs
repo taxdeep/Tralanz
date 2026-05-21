@@ -165,10 +165,19 @@ public sealed class PostInvoiceCommandHandler
             return null;
         }
 
-        // Re-load just enough header data to pass the customer guard.
-        // GetForPostingAsync is safe to call after post; we only need
-        // CustomerId for the cross-customer-protection check.
-        Guid? customerId = null;
+        // H7: Re-load the invoice header to get its customer id. The
+        // earlier code swallowed any exception from GetForPostingAsync
+        // and continued with customerId=null, which the billing
+        // coordinator treats as "skip the per-task cross-customer
+        // match" — meaning a transient DB failure mid-post could
+        // silently disable the protection that prevents customer A's
+        // Task from being marked billed by customer B's invoice.
+        //
+        // Soft-failure here is preserved by routing the throw into
+        // the outer try/catch below so the operator still gets a
+        // toast and the JE stays committed, but a null customerId
+        // is no longer the fall-through path.
+        Guid? customerId;
         try
         {
             var document = await _documents.GetForPostingAsync(
@@ -178,11 +187,10 @@ public sealed class PostInvoiceCommandHandler
             // PartyId on an invoice doc is the customer id.
             customerId = document?.PartyId;
         }
-        catch
+        catch (Exception ex)
         {
-            // Best effort — fall through with null customerId. The
-            // coordinator treats null as "skip the per-task customer
-            // match" so the flip still happens.
+            return new InvoiceTaskBillingOutcome(0, 0,
+                "Customer lookup for cross-customer task-billing guard failed: " + ex.Message);
         }
 
         try
