@@ -698,6 +698,49 @@ public sealed class PostgresPlatformGovernanceRepository(
             return null;
         }
 
+        // H12: sole-Owner safety net. When transitioning AWAY from 'active'
+        // (i.e. to inactive / suspended / locked / etc.), refuse if this
+        // user is the only active owner of any active company. Without
+        // this guard a SysAdmin could orphan a company with one toggle —
+        // the company would have an inactive Owner, no other Owner, and
+        // no business path to assign a new one (Owner transfer requires
+        // an active source).
+        //
+        // Reactivating an account ('active') never needs this check; if
+        // anything it un-orphans a previously-frozen Owner.
+        if (!string.Equals(normalizedStatus, "active", StringComparison.Ordinal))
+        {
+            await using var ownershipProbe = connection.CreateCommand();
+            ownershipProbe.Transaction = transaction;
+            ownershipProbe.CommandText =
+                """
+                select string_agg(c.id || ' (' || c.legal_name || ')', ', ')
+                from company_memberships m
+                join companies c on c.id = m.company_id
+                where m.user_id = @account_id
+                  and m.is_owner = true
+                  and m.is_active = true
+                  and c.status = 'active'
+                  and not exists (
+                    select 1 from company_memberships m2
+                    where m2.company_id = m.company_id
+                      and m2.user_id <> m.user_id
+                      and m2.is_owner = true
+                      and m2.is_active = true
+                  );
+                """;
+            ownershipProbe.Parameters.AddWithValue("account_id", accountId.Value);
+
+            var soloOwnerCompanies = (await ownershipProbe.ExecuteScalarAsync(cancellationToken)) as string;
+            if (!string.IsNullOrEmpty(soloOwnerCompanies))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw new InvalidOperationException(
+                    $"Account '{accountId.Value}' is the sole active owner of: {soloOwnerCompanies}. " +
+                    "Transfer ownership of these companies to another active member before changing this account's status to '" + normalizedStatus + "'.");
+            }
+        }
+
         await using (var update = connection.CreateCommand())
         {
             update.Transaction = transaction;

@@ -13783,7 +13783,7 @@ accounting.MapPost(
             ResultCode = result.ResultCode.ToString(),
             result.ResultMessage,
         });
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsPermissionsAssign);
 
 accounting.MapPost(
     "/memberships/{userId}/permissions/revoke",
@@ -13832,7 +13832,7 @@ accounting.MapPost(
             ResultCode = result.ResultCode.ToString(),
             result.ResultMessage,
         });
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsPermissionsAssign);
 
 app.Run();
 
