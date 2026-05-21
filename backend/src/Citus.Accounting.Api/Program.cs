@@ -4248,7 +4248,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/execute",
-    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostArOpenItemAdjustmentCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostArOpenItemAdjustmentCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
         if (!actorId.HasValue)
@@ -4266,7 +4266,7 @@ accounting.MapPost(
                     actorId.Value,
                     request.AdjustmentAccountId,
                     request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -4542,7 +4542,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/execute",
-    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostApOpenItemAdjustmentCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostApOpenItemAdjustmentCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
         if (!actorId.HasValue)
@@ -4560,7 +4560,7 @@ accounting.MapPost(
                     actorId.Value,
                     request.AdjustmentAccountId,
                     request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -7074,6 +7074,7 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         ISalesOrderStore salesOrderStore,
         PostCustomerDepositCommandHandler handler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -7099,7 +7100,7 @@ accounting.MapPost(
                     AmountTx: request.AmountTx,
                     DocumentDate: request.DocumentDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
                     Memo: request.Memo,
-                    IdempotencyKey: request.IdempotencyKey),
+                    IdempotencyKey: ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
             return Results.Ok(result);
         }
@@ -7243,6 +7244,7 @@ accounting.MapPost(
         DropShipClearingWriteOffHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         WriteOffDropShipClearingCommandHandler handler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -7258,7 +7260,7 @@ accounting.MapPost(
                     ItemId: itemId,
                     ExpectedNetClearingBase: request.ExpectedNetClearingBase,
                     Memo: request.Memo,
-                    IdempotencyKey: request.IdempotencyKey),
+                    IdempotencyKey: ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
             return Results.Ok(result);
         }
@@ -9202,7 +9204,7 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/fx-revaluation-batches/{documentId:guid}/auto-post-cascade-unwind",
-    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, PostFxRevaluationCascadeUnwindCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, PostFxRevaluationCascadeUnwindCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9213,7 +9215,7 @@ accounting.MapPost(
                     request.UserId,
                     request.UnwindDate,
                     request.Memo,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -9340,7 +9342,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/fx-revaluation-batches/{documentId:guid}/post",
-    async (Guid documentId, PostFxRevaluationBatchHttpRequest request, PostFxRevaluationBatchCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostFxRevaluationBatchHttpRequest request, PostFxRevaluationBatchCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9350,7 +9352,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -11619,6 +11621,7 @@ accounting.MapPost(
         ExecuteReceiptGrIrSettlementHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ExecuteReceiptGrIrSettlementCommandHandler handler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var authorityBlock = RequireGrIrSettlementExecutionAuthority(
@@ -11637,7 +11640,7 @@ accounting.MapPost(
                     request.UserId,
                     documentId,
                     request.SettlementAmountBase,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -11656,6 +11659,7 @@ accounting.MapPost(
         PostReceiptGrIrSettlementJournalHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         PostReceiptGrIrSettlementJournalCommandHandler handler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var authorityBlock = RequireGrIrSettlementExecutionAuthority(
@@ -11674,7 +11678,7 @@ accounting.MapPost(
                     request.UserId,
                     documentId,
                     settlementBatchId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -11759,7 +11763,7 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-bridge/post",
-    async (Guid documentId, PostReceiptGrIrBridgeHttpRequest request, PostReceiptGrIrCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostReceiptGrIrBridgeHttpRequest request, PostReceiptGrIrCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -11769,7 +11773,7 @@ accounting.MapPost(
                     request.UserId,
                     documentId,
                     request.GrIrClearingAccountId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -12366,7 +12370,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/credit-applications/{documentId:guid}/post",
-    async (Guid documentId, PostCreditApplicationHttpRequest request, PostCreditApplicationCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostCreditApplicationHttpRequest request, PostCreditApplicationCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -12375,7 +12379,7 @@ accounting.MapPost(
                     request.CompanyId,
                     documentId,
                     request.UserId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -12714,7 +12718,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/vendor-credit-applications/{documentId:guid}/post",
-    async (Guid documentId, PostVendorCreditApplicationHttpRequest request, PostVendorCreditApplicationCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostVendorCreditApplicationHttpRequest request, PostVendorCreditApplicationCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -12723,7 +12727,7 @@ accounting.MapPost(
                     request.CompanyId,
                     documentId,
                     request.UserId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -12846,6 +12850,7 @@ accounting.MapPost(
         SalesReceiptSaveAndPostHttpRequest request,
         ISalesReceiptDocumentRepository repository,
         PostSalesReceiptCommandHandler postHandler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         // 1. Validate the wire shape. Frontend already does its own
@@ -12906,7 +12911,7 @@ accounting.MapPost(
                     saveResult.DocumentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(new
@@ -12933,6 +12938,7 @@ accounting.MapPost(
         RefundReceiptSaveAndPostHttpRequest request,
         IRefundReceiptDocumentRepository repository,
         PostRefundReceiptCommandHandler postHandler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
@@ -12989,7 +12995,7 @@ accounting.MapPost(
                     saveResult.DocumentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(new
@@ -13016,6 +13022,7 @@ accounting.MapPost(
         CreditMemoSaveAndPostHttpRequest request,
         ICreditNoteDocumentRepository repository,
         PostCreditNoteCommandHandler postHandler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         // CreditMemo reuses the existing credit_notes infrastructure
@@ -13084,7 +13091,7 @@ accounting.MapPost(
                     saveResult.DocumentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(new
@@ -13125,6 +13132,7 @@ accounting.MapPost(
         VendorCreditSaveAndPostHttpRequest request,
         IVendorCreditDocumentRepository repository,
         PostVendorCreditCommandHandler postHandler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         // Sister to /credit-memos/save-and-post on the AP side. The
@@ -13190,7 +13198,7 @@ accounting.MapPost(
                     saveResult.DocumentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(new
@@ -13227,6 +13235,7 @@ accounting.MapPost(
         BankTransferSaveAndPostHttpRequest request,
         IBankTransferDocumentRepository repository,
         PostBankTransferCommandHandler postHandler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
@@ -13266,7 +13275,7 @@ accounting.MapPost(
                     saveResult.DocumentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(new
@@ -13293,6 +13302,7 @@ accounting.MapPost(
         BankDepositSaveAndPostHttpRequest request,
         IBankDepositDocumentRepository repository,
         PostBankDepositCommandHandler postHandler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
@@ -13336,7 +13346,7 @@ accounting.MapPost(
                     saveResult.DocumentId,
                     request.UserId,
                     null,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(new
@@ -13363,6 +13373,7 @@ accounting.MapPost(
         TaxReturnSaveAndPostHttpRequest request,
         ITaxReturnDocumentRepository repository,
         PostTaxReturnCommandHandler postHandler,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
@@ -13403,7 +13414,7 @@ accounting.MapPost(
                     request.CompanyId,
                     saveResult.DocumentId,
                     request.UserId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(new
