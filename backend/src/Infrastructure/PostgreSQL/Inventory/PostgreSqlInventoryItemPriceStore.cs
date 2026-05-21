@@ -70,7 +70,7 @@ public sealed class PostgreSqlInventoryItemPriceStore(PostgreSqlConnectionFactor
               effective_from desc,
               min_quantity desc;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("include_inactive", includeInactive);
 
@@ -101,7 +101,7 @@ public sealed class PostgreSqlInventoryItemPriceStore(PostgreSqlConnectionFactor
               and id = @id
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", priceId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -160,7 +160,7 @@ public sealed class PostgreSqlInventoryItemPriceStore(PostgreSqlConnectionFactor
             command.Parameters.AddWithValue("id", normalized.Id.Value);
         }
 
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
         command.Parameters.AddWithValue("currency_code", normalized.CurrencyCode);
         command.Parameters.AddWithValue("unit_price", normalized.UnitPrice);
@@ -197,7 +197,7 @@ public sealed class PostgreSqlInventoryItemPriceStore(PostgreSqlConnectionFactor
               and id = @id
               and is_active = true;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", priceId);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);

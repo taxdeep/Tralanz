@@ -20,6 +20,9 @@
 
 @namespace Citus.Business.Blazor.Components.Layout
 
+@using Citus.Business.Blazor.State
+@inject BusinessShellState ShellState
+
 <details class="citus-popover citus-create-menu">
     <summary class="citus-create-menu__trigger">
         <span class="citus-create-menu__plus">+</span>
@@ -28,21 +31,21 @@
     <div class="citus-create-menu__panel">
         <div class="citus-create-menu__column">
             <div class="citus-create-menu__column-title">Customers</div>
-            @foreach (var item in CustomerItems)
+            @foreach (var item in CustomerItems.Where(IsVisible))
             {
                 @RenderItem(item)
             }
         </div>
         <div class="citus-create-menu__column">
             <div class="citus-create-menu__column-title">Suppliers</div>
-            @foreach (var item in SupplierItems)
+            @foreach (var item in SupplierItems.Where(IsVisible))
             {
                 @RenderItem(item)
             }
         </div>
         <div class="citus-create-menu__column">
             <div class="citus-create-menu__column-title">Other</div>
-            @foreach (var item in OtherItems)
+            @foreach (var item in OtherItems.Where(IsVisible))
             {
                 @RenderItem(item)
             }
@@ -107,8 +110,14 @@
         new("Warehouse Transfer", null),
         new("Add Warehouse", null),
         new("Add Product/Service", "/items"),
-        new("Task", "/tasks")
+        new("Task", "/tasks", ModuleKey: "task")
     };
 
-    private sealed record CreateMenuEntry(string Label, string? Href);
+    // Hide module-gated entries when their module is disabled. Mirrors the
+    // sidebar's BusinessNavMenu filter so the create menu doesn't surface
+    // a clickable link that lands on a disabled page.
+    private bool IsVisible(CreateMenuEntry item) =>
+        string.IsNullOrEmpty(item.ModuleKey) || ShellState.IsModuleEnabled(item.ModuleKey);
+
+    private sealed record CreateMenuEntry(string Label, string? Href, string? ModuleKey = null);
 }
