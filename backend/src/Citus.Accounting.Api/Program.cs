@@ -6019,6 +6019,7 @@ accounting.MapPost(
         Guid journalEntryId,
         BusinessSessionContextAccessor sessionAccessor,
         Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow lifecycleWorkflow,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -6034,6 +6035,10 @@ accounting.MapPost(
                 journalEntryId,
                 session.UserId,
                 cancellationToken);
+            // H15-b: JE status flipped posted → voided. Projection's
+            // is_voided / status filter must refresh so the voided JE
+            // disappears from topbar search results.
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(new
             {
                 originalJournalEntryId = result.OriginalJournalEntryId,
@@ -9328,7 +9333,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/manual-journals/{documentId:guid}/post",
-    async (Guid documentId, PostManualJournalHttpRequest request, PostManualJournalCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostManualJournalHttpRequest request, PostManualJournalCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9341,6 +9346,8 @@ accounting.MapPost(
                     request.IdempotencyKey),
                 cancellationToken);
 
+            // H15-b: manual journal status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
@@ -9698,7 +9705,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/invoices/{documentId:guid}/post",
-    async (Guid documentId, PostInvoiceHttpRequest request, PostInvoiceCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostInvoiceHttpRequest request, PostInvoiceCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9711,6 +9718,10 @@ accounting.MapPost(
                     request.IdempotencyKey),
                 cancellationToken);
 
+            // H15-b: invoice status flipped draft → posted; the projection's
+            // status filter needs to refresh so the invoice surfaces in the
+            // topbar search + AR pickers without the 5-min refresh wait.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
@@ -9896,7 +9907,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/credit-notes/{documentId:guid}/post",
-    async (Guid documentId, PostCreditNoteHttpRequest request, PostCreditNoteCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostCreditNoteHttpRequest request, PostCreditNoteCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9909,6 +9920,8 @@ accounting.MapPost(
                     request.IdempotencyKey),
                 cancellationToken);
 
+            // H15-b: credit-note status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
@@ -10275,7 +10288,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/bills/{documentId:guid}/post",
-    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -10288,6 +10301,8 @@ accounting.MapPost(
                     request.IdempotencyKey),
                 cancellationToken);
 
+            // H15-b: bill status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
@@ -11918,7 +11933,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/vendor-credits/{documentId:guid}/post",
-    async (Guid documentId, PostVendorCreditHttpRequest request, PostVendorCreditCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostVendorCreditHttpRequest request, PostVendorCreditCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -11931,6 +11946,8 @@ accounting.MapPost(
                     request.IdempotencyKey),
                 cancellationToken);
 
+            // H15-b: vendor-credit status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
