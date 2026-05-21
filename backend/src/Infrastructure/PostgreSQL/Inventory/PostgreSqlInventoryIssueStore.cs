@@ -628,6 +628,360 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         }
     }
 
+    /// <summary>
+    /// P0-2 (C2): undoes the subledger effects of a posted sales-issue
+    /// as part of an invoice-reverse. The matching GL-side compensation
+    /// is posted independently by <c>PostSalesIssueCogsReverseCommandHandler</c>;
+    /// the two halves are independently idempotent so a partial-commit
+    /// recovery on retry leaves both sides eventually consistent.
+    /// </summary>
+    public async Task<InventorySalesIssueReverseSummary> ReverseForInvoiceAsync(
+        CompanyId companyId,
+        Guid salesIssueDocumentId,
+        Guid invoiceId,
+        UserId actorId,
+        CancellationToken cancellationToken)
+    {
+        if (salesIssueDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Sales-issue document id is required.", nameof(salesIssueDocumentId));
+        }
+
+        _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            // 1. Idempotency probe + status guard. FOR UPDATE locks the
+            // inventory_documents row so two concurrent invoice-reverse
+            // attempts can't both pass the reversed_at check.
+            string status;
+            DateTimeOffset? existingReversedAt = null;
+            DateOnly postingDate;
+            await using (var probe = connection.CreateCommand())
+            {
+                probe.Transaction = transaction;
+                probe.CommandText =
+                    """
+                    select status, reversed_at, posting_date
+                    from inventory_documents
+                    where company_id = @company_id
+                      and id = @sales_issue_id
+                      and document_type = 'sales_issue'
+                    for update;
+                    """;
+                probe.Parameters.AddWithValue("company_id", companyId.Value);
+                probe.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
+
+                await using var reader = await probe.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException(
+                        $"Sales-issue {salesIssueDocumentId:D} was not found for company {companyId.Value:D}.");
+                }
+                status = reader.GetString(0);
+                existingReversedAt = reader.IsDBNull(1) ? null : reader.GetFieldValue<DateTimeOffset>(1);
+                postingDate = reader.GetFieldValue<DateOnly>(2);
+            }
+
+            if (existingReversedAt.HasValue)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new InventorySalesIssueReverseSummary(
+                    SalesIssueDocumentId: salesIssueDocumentId,
+                    InvoiceId: invoiceId,
+                    AlreadyReversed: true,
+                    LineCount: 0,
+                    TotalQuantityRestored: 0m,
+                    TotalCostBaseRestored: 0m,
+                    ReversedAt: existingReversedAt.Value);
+            }
+
+            if (!string.Equals(status, "posted", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Sales-issue {salesIssueDocumentId:D} cannot be reversed because its status is '{status}'.");
+            }
+
+            // 2. Restore inventory_cost_layers: add back consumed qty +
+            // cost. The forward post wrote inventory_layer_consumptions
+            // rows we deliberately keep for the audit trail; the
+            // remaining_qty / remaining_cost_base columns on
+            // inventory_cost_layers are the live state and are what
+            // gets restored here.
+            await using (var restoreLayers = connection.CreateCommand())
+            {
+                restoreLayers.Transaction = transaction;
+                restoreLayers.CommandText =
+                    """
+                    with target_consumptions as (
+                      select c.cost_layer_id,
+                             sum(c.consumed_qty)        as restore_qty,
+                             sum(c.consumed_cost_base)  as restore_cost_base
+                      from inventory_layer_consumptions c
+                      join inventory_ledger_entries le on le.id = c.issue_ledger_entry_id
+                      where c.company_id = @company_id
+                        and le.company_id = @company_id
+                        and le.document_id = @sales_issue_id
+                      group by c.cost_layer_id
+                    )
+                    update inventory_cost_layers cl
+                    set remaining_qty = cl.remaining_qty + t.restore_qty,
+                        remaining_cost_base = cl.remaining_cost_base + t.restore_cost_base
+                    from target_consumptions t
+                    where cl.id = t.cost_layer_id;
+                    """;
+                restoreLayers.Parameters.AddWithValue("company_id", companyId.Value);
+                restoreLayers.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
+                await restoreLayers.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // 3. Load each original outbound ledger entry so we know
+            // (item_id, warehouse_id, quantity_delta, cost_amount_delta_base)
+            // to reverse. We loop one-at-a-time because each row needs to
+            // produce (a) a matched inbound ledger entry and (b) an
+            // upsert on item_warehouse_balances.
+            var originalEntries = new List<OriginalLedgerEntry>();
+            await using (var loadOriginals = connection.CreateCommand())
+            {
+                loadOriginals.Transaction = transaction;
+                loadOriginals.CommandText =
+                    """
+                    select id, item_id, warehouse_id, document_line_id,
+                           quantity_delta, cost_amount_delta_base
+                    from inventory_ledger_entries
+                    where company_id = @company_id
+                      and document_id = @sales_issue_id
+                      and movement_direction = 'outbound'
+                      and movement_type = 'sales_issue'
+                    order by created_at, id;
+                    """;
+                loadOriginals.Parameters.AddWithValue("company_id", companyId.Value);
+                loadOriginals.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
+
+                await using var reader = await loadOriginals.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    originalEntries.Add(new OriginalLedgerEntry(
+                        Id: reader.GetGuid(0),
+                        ItemId: reader.GetGuid(1),
+                        WarehouseId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
+                        DocumentLineId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                        QuantityDelta: reader.GetDecimal(4),
+                        CostAmountDeltaBase: reader.GetDecimal(5)));
+                }
+            }
+
+            if (originalEntries.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Sales-issue {salesIssueDocumentId:D} has no outbound ledger entries — cannot reverse.");
+            }
+
+            var reversedAt = DateTimeOffset.UtcNow;
+            var totalQtyRestored = 0m;
+            var totalCostRestored = 0m;
+
+            foreach (var entry in originalEntries)
+            {
+                // The forward leg wrote negative quantity_delta + negative
+                // cost_amount_delta_base. The reverse leg writes the
+                // negated values so the per-row sum nets to zero.
+                var restoreQty = -entry.QuantityDelta;
+                var restoreCost = -entry.CostAmountDeltaBase;
+                totalQtyRestored += restoreQty;
+                totalCostRestored += restoreCost;
+
+                // Sales-issue lines always pin a warehouse, but the ledger
+                // schema allows null. Skip the balance upsert defensively
+                // when the original entry was warehouse-less (e.g. a
+                // future drop-ship-style movement) — those don't affect
+                // item_warehouse_balances either way.
+                if (entry.WarehouseId is { } warehouseId)
+                {
+                    // Upsert item_warehouse_balances: add back to on_hand_qty.
+                    // The (company_id, item_id, warehouse_id) unique index
+                    // is the conflict target so two concurrent reverses
+                    // serialize at INSERT time.
+                    await using var upsertBalance = connection.CreateCommand();
+                    upsertBalance.Transaction = transaction;
+                    upsertBalance.CommandText =
+                        """
+                        insert into item_warehouse_balances (
+                          id, company_id, item_id, warehouse_id,
+                          on_hand_qty, reserved_qty, in_transit_out_qty, in_transit_in_qty,
+                          updated_at
+                        )
+                        values (
+                          gen_random_uuid(), @company_id, @item_id, @warehouse_id,
+                          @restore_qty, 0, 0, 0,
+                          now()
+                        )
+                        on conflict (company_id, item_id, warehouse_id)
+                        do update
+                          set on_hand_qty = item_warehouse_balances.on_hand_qty + excluded.on_hand_qty,
+                              updated_at = now();
+                        """;
+                    upsertBalance.Parameters.AddWithValue("company_id", companyId.Value);
+                    upsertBalance.Parameters.AddWithValue("item_id", entry.ItemId);
+                    upsertBalance.Parameters.AddWithValue("warehouse_id", warehouseId);
+                    upsertBalance.Parameters.AddWithValue("restore_qty", restoreQty);
+                    await upsertBalance.ExecuteNonQueryAsync(cancellationToken);
+                }
+
+                // Compute the post-restore running totals for the
+                // compensating ledger entry. quantity_after / cost_after
+                // are SUM-of-deltas over inventory_ledger_entries — these
+                // are the canonical running totals, not item_warehouse_balances
+                // (which only tracks qty, not cost).
+                decimal quantityAfter;
+                decimal costAfter;
+                await using (var readRunningTotals = connection.CreateCommand())
+                {
+                    readRunningTotals.Transaction = transaction;
+                    readRunningTotals.CommandText =
+                        """
+                        select coalesce(sum(quantity_delta), 0),
+                               coalesce(sum(cost_amount_delta_base), 0)
+                        from inventory_ledger_entries
+                        where company_id = @company_id
+                          and item_id = @item_id
+                          and warehouse_id is not distinct from @warehouse_id;
+                        """;
+                    readRunningTotals.Parameters.AddWithValue("company_id", companyId.Value);
+                    readRunningTotals.Parameters.AddWithValue("item_id", entry.ItemId);
+                    readRunningTotals.Parameters.AddWithValue(
+                        "warehouse_id",
+                        (object?)entry.WarehouseId ?? DBNull.Value);
+                    await using var reader = await readRunningTotals.ExecuteReaderAsync(cancellationToken);
+                    await reader.ReadAsync(cancellationToken);
+                    // After this restore commits its insert below, the totals
+                    // will reflect the restore. Pre-compute that here.
+                    quantityAfter = reader.GetDecimal(0) + restoreQty;
+                    costAfter = reader.GetDecimal(1) + restoreCost;
+                }
+
+                // Write the compensating inbound ledger entry. movement_type
+                // = 'customer_return_receipt' is the closest valid inbound
+                // value in the CHECK constraint; the memo + document_id link
+                // back to the original sales-issue so reports can group the
+                // pair. Adding a dedicated 'sales_issue_reverse' enum entry
+                // would require dropping/recreating the named CHECK
+                // constraint — deferred to a follow-up cleanup batch.
+                await using (var insertReverseLedger = connection.CreateCommand())
+                {
+                    insertReverseLedger.Transaction = transaction;
+                    insertReverseLedger.CommandText =
+                        """
+                        insert into inventory_ledger_entries (
+                          id,
+                          company_id,
+                          item_id,
+                          warehouse_id,
+                          document_id,
+                          document_line_id,
+                          movement_direction,
+                          movement_type,
+                          posting_date,
+                          quantity_delta,
+                          quantity_after,
+                          cost_amount_delta_base,
+                          cost_amount_after_base,
+                          memo,
+                          created_at
+                        )
+                        values (
+                          gen_random_uuid(),
+                          @company_id,
+                          @item_id,
+                          @warehouse_id,
+                          @document_id,
+                          @document_line_id,
+                          'inbound',
+                          'customer_return_receipt',
+                          @posting_date,
+                          @quantity_delta,
+                          @quantity_after,
+                          @cost_amount_delta,
+                          @cost_amount_after,
+                          @memo,
+                          @created_at
+                        );
+                        """;
+                    insertReverseLedger.Parameters.AddWithValue("company_id", companyId.Value);
+                    insertReverseLedger.Parameters.AddWithValue("item_id", entry.ItemId);
+                    insertReverseLedger.Parameters.AddWithValue(
+                        "warehouse_id",
+                        (object?)entry.WarehouseId ?? DBNull.Value);
+                    insertReverseLedger.Parameters.AddWithValue("document_id", salesIssueDocumentId);
+                    insertReverseLedger.Parameters.AddWithValue(
+                        "document_line_id",
+                        (object?)entry.DocumentLineId ?? DBNull.Value);
+                    insertReverseLedger.Parameters.AddWithValue("posting_date", postingDate);
+                    insertReverseLedger.Parameters.AddWithValue("quantity_delta", restoreQty);
+                    insertReverseLedger.Parameters.AddWithValue("quantity_after", quantityAfter);
+                    insertReverseLedger.Parameters.AddWithValue("cost_amount_delta", restoreCost);
+                    insertReverseLedger.Parameters.AddWithValue("cost_amount_after", costAfter);
+                    insertReverseLedger.Parameters.AddWithValue(
+                        "memo",
+                        $"P0-2 compensation — invoice reverse {invoiceId:D} (actor {actorId.Value})");
+                    insertReverseLedger.Parameters.AddWithValue("created_at", reversedAt);
+                    await insertReverseLedger.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
+
+            // 4. Stamp the idempotency marker.
+            await using (var markReversed = connection.CreateCommand())
+            {
+                markReversed.Transaction = transaction;
+                markReversed.CommandText =
+                    """
+                    update inventory_documents
+                    set reversed_at = @reversed_at
+                    where company_id = @company_id
+                      and id = @sales_issue_id
+                      and reversed_at is null;
+                    """;
+                markReversed.Parameters.AddWithValue("company_id", companyId.Value);
+                markReversed.Parameters.AddWithValue("sales_issue_id", salesIssueDocumentId);
+                markReversed.Parameters.AddWithValue("reversed_at", reversedAt);
+                var affected = await markReversed.ExecuteNonQueryAsync(cancellationToken);
+                if (affected != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to mark sales-issue {salesIssueDocumentId:D} as reversed — concurrent reverse may have raced ahead.");
+                }
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return new InventorySalesIssueReverseSummary(
+                SalesIssueDocumentId: salesIssueDocumentId,
+                InvoiceId: invoiceId,
+                AlreadyReversed: false,
+                LineCount: originalEntries.Count,
+                TotalQuantityRestored: decimal.Round(totalQtyRestored, 6, MidpointRounding.AwayFromZero),
+                TotalCostBaseRestored: decimal.Round(totalCostRestored, 6, MidpointRounding.AwayFromZero),
+                ReversedAt: reversedAt);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private readonly record struct OriginalLedgerEntry(
+        Guid Id,
+        Guid ItemId,
+        Guid? WarehouseId,
+        Guid? DocumentLineId,
+        decimal QuantityDelta,
+        decimal CostAmountDeltaBase);
+
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken,

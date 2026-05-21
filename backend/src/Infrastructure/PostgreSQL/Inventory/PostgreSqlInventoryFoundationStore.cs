@@ -852,6 +852,12 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 alter table inventory_documents add column if not exists customer_po_number text null;
                 alter table inventory_documents add column if not exists sales_order_id uuid null;
+                -- P0-2 (C2): idempotency marker for invoice-reverse
+                -- inventory compensation. Non-null = this sales-issue has
+                -- already had its outbound subledger effect unwound by an
+                -- invoice reverse run. See
+                -- PostgresInventorySalesIssueReverseStore.
+                alter table inventory_documents add column if not exists reversed_at timestamptz null;
 
                 create index if not exists ix_inventory_documents_company_customer_po
                   on inventory_documents (company_id, customer_po_number)
@@ -859,6 +865,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 create index if not exists ix_inventory_documents_company_sales_order
                   on inventory_documents (company_id, sales_order_id)
                   where sales_order_id is not null;
+                create index if not exists ix_inventory_documents_company_reversed_at
+                  on inventory_documents (company_id, reversed_at)
+                  where reversed_at is not null;
 
                 create table if not exists inventory_document_lines (
                   id uuid primary key default gen_random_uuid(),

@@ -3744,7 +3744,8 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
         Guid salesIssueDocumentId,
         DateOnly documentDate,
         CurrencyCode baseCurrencyCode,
-        IEnumerable<SalesIssueCogsPostingDocumentLine> lines)
+        IEnumerable<SalesIssueCogsPostingDocumentLine> lines,
+        bool isReverse = false)
     {
         if (salesIssueDocumentId == Guid.Empty)
         {
@@ -3760,6 +3761,7 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
         DocumentDate = documentDate;
         TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
         BaseCurrencyCode = baseCurrencyCode;
+        IsReverse = isReverse;
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -3780,8 +3782,11 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
     /// Stamped on the produced journal_entries.source_type. The
     /// command handler probes for an existing JE with this source_type
     /// + source_id = SalesIssueDocumentId to enforce idempotency.
+    /// P0-2 (C2): the reverse path uses a distinct source_type so the
+    /// forward and reverse JEs coexist on the same sales-issue, each
+    /// idempotent on its own.
     /// </summary>
-    public string SourceType => "sales_issue_cogs";
+    public string SourceType => IsReverse ? "sales_issue_cogs_reverse" : "sales_issue_cogs";
 
     public string Status { get; }
     public Guid SalesIssueDocumentId { get; }
@@ -3791,6 +3796,15 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
     public IReadOnlyList<SalesIssueCogsPostingDocumentLine> CogsLines { get; }
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
     public decimal TotalAmountBase => CogsLines.Sum(static line => line.AmountBase);
+
+    /// <summary>
+    /// P0-2 (C2): when true the fragment builder posts the compensating
+    /// JE for an invoice-reverse, swapping the forward Dr COGS / Cr
+    /// Inventory into Dr Inventory / Cr COGS at identical per-account
+    /// amounts. Set by <c>ISalesIssueCogsReversePostingRepository</c>;
+    /// the forward command handler always passes false.
+    /// </summary>
+    public bool IsReverse { get; }
 
     /// <summary>
     /// Cost layers are already in base; no FX step happens at posting.

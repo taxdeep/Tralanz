@@ -1,5 +1,7 @@
+using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
+using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Tasks.Application.Contracts;
 using System.Text.Json;
 
@@ -14,6 +16,14 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
     // wiring the coordinator can still compile. DI always populates
     // it in the running API host.
     private readonly ITaskBillingCoordinator? _taskBilling;
+    // P0-2 (C2): inventory subledger + COGS reverse on invoice reverse.
+    // Same null-safety pattern as _taskBilling — DI in the running API
+    // host always populates these; bare-bones unit-test constructions
+    // can skip them and the reverse path silently no-ops on the
+    // inventory/COGS leg.
+    private readonly IInventoryShipmentStore? _inventoryShipmentStore;
+    private readonly IInventoryIssueStore? _inventoryIssueStore;
+    private readonly PostSalesIssueCogsReverseCommandHandler? _salesIssueCogsReverseHandler;
 
     public PostgresAccountingDocumentReviewRepository(
         PostgresConnectionFactory connections,
@@ -26,10 +36,27 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         PostgresConnectionFactory connections,
         PostgresExecutionContextAccessor executionContextAccessor,
         ITaskBillingCoordinator? taskBilling)
+        : this(connections, executionContextAccessor, taskBilling,
+               inventoryShipmentStore: null,
+               inventoryIssueStore: null,
+               salesIssueCogsReverseHandler: null)
+    {
+    }
+
+    public PostgresAccountingDocumentReviewRepository(
+        PostgresConnectionFactory connections,
+        PostgresExecutionContextAccessor executionContextAccessor,
+        ITaskBillingCoordinator? taskBilling,
+        IInventoryShipmentStore? inventoryShipmentStore,
+        IInventoryIssueStore? inventoryIssueStore,
+        PostSalesIssueCogsReverseCommandHandler? salesIssueCogsReverseHandler)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
         _taskBilling = taskBilling;
+        _inventoryShipmentStore = inventoryShipmentStore;
+        _inventoryIssueStore = inventoryIssueStore;
+        _salesIssueCogsReverseHandler = salesIssueCogsReverseHandler;
     }
 
     public async Task<AccountingDocumentReview?> GetSourceDocumentAsync(
@@ -1538,6 +1565,83 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             }
         }
 
+        // P0-2 (C2): inventory subledger restore + compensating COGS JE for
+        // every posted sales-issue linked to a reversed invoice. Both
+        // halves are independently idempotent so a partial-commit recovery
+        // on retry converges to the same end state. Soft-failure pattern
+        // matches task billing rollback above: error message goes into the
+        // audit payload, source-document mark stays as 'reversed' so the
+        // operator can resolve from the inventory + AI Activity surfaces.
+        int salesIssueCogsReverseProcessed = 0;
+        int salesIssueCogsReverseSkipped = 0;
+        decimal salesIssueCogsReverseTotalQty = 0m;
+        decimal salesIssueCogsReverseTotalCostBase = 0m;
+        string? salesIssueCogsReverseError = null;
+        var salesIssueCogsReverseAttempted = _inventoryShipmentStore is not null
+            && _inventoryIssueStore is not null
+            && _salesIssueCogsReverseHandler is not null
+            && actorId.HasValue
+            && string.Equals(
+                NormalizeSourceType(request.SourceType),
+                "invoice",
+                StringComparison.Ordinal);
+        if (salesIssueCogsReverseAttempted)
+        {
+            try
+            {
+                var lane = await _inventoryShipmentStore!.GetInvoiceLaneSummaryAsync(
+                    companyId,
+                    request.DocumentId,
+                    cancellationToken);
+
+                foreach (var issue in lane.RecentIssues)
+                {
+                    if (!string.Equals(issue.Status, "posted", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var subledgerResult = await _inventoryIssueStore!.ReverseForInvoiceAsync(
+                            companyId,
+                            issue.DocumentId,
+                            request.DocumentId,
+                            actorId!.Value,
+                            cancellationToken);
+
+                        // Always post-or-probe the compensating COGS JE,
+                        // even when AlreadyReversed=true — the handler's
+                        // own idempotency probe surfaces the prior JE id.
+                        // The two halves are independently idempotent.
+                        await _salesIssueCogsReverseHandler!.HandleAsync(
+                            new PostSalesIssueCogsReverseCommand(
+                                companyId,
+                                actorId!.Value,
+                                issue.DocumentId,
+                                request.DocumentId),
+                            cancellationToken);
+
+                        salesIssueCogsReverseProcessed++;
+                        if (!subledgerResult.AlreadyReversed)
+                        {
+                            salesIssueCogsReverseTotalQty += subledgerResult.TotalQuantityRestored;
+                            salesIssueCogsReverseTotalCostBase += subledgerResult.TotalCostBaseRestored;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        salesIssueCogsReverseSkipped++;
+                        salesIssueCogsReverseError ??= ex.Message;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                salesIssueCogsReverseError = ex.Message;
+            }
+        }
+
         await AppendReverseRequestTransitionAsync(
             scope,
             companyId,
@@ -1566,6 +1670,16 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 TaskBillingRollbackProcessedCount = taskRollbackProcessed,
                 TaskBillingRollbackSkippedCount = taskRollbackSkipped,
                 TaskBillingRollbackError = taskRollbackError,
+                // P0-2 (C2): inventory + COGS reverse outcome — same audit
+                // intent as task billing rollback. Distinguishes "no
+                // sales-issues linked", "reverse succeeded", "reverse
+                // failed — operator needs to inspect inventory state".
+                SalesIssueCogsReverseAttempted = salesIssueCogsReverseAttempted,
+                SalesIssueCogsReverseProcessedCount = salesIssueCogsReverseProcessed,
+                SalesIssueCogsReverseSkippedCount = salesIssueCogsReverseSkipped,
+                SalesIssueCogsReverseTotalQuantityRestored = salesIssueCogsReverseTotalQty,
+                SalesIssueCogsReverseTotalCostBaseRestored = salesIssueCogsReverseTotalCostBase,
+                SalesIssueCogsReverseError = salesIssueCogsReverseError,
                 ExecutedAt = executedAt
             },
             cancellationToken);
