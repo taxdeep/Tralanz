@@ -1080,6 +1080,9 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        // P0-4 (C4): FOR UPDATE serializes concurrent adjustment posts so
+        // two write-offs against the same balance cannot both pass the
+        // negative-stock guard before either UPSERT-decrements.
         command.CommandText =
             """
             select
@@ -1088,7 +1091,8 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             from item_warehouse_balances
             where company_id = @company_id
               and item_id = @item_id
-              and warehouse_id = @warehouse_id;
+              and warehouse_id = @warehouse_id
+            for update;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
