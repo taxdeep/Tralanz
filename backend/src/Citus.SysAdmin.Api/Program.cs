@@ -222,6 +222,28 @@ await using (var startupScope = app.Services.CreateAsyncScope())
 
     if (authOptions.Bootstrap.IsActive(builder.Environment.IsDevelopment()))
     {
+        // H14: refuse to seed a non-development host with the well-known
+        // default 'change-me-now' password. The operator MUST set
+        // SysAdminAuthentication__Bootstrap__Password (env-friendly form:
+        // SysAdminAuthentication__Bootstrap__Password=... or
+        // SysAdminAuthentication:Bootstrap:Password in appsettings) before
+        // flipping AllowInNonDevelopment on. Without this gate, a
+        // production deployment that ships with the upstream default would
+        // expose the SysAdmin API to anyone who reads the public sample
+        // config.
+        if (authOptions.Bootstrap.IsDefaultPasswordInsecureForProduction(builder.Environment.IsDevelopment()))
+        {
+            const string remediation =
+                "SysAdmin bootstrap is configured to seed a non-development host but " +
+                "Bootstrap.Password is still the well-known default 'change-me-now'. " +
+                "Set SysAdminAuthentication:Bootstrap:Password (env: " +
+                "SysAdminAuthentication__Bootstrap__Password) to a strong unique value " +
+                "before enabling AllowInNonDevelopment. Refusing to start with the " +
+                "default password to prevent a credentialed-but-unprotected SysAdmin API.";
+            app.Logger.LogCritical("{Remediation}", remediation);
+            throw new InvalidOperationException(remediation);
+        }
+
         await authRepository.EnsureBootstrapAccountAsync(
             authOptions.Bootstrap.Email,
             authOptions.Bootstrap.Password,
