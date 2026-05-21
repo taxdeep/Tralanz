@@ -1724,6 +1724,31 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
         return fragments;
     }
 
+    // H2: Realized FX gain/loss is a BASE-CURRENCY artefact — it's the
+    // delta between the carrying base value of the open item (locked at
+    // post-time via the invoice/bill FX snapshot) and the settlement
+    // base value at payment time (locked via the payment FX snapshot).
+    // There is no exposure in transaction currency, so TxDebit/TxCredit
+    // are both 0 on the FX leg and only the base side carries the delta.
+    //
+    // The whole JE still balances on both axes:
+    //   * Tx axis: bank Dr + AR Cr already balance to zero in TX
+    //              currency. The FX leg adds 0/0 → still balanced.
+    //   * Base axis: bank Dr (= settlementBase) vs AR Cr (= carryingBase)
+    //              has a delta of (settlementBase - carryingBase). The
+    //              FX leg closes that delta with the same magnitude on
+    //              the opposite side, making total base Dr == total
+    //              base Cr.
+    //
+    // Reporting note for downstream consumers (POSTING_TAX_FX_ENGINE_
+    // EXECUTION_SPEC §11): aggregating ledger_entries by
+    // transaction_currency_code will MISS the FX-realisation slice
+    // because the FX legs contribute 0 in TX currency. Filter by
+    // posting_role LIKE 'fx:realized%' on the base columns instead.
+    // EnsureJournalInvariants below now requires that any fragment
+    // with (TxDebit==0 && TxCredit==0 && (Debit>0 || Credit>0)) carries
+    // a posting_role with the `fx:` prefix — catches future regressions
+    // where a non-FX fragment accidentally drops both TX legs.
     private static void AppendReceivePaymentRealizedFxFragment(
         ReceivePaymentDocument receivePayment,
         List<PostingFragment> fragments,
@@ -2149,6 +2174,26 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
                 throw new InvalidOperationException(
                     "Posting fragment cannot carry both base debit and base credit amounts.");
             }
+
+            // H2: invariant for the realized FX legs. They legitimately
+            // carry TxDebit=TxCredit=0 because realized FX is a base-
+            // currency-only concept (see comment on
+            // AppendReceivePaymentRealizedFxFragment). But ANY other
+            // fragment with both TX legs zero AND a non-zero base leg
+            // is a bug — it would silently make TX-grouped reports
+            // understate that fragment's GL impact. Reject early
+            // with the role name so the regression is obvious.
+            var hasBaseImpact = fragment.Debit > 0m || fragment.Credit > 0m;
+            var hasTxImpact = fragment.TxDebit > 0m || fragment.TxCredit > 0m;
+            if (hasBaseImpact && !hasTxImpact)
+            {
+                var role = fragment.PostingRole ?? string.Empty;
+                if (!role.StartsWith(RealizedFxPostingRolePrefix, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Posting fragment carries base-currency amounts with both transaction-currency legs zero, but its posting_role '{role}' is not a realized-FX leg. Only fragments with posting_role starting with '{RealizedFxPostingRolePrefix}' may legally drop both TX legs.");
+                }
+            }
         }
 
         var transactionDelta = fragments.Sum(static fragment => fragment.TxDebit) -
@@ -2167,6 +2212,16 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
                 $"Posting fragments are not balanced in base currency. Delta: {baseDelta:0.00####}.");
         }
     }
+
+    // H2: posting_role prefix marking a fragment as a realized FX
+    // gain/loss leg — see EnsureJournalInvariants for the rationale.
+    // Constants used in BuildXxxRealizedFxFragment calls:
+    //   fx:realized_gain    fx:realized_loss
+    // Keep these strings in sync with the literals at the
+    // AppendReceivePaymentRealizedFxFragment / AppendPayBillRealizedFx
+    // Fragment / AppendCreditApplicationRealizedFxFragment /
+    // AppendVendorCreditApplicationRealizedFxFragment call sites.
+    private const string RealizedFxPostingRolePrefix = "fx:realized";
 }
 
 public sealed class GeneratedJournalEntryWriter : IJournalEntryWriter
