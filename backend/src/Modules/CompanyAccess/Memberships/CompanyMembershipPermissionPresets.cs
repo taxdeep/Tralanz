@@ -128,6 +128,7 @@ public static class CompanyMembershipPermissionPresets
                 CompanyMembershipPermissionCatalog.GlJournalView,
                 CompanyMembershipPermissionCatalog.GlJournalCreate,
                 CompanyMembershipPermissionCatalog.GlJournalPost,
+                CompanyMembershipPermissionCatalog.GlJournalVoid,
                 CompanyMembershipPermissionCatalog.GlAccountView,
                 CompanyMembershipPermissionCatalog.GlAccountEdit,
             },
