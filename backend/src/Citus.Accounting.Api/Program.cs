@@ -9333,7 +9333,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/manual-journals/{documentId:guid}/post",
-    async (Guid documentId, PostManualJournalHttpRequest request, PostManualJournalCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostManualJournalHttpRequest request, PostManualJournalCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9343,7 +9343,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             // H15-b: manual journal status flipped draft → posted.
@@ -9705,7 +9705,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/invoices/{documentId:guid}/post",
-    async (Guid documentId, PostInvoiceHttpRequest request, PostInvoiceCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostInvoiceHttpRequest request, PostInvoiceCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9715,7 +9715,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             // H15-b: invoice status flipped draft → posted; the projection's
@@ -9907,7 +9907,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/credit-notes/{documentId:guid}/post",
-    async (Guid documentId, PostCreditNoteHttpRequest request, PostCreditNoteCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostCreditNoteHttpRequest request, PostCreditNoteCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -9917,7 +9917,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             // H15-b: credit-note status flipped draft → posted.
@@ -10288,7 +10288,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/bills/{documentId:guid}/post",
-    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -10298,7 +10298,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             // H15-b: bill status flipped draft → posted.
@@ -11933,7 +11933,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/vendor-credits/{documentId:guid}/post",
-    async (Guid documentId, PostVendorCreditHttpRequest request, PostVendorCreditCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostVendorCreditHttpRequest request, PostVendorCreditCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -11943,7 +11943,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             // H15-b: vendor-credit status flipped draft → posted.
@@ -12227,7 +12227,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/receive-payments/{documentId:guid}/post",
-    async (Guid documentId, PostReceivePaymentHttpRequest request, PostReceivePaymentCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostReceivePaymentHttpRequest request, PostReceivePaymentCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -12237,7 +12237,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -12575,7 +12575,7 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/pay-bills/{documentId:guid}/post",
-    async (Guid documentId, PostPayBillHttpRequest request, PostPayBillCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostPayBillHttpRequest request, PostPayBillCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
     {
         try
         {
@@ -12585,7 +12585,7 @@ accounting.MapPost(
                     documentId,
                     request.UserId,
                     request.AcceptedFxSnapshotId,
-                    request.IdempotencyKey),
+                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -13910,6 +13910,34 @@ static IResult AccountingOperationBadRequest(InvalidOperationException exception
         code,
         message = exception.Message
     });
+}
+
+/// <summary>
+/// H3: resolves the idempotency key from the `Idempotency-Key` HTTP
+/// header first, falling back to the request body's IdempotencyKey
+/// field for transitional compatibility. The header is the long-term
+/// home (aligned with the P0-5 inventory POST pattern and with the
+/// HTTP idempotency draft RFC) — the body field stays accepted for
+/// one release while clients migrate, then becomes deprecated.
+///
+/// When both are present the header wins; the body field is ignored.
+/// When neither is present the call falls back to the downstream
+/// handler's default key derivation (typically
+/// `"&lt;source-type&gt;:&lt;companyId&gt;:&lt;documentId&gt;"`).
+/// </summary>
+static string? ResolveIdempotencyKey(HttpContext httpContext, string? bodyFallback)
+{
+    if (httpContext.Request.Headers.TryGetValue("Idempotency-Key", out var headerValues)
+        && headerValues.Count > 0)
+    {
+        var headerKey = headerValues.ToString();
+        if (!string.IsNullOrWhiteSpace(headerKey))
+        {
+            return headerKey.Trim();
+        }
+    }
+
+    return bodyFallback;
 }
 
 static string ResolveAccountingOperationErrorCode(string message)
