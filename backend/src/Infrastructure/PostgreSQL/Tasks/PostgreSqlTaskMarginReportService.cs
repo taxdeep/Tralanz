@@ -116,6 +116,13 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
         // rate stamped at post time. coalesce defends against rows
         // where fx_rate is null (shouldn't happen for posted docs,
         // but a missing rate falls back to the line's own amount).
+        // H4: only POSTED bills/expenses contribute to a task's direct cost.
+        // The earlier filter was `<> 'voided'` which let through draft,
+        // submitted, cancelled, and reversed rows because the bill state
+        // machine never actually stamps 'voided' on a row (posted bills
+        // become 'reversed', drafts become 'cancelled'). Result: every
+        // reversed or in-progress bill inflated direct_cost, deflating
+        // the reported margin — the inverse of what an operator expects.
         const string BillCostCte = """
             bill_cost as (
               select
@@ -125,7 +132,7 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
               from bill_lines bl
               join bills b on b.id = bl.bill_id
                             and b.company_id = bl.company_id
-                            and b.status <> 'voided'
+                            and b.status = 'posted'
               where bl.company_id = @company_id
                 and bl.task_id is not null
               group by bl.task_id
@@ -136,6 +143,7 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
             expense_cost as (
               -- expense_lines has no company_id of its own; isolate
               -- via the parent expense row.
+              -- H4: same posted-only filter as bill_cost above.
               select
                 el.task_id,
                 sum(el.line_total) as amt_native,
@@ -143,7 +151,7 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
               from expense_lines el
               join expenses e on e.id = el.expense_id
                               and e.company_id = @company_id
-                              and e.status <> 'voided'
+                              and e.status = 'posted'
               where el.task_id is not null
               group by el.task_id
             )
