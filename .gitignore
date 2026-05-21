@@ -37,3 +37,7 @@ TestResults
 
 .deploy_helper.py
 .smoke_remote.sh
+
+# Claude harness runtime files (per-session locks, transient state)
+.claude/scheduled_tasks.lock
+.claude/*.tmp
