@@ -1315,6 +1315,61 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
         SalesIssueCogsPostingDocument document)
     {
         var fragments = new List<PostingFragment>();
+        var displayNumber = document.DisplayNumber.Value;
+
+        if (document.IsReverse)
+        {
+            // P0-2 (C2): compensating JE for an invoice-reverse. The
+            // forward sales-issue COGS posting was Dr COGS / Cr Inventory
+            // Asset. The reverse swaps the legs at identical per-account
+            // amounts so the GL Inventory Asset balance and the inventory
+            // subledger reconcile after every invoice reverse.
+
+            // Debit Inventory Asset (restore).
+            foreach (var accountGroup in document.CogsLines.GroupBy(static line => line.InventoryAssetAccountId))
+            {
+                var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+                if (amount <= 0m)
+                {
+                    continue;
+                }
+
+                fragments.Add(new PostingFragment(
+                    accountGroup.Key,
+                    document.BaseCurrencyCode,
+                    amount,
+                    0m,
+                    amount,
+                    0m,
+                    $"Inventory restored by sales-issue reverse {displayNumber}",
+                    ControlRole: "inventory_asset",
+                    PostingRole: "inventory:asset_restoration"));
+            }
+
+            // Credit COGS (un-recognise).
+            foreach (var accountGroup in document.CogsLines.GroupBy(static line => line.CogsAccountId))
+            {
+                var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+                if (amount <= 0m)
+                {
+                    continue;
+                }
+
+                fragments.Add(new PostingFragment(
+                    accountGroup.Key,
+                    document.BaseCurrencyCode,
+                    0m,
+                    amount,
+                    0m,
+                    amount,
+                    $"COGS reversed for sales-issue {displayNumber}",
+                    ControlRole: "cost_of_goods_sold",
+                    PostingRole: "inventory:cogs_reversal"));
+            }
+
+            EnsureBalancedBaseCurrency(fragments);
+            return fragments;
+        }
 
         // Debit COGS — group by item-resolved COGS account so a JE with
         // 50 line items posting to the same COGS account collapses to one
@@ -1334,7 +1389,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 amount,
                 0m,
-                $"COGS for sales-issue {document.DisplayNumber.Value}",
+                $"COGS for sales-issue {displayNumber}",
                 ControlRole: "cost_of_goods_sold",
                 PostingRole: "inventory:cogs_recognition"));
         }
@@ -1355,7 +1410,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 amount,
                 0m,
                 amount,
-                $"Inventory consumed by sales-issue {document.DisplayNumber.Value}",
+                $"Inventory consumed by sales-issue {displayNumber}",
                 ControlRole: "inventory_asset",
                 PostingRole: "inventory:asset_consumption"));
         }

@@ -16,6 +16,10 @@ namespace Citus.Accounting.Infrastructure.Persistence;
 public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPostingRepository
 {
     private const string CogsSourceType = "sales_issue_cogs";
+    // P0-2 (C2): the compensating JE for an invoice-reverse uses a
+    // distinct source_type so the forward JE and the reverse JE coexist
+    // on the same sales-issue row, each idempotent under its own probe.
+    private const string CogsReverseSourceType = "sales_issue_cogs_reverse";
 
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
@@ -148,10 +152,142 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
             ExistingJournalEntryDisplayNumber: null);
     }
 
-    private static async Task<(Guid Id, string DisplayNumber)?> TryReadExistingJournalAsync(
+    public async Task<SalesIssueCogsReversePostingPreparation> PrepareReversePostingDocumentAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid salesIssueDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (salesIssueDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Sales-issue document id is required.", nameof(salesIssueDocumentId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections, _executionContextAccessor, cancellationToken);
+
+        // Idempotency probe: did we already post the reverse JE?
+        var existingReverse = await TryReadJournalBySourceTypeAsync(
+            scope, companyId, salesIssueDocumentId, CogsReverseSourceType, cancellationToken);
+        if (existingReverse is not null)
+        {
+            return new SalesIssueCogsReversePostingPreparation(
+                Document: null,
+                ExistingReverseJournalEntryId: existingReverse.Value.Id,
+                ExistingReverseJournalEntryDisplayNumber: existingReverse.Value.DisplayNumber,
+                ForwardNotPosted: false);
+        }
+
+        // Forward-JE existence check: only compensate if a forward COGS
+        // JE was ever posted. PostInvoiceCommandHandler.TryAutoPostCogsAsync
+        // soft-fails its forward COGS post, so it's possible to reach an
+        // invoice reverse with no forward JE to compensate. In that case
+        // the GL side is already clean — the caller still runs the
+        // inventory subledger reverse.
+        var existingForward = await TryReadJournalBySourceTypeAsync(
+            scope, companyId, salesIssueDocumentId, CogsSourceType, cancellationToken);
+        if (existingForward is null)
+        {
+            return new SalesIssueCogsReversePostingPreparation(
+                Document: null,
+                ExistingReverseJournalEntryId: null,
+                ExistingReverseJournalEntryDisplayNumber: null,
+                ForwardNotPosted: true);
+        }
+
+        var header = await ReadHeaderAsync(scope, companyId, salesIssueDocumentId, cancellationToken);
+        if (header is null)
+        {
+            throw new InvalidOperationException(
+                $"Sales issue {salesIssueDocumentId:D} was not found for company {companyId.Value:D}.");
+        }
+
+        var lines = await ReadLineCandidatesAsync(scope, companyId, salesIssueDocumentId, cancellationToken);
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Sales issue {salesIssueDocumentId:D} has no cost-layer consumption rows to compensate.");
+        }
+
+        var fallbackCogs = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
+            scope, companyId, cancellationToken, "cost_of_goods_sold", "inventory:cogs");
+        var fallbackInventory = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
+            scope, companyId, cancellationToken, "inventory_asset", "inventory:asset");
+
+        var documentLines = new List<SalesIssueCogsPostingDocumentLine>();
+        var lineNumber = 0;
+        foreach (var candidate in lines)
+        {
+            var cogsAccountId = candidate.ItemCogsAccountId ?? fallbackCogs;
+            var inventoryAccountId = candidate.ItemInventoryAssetAccountId ?? fallbackInventory;
+            if (cogsAccountId is null || cogsAccountId.Value == Guid.Empty ||
+                inventoryAccountId is null || inventoryAccountId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compensate sales-issue {salesIssueDocumentId:D}: account binding for COGS / Inventory Asset is missing for item {candidate.ItemId:D}. This should match the forward post — investigate the activation wizard.");
+            }
+            if (candidate.AmountBase <= 0m)
+            {
+                continue;
+            }
+
+            documentLines.Add(new SalesIssueCogsPostingDocumentLine(
+                lineNumber: ++lineNumber,
+                itemId: candidate.ItemId,
+                cogsAccountId: cogsAccountId.Value,
+                inventoryAssetAccountId: inventoryAccountId.Value,
+                description: $"Reverse COGS for {candidate.ItemCode} on sales-issue {header.Value.SourceDocumentNumber ?? salesIssueDocumentId.ToString("D")}",
+                amountBase: candidate.AmountBase));
+        }
+
+        if (documentLines.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "All cost-layer consumption rows for this sales-issue net to zero — nothing to compensate.");
+        }
+
+        // Deterministic entity-number derivation matches the forward prep,
+        // but offset by 1 in the ordinal so it doesn't collide with the
+        // forward JE's entity number (the year + ordinal pair is unique
+        // per company per year).
+        var idShort = salesIssueDocumentId.ToString("N")[..12].ToUpperInvariant();
+        var ordinalSuffix = (BitConverter.ToUInt32(salesIssueDocumentId.ToByteArray(), 0) + 1u)
+            % (EntityNumber.MaxOrdinal + 1);
+        var entityNumber = EntityNumber.Create(header.Value.PostingDate.Year, ordinalSuffix);
+        var displayNumber = new DocumentNumber($"COGS-REV-{idShort}");
+        var baseCurrency = new CurrencyCode(header.Value.BaseCurrencyCode);
+
+        var document = new SalesIssueCogsPostingDocument(
+            id: salesIssueDocumentId,
+            companyId: companyId,
+            entityNumber: entityNumber,
+            displayNumber: displayNumber,
+            status: "draft",
+            salesIssueDocumentId: salesIssueDocumentId,
+            documentDate: header.Value.PostingDate,
+            baseCurrencyCode: baseCurrency,
+            lines: documentLines,
+            isReverse: true);
+
+        return new SalesIssueCogsReversePostingPreparation(
+            Document: document,
+            ExistingReverseJournalEntryId: null,
+            ExistingReverseJournalEntryDisplayNumber: null,
+            ForwardNotPosted: false);
+    }
+
+    private static Task<(Guid Id, string DisplayNumber)?> TryReadExistingJournalAsync(
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid salesIssueDocumentId,
+        CancellationToken cancellationToken) =>
+        TryReadJournalBySourceTypeAsync(scope, companyId, salesIssueDocumentId, CogsSourceType, cancellationToken);
+
+    private static async Task<(Guid Id, string DisplayNumber)?> TryReadJournalBySourceTypeAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid salesIssueDocumentId,
+        string sourceType,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -164,7 +300,7 @@ public sealed class PostgresSalesIssueCogsPostingRepository : ISalesIssueCogsPos
             limit 1;
             """);
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("source_type", CogsSourceType);
+        command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", salesIssueDocumentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

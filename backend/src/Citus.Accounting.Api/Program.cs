@@ -287,6 +287,12 @@ builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
+// P0-2 (C2): compensating COGS post on invoice-reverse. Mirror of the
+// forward sales-issue COGS handler with isReverse=true on the posting
+// document. Invoked by PostgresAccountingDocumentReviewRepository
+// .CompleteReverseRequestExecutionAsync as part of the invoice-reverse
+// flow, idempotent at the journal-entry source-type probe.
+builder.Services.AddScoped<PostSalesIssueCogsReverseCommandHandler>();
 builder.Services.AddScoped<PostInvoiceDropShipCogsCommandHandler>();
 builder.Services.AddScoped<WriteOffDropShipClearingCommandHandler>();
 builder.Services.AddScoped<PostCustomerDepositCommandHandler>();
