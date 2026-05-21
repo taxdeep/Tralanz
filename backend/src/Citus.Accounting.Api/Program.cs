@@ -9069,7 +9069,7 @@ accounting.MapPost(
                 message = ex.Message
             });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
 
 accounting.MapGet(
     "/fx-revaluation-batches",
@@ -9203,7 +9203,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
 
 accounting.MapGet(
     "/manual-journals/{documentId:guid}",
@@ -11272,7 +11272,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/inventory-activation/retry",
@@ -11292,7 +11292,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/inventory-valuation/refresh",
@@ -11312,7 +11312,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/inventory-cost-layer-emission/emit",
@@ -11332,7 +11332,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-bridge/refresh",
@@ -11352,7 +11352,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-settlement/refresh",
