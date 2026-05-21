@@ -67,7 +67,7 @@ begin
     left join (
       select company_id, count(*) as cnt
         from company_memberships
-       where is_owner = true and status = 'active'
+       where is_owner = true and is_active = true
        group by company_id
     ) o on o.company_id = c.id
    where c.status = 'active'
@@ -84,7 +84,7 @@ end$$;
 -- ---------------------------------------------------------------------
 create unique index if not exists ux_company_memberships_active_owner
   on company_memberships(company_id)
-  where is_owner = true and status = 'active';
+  where is_owner = true and is_active = true;
 
 -- ---------------------------------------------------------------------
 -- 4. permission_registry — single source of truth for valid tokens
@@ -332,9 +332,9 @@ from company_memberships m
 join company_memberships owner
   on owner.company_id = m.company_id
  and owner.is_owner = true
- and owner.status = 'active'
+ and owner.is_active = true
 cross join lateral jsonb_array_elements_text(m.permissions) as p(token)
-where m.status = 'active'
+where m.is_active = true
   and m.is_owner = false
   and token ~ '\.(view|create)$'
   and token in (select permission_token from permission_registry where is_assignable = true)
