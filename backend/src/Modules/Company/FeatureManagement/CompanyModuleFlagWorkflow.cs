@@ -116,6 +116,45 @@ public sealed class CompanyModuleFlagWorkflow : ICompanyModuleFlagWorkflow
         return result;
     }
 
+    public async Task<CompanyModuleFlagUpdateResult> SetEnabledFromOwnerAsync(
+        CompanyId companyId,
+        string moduleKey,
+        bool enabled,
+        string reason,
+        UserId actorUserId,
+        CancellationToken cancellationToken)
+    {
+        if (companyId.Value is null)
+        {
+            throw new InvalidOperationException("Company context is required to set a module flag.");
+        }
+        if (actorUserId.Value is null)
+        {
+            throw new InvalidOperationException("Actor user id is required for the business-side toggle.");
+        }
+
+        var normalized = CompanyModuleFlagCatalog.NormalizeKey(moduleKey);
+        var normalizedReason = string.IsNullOrWhiteSpace(reason)
+            ? $"Owner set module '{normalized}' enabled={enabled}."
+            : reason.Trim();
+
+        var result = await _store.SetEnabledAsync(
+            companyId,
+            normalized,
+            enabled,
+            normalizedReason,
+            actorType: "user",
+            actorUserId: actorUserId,
+            forceAuditOnNoChange: false,
+            cancellationToken);
+
+        _cache[new CacheKey(companyId, normalized)] = new CacheEntry(
+            result.Flag.Enabled,
+            _now() + CacheTtl);
+
+        return result;
+    }
+
     private readonly record struct CacheKey(CompanyId CompanyId, string ModuleKey);
 
     private readonly record struct CacheEntry(bool Enabled, DateTimeOffset ExpiresAtUtc);

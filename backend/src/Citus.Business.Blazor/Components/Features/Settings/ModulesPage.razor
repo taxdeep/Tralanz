@@ -1,0 +1,170 @@
+@page "/settings/modules"
+
+@using Citus.Business.Blazor.Services
+@using Citus.Ui.Shared.Control
+@inject BusinessShellState ShellState
+@inject ModuleFlagsClient ModuleFlagsClient
+@inject CitusToastService Message
+
+<PageTitle>Modules | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusBadge Color="@("blue")">Owner self-service</CitusBadge>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+else if (_flags.Count == 0)
+{
+    <CitusEmpty Icon="IconName.Puzzle"
+                Title="No toggleable modules"
+                Description="No opt-in modules are currently registered in the platform catalog. Optional modules ship in later platform batches." />
+}
+else
+{
+    @if (ShellState.AreWritesBlocked)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning"
+                    ShowIcon="true"
+                    Message="@ShellState.WriteBlockMessage"
+                    Class="mb-4" />
+    }
+
+    <section class="citus-panel">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Module</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Last changed</th>
+                    <th class="text-right">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var flag in _flags)
+                {
+                    <tr>
+                        <td>
+                            <div class="font-medium">@flag.DisplayName</div>
+                            <div class="text-fg-subtle text-xs">@flag.ModuleKey</div>
+                        </td>
+                        <td>@flag.Description</td>
+                        <td>
+                            @if (flag.Enabled)
+                            {
+                                <CitusBadge Color="@("green")">Enabled</CitusBadge>
+                            }
+                            else
+                            {
+                                <CitusBadge Color="@("default")">Disabled</CitusBadge>
+                            }
+                        </td>
+                        <td>
+                            @(flag.UpdatedAtUtc.HasValue ? flag.UpdatedAtUtc.Value.ToString("yyyy-MM-dd HH:mm 'UTC'") : "—")
+                        </td>
+                        <td class="text-right">
+                            @if (flag.Enabled)
+                            {
+                                <CitusButton Size="CitusButtonSize.Small"
+                                             Danger="true"
+                                             Disabled="@(IsBusy(flag.ModuleKey) || ShellState.AreWritesBlocked)"
+                                             OnClick="@(() => SetEnabledAsync(flag, enabled: false))">
+                                    Disable
+                                </CitusButton>
+                            }
+                            else
+                            {
+                                <CitusButton Size="CitusButtonSize.Small"
+                                             Disabled="@(IsBusy(flag.ModuleKey) || ShellState.AreWritesBlocked)"
+                                             OnClick="@(() => SetEnabledAsync(flag, enabled: true))">
+                                    Enable
+                                </CitusButton>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <p class="text-fg-subtle text-xs mt-4">
+        Enabling a module surfaces its sidebar entries + create-menu entries immediately.
+        Disabling hides the module's surfaces but preserves all historical data — toggling
+        back later restores the previous state. Requires the
+        <code class="text-xs">settings.modules.toggle</code> permission;
+        the company Owner holds it by default.
+    </p>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Optional Modules",
+        Subtitle = "Enable per-company features for the active company. Toggling preserves history."
+    };
+
+    private bool _isLoading = true;
+    private IReadOnlyList<CompanyModuleFlagSummary> _flags = Array.Empty<CompanyModuleFlagSummary>();
+    private readonly HashSet<string> _busyKeys = new(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _isLoading = true;
+        _flags = await ModuleFlagsClient.ListAsync();
+        _isLoading = false;
+    }
+
+    private bool IsBusy(string moduleKey) => _busyKeys.Contains(moduleKey);
+
+    private async Task SetEnabledAsync(CompanyModuleFlagSummary flag, bool enabled)
+    {
+        _busyKeys.Add(flag.ModuleKey);
+
+        try
+        {
+            var reason = enabled
+                ? $"Owner enabled the {flag.DisplayName} module from Settings → Modules."
+                : $"Owner disabled the {flag.DisplayName} module from Settings → Modules.";
+
+            var outcome = await ModuleFlagsClient.SetEnabledAsync(
+                flag.ModuleKey,
+                enabled,
+                reason);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(
+                    string.IsNullOrWhiteSpace(outcome.ErrorMessage)
+                        ? $"Unable to update {flag.DisplayName}."
+                        : outcome.ErrorMessage);
+                return;
+            }
+
+            // Refresh local view AND the shell's in-memory module-flag
+            // cache so nav menu items appear / disappear immediately.
+            var refreshed = await ModuleFlagsClient.GetAsync();
+            ShellState.ApplyModuleFlags(refreshed);
+            _flags = await ModuleFlagsClient.ListAsync();
+
+            await Message.SuccessAsync(
+                enabled
+                    ? $"{flag.DisplayName} enabled."
+                    : $"{flag.DisplayName} disabled.");
+        }
+        finally
+        {
+            _busyKeys.Remove(flag.ModuleKey);
+        }
+    }
+}
