@@ -90,6 +90,7 @@ public static class CompanyMembershipPermissionPresets
                 CompanyMembershipPermissionCatalog.ArInvoiceEdit,
                 CompanyMembershipPermissionCatalog.ArInvoicePost,
                 CompanyMembershipPermissionCatalog.ArInvoiceVoid,
+                CompanyMembershipPermissionCatalog.ArInvoiceSend,
                 CompanyMembershipPermissionCatalog.ArInvoiceExport,
                 CompanyMembershipPermissionCatalog.ArReceiptView,
                 CompanyMembershipPermissionCatalog.ArReceiptCreate,

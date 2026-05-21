@@ -25,6 +25,7 @@ public static class CompanyMembershipPermissionLegacyExpansion
                 CompanyMembershipPermissionCatalog.ArInvoiceView,
                 CompanyMembershipPermissionCatalog.ArInvoiceCreate,
                 CompanyMembershipPermissionCatalog.ArInvoiceEdit,
+                CompanyMembershipPermissionCatalog.ArInvoiceSend,
                 CompanyMembershipPermissionCatalog.ArReceiptView,
                 CompanyMembershipPermissionCatalog.ArReceiptCreate,
                 CompanyMembershipPermissionCatalog.ArCustomerView,

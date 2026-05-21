@@ -42,6 +42,7 @@ public static class CompanyMembershipPermissionCatalog
     public const string ArInvoiceEdit = "ar.invoice.edit";
     public const string ArInvoicePost = "ar.invoice.post";
     public const string ArInvoiceVoid = "ar.invoice.void";
+    public const string ArInvoiceSend = "ar.invoice.send";
     public const string ArInvoiceExport = "ar.invoice.export";
     public const string ArReceiptView = "ar.receipt.view";
     public const string ArReceiptCreate = "ar.receipt.create";
@@ -140,6 +141,7 @@ public static class CompanyMembershipPermissionCatalog
         new(ArInvoiceEdit, "AR · Invoice · Edit", "Edit AR invoices in draft.", false),
         new(ArInvoicePost, "AR · Invoice · Post", "Post AR invoices to the ledger.", false),
         new(ArInvoiceVoid, "AR · Invoice · Void", "Void posted AR invoices.", false),
+        new(ArInvoiceSend, "AR · Invoice · Send", "Send AR invoice emails to customers (with PDF attached).", false),
         new(ArInvoiceExport, "AR · Invoice · Export", "Export AR invoice lists.", false),
         new(ArReceiptView, "AR · Receipt · View", "View customer receipts.", false),
         new(ArReceiptCreate, "AR · Receipt · Create", "Create customer receipts.", false),
