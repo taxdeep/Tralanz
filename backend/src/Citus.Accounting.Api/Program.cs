@@ -12569,15 +12569,25 @@ accounting.MapPost(
 // ============================================================================
 // Internal admin trigger: run UnitySearch hint distillation for one company.
 //
-// This is the manual-fire endpoint while we wait for a hosted scheduler. It
-// has no business-session auth on purpose — this is a control-plane action,
-// not a tenant action — and it expects to be reached only from inside the
-// trusted network (curl on the host, the SysAdmin process forwarding from
-// the AI Activity page in a follow-up batch). Tighten this with a SysAdmin
-// session check before exposing the API to the public network.
+// This is the manual-fire endpoint while we wait for a hosted scheduler.
+// Before P0-6 (C12) it had no auth on purpose and expected to be reached
+// only from inside the trusted network — but anyone able to hit the API
+// on that network could distill against ANY companyId, consuming the
+// configured AI gateway budget against arbitrary tenants and writing
+// per-company state into unitysearch_ranking_hints + ai_job_runs.
+//
+// Current gate (P0-6): a bootstrap token configured at
+// `UnityAi:ManualTriggerBootstrapToken` (env var
+// `UnityAi__ManualTriggerBootstrapToken`). The request must present it
+// as `Authorization: Bearer <token>`. If the token is not configured the
+// endpoint refuses 503 — fail closed. This is a temporary gate; the
+// final state is migrating the endpoint to the SysAdmin API where the
+// existing SysAdmin session filter covers it (tracked as P1 follow-up).
 //
 // Usage:
-//   curl -X POST 'http://localhost:5xxx/internal/ai/distill-unitysearch?companyId=<uuid>'
+//   curl -X POST \
+//     -H "Authorization: Bearer ${UNITYAI_MANUAL_TOKEN}" \
+//     'http://localhost:5xxx/internal/ai/distill-unitysearch?companyId=<uuid>'
 //
 // Response:
 //   { "jobRunId": "<uuid>", "candidateBuckets": 3, "gatewayCalls": 3,
@@ -12589,10 +12599,40 @@ app.MapPost(
     async (
         CompanyId companyId,
         IUnitysearchHintDistillationService distillation,
+        IConfiguration configuration,
+        HttpContext httpContext,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken) =>
     {
         var logger = loggerFactory.CreateLogger("ai.distill.unitysearch");
+
+        // P0-6 (C12): bootstrap-token gate.
+        var configuredToken = configuration["UnityAi:ManualTriggerBootstrapToken"];
+        if (string.IsNullOrWhiteSpace(configuredToken))
+        {
+            return Results.Problem(
+                detail: "Manual distillation is disabled because UnityAi:ManualTriggerBootstrapToken is not configured. Set the bootstrap token via env or appsettings before invoking this endpoint.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        if (!httpContext.Request.Headers.TryGetValue("Authorization", out var authValues) ||
+            authValues.Count == 0)
+        {
+            return Results.Unauthorized();
+        }
+        var providedAuth = authValues.ToString();
+        if (!providedAuth.StartsWith("Bearer ", StringComparison.Ordinal))
+        {
+            return Results.Unauthorized();
+        }
+        var providedToken = providedAuth.AsSpan("Bearer ".Length).Trim().ToString();
+        var providedBytes = System.Text.Encoding.UTF8.GetBytes(providedToken);
+        var configuredBytes = System.Text.Encoding.UTF8.GetBytes(configuredToken);
+        if (providedBytes.Length != configuredBytes.Length ||
+            !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes))
+        {
+            return Results.Unauthorized();
+        }
+
         if (companyId.Value is null)
         {
             return Results.BadRequest(new { message = "companyId query parameter is required." });
