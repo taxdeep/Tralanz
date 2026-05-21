@@ -8422,7 +8422,7 @@ accounting.MapPost(
                 constraint = constraint
             });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
 
 accounting.MapPut(
     "/accounts/{id:guid}",
@@ -8487,7 +8487,7 @@ accounting.MapPut(
                 constraint = constraint
             });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
 
 accounting.MapPost(
     "/accounts/{id:guid}/activate",
@@ -8503,7 +8503,7 @@ accounting.MapPost(
         return updated is null
             ? Results.NotFound(new { message = "Account not found or system-protected." })
             : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
 
 accounting.MapPost(
     "/accounts/{id:guid}/deactivate",
@@ -8519,7 +8519,7 @@ accounting.MapPost(
         return updated is null
             ? Results.NotFound(new { message = "Account not found or system-protected." })
             : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
 
 static string? ValidateAccountInput(AccountUpsertHttpRequest request)
 {
@@ -8606,7 +8606,7 @@ accounting.MapPost(
             // Chart of accounts already seeded — re-applying is forbidden.
             return Results.Conflict(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
 
 accounting.MapPost(
     "/unitysearch/usage",
