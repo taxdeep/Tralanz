@@ -73,6 +73,20 @@ public sealed class PostgreSqlPermissionGrantStore(PostgreSqlConnectionFactory c
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        // P1-1 (C11): dual-write the same grant into the legacy JSONB
+        // snapshot on company_memberships so session.Roles + legacy
+        // RequirePermission / BusinessApprovalAuthority read the same
+        // truth as IPermissionEvaluator. Without this, granting via the
+        // new business UI lights up RequireGrantedPermission gates but
+        // leaves legacy Task gates dark until the session is re-resolved.
+        // Same transaction → the two stores cannot diverge mid-grant.
+        // Idempotent: if the token is already in the JSONB array (e.g.
+        // a previous SysAdmin Preset Apply put it there), the merge is
+        // a no-op and rows-affected can legitimately be zero.
+        await UpdateJsonbPermissionsAsync(
+            connection, transaction, companyId, targetUserId,
+            tokenToAdd: permissionToken, tokenToRemove: null, cancellationToken);
+
         await InsertAuditAsync(
             connection, transaction, companyId, actorUserId, targetUserId,
             permissionToken, action: "permission_granted", cancellationToken);
@@ -118,6 +132,15 @@ public sealed class PostgreSqlPermissionGrantStore(PostgreSqlConnectionFactory c
             await transaction.RollbackAsync(cancellationToken);
             return false;
         }
+
+        // P1-1 (C11): dual-write the same revoke into the legacy JSONB
+        // snapshot — mirror of the grant path. Removing the token from
+        // the array means session.Roles + legacy RequirePermission stop
+        // honoring it on the next session resolution. Same transaction
+        // keeps the two stores in lock-step.
+        await UpdateJsonbPermissionsAsync(
+            connection, transaction, companyId, targetUserId,
+            tokenToAdd: null, tokenToRemove: permissionToken, cancellationToken);
 
         await InsertAuditAsync(
             connection, transaction, companyId, actorUserId, targetUserId,
@@ -228,6 +251,68 @@ public sealed class PostgreSqlPermissionGrantStore(PostgreSqlConnectionFactory c
             ActiveGrants = grants,
             ActiveGrantAuthorities = authorities,
         };
+    }
+
+    /// <summary>
+    /// P1-1 (C11): merges a single token add or remove into the legacy
+    /// JSONB snapshot on <c>company_memberships.permissions</c>. The
+    /// JSONB stores a flat array of strings; PostgreSQL's
+    /// <c>jsonb || '["t"]'::jsonb</c> (add) and
+    /// <c>jsonb - 't'</c> (remove) operators do the merge atomically
+    /// inside the shared transaction. Owner memberships are skipped
+    /// because Owner is implied-all (the legacy code that reads the
+    /// JSONB unions
+    /// <c>CompanyMembershipPermissionCatalog.AllTokens</c> for owners
+    /// regardless of stored content).
+    /// </summary>
+    private static async Task UpdateJsonbPermissionsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId targetUserId,
+        string? tokenToAdd,
+        string? tokenToRemove,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(tokenToAdd) && string.IsNullOrEmpty(tokenToRemove))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // The CASE expressions keep the SQL parameter list flat: pass
+        // both tokens always, branch in-SQL based on whether each is
+        // non-null. `jsonb_path_query_array` filters out the matching
+        // string when removing; `||` appends only if the token isn't
+        // already present (guarded via a subquery).
+        command.CommandText =
+            """
+            update company_memberships
+               set permissions = (
+                     case
+                       when @token_to_add::text is not null then
+                         case
+                           when permissions @> jsonb_build_array(@token_to_add::text) then permissions
+                           else permissions || jsonb_build_array(@token_to_add::text)
+                         end
+                       else permissions
+                     end
+                   ) - coalesce(@token_to_remove::text, '__sentinel_never_matches__'),
+                   updated_at = now()
+             where company_id = @company_id
+               and user_id = @target_user_id
+               and is_owner = false;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("target_user_id", targetUserId.Value);
+        command.Parameters.AddWithValue(
+            "token_to_add",
+            (object?)tokenToAdd ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "token_to_remove",
+            (object?)tokenToRemove ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertAuditAsync(

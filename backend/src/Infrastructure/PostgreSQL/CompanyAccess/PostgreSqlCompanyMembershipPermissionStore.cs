@@ -396,6 +396,48 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             savedUpdatedAt = CoerceTimestamp(reader.GetValue(reader.GetOrdinal("updated_at")));
         }
 
+        // P1-1 (C11): dual-write the same token diff into
+        // company_user_permissions so the new IPermissionEvaluator-backed
+        // gates (RequireGrantedPermission) see the same truth as the
+        // legacy session.Roles cache that reads this row's JSONB. Without
+        // this sync the two permission stores drift on every preset apply:
+        // SysAdmin-applied tokens light up legacy gates but leave the new
+        // gates dark, forcing operators to re-grant in the business UI.
+        //
+        // Granter attribution for the company_user_permissions FK:
+        //   - actorUserId non-null (business user save) → use it
+        //   - actorUserId null (SysAdmin Preset Apply) → fall back to the
+        //     company's Owner; SysAdmin actions are attributed to the
+        //     Owner at the row level (the audit_logs row written below
+        //     still records actor_type='sysadmin' so the SysAdmin action
+        //     remains identifiable in audit). The Owner is guaranteed to
+        //     exist by the uq_company_memberships_one_owner partial
+        //     unique index plus the workflow that always assigns one on
+        //     company creation.
+        var granterUserId = actorUserId;
+        if (!granterUserId.HasValue)
+        {
+            granterUserId = await ResolveOwnerUserIdAsync(connection, transaction, companyId, cancellationToken);
+        }
+
+        var addedTokens = permissionTokens.Except(previousTokens, StringComparer.Ordinal).ToArray();
+        var removedTokens = previousTokens.Except(permissionTokens, StringComparer.Ordinal).ToArray();
+
+        if (granterUserId.HasValue)
+        {
+            foreach (var token in addedTokens)
+            {
+                await SyncGrantTokenAsync(
+                    connection, transaction, companyId, granterUserId.Value, targetUserId, token, cancellationToken);
+            }
+        }
+
+        foreach (var token in removedTokens)
+        {
+            await SyncRevokeTokenAsync(
+                connection, transaction, companyId, granterUserId, targetUserId, token, cancellationToken);
+        }
+
         await InsertAuditLogAsync(
             connection,
             transaction,
@@ -667,5 +709,140 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
         }
 
         return DateTimeOffset.UtcNow;
+    }
+
+    // P1-1 (C11): dual-write helpers — keep company_user_permissions
+    // (the per-token table read by IPermissionEvaluator-backed gates)
+    // in sync with company_memberships.permissions JSONB (the bulk
+    // snapshot read by session.Roles + legacy RequirePermission).
+    // Both stores must show the same truth after every save.
+
+    private static async Task<UserId?> ResolveOwnerUserIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select user_id
+            from company_memberships
+            where company_id = @company_id
+              and is_owner = true
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is null || result is DBNull)
+        {
+            return null;
+        }
+        return UserId.Parse((string)result);
+    }
+
+    private static async Task SyncGrantTokenAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId granterUserId,
+        UserId targetUserId,
+        string permissionToken,
+        CancellationToken cancellationToken)
+    {
+        // Try to reactivate a previously-revoked row first. The partial
+        // unique index ux_company_user_permissions_active permits at
+        // most one is_active=true row per (company, user, token), so a
+        // revoked row + a new active row would conflict — reusing the
+        // revoked row keeps history compact and avoids INSERT collisions.
+        int reactivated;
+        await using (var reactivateCommand = connection.CreateCommand())
+        {
+            reactivateCommand.Transaction = transaction;
+            reactivateCommand.CommandText =
+                """
+                update company_user_permissions
+                   set is_active = true,
+                       granted_by_user_id = @actor_user_id,
+                       granted_at = now(),
+                       revoked_by_user_id = null,
+                       revoked_at = null
+                 where company_id = @company_id
+                   and user_id = @target_user_id
+                   and permission_token = @token
+                   and is_active = false;
+                """;
+            reactivateCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            reactivateCommand.Parameters.AddWithValue("target_user_id", targetUserId.Value);
+            reactivateCommand.Parameters.AddWithValue("token", permissionToken);
+            reactivateCommand.Parameters.AddWithValue("actor_user_id", granterUserId.Value);
+            reactivated = await reactivateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (reactivated > 0)
+        {
+            return;
+        }
+
+        // No revoked row to reuse — INSERT a new grant, guarded by a
+        // NOT EXISTS clause that skips when an active row already
+        // exists (idempotent for a partial preset re-apply).
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.Transaction = transaction;
+        insertCommand.CommandText =
+            """
+            insert into company_user_permissions
+              (company_id, user_id, permission_token, granted_by_user_id, granted_at, is_active)
+            select @company_id, @target_user_id, @token, @actor_user_id, now(), true
+             where not exists (
+               select 1 from company_user_permissions
+                where company_id = @company_id
+                  and user_id = @target_user_id
+                  and permission_token = @token
+                  and is_active = true
+             );
+            """;
+        insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        insertCommand.Parameters.AddWithValue("target_user_id", targetUserId.Value);
+        insertCommand.Parameters.AddWithValue("token", permissionToken);
+        insertCommand.Parameters.AddWithValue("actor_user_id", granterUserId.Value);
+        await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task SyncRevokeTokenAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId? revokerUserId,
+        UserId targetUserId,
+        string permissionToken,
+        CancellationToken cancellationToken)
+    {
+        // revoked_by_user_id is nullable in the schema (unlike
+        // granted_by_user_id), so a SysAdmin-driven revoke can leave
+        // it null. Idempotent: if no active row exists, the UPDATE
+        // affects zero rows and we move on.
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update company_user_permissions
+               set is_active = false,
+                   revoked_by_user_id = @actor_user_id,
+                   revoked_at = now()
+             where company_id = @company_id
+               and user_id = @target_user_id
+               and permission_token = @token
+               and is_active = true;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("target_user_id", targetUserId.Value);
+        command.Parameters.AddWithValue("token", permissionToken);
+        command.Parameters.AddWithValue(
+            "actor_user_id",
+            revokerUserId.HasValue ? (object)revokerUserId.Value.Value : DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
