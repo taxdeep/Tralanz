@@ -55,6 +55,28 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // P0-3 (C3) fail-fast guard. The forward subledger writes below
+        // (qty + cost layers + balances + ledger entries) work correctly,
+        // but committing them without the matching Dr/Cr journal entry
+        // leaves the books in the state where
+        // `inventory subledger × unit cost != GL Inventory Asset` —
+        // the audit's C3 critical risk. The user's Q2=A confirmed every
+        // inventory movement must auto-emit a GL JE; the matching
+        // handler (mirror of PostSalesIssueCogsCommandHandler) is tracked
+        // as a follow-up batch in AUDIT_2026-05-20.md. Until that handler
+        // ships, this entry point is gated to prevent silent GL drift
+        // if the workflow is ever wired into an API / Blazor surface.
+        //
+        // Today no endpoint reaches this path (InventoryAdjustmentWorkflow
+        // and IInventoryAdjustmentStore are not registered in DI), so
+        // the guard is a future-proofing safety net rather than a live
+        // block.
+        throw new NotImplementedException(
+            "Inventory adjustment (Gain / Loss / Write-off) posting is gated by AUDIT_2026-05-20 C3: " +
+            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
+            "before re-enabling this path.");
+
+#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch that ships the GL handler.
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -374,6 +396,17 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // P0-3 (C3) fail-fast guard. Same rationale as PostAsync above —
+        // the approved-write-off post path mutates qty + cost layers
+        // without emitting the matching Dr Write-off Expense / Cr
+        // Inventory Asset journal entry. Gated until the GL handler
+        // ships per Q2=A. See AUDIT_2026-05-20 C3 follow-up.
+        throw new NotImplementedException(
+            "Approved write-off posting is gated by AUDIT_2026-05-20 C3: " +
+            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
+            "before re-enabling this path.");
+
+#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch.
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
