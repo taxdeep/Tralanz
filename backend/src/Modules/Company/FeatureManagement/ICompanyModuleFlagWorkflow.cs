@@ -25,4 +25,20 @@ public interface ICompanyModuleFlagWorkflow
         string reason,
         UserId? sysAdminAccountId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Business-side self-service toggle for the active company's Owner
+    /// (or anyone the Owner has granted settings.modules.toggle to).
+    /// Same persistence + cache-invalidate path as the SysAdmin
+    /// pathway, but the audit row records actor_type='user' so post-hoc
+    /// governance review can tell business-driven activations apart
+    /// from platform-driven ones.
+    /// </summary>
+    Task<CompanyModuleFlagUpdateResult> SetEnabledFromOwnerAsync(
+        CompanyId companyId,
+        string moduleKey,
+        bool enabled,
+        string reason,
+        UserId actorUserId,
+        CancellationToken cancellationToken);
 }

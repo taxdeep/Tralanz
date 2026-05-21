@@ -1207,11 +1207,10 @@ accounting.MapGet(
     });
 
 // -----------------------------------------------------------------------
-// Per-company module-flag list for the active company. Read-only on
-// the business side — the SysAdmin owns the write surface. Returns
-// the full catalog merged with persisted state (Enabled=false when the
-// company has never been switched on). Consumed by the Blazor shell
-// to decide which menus to render and by future Task module pages.
+// Per-company module-flag list for the active company. Returns the full
+// catalog merged with persisted state (Enabled=false when the company
+// has never been switched on). Consumed by the Blazor shell to decide
+// which menus to render and by the Task module pages.
 // -----------------------------------------------------------------------
 accounting.MapGet(
     "/company/module-flags",
@@ -1226,6 +1225,55 @@ accounting.MapGet(
         var flags = await workflow.ListAsync(session.ActiveCompanyId, cancellationToken);
         return Results.Ok(flags);
     });
+
+// -----------------------------------------------------------------------
+// Business-side module-flag toggle. Owners (and anyone holding the
+// settings.modules.toggle token) can self-serve enable/disable a
+// catalog module for the active company. Same persistence + cache
+// invalidation as the SysAdmin path — only the audit row's actor_type
+// differs ('user' vs 'sysadmin') so governance review can distinguish
+// the two pathways.
+//
+// Why this exists alongside the SysAdmin write surface: previously the
+// SysAdmin was the only operator who could flip module-flags. That
+// meant a small-business Owner who wanted Task tracking had to file a
+// ticket. With self-serve toggling the Owner can enable per-company
+// optional modules from Settings → Modules without SysAdmin
+// intervention.
+// -----------------------------------------------------------------------
+accounting.MapPut(
+    "/company/module-flags/{moduleKey}",
+    async (
+        string moduleKey,
+        CompanyModuleFlagToggleHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyModuleFlagWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null
+            || string.IsNullOrEmpty(session.ActiveCompanyId.Value)
+            || string.IsNullOrEmpty(session.UserId.Value))
+        {
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            var result = await workflow.SetEnabledFromOwnerAsync(
+                session.ActiveCompanyId,
+                moduleKey,
+                request.Enabled,
+                request.Reason ?? string.Empty,
+                session.UserId,
+                cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsModulesToggle);
 
 // -----------------------------------------------------------------------
 // Create an additional company (Business shell, "+ New Company").
