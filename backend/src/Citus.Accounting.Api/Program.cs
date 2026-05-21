@@ -1630,6 +1630,7 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         IVendorStore store,
         ICompanyCurrencyGovernanceWorkflow currencyWorkflow,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1672,6 +1673,11 @@ accounting.MapPost(
                     Notes: request.Notes,
                     PaymentTermId: request.PaymentTermId),
                 cancellationToken);
+            // H15: drop the projection's "last refreshed" timestamp so the
+            // new vendor surfaces in the topbar / vendor pickers on the
+            // next search instead of waiting out the 5-minute refresh
+            // window.
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23505")
@@ -1691,6 +1697,7 @@ accounting.MapPut(
         VendorUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IVendorStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1724,6 +1731,13 @@ accounting.MapPut(
                     Notes: request.Notes,
                     PaymentTermId: request.PaymentTermId),
                 cancellationToken);
+            if (saved is not null)
+            {
+                // H15: keep topbar / vendor picker in sync with the rename
+                // / address update without waiting for the projection's
+                // 5-minute refresh window.
+                await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
+            }
             return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23503")
@@ -1886,6 +1900,7 @@ accounting.MapPut(
         WarehouseRenameHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IInventoryFoundationStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1904,6 +1919,8 @@ accounting.MapPut(
                     Name: request.Name.Trim(),
                     Description: string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim()),
                 cancellationToken);
+            // H15: refresh warehouse picker projection on rename / upsert.
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(new { warehouseId });
         }
         catch (InvalidOperationException ex)
@@ -1954,6 +1971,7 @@ accounting.MapPost(
         InventoryItemUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IInventoryFoundationStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1968,6 +1986,10 @@ accounting.MapPost(
             var itemId = await store.SaveItemAsync(
                 BuildItemUpsertRequest(session.ActiveCompanyId, session.UserId, itemId: null, request),
                 cancellationToken);
+
+            // H15: refresh topbar / item / stock picker projection so the
+            // new item shows up immediately.
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
 
             // Re-fetch the saved row so the response carries the same shape
             // as GET /items (including auto-set fields like created_at).
@@ -1988,6 +2010,7 @@ accounting.MapPut(
         InventoryItemUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IInventoryFoundationStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -2002,6 +2025,10 @@ accounting.MapPut(
             await store.SaveItemAsync(
                 BuildItemUpsertRequest(session.ActiveCompanyId, session.UserId, itemId, request),
                 cancellationToken);
+
+            // H15: keep topbar / item / stock picker in sync with the
+            // rename / re-categorization.
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
 
             var rows = await store.ListItemsAsync(session.ActiveCompanyId, includeInactive: true, cancellationToken);
             var saved = rows.FirstOrDefault(r => r.Id == itemId);
@@ -6254,6 +6281,7 @@ accounting.MapPost(
         TaxCodeUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ITaxCodeStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -6280,6 +6308,9 @@ accounting.MapPost(
                     RegistrationNumber: request.RegistrationNumber,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
+            // H15: refresh tax-code picker projection so the new code shows
+            // up in line-level pickers immediately.
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(record);
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
@@ -6296,6 +6327,7 @@ accounting.MapPut(
         TaxCodeUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ITaxCodeStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -6323,6 +6355,12 @@ accounting.MapPut(
                     RegistrationNumber: request.RegistrationNumber,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
+            if (updated is not null)
+            {
+                // H15: keep tax-code picker in sync with the rate / display
+                // name update.
+                await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
+            }
             return updated is null ? Results.NotFound() : Results.Ok(updated);
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
@@ -8365,6 +8403,7 @@ accounting.MapPost(
         AccountUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IAccountStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -8398,6 +8437,9 @@ accounting.MapPost(
                     AllowManualPosting: request.AllowManualPosting ?? true,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
+            // H15: refresh the topbar / account picker projection so the
+            // new account shows up immediately.
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(record);
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
@@ -8431,6 +8473,7 @@ accounting.MapPut(
         AccountUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IAccountStore store,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -8462,6 +8505,12 @@ accounting.MapPut(
                     AllowManualPosting: request.AllowManualPosting ?? true,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
+            if (updated is not null)
+            {
+                // H15: keep topbar / account picker in sync with the rename
+                // / re-categorization.
+                await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
+            }
             // Update returns null when the row is missing OR when is_system
             // blocked the WHERE clause. The maintenance UI hides edit on
             // system rows so a 404 here is the right honest response.
