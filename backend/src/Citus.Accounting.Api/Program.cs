@@ -9446,6 +9446,7 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         IAccountStore accountStore,
         Modules.GL.JournalEntry.IJournalEntryWorkflow workflow,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -9537,6 +9538,12 @@ accounting.MapPost(
         try
         {
             var result = await workflow.PostDraftAsync(draft, session.UserId, cancellationToken);
+
+            // H15-c: composite save-and-post created a new manual journal in
+            // 'posted' status — drop the UnitySearch projection so the journal
+            // shows up in topbar search + GL pickers without the 5-min wait.
+            await unitySearchProjectionStore.InvalidateAsync(companyId, cancellationToken);
+
             return Results.Ok(new
             {
                 documentId = result.DocumentId,
@@ -12850,6 +12857,7 @@ accounting.MapPost(
         SalesReceiptSaveAndPostHttpRequest request,
         ISalesReceiptDocumentRepository repository,
         PostSalesReceiptCommandHandler postHandler,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
@@ -12914,6 +12922,10 @@ accounting.MapPost(
                     ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
+            // H15-c: sales receipt status flipped draft → posted; refresh the
+            // projection so the receipt surfaces in topbar search immediately.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
+
             return Results.Ok(new
             {
                 documentId = saveResult.DocumentId,
@@ -12938,6 +12950,7 @@ accounting.MapPost(
         RefundReceiptSaveAndPostHttpRequest request,
         IRefundReceiptDocumentRepository repository,
         PostRefundReceiptCommandHandler postHandler,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
@@ -12998,6 +13011,9 @@ accounting.MapPost(
                     ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
+            // H15-c: refund receipt status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
+
             return Results.Ok(new
             {
                 documentId = saveResult.DocumentId,
@@ -13022,6 +13038,7 @@ accounting.MapPost(
         CreditMemoSaveAndPostHttpRequest request,
         ICreditNoteDocumentRepository repository,
         PostCreditNoteCommandHandler postHandler,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
@@ -13094,6 +13111,9 @@ accounting.MapPost(
                     ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
+            // H15-c: credit memo status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
+
             return Results.Ok(new
             {
                 documentId = saveResult.DocumentId,
@@ -13132,6 +13152,7 @@ accounting.MapPost(
         VendorCreditSaveAndPostHttpRequest request,
         IVendorCreditDocumentRepository repository,
         PostVendorCreditCommandHandler postHandler,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
@@ -13201,6 +13222,9 @@ accounting.MapPost(
                     ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
+            // H15-c: vendor credit status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
+
             return Results.Ok(new
             {
                 documentId = saveResult.DocumentId,
@@ -13235,6 +13259,7 @@ accounting.MapPost(
         BankTransferSaveAndPostHttpRequest request,
         IBankTransferDocumentRepository repository,
         PostBankTransferCommandHandler postHandler,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
@@ -13278,6 +13303,9 @@ accounting.MapPost(
                     ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
+            // H15-c: bank transfer status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
+
             return Results.Ok(new
             {
                 documentId = saveResult.DocumentId,
@@ -13302,6 +13330,7 @@ accounting.MapPost(
         BankDepositSaveAndPostHttpRequest request,
         IBankDepositDocumentRepository repository,
         PostBankDepositCommandHandler postHandler,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
@@ -13349,6 +13378,9 @@ accounting.MapPost(
                     ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
 
+            // H15-c: bank deposit status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
+
             return Results.Ok(new
             {
                 documentId = saveResult.DocumentId,
@@ -13373,6 +13405,7 @@ accounting.MapPost(
         TaxReturnSaveAndPostHttpRequest request,
         ITaxReturnDocumentRepository repository,
         PostTaxReturnCommandHandler postHandler,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
@@ -13416,6 +13449,9 @@ accounting.MapPost(
                     request.UserId,
                     ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
                 cancellationToken);
+
+            // H15-c: tax return status flipped draft → posted.
+            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
