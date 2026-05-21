@@ -256,7 +256,6 @@ public class TaskBillingCoordinatorTests
                 Status = status,
                 CurrencyCode = "USD",
                 TotalBillableValue = 100m,
-                TotalDirectCost = 0m,
                 IsVoided = false,
                 CreatedAtUtc = DateTimeOffset.UtcNow,
                 CreatedBy = Actor,
