@@ -1412,7 +1412,7 @@ accounting.MapGet(
 
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerView);
 
 accounting.MapGet(
     "/customers/{customerId:guid}",
@@ -1427,7 +1427,7 @@ accounting.MapGet(
 
         var customer = await store.GetByIdAsync(session.ActiveCompanyId, customerId, cancellationToken);
         return customer is null ? Results.NotFound() : Results.Ok(customer);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerView);
 
 accounting.MapPost(
     "/customers",
@@ -1499,7 +1499,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerCreate);
 
 accounting.MapPut(
     "/customers/{customerId:guid}",
@@ -1554,7 +1554,7 @@ accounting.MapPut(
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerEdit);
 
 // Customer shipping-address history — backs the AddressEditor drawer's
 // "Use a previous shipping address" picker. Distinct shipping_*
@@ -1606,7 +1606,7 @@ accounting.MapGet(
 
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorView);
 
 accounting.MapGet(
     "/vendors/{vendorId:guid}",
@@ -1621,7 +1621,7 @@ accounting.MapGet(
 
         var vendor = await store.GetByIdAsync(session.ActiveCompanyId, vendorId, cancellationToken);
         return vendor is null ? Results.NotFound() : Results.Ok(vendor);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorView);
 
 accounting.MapPost(
     "/vendors",
@@ -1682,7 +1682,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorCreate);
 
 accounting.MapPut(
     "/vendors/{vendorId:guid}",
@@ -1730,7 +1730,7 @@ accounting.MapPut(
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorEdit);
 
 // -----------------------------------------------------------------------
 // Inventory items (Products & Services).
@@ -1877,7 +1877,7 @@ accounting.MapGet(
 
         var rows = await store.ListWarehousesAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryWarehouseView);
 
 accounting.MapPut(
     "/warehouses/{warehouseId:guid}",
@@ -1910,7 +1910,7 @@ accounting.MapPut(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryWarehouseEdit);
 
 accounting.MapGet(
     "/inventory/activation-state",
@@ -1946,7 +1946,7 @@ accounting.MapGet(
 
         var rows = await store.ListItemsAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows.Select(MapItemSummary));
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemView);
 
 accounting.MapPost(
     "/items",
@@ -1979,7 +1979,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemCreate);
 
 accounting.MapPut(
     "/items/{itemId:guid}",
@@ -2011,7 +2011,7 @@ accounting.MapPut(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemEdit);
 
 accounting.MapPost(
     "/items/{itemId:guid}/activate",
@@ -2032,7 +2032,7 @@ accounting.MapPost(
         {
             return Results.NotFound(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemEdit);
 
 accounting.MapPost(
     "/items/{itemId:guid}/deactivate",
@@ -2053,7 +2053,7 @@ accounting.MapPost(
         {
             return Results.NotFound(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemEdit);
 
 // ---------------------------------------------------------------------------
 // Inventory item pricing (Batch 4).
@@ -6287,7 +6287,7 @@ accounting.MapPost(
             // Unique violation — most likely (company_id, code) clash.
             return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
 
 accounting.MapPut(
     "/tax-codes/{id:guid}",
@@ -6329,7 +6329,7 @@ accounting.MapPut(
         {
             return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
 
 accounting.MapPost(
     "/tax-codes/{id:guid}/activate",
@@ -6343,7 +6343,7 @@ accounting.MapPost(
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
 
 accounting.MapPost(
     "/tax-codes/{id:guid}/deactivate",
@@ -6357,7 +6357,7 @@ accounting.MapPost(
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
 
 static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
 {
