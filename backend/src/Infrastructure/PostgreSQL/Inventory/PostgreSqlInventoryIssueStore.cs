@@ -906,6 +906,14 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        // P0-4 (C4): row-level FOR UPDATE serializes concurrent sales-issue
+        // posts against the same (company_id, item_id, warehouse_id) so two
+        // writers cannot both pass the negative-stock guard at line 365 and
+        // then both UPSERT-decrement. Without this, READ COMMITTED lets
+        // their SELECTs both see e.g. 5 on-hand and both ship 4, leaving
+        // -3 on-hand. The downstream INSERT ... ON CONFLICT serializes via
+        // the (company_id, item_id, warehouse_id) unique index for the
+        // empty-row case where FOR UPDATE locks nothing.
         command.CommandText =
             """
             select
@@ -915,7 +923,8 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
             where company_id = @company_id
               and item_id = @item_id
               and warehouse_id = @warehouse_id
-            limit 1;
+            limit 1
+            for update;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
