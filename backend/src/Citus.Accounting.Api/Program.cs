@@ -168,6 +168,11 @@ builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccounti
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
+// H1: Expense Void compensation now flows through the Posting Engine via
+// PostExpenseVoidCommandHandler instead of hand-rolled SQL in
+// PostgreSqlExpenseStore. The repo reads the original Expense JE and
+// builds a pre-flipped ExpenseVoidPostingDocument.
+builder.Services.AddScoped<IExpenseVoidPostingRepository, PostgresExpenseVoidPostingRepository>();
 builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoiceDropShipCogsPostingRepository>();
 builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearingAgingReader>();
 builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
@@ -287,6 +292,8 @@ builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
+// H1: orchestrates the Expense Void compensating JE via the Posting Engine.
+builder.Services.AddScoped<PostExpenseVoidCommandHandler>();
 // P0-2 (C2): compensating COGS post on invoice-reverse. Mirror of the
 // forward sales-issue COGS handler with isReverse=true on the posting
 // document. Invoked by PostgresAccountingDocumentReviewRepository
@@ -8131,14 +8138,28 @@ accounting.MapPost(
     async (
         Guid expenseId,
         BusinessSessionContextAccessor sessionAccessor,
+        PostExpenseVoidCommandHandler voidHandler,
         IExpenseStore store,
         CancellationToken cancellationToken) =>
     {
+        // H1: route the compensating Dr Payment / Cr Expense JE through the
+        // Posting Engine first (idempotent via source_type='expense_void' +
+        // source_id probe). Only after the JE is committed do we flip the
+        // expense row to 'voided'. Two transactions, but the handler is safe
+        // to retry: a repeat returns AlreadyVoided=true without re-posting.
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
 
         try
         {
+            await voidHandler.HandleAsync(
+                new PostExpenseVoidCommand(
+                    session.ActiveCompanyId,
+                    session.UserId,
+                    expenseId),
+                cancellationToken);
+
             var saved = await store.VoidAsync(session.ActiveCompanyId, expenseId, cancellationToken);
             return saved is null ? Results.NotFound() : Results.Ok(saved);
         }

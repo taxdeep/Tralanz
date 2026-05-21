@@ -431,9 +431,44 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildCustomerDepositFragments(deposit).AsReadOnly()),
             CustomerDepositApplicationDocument depositApp => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildCustomerDepositApplicationFragments(depositApp).AsReadOnly()),
+            ExpenseVoidPostingDocument expenseVoid => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildExpenseVoidFragments(expenseVoid).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
+    }
+
+    // H1: expense-void fragments are pre-flipped on the
+    // ExpenseVoidPostingDocumentLine — the repository has already
+    // read the original journal_entry_lines and swapped Dr↔Cr (and
+    // TxDebit↔TxCredit). This builder maps each line straight to a
+    // PostingFragment in the same shape; the engine's
+    // EnsureJournalInvariants then re-validates the Dr=Cr balance on
+    // both axes, providing the same safety net every other engine-
+    // produced JE gets.
+    private static List<PostingFragment> BuildExpenseVoidFragments(
+        ExpenseVoidPostingDocument document)
+    {
+        var fragments = new List<PostingFragment>(document.VoidLines.Count);
+        foreach (var line in document.VoidLines)
+        {
+            fragments.Add(new PostingFragment(
+                line.AccountId,
+                document.TransactionCurrencyCode,
+                line.TxDebit,
+                line.TxCredit,
+                line.Debit,
+                line.Credit,
+                line.Description,
+                TaxComponentType: null,
+                ControlRole: line.ControlRole,
+                PartyId: line.PartyId,
+                PostingRole: line.PostingRole,
+                SourceLineNumber: line.SourceLineNumber));
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
     }
 
     private static List<PostingFragment> BuildManualJournalFragments(
