@@ -39,7 +39,7 @@ public sealed class PostgreSqlPermissionEvaluator(PostgreSqlConnectionFactory co
                 from company_memberships
                where company_id = @company_id
                  and user_id = @user_id
-                 and status = 'active'
+                 and is_active = true
             );
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -67,7 +67,7 @@ public sealed class PostgreSqlPermissionEvaluator(PostgreSqlConnectionFactory co
                where company_id = @company_id
                  and user_id = @user_id
                  and is_owner = true
-                 and status = 'active'
+                 and is_active = true
             );
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -141,7 +141,7 @@ public sealed class PostgreSqlPermissionEvaluator(PostgreSqlConnectionFactory co
                  and cup.user_id = @user_id
                  and cup.permission_token = @token
                  and cup.is_active = true
-                 and m.status = 'active'
+                 and m.is_active = true
                  and r.is_assignable = true
             );
             """;
