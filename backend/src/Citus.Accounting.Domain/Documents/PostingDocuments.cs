@@ -4238,3 +4238,118 @@ public sealed class CustomerDepositPostingDocument : IPostingDocument
     public string? Memo { get; }
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
 }
+
+/// <summary>
+/// H1: compensating posting document for voiding a posted Expense.
+/// Carries pre-flipped reverse fragments — the repository reads the
+/// original Expense JE's lines and swaps Dr↔Cr (and tx ↔ tx) on each
+/// before building this document. The fragment builder then maps each
+/// line straight to a PostingFragment without further transformation.
+///
+/// Rationale: the forward Expense post is currently hand-rolled SQL
+/// inside PostgreSqlExpenseStore (a broader H-level concern, deferred).
+/// The Void path was previously also hand-rolled SQL (the audit's H1
+/// specific finding) — routing it through the Posting Engine here
+/// gives:
+///   - EnsureJournalInvariants (Dr=Cr in TX and base);
+///   - PostgresJournalEntryWriter's ambient-tx guard (PR #25);
+///   - uniform idempotency via (source_type='expense_void', source_id);
+///   - uniform audit + ledger writer.
+///
+/// The fragments are pre-built (not derived from line semantics) so
+/// the engine treats this document as a self-describing reverse. This
+/// is a pragmatic choice: building from line semantics would require
+/// re-deriving the original expense allocations from a partial reverse
+/// view, and re-deriving is exactly what the audit flagged as
+/// drift-prone in the hand-rolled SQL.
+/// </summary>
+public sealed class ExpenseVoidPostingDocument : IPostingDocument
+{
+    public ExpenseVoidPostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        Guid expenseId,
+        string expenseNumber,
+        DateOnly documentDate,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        decimal fxRate,
+        IEnumerable<ExpenseVoidPostingDocumentLine> lines)
+    {
+        if (expenseId == Guid.Empty)
+        {
+            throw new ArgumentException("Expense id is required.", nameof(expenseId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber;
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        ExpenseId = expenseId;
+        ExpenseNumber = expenseNumber?.Trim() ?? string.Empty;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        FxRate = fxRate;
+
+        var materialized = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materialized.Length == 0)
+        {
+            throw new InvalidOperationException("Expense-void document must carry at least one line.");
+        }
+
+        VoidLines = Array.AsReadOnly(materialized);
+        Lines = Array.AsReadOnly(materialized.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+
+    /// <summary>
+    /// Stamped on the produced journal_entries.source_type. The
+    /// repository probes for an existing JE with this source_type +
+    /// source_id = ExpenseId to enforce idempotency on retry.
+    /// </summary>
+    public string SourceType => "expense_void";
+
+    public string Status => "draft";
+    public Guid ExpenseId { get; }
+    public string ExpenseNumber { get; }
+    public DateOnly DocumentDate { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public decimal FxRate { get; }
+    public IReadOnlyList<ExpenseVoidPostingDocumentLine> VoidLines { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    /// <summary>
+    /// The original Expense never went through an FX snapshot lookup —
+    /// FxRate / FxSource were captured at post-time. The reverse JE
+    /// uses the SAME rate (no fresh FX resolution); identity rate when
+    /// the transaction currency equals base.
+    /// </summary>
+    public FxSnapshotRef? FxSnapshot => null;
+}
+
+/// <summary>
+/// One leg of an expense-void compensation JE. Amounts are ALREADY
+/// flipped relative to the forward Expense post — the repository
+/// reads the original journal_entry_lines and constructs each line
+/// with debit/credit swapped (and tx_debit/tx_credit swapped).
+/// </summary>
+public sealed record ExpenseVoidPostingDocumentLine(
+    int LineNumber,
+    Guid AccountId,
+    decimal TxDebit,
+    decimal TxCredit,
+    decimal Debit,
+    decimal Credit,
+    string Description,
+    string PostingRole,
+    string? ControlRole = null,
+    Guid? PartyId = null,
+    int? SourceLineNumber = null) : IPostingDocumentLine;

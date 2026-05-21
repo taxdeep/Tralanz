@@ -328,15 +328,10 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         var lines = await ReadLinesAsync(connection, expenseId, cancellationToken, transaction).ConfigureAwait(false);
         expense = expense with { Lines = lines };
 
-        if (expense.PostedJournalEntryId is { })
-        {
-            await InsertVoidedExpenseJournalAsync(
-                connection,
-                transaction,
-                expense,
-                cancellationToken).ConfigureAwait(false);
-        }
-
+        // H1: the compensating Dr Payment / Cr Expense JE is now posted by
+        // PostExpenseVoidCommandHandler through the Posting Engine before this
+        // call. VoidAsync only flips the expense row status; the engine owns
+        // the journal_entries / journal_entry_lines / ledger_lines writes.
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -595,138 +590,6 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         return journalEntryId;
     }
 
-    private static async Task InsertVoidedExpenseJournalAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ExpenseRecord expense,
-        CancellationToken cancellationToken)
-    {
-        if (expense.Lines.Count == 0)
-        {
-            throw new InvalidOperationException("Expense has no lines to reverse.");
-        }
-
-        var journalEntryId = Guid.NewGuid();
-        var postedAt = DateTimeOffset.UtcNow;
-        var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, expense.CompanyId, cancellationToken).ConfigureAwait(false);
-        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, expense.CompanyId, expense.PaymentDate.Year, cancellationToken).ConfigureAwait(false);
-        var idempotencyKey = $"expense-void:{expense.Id:D}";
-        var totalTx = RoundTx(expense.TotalAmount);
-        var totalBase = RoundBase(expense.TotalAmount * expense.FxRate);
-        var createdByUserId = await ReadJournalCreatedByUserIdAsync(
-            connection,
-            transaction,
-            expense.CompanyId,
-            expense.PostedJournalEntryId!.Value,
-            cancellationToken).ConfigureAwait(false);
-
-        await using (var insertEntryCommand = connection.CreateCommand())
-        {
-            insertEntryCommand.Transaction = transaction;
-            insertEntryCommand.CommandText = """
-                INSERT INTO journal_entries (
-                  id, company_id, entity_number, display_number, status,
-                  source_type, source_id,
-                  transaction_currency_code, base_currency_code,
-                  exchange_rate, exchange_rate_date, exchange_rate_source,
-                  fx_rate_snapshot_id,
-                  total_tx_debit, total_tx_credit, total_debit, total_credit,
-                  posting_run_id, idempotency_key, posted_at, created_by_user_id, created_at
-                )
-                VALUES (
-                  @id, @company_id, @entity_number, @display_number, 'posted',
-                  'expense_void', @source_id,
-                  @transaction_currency_code, @base_currency_code,
-                  @exchange_rate, @exchange_rate_date, @exchange_rate_source,
-                  NULL,
-                  @total_tx_debit, @total_tx_credit, @total_debit, @total_credit,
-                  @posting_run_id, @idempotency_key, @posted_at, @created_by_user_id, NOW()
-                )
-                ON CONFLICT (company_id, idempotency_key) DO NOTHING;
-                """;
-            insertEntryCommand.Parameters.AddWithValue("id", journalEntryId);
-            insertEntryCommand.Parameters.AddWithValue("company_id", expense.CompanyId.Value);
-            insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
-            insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
-            insertEntryCommand.Parameters.AddWithValue("source_id", expense.Id);
-            insertEntryCommand.Parameters.AddWithValue("transaction_currency_code", expense.TransactionCurrencyCode);
-            insertEntryCommand.Parameters.AddWithValue("base_currency_code", expense.BaseCurrencyCode);
-            insertEntryCommand.Parameters.AddWithValue("exchange_rate", RoundRate(expense.FxRate));
-            insertEntryCommand.Parameters.Add("exchange_rate_date", NpgsqlDbType.Date).Value = expense.PaymentDate.ToDateTime(TimeOnly.MinValue);
-            insertEntryCommand.Parameters.AddWithValue("exchange_rate_source", expense.FxSource);
-            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", totalTx);
-            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", totalTx);
-            insertEntryCommand.Parameters.AddWithValue("total_debit", totalBase);
-            insertEntryCommand.Parameters.AddWithValue("total_credit", totalBase);
-            insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
-            insertEntryCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
-            insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
-            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
-            var insertedRows = await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            if (insertedRows != 1)
-            {
-                return;
-            }
-        }
-
-        await InsertJournalAndLedgerLineAsync(
-            connection,
-            transaction,
-            expense.CompanyId,
-            journalEntryId,
-            lineNumber: 1,
-            expense.PaymentAccountId,
-            expense.PayeeKind,
-            expense.PayeeId,
-            $"Void payment for expense {expense.ExpenseNumber}",
-            expense.TransactionCurrencyCode,
-            txDebit: totalTx,
-            txCredit: 0m,
-            debit: totalBase,
-            credit: 0m,
-            postingDate: expense.PaymentDate,
-            postingRole: "void:payment_account",
-            sourceLineNumber: null,
-            cancellationToken).ConfigureAwait(false);
-
-        var activeLines = expense.Lines
-            .Where(static line => line.LineTotal > 0m)
-            .Select(static line => new ExpenseLineInput(
-                line.Sequence,
-                line.ServiceDate,
-                line.ItemId,
-                line.ExpenseAccountId,
-                line.Description,
-                line.Quantity,
-                line.UnitPrice,
-                line.TaxCodeId))
-            .ToArray();
-        var allocations = AllocateExpenseLines(activeLines, expense.TotalAmount, expense.DiscountAmount, expense.FxRate);
-        var lineNumber = 2;
-        foreach (var allocation in allocations)
-        {
-            await InsertJournalAndLedgerLineAsync(
-                connection,
-                transaction,
-                expense.CompanyId,
-                journalEntryId,
-                lineNumber++,
-                allocation.Line.ExpenseAccountId,
-                expense.PayeeKind,
-                expense.PayeeId,
-                $"Void {allocation.Description(expense.ExpenseNumber)}",
-                expense.TransactionCurrencyCode,
-                txDebit: 0m,
-                txCredit: allocation.TxAmount,
-                debit: 0m,
-                credit: allocation.BaseAmount,
-                postingDate: expense.PaymentDate,
-                postingRole: "void:expense",
-                sourceLineNumber: allocation.Line.Sequence,
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
-
     private static async Task InsertJournalAndLedgerLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -943,28 +806,6 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             5,
             1,
             cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task<string> ReadJournalCreatedByUserIdAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        CompanyId companyId,
-        Guid journalEntryId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            SELECT created_by_user_id
-              FROM journal_entries
-             WHERE company_id = @company_id
-               AND id = @journal_entry_id
-             LIMIT 1;
-            """;
-        command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
-        return (string)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("Posted expense journal entry could not be found for reversal."));
     }
 
     private static decimal RoundTx(decimal value) =>
