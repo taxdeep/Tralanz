@@ -1169,6 +1169,21 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         string? idempotencyKey,
         CancellationToken cancellationToken)
     {
+        // P0-3 (C3) fail-fast guard. Transfer ship decrements the source
+        // warehouse's on_hand_qty + opens in_transit_out. If source and
+        // destination share the same inventory-asset account the net GL
+        // is zero, but the spec (Q2=A) requires every movement to post
+        // an explicit JE — either to an in-transit clearing account for
+        // cross-location moves, or a balanced same-account entry that
+        // makes the movement auditable in the GL. Until that handler
+        // ships this entry point is gated. Today no API endpoint reaches
+        // it (IInventoryTransferStore is unregistered in DI).
+        throw new NotImplementedException(
+            "Transfer ship is gated by AUDIT_2026-05-20 C3: " +
+            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
+            "before re-enabling this path.");
+
+#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch.
         var foundationSummary = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -1407,6 +1422,16 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         string? idempotencyKey,
         CancellationToken cancellationToken)
     {
+        // P0-3 (C3) fail-fast guard. Transfer receive credits the
+        // destination warehouse's on_hand_qty + closes in_transit_in.
+        // Same GL-symmetry concern as ShipCoreAsync above — gated until
+        // the matching JE handler lands per Q2=A. See AUDIT_2026-05-20 C3.
+        throw new NotImplementedException(
+            "Transfer receive is gated by AUDIT_2026-05-20 C3: " +
+            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
+            "before re-enabling this path.");
+
+#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch.
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
