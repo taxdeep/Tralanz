@@ -3470,7 +3470,7 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapTrialBalanceReport(report));
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsView);
 
 accounting.MapGet(
     "/reports/trial-balance/export.csv",
@@ -3493,7 +3493,7 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportTrialBalance(MapTrialBalanceReport(report));
         return ToCsvFileResult(file);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
 
 accounting.MapGet(
     "/reports/income-statement",
@@ -3527,7 +3527,7 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapIncomeStatementReport(report));
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsView);
 
 accounting.MapGet(
     "/reports/income-statement/export.csv",
@@ -3562,7 +3562,7 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportIncomeStatement(MapIncomeStatementReport(report));
         return ToCsvFileResult(file);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
 
 accounting.MapGet(
     "/reports/balance-sheet",
@@ -3584,7 +3584,7 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapBalanceSheetReport(report));
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsView);
 
 accounting.MapGet(
     "/reports/balance-sheet/export.csv",
@@ -3607,7 +3607,7 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportBalanceSheet(MapBalanceSheetReport(report));
         return ToCsvFileResult(file);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
 
 accounting.MapGet(
     "/reports/ar-aging",
@@ -3628,7 +3628,7 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapArAgingReport(report));
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArAgingView);
 
 accounting.MapGet(
     "/reports/ar-aging/export.csv",
@@ -3650,7 +3650,7 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportArAging(MapArAgingReport(report));
         return ToCsvFileResult(file);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
 
 accounting.MapGet(
     "/reports/ap-aging",
@@ -3671,7 +3671,7 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapApAgingReport(report));
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApAgingView);
 
 accounting.MapGet(
     "/reports/ap-aging/export.csv",
@@ -3693,7 +3693,7 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportApAging(MapApAgingReport(report));
         return ToCsvFileResult(file);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
 
 // ---------------------------------------------------------------------------
 // Sales Overview — Cash Flow band (10 past + current + 3 forecast months)
