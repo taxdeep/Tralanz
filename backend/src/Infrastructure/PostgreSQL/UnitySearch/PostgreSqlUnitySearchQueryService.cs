@@ -36,7 +36,7 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                      from company_memberships
                     where company_id = @company_id
                       and user_id = @user_id
-                      and status = 'active'),
+                      and is_active = true),
                   false
                 ) as is_owner,
                 coalesce(
@@ -51,7 +51,7 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                       and cup.user_id = @user_id
                       and cup.is_active = true
                       and pr.is_assignable = true
-                      and m.status = 'active'),
+                      and m.is_active = true),
                   array[]::text[]
                 ) as granted_tokens
             ),

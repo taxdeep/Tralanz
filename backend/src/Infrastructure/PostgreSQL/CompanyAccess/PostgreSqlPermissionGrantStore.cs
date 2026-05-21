@@ -168,7 +168,7 @@ public sealed class PostgreSqlPermissionGrantStore(PostgreSqlConnectionFactory c
                 select coalesce(
                   (select is_owner from company_memberships
                     where company_id = @company_id and user_id = @user_id
-                      and status = 'active'),
+                      and is_active = true),
                   false);
                 """;
             ownerCommand.Parameters.AddWithValue("company_id", companyId.Value);
