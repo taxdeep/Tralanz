@@ -55,6 +55,7 @@ public static class CompanyMembershipPermissionLegacyExpansion
                 CompanyMembershipPermissionCatalog.ArInvoicePost,
                 CompanyMembershipPermissionCatalog.ApBillPost,
                 CompanyMembershipPermissionCatalog.GlJournalPost,
+                CompanyMembershipPermissionCatalog.GlJournalVoid,
             },
 
             [CompanyMembershipPermissionCatalog.Reports] = new[]

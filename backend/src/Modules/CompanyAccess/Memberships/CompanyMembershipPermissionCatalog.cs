@@ -90,6 +90,7 @@ public static class CompanyMembershipPermissionCatalog
     public const string GlJournalView = "gl.journal.view";
     public const string GlJournalCreate = "gl.journal.create";
     public const string GlJournalPost = "gl.journal.post";
+    public const string GlJournalVoid = "gl.journal.void";
     public const string GlAccountView = "gl.account.view";
     public const string GlAccountEdit = "gl.account.edit";
     public const string GlPeriodClose = "gl.period.close";
@@ -187,6 +188,7 @@ public static class CompanyMembershipPermissionCatalog
         new(GlJournalView, "GL · Journal · View", "View journal entries.", false),
         new(GlJournalCreate, "GL · Journal · Create", "Create manual journal entries.", false),
         new(GlJournalPost, "GL · Journal · Post", "Post journal entries.", false),
+        new(GlJournalVoid, "GL · Journal · Void", "Void posted journal entries (writes compensating reversal).", false),
         new(GlAccountView, "GL · Account · View", "View chart of accounts.", false),
         new(GlAccountEdit, "GL · Account · Edit", "Edit chart of accounts.", false),
         new(GlPeriodClose, "GL · Period · Close", "Close accounting periods.", IsGovernancePermission: true),

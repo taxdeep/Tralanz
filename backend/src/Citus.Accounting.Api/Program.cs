@@ -5989,7 +5989,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalVoid);
 
 accounting.MapGet(
     "/unity-search",
@@ -12147,7 +12147,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArReceiptApply);
 
 accounting.MapGet(
     "/credit-applications/{documentId:guid}",
@@ -12495,7 +12495,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApPaymentApply);
 
 accounting.MapGet(
     "/vendor-credit-applications/{documentId:guid}",
@@ -12757,7 +12757,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
 
 accounting.MapPost(
     "/refund-receipts/save-and-post",
@@ -12840,7 +12840,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
 
 accounting.MapPost(
     "/credit-memos/save-and-post",
@@ -13117,7 +13117,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
 
 accounting.MapPost(
     "/bank-deposits/save-and-post",
@@ -13187,7 +13187,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
 
 accounting.MapPost(
     "/tax-returns/save-and-post",
@@ -13254,7 +13254,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
 
 // ============================================================================
 // V1 list endpoints for the 7 doc types that now post end-to-end.
