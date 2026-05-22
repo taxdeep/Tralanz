@@ -304,7 +304,12 @@ public sealed record SaveCreditNoteDraftLineHttpRequest(
     // posted, the Task billing coordinator rolls every linked task
     // currently in Billed status back to Completed. Persists into
     // credit_note_lines.task_id (column added by Batch 8).
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    // H6-3: optional pin to a specific task_lines row that this
+    // credit releases. When present, the post handler routes through
+    // the new RollbackLinesAsync path (per-line audit). Null falls
+    // back to legacy whole-task rollback via TaskId.
+    Guid? TaskLineId = null);
 
 public sealed record CreditNoteLookupQuery(CompanyId CompanyId);
 

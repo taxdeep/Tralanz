@@ -9886,7 +9886,8 @@ accounting.MapPost(
                         line.UnitPrice,
                         line.TaxCodeId,
                         line.TaxAmount,
-                        line.TaskId)).ToArray()),
+                        line.TaskId,
+                        line.TaskLineId)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -9926,7 +9927,8 @@ accounting.MapPut(
                         line.UnitPrice,
                         line.TaxCodeId,
                         line.TaxAmount,
-                        line.TaskId)).ToArray()),
+                        line.TaskId,
+                        line.TaskLineId)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -13003,7 +13005,10 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray(),
+                        line.TaxAmount,
+                        ItemId: null,
+                        TaskId: line.TaskId,
+                        TaskLineId: line.TaskLineId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
@@ -13103,7 +13108,8 @@ accounting.MapPost(
                         line.UnitPrice,
                         line.TaxCodeId,
                         line.TaxAmount,
-                        line.TaskId)).ToArray(),
+                        line.TaskId,
+                        line.TaskLineId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
@@ -14928,6 +14934,11 @@ internal sealed record class RefundReceiptLineHttpRequest
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
+    // H6-3 (D8): optional task back-link. Refund receipt is the
+    // reverse of Sales Receipt — when set, the post handler releases
+    // the linked task_lines via RollbackLinesAsync.
+    public Guid? TaskId { get; init; }
+    public Guid? TaskLineId { get; init; }
 }
 
 internal sealed record class CreditMemoSaveAndPostHttpRequest
@@ -14962,6 +14973,11 @@ internal sealed record class CreditMemoLineHttpRequest
     // gets persisted into credit_note_lines.task_id so the post handler
     // can roll the linked tasks back to Completed.
     public Guid? TaskId { get; init; }
+    // H6-3: optional pin to a specific task_lines row that this credit
+    // releases. When present, the post handler routes through the new
+    // line-level RollbackLinesAsync path. Null falls back to the
+    // legacy whole-task rollback (matches pre-H6-3 behavior).
+    public Guid? TaskLineId { get; init; }
 }
 
 internal sealed record class VendorCreditSaveAndPostHttpRequest

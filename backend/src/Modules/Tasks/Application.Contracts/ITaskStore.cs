@@ -146,6 +146,35 @@ public interface ITaskStore
         CompanyId companyId,
         Guid taskId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-3: clears the billing stamp on a single <c>task_lines</c>
+    /// row (the reverse of <see cref="MarkLineBilledAsync"/>). Used by
+    /// Credit Note / Refund Receipt rollback paths where the
+    /// reversing document specifies the exact task_line to release.
+    /// Idempotent: if the line wasn't stamped, returns the parent
+    /// task id anyway (so the coordinator's status recompute fires on
+    /// the right task). Returns null when the line does not exist in
+    /// the active company.
+    /// </summary>
+    Task<Guid?> UnmarkLineBilledAsync(
+        CompanyId companyId,
+        Guid taskLineId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-3: bulk unmark — clears every <c>task_lines</c> row whose
+    /// <c>(billed_source_type, billed_source_id)</c> matches. Used by
+    /// the Invoice Reverse path, which voids the entire invoice in
+    /// one shot. Returns the distinct task ids whose lines were
+    /// touched so the coordinator's recompute step knows which task
+    /// headers to revisit.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> UnmarkLinesBySourceAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>

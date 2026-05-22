@@ -195,6 +195,126 @@ public class TaskLineBillingCoordinatorTests
         return new TaskBillingCoordinator(store, workflow);
     }
 
+    // =================================================================
+    // H6-3 rollback path tests
+    // =================================================================
+
+    [Fact]
+    public async Task RollbackLines_releases_billed_line_and_returns_task_to_completed()
+    {
+        var store = new LineAwareStore();
+        var (taskId, lineIds) = store.SeedCompletedTaskWithLines(lineCount: 1);
+        var coordinator = MakeCoordinator(store);
+
+        var invoiceId = Guid.NewGuid();
+        await coordinator.MarkLinesAsBilledAsync(
+            CompanyA, "invoice", invoiceId, null,
+            new[] { new TaskLineBillingMapping(taskId, lineIds[0], null) },
+            Actor, CancellationToken.None);
+        Assert.Equal(TaskStatus.Billed, store.GetStatus(taskId));
+
+        // Credit-note-style rollback by task_line_id.
+        var result = await coordinator.RollbackLinesAsync(
+            CompanyA, "credit_note", Guid.NewGuid(),
+            new[] { lineIds[0] },
+            Actor, reason: "test", cancellationToken: CancellationToken.None);
+
+        Assert.Single(result.ProcessedTasks);
+        Assert.Equal(TaskStatus.Completed, store.GetStatus(taskId));
+        Assert.Null(store.GetLineStamp(lineIds[0]).SourceType);
+        // Header billed_invoice_id should clear when transitioning to
+        // Completed (the test stub mirrors the Postgres behavior).
+        Assert.Null(store.GetBilledInvoiceId(taskId));
+    }
+
+    [Fact]
+    public async Task RollbackLines_partial_returns_task_to_partially_billed()
+    {
+        var store = new LineAwareStore();
+        var (taskId, lineIds) = store.SeedCompletedTaskWithLines(lineCount: 3);
+        var coordinator = MakeCoordinator(store);
+
+        var invoiceId = Guid.NewGuid();
+        await coordinator.MarkLinesAsBilledAsync(
+            CompanyA, "invoice", invoiceId, null,
+            new[]
+            {
+                new TaskLineBillingMapping(taskId, lineIds[0], null),
+                new TaskLineBillingMapping(taskId, lineIds[1], null),
+                new TaskLineBillingMapping(taskId, lineIds[2], null),
+            },
+            Actor, CancellationToken.None);
+        Assert.Equal(TaskStatus.Billed, store.GetStatus(taskId));
+
+        // Reverse only one of the three billed lines.
+        var result = await coordinator.RollbackLinesAsync(
+            CompanyA, "credit_note", Guid.NewGuid(),
+            new[] { lineIds[1] },
+            Actor, reason: null, cancellationToken: CancellationToken.None);
+
+        Assert.Single(result.ProcessedTasks);
+        Assert.Equal(TaskStatus.PartiallyBilled, store.GetStatus(taskId));
+        Assert.Null(store.GetLineStamp(lineIds[1]).SourceType);
+        Assert.NotNull(store.GetLineStamp(lineIds[0]).SourceType);
+        Assert.NotNull(store.GetLineStamp(lineIds[2]).SourceType);
+    }
+
+    [Fact]
+    public async Task RollbackBySource_clears_only_matching_source_stamps()
+    {
+        var store = new LineAwareStore();
+        var (taskId, lineIds) = store.SeedCompletedTaskWithLines(lineCount: 2);
+        var coordinator = MakeCoordinator(store);
+
+        // Mark each line from a DIFFERENT invoice.
+        var invoiceA = Guid.NewGuid();
+        var invoiceB = Guid.NewGuid();
+        await coordinator.MarkLinesAsBilledAsync(
+            CompanyA, "invoice", invoiceA, null,
+            new[] { new TaskLineBillingMapping(taskId, lineIds[0], null) },
+            Actor, CancellationToken.None);
+        await coordinator.MarkLinesAsBilledAsync(
+            CompanyA, "invoice", invoiceB, null,
+            new[] { new TaskLineBillingMapping(taskId, lineIds[1], null) },
+            Actor, CancellationToken.None);
+        Assert.Equal(TaskStatus.Billed, store.GetStatus(taskId));
+
+        // Reverse invoiceA — only line 0 should release; line 1 stays
+        // billed by invoiceB; header drops to PartiallyBilled.
+        var result = await coordinator.RollbackBySourceAsync(
+            CompanyA, "invoice", invoiceA, Actor, reason: null, cancellationToken: CancellationToken.None);
+
+        Assert.Single(result.ProcessedTasks);
+        Assert.Equal(TaskStatus.PartiallyBilled, store.GetStatus(taskId));
+        Assert.Null(store.GetLineStamp(lineIds[0]).SourceType);
+        Assert.Equal(("invoice", invoiceB), store.GetLineStamp(lineIds[1]));
+    }
+
+    [Fact]
+    public async Task RollbackBySource_idempotent_when_already_unmarked()
+    {
+        var store = new LineAwareStore();
+        var (taskId, lineIds) = store.SeedCompletedTaskWithLines(lineCount: 1);
+        var coordinator = MakeCoordinator(store);
+
+        var invoiceId = Guid.NewGuid();
+        await coordinator.MarkLinesAsBilledAsync(
+            CompanyA, "invoice", invoiceId, null,
+            new[] { new TaskLineBillingMapping(taskId, lineIds[0], null) },
+            Actor, CancellationToken.None);
+
+        await coordinator.RollbackBySourceAsync(
+            CompanyA, "invoice", invoiceId, Actor, null, CancellationToken.None);
+        Assert.Equal(TaskStatus.Completed, store.GetStatus(taskId));
+
+        // Re-call: nothing to unmark, nothing to recompute.
+        var second = await coordinator.RollbackBySourceAsync(
+            CompanyA, "invoice", invoiceId, Actor, null, CancellationToken.None);
+        Assert.Empty(second.ProcessedTasks);
+        Assert.Empty(second.SkippedTasks);
+        Assert.Equal(TaskStatus.Completed, store.GetStatus(taskId));
+    }
+
     // -----------------------------------------------------------------
     // Test doubles: an in-memory ITaskStore that actually models
     // task_lines so the new H6-2 status-recompute logic runs end-to-end.
@@ -298,10 +418,30 @@ public class TaskLineBillingCoordinatorTests
                 throw new InvalidOperationException(
                     $"Concurrent transition: expected '{fromStatus}', found '{t.Status}'.");
             }
+            // Mirror PostgreSqlTaskStore.TransitionStatusAsync: when
+            // transitioning back to Completed from Billed or
+            // PartiallyBilled, clear the header billed_invoice_id. The
+            // line-level audit trail (billed_source_id on each
+            // task_lines row) carries the precise history.
+            Guid? nextBilledInvoiceId;
+            if (toStatus == TaskStatus.Billed)
+            {
+                nextBilledInvoiceId = billedInvoiceId;
+            }
+            else if (toStatus == TaskStatus.Completed &&
+                     t.Status is TaskStatus.Billed or TaskStatus.PartiallyBilled)
+            {
+                nextBilledInvoiceId = null;
+            }
+            else
+            {
+                nextBilledInvoiceId = t.BilledInvoiceId;
+            }
+
             var updated = t with
             {
                 Status = toStatus,
-                BilledInvoiceId = billedInvoiceId ?? t.BilledInvoiceId,
+                BilledInvoiceId = nextBilledInvoiceId,
                 BilledAtUtc = toStatus == TaskStatus.Billed ? DateTimeOffset.UtcNow : t.BilledAtUtc,
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
             };
@@ -351,6 +491,44 @@ public class TaskLineBillingCoordinatorTests
                 CurrentStatus: t.Status,
                 TotalLineCount: lines.Count,
                 BilledLineCount: billedCount));
+        }
+
+        public Task<Guid?> UnmarkLineBilledAsync(
+            CompanyId companyId, Guid taskLineId, CancellationToken cancellationToken)
+        {
+            // Find the parent task even if the line isn't currently
+            // stamped (matches Postgres impl semantics so the
+            // coordinator can recompute the right header).
+            var parent = _linesByTask
+                .FirstOrDefault(kvp => kvp.Value.Any(l => l.Id == taskLineId));
+            if (parent.Key == Guid.Empty)
+            {
+                return Task.FromResult<Guid?>(null);
+            }
+            _stamps.Remove(taskLineId);
+            return Task.FromResult<Guid?>(parent.Key);
+        }
+
+        public Task<IReadOnlyList<Guid>> UnmarkLinesBySourceAsync(
+            CompanyId companyId, string sourceType, Guid sourceId, CancellationToken cancellationToken)
+        {
+            var matchingLineIds = _stamps
+                .Where(kvp => kvp.Value.SourceType == sourceType && kvp.Value.SourceId == sourceId)
+                .Select(kvp => kvp.Key)
+                .ToArray();
+
+            var affectedTasks = new HashSet<Guid>();
+            foreach (var lineId in matchingLineIds)
+            {
+                var parent = _linesByTask
+                    .FirstOrDefault(kvp => kvp.Value.Any(l => l.Id == lineId));
+                if (parent.Key != Guid.Empty)
+                {
+                    affectedTasks.Add(parent.Key);
+                }
+                _stamps.Remove(lineId);
+            }
+            return Task.FromResult<IReadOnlyList<Guid>>(affectedTasks.ToArray());
         }
     }
 

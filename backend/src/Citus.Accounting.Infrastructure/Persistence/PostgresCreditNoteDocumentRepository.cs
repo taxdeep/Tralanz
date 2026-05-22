@@ -455,6 +455,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   tax_code_id,
                   tax_amount,
                   task_id,
+                  task_line_id,
                   created_at,
                   updated_at
                 )
@@ -471,6 +472,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   @tax_code_id,
                   @tax_amount,
                   @task_id,
+                  @task_line_id,
                   now(),
                   now()
                 );
@@ -490,6 +492,11 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             // (Batch 8). When set, PostCreditNoteCommandHandler's Step 2
             // hook rolls the linked tasks Billed -> Completed after post.
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
+            // H6-3: task_line_id column added by the H6-1 migration.
+            // When set, the post handler uses the new line-level
+            // rollback path (RollbackLinesAsync); when null it falls
+            // back to legacy whole-task rollback via task_id alone.
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_line_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskLineId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -523,6 +530,37 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             ids.Add(reader.GetGuid(0));
         }
         return ids;
+    }
+
+    public async Task<IReadOnlyList<CreditNoteLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid creditNoteId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select id, task_id, task_line_id
+            from credit_note_lines
+            where company_id = @company_id
+              and credit_note_id = @credit_note_id
+              and task_id is not null
+            order by line_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("credit_note_id", creditNoteId);
+
+        var rows = new List<CreditNoteLineTaskLink>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new CreditNoteLineTaskLink(
+                CreditNoteLineId: reader.GetGuid(0),
+                TaskId: reader.GetGuid(1),
+                TaskLineId: reader.IsDBNull(2) ? null : reader.GetGuid(2)));
+        }
+        return rows;
     }
 
     private static void ValidateDraft(CreditNoteDraftSaveModel draft)
