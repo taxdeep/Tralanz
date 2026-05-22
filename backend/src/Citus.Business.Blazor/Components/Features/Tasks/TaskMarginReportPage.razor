@@ -353,6 +353,7 @@ else
         TaskStatus.Completed => "Completed",
         TaskStatus.Billed => "Billed",
         TaskStatus.Canceled => "Canceled",
+        TaskStatus.PartiallyBilled => "Partially billed",
         _ => status.ToString(),
     };
 
@@ -362,6 +363,7 @@ else
         TaskStatus.Completed => "green",
         TaskStatus.Billed => "gold",
         TaskStatus.Canceled => "default",
+        TaskStatus.PartiallyBilled => "blue",
         _ => "default",
     };
 
@@ -373,6 +375,8 @@ else
         {
             TaskCount = 0,
             TotalBillableValue = 0m,
+            TotalBilledValue = 0m,
+            TotalUnbilledValue = 0m,
             TotalDirectCost = 0m,
             TotalGrossMargin = 0m,
             WeightedGrossMarginPercent = null,

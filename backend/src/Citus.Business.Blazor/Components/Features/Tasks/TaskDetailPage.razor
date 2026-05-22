@@ -59,18 +59,20 @@ else
                              Disabled="@_isBusy"
                              OnClick="@(() => ChangeStateAsync("complete"))">Mark completed</CitusButton>
             }
-            @if (_task.Status == TaskStatus.Completed && CanBill && _task.CustomerId.HasValue)
+            @if ((_task.Status == TaskStatus.Completed || _task.Status == TaskStatus.PartiallyBilled) && CanBill && _task.CustomerId.HasValue)
             {
                 @* "Bill this task" hand-off. Navigates to the AR invoice
                    create page with ?FromTaskId — the create page pre-fills
                    customer + lines + currency from the task, every line
                    carries the task id, and the post handler flips the
-                   task to Billed automatically on a successful post. *@
+                   task to Billed automatically on a successful post.
+                   H6-4: PartiallyBilled tasks can also create a follow-up
+                   invoice to bill the remaining un-billed lines. *@
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              LeadingIcon="IconName.FileInvoice"
                              Disabled="@_isBusy"
                              OnClick="@(() => NavigationManager.NavigateTo($"invoices/new?FromTaskId={_task.Id:D}"))">
-                    Create invoice
+                    @(_task.Status == TaskStatus.PartiallyBilled ? "Bill remaining lines" : "Create invoice")
                 </CitusButton>
             }
             @if ((_task.Status == TaskStatus.Open || _task.Status == TaskStatus.Completed) && CanCancel)
@@ -526,6 +528,7 @@ else
         TaskStatus.Completed => "Completed",
         TaskStatus.Billed => "Billed",
         TaskStatus.Canceled => "Canceled",
+        TaskStatus.PartiallyBilled => "Partially billed",
         _ => status.ToString(),
     };
 
@@ -535,6 +538,7 @@ else
         TaskStatus.Completed => "green",
         TaskStatus.Billed => "gold",
         TaskStatus.Canceled => "default",
+        TaskStatus.PartiallyBilled => "blue",
         _ => "default",
     };
 

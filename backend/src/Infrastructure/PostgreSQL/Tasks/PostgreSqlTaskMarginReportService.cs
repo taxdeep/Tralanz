@@ -168,6 +168,25 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
             )
             """;
 
+        // H6-4: per-task split of the billable side into the portion
+        // already covered by a posted source document (line-level)
+        // vs the portion still un-billed. Sums task_lines.line_amount
+        // filtered on billed_source_id presence — backfilled rows
+        // (H6-1's migration) already carry the stamp for pre-H6-2a
+        // header-billed tasks so the split stays consistent across
+        // the cutover. The two columns add up to t.total_billable_value.
+        const string LineSplitCte = """
+            line_split as (
+              select
+                task_id,
+                sum(case when billed_source_id is not null then line_amount else 0 end) as billed_native,
+                sum(case when billed_source_id is null     then line_amount else 0 end) as unbilled_native
+              from task_lines
+              where company_id = @company_id
+              group by task_id
+            )
+            """;
+
         await using var connection = await connections.OpenAsync(cancellationToken);
 
         // Row query — paged.
@@ -178,7 +197,8 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                 $$"""
                 with
                 {{BillCostCte}},
-                {{ExpenseCostCte}}
+                {{ExpenseCostCte}},
+                {{LineSplitCte}}
                 select
                   t.id,
                   t.task_no,
@@ -191,6 +211,8 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                   t.billed_invoice_id,
                   t.currency_code,
                   t.total_billable_value,
+                  coalesce(ls.billed_native, 0)   as billed_native,
+                  coalesce(ls.unbilled_native, 0) as unbilled_native,
                   coalesce(bc.amt_native, 0) + coalesce(ec.amt_native, 0) as direct_cost,
                   coalesce(bc.amt_base, 0)   + coalesce(ec.amt_base, 0)   as direct_cost_base,
                   coalesce(billable_fx.rate, 1)        as billable_fx_rate,
@@ -198,6 +220,7 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                 from tasks t
                 left join bill_cost    bc on bc.task_id = t.id
                 left join expense_cost ec on ec.task_id = t.id
+                left join line_split   ls on ls.task_id = t.id
                 {{BillableFxJoinClause}}
                 where t.company_id = @company_id
                   and t.status = any(@status_tokens)
@@ -216,6 +239,8 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
             while (await reader.ReadAsync(cancellationToken))
             {
                 var billable = reader.GetDecimal(reader.GetOrdinal("total_billable_value"));
+                var billedNative = reader.GetDecimal(reader.GetOrdinal("billed_native"));
+                var unbilledNative = reader.GetDecimal(reader.GetOrdinal("unbilled_native"));
                 var directCost = reader.GetDecimal(reader.GetOrdinal("direct_cost"));
                 var directCostBase = reader.GetDecimal(reader.GetOrdinal("direct_cost_base"));
                 var billableFx = reader.GetDecimal(reader.GetOrdinal("billable_fx_rate"));
@@ -246,6 +271,8 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                         : reader.GetGuid(reader.GetOrdinal("billed_invoice_id")),
                     CurrencyCode = reader.GetString(reader.GetOrdinal("currency_code")),
                     BillableValue = billable,
+                    BilledValue = billedNative,
+                    UnbilledValue = unbilledNative,
                     DirectCost = directCost,
                     GrossMargin = margin,
                     GrossMarginPercent = billable == 0m ? null : Math.Round(margin / billable * 100m, 2),
@@ -269,9 +296,12 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                 with
                 {{BillCostCte}},
                 {{ExpenseCostCte}},
+                {{LineSplitCte}},
                 rows_with_fx as (
                   select
                     t.total_billable_value                                         as billable,
+                    coalesce(ls.billed_native, 0)                                  as billed_native,
+                    coalesce(ls.unbilled_native, 0)                                as unbilled_native,
                     coalesce(bc.amt_native, 0) + coalesce(ec.amt_native, 0)        as direct_cost,
                     coalesce(bc.amt_base, 0)   + coalesce(ec.amt_base, 0)          as direct_cost_base,
                     coalesce(billable_fx.rate, 1)                                  as billable_fx_rate,
@@ -279,6 +309,7 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                   from tasks t
                   left join bill_cost    bc on bc.task_id = t.id
                   left join expense_cost ec on ec.task_id = t.id
+                  left join line_split   ls on ls.task_id = t.id
                   {{BillableFxJoinClause}}
                   where t.company_id = @company_id
                     and t.status = any(@status_tokens)
@@ -290,6 +321,8 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
                 select
                   count(*)::int                                                              as task_count,
                   coalesce(sum(billable), 0)                                                 as billable_sum,
+                  coalesce(sum(billed_native), 0)                                            as billed_sum,
+                  coalesce(sum(unbilled_native), 0)                                          as unbilled_sum,
                   coalesce(sum(direct_cost), 0)                                              as cost_sum,
                   coalesce(sum(round(billable * billable_fx_rate, 2)), 0)                    as billable_base_sum,
                   coalesce(sum(direct_cost_base), 0)                                         as cost_base_sum,
@@ -302,6 +335,8 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
             await reader.ReadAsync(cancellationToken);
             var count = reader.GetInt32(reader.GetOrdinal("task_count"));
             var billableSum = reader.GetDecimal(reader.GetOrdinal("billable_sum"));
+            var billedSum = reader.GetDecimal(reader.GetOrdinal("billed_sum"));
+            var unbilledSum = reader.GetDecimal(reader.GetOrdinal("unbilled_sum"));
             var costSum = reader.GetDecimal(reader.GetOrdinal("cost_sum"));
             var billableBaseSum = reader.GetDecimal(reader.GetOrdinal("billable_base_sum"));
             var costBaseSum = reader.GetDecimal(reader.GetOrdinal("cost_base_sum"));
@@ -312,6 +347,8 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
             {
                 TaskCount = count,
                 TotalBillableValue = billableSum,
+                TotalBilledValue = billedSum,
+                TotalUnbilledValue = unbilledSum,
                 TotalDirectCost = costSum,
                 TotalGrossMargin = marginSum,
                 WeightedGrossMarginPercent = billableSum == 0m

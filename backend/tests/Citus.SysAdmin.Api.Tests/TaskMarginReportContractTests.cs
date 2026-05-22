@@ -106,6 +106,8 @@ public class TaskMarginReportContractTests
             Status = TaskStatus.Open,
             CurrencyCode = "USD",
             BillableValue = 0m,
+            BilledValue = 0m,
+            UnbilledValue = 0m,
             DirectCost = 100m,
             GrossMargin = -100m,
             GrossMarginPercent = null,
@@ -141,6 +143,8 @@ public class TaskMarginReportContractTests
             CurrencyCode = "USD",
             BilledInvoiceId = Guid.NewGuid(),
             BillableValue = 100m,
+            BilledValue = 100m,         // fully billed → split == BillableValue
+            UnbilledValue = 0m,
             DirectCost = 40m,        // sum of cost line amounts (mixed currencies, raw)
             GrossMargin = 60m,
             GrossMarginPercent = 60m,
@@ -165,6 +169,8 @@ public class TaskMarginReportContractTests
         {
             TaskCount = 3,
             TotalBillableValue = 1000m,
+            TotalBilledValue = 700m,         // mix of billed + un-billed across 3 tasks
+            TotalUnbilledValue = 300m,
             TotalDirectCost = 600m,
             TotalGrossMargin = 400m,
             WeightedGrossMarginPercent = 40m,
@@ -193,6 +199,8 @@ public class TaskMarginReportContractTests
             {
                 TaskCount = 0,
                 TotalBillableValue = 0m,
+                TotalBilledValue = 0m,
+                TotalUnbilledValue = 0m,
                 TotalDirectCost = 0m,
                 TotalGrossMargin = 0m,
                 WeightedGrossMarginPercent = null,
