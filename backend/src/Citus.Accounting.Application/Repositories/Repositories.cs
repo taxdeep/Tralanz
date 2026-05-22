@@ -52,7 +52,34 @@ public interface IInvoiceDocumentRepository
         CompanyId companyId,
         Guid invoiceId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-2: returns the full per-line mapping (invoice_line_id,
+    /// task_id, task_line_id) for lines that carry a task reference.
+    /// The post handler uses this to drive line-level Task billing —
+    /// when every task-linked line has a non-null task_line_id, the
+    /// new <c>MarkLinesAsBilledAsync</c> path runs; when any task-linked
+    /// line has only task_id (legacy data, draft saved before H6-2's
+    /// wire-shape extension), the handler falls back to the header-level
+    /// <c>MarkAsBilledAsync</c> path so nothing breaks.
+    /// </summary>
+    Task<IReadOnlyList<InvoiceLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// One row from
+/// <see cref="IInvoiceDocumentRepository.ListLinkedTaskLineMappingsAsync"/>.
+/// <see cref="TaskLineId"/> is null on rows that pre-date H6-2's wire-
+/// shape extension; the handler treats those as header-level links and
+/// routes them through the legacy <c>MarkAsBilledAsync</c> path.
+/// </summary>
+public sealed record class InvoiceLineTaskLink(
+    Guid InvoiceLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 public sealed record InvoiceListItem(
     Guid Id,
@@ -387,7 +414,13 @@ public sealed record InvoiceDraftLineSaveModel(
     // Per-line back-link to the Task this line bills. Persists into
     // invoice_lines.task_id; the post handler aggregates distinct
     // task_ids to flip source tasks Completed -> Billed on post.
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    // H6-2: when present, the post handler stamps THIS specific
+    // task_line as billed and recomputes the task header status
+    // (Open|Completed -> PartiallyBilled, or -> Billed when this is
+    // the final un-billed line). Null falls back to the legacy
+    // whole-task marking via task_id alone.
+    Guid? TaskLineId = null);
 
 public sealed record CreditNoteDraftSaveModel(
     Guid? DocumentId,

@@ -142,15 +142,27 @@ public sealed class PostInvoiceCommandHandler
     /// lines (the common case for direct-create invoices). Otherwise
     /// returns the per-task outcome counts; ErrorMessage non-null
     /// signals a soft failure — invoice already committed.
+    ///
+    /// H6-2: when any line carries <c>task_line_id</c> the handler uses
+    /// the new line-level coordinator path
+    /// (<see cref="ITaskBillingCoordinator.MarkLinesAsBilledAsync"/>),
+    /// which stamps each task_line and auto-transitions the header to
+    /// PartiallyBilled / Billed. Lines that carry only <c>task_id</c>
+    /// (legacy data, or drafts saved before the H6-2b UI ships) fall
+    /// back to the original whole-task path
+    /// (<see cref="ITaskBillingCoordinator.MarkAsBilledAsync"/>). The
+    /// two paths can co-exist on the same invoice — each task hits one
+    /// path or the other based on whether its lines on this invoice
+    /// have a task_line_id.
     /// </summary>
     private async Task<InvoiceTaskBillingOutcome?> TryMarkLinkedTasksBilledAsync(
         PostInvoiceCommand command,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<Guid> taskIds;
+        IReadOnlyList<InvoiceLineTaskLink> linkRows;
         try
         {
-            taskIds = await _documents.ListLinkedTaskIdsAsync(
+            linkRows = await _documents.ListLinkedTaskLineMappingsAsync(
                 command.CompanyId,
                 command.DocumentId,
                 cancellationToken);
@@ -160,23 +172,15 @@ public sealed class PostInvoiceCommandHandler
             return new InvoiceTaskBillingOutcome(0, 0, ex.Message);
         }
 
-        if (taskIds.Count == 0)
+        if (linkRows.Count == 0)
         {
             return null;
         }
 
-        // H7: Re-load the invoice header to get its customer id. The
-        // earlier code swallowed any exception from GetForPostingAsync
-        // and continued with customerId=null, which the billing
-        // coordinator treats as "skip the per-task cross-customer
-        // match" — meaning a transient DB failure mid-post could
-        // silently disable the protection that prevents customer A's
-        // Task from being marked billed by customer B's invoice.
-        //
-        // Soft-failure here is preserved by routing the throw into
-        // the outer try/catch below so the operator still gets a
-        // toast and the JE stays committed, but a null customerId
-        // is no longer the fall-through path.
+        // H7: re-load the invoice header to get its customer id. A
+        // null here would silently disable the cross-customer guard
+        // both paths apply, so surface any failure as a soft-failure
+        // outcome rather than fall through to null.
         Guid? customerId;
         try
         {
@@ -193,24 +197,68 @@ public sealed class PostInvoiceCommandHandler
                 "Customer lookup for cross-customer task-billing guard failed: " + ex.Message);
         }
 
-        try
+        // Split the link rows: any with task_line_id go to the new
+        // line-level path; the remainder (task_id only) go to the
+        // legacy whole-task path. Distinct on each side so the legacy
+        // path doesn't bill a task that the new path already billed.
+        var lineLevelMappings = linkRows
+            .Where(r => r.TaskLineId.HasValue)
+            .Select(r => new TaskLineBillingMapping(r.TaskId, r.TaskLineId!.Value, r.InvoiceLineId))
+            .ToArray();
+        var tasksHandledByLinePath = lineLevelMappings
+            .Select(m => m.TaskId)
+            .ToHashSet();
+        var legacyTaskIds = linkRows
+            .Where(r => !r.TaskLineId.HasValue && !tasksHandledByLinePath.Contains(r.TaskId))
+            .Select(r => r.TaskId)
+            .Distinct()
+            .ToArray();
+
+        var processedCount = 0;
+        var skippedCount = 0;
+
+        if (lineLevelMappings.Length > 0)
         {
-            var result = await _taskBilling.MarkAsBilledAsync(
-                command.CompanyId,
-                command.DocumentId,
-                customerId,
-                taskIds,
-                command.UserId,
-                cancellationToken);
-            return new InvoiceTaskBillingOutcome(
-                ProcessedCount: result.ProcessedTasks.Count,
-                SkippedCount: result.SkippedTasks.Count,
-                ErrorMessage: null);
+            try
+            {
+                var result = await _taskBilling.MarkLinesAsBilledAsync(
+                    command.CompanyId,
+                    sourceType: "invoice",
+                    sourceId: command.DocumentId,
+                    customerId,
+                    lineLevelMappings,
+                    command.UserId,
+                    cancellationToken);
+                processedCount += result.ProcessedTasks.Count;
+                skippedCount += result.SkippedTasks.Count;
+            }
+            catch (Exception ex)
+            {
+                return new InvoiceTaskBillingOutcome(processedCount, skippedCount, ex.Message);
+            }
         }
-        catch (Exception ex)
+
+        if (legacyTaskIds.Length > 0)
         {
-            return new InvoiceTaskBillingOutcome(0, 0, ex.Message);
+            try
+            {
+                var result = await _taskBilling.MarkAsBilledAsync(
+                    command.CompanyId,
+                    command.DocumentId,
+                    customerId,
+                    legacyTaskIds,
+                    command.UserId,
+                    cancellationToken);
+                processedCount += result.ProcessedTasks.Count;
+                skippedCount += result.SkippedTasks.Count;
+            }
+            catch (Exception ex)
+            {
+                return new InvoiceTaskBillingOutcome(processedCount, skippedCount, ex.Message);
+            }
         }
+
+        return new InvoiceTaskBillingOutcome(processedCount, skippedCount, ErrorMessage: null);
     }
 
     /// <summary>

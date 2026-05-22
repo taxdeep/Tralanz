@@ -351,5 +351,17 @@ public class TaskBillingCoordinatorTests
 
         public Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(CompanyId companyId, IReadOnlyList<Guid> taskIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<TaskDisplayLookup>>(Array.Empty<TaskDisplayLookup>());
+
+        // H6-2: not exercised by these legacy whole-task tests — the
+        // new MarkLinesAsBilled path is covered in a dedicated test
+        // class with its own line-aware store stub.
+        public Task<TaskLineBillingStampOutcome> MarkLineBilledAsync(
+            CompanyId companyId, Guid taskLineId, string sourceType, Guid sourceId,
+            Guid? sourceLineId, DateTimeOffset billedAtUtc, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<TaskLineBillingSnapshot?> ReadLineBillingSnapshotAsync(
+            CompanyId companyId, Guid taskId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }
