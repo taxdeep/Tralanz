@@ -1,119 +1,413 @@
 @page "/dashboard"
 
+@using Citus.Business.Blazor.Services
+@using Citus.Ui.Shared.Journal
+@using Citus.Ui.Shared.Reports
+
 @inject BusinessShellState ShellState
-@inject AccountingHealthClient AccountingHealthClient
+@inject NavigationManager NavigationManager
+@inject ArAgingClient ArAgingClient
+@inject ApAgingClient ApAgingClient
+@inject TrialBalanceClient TrialBalanceClient
+@inject IncomeStatementClient IncomeStatementClient
+@inject JournalEntryReviewClient JournalEntryReviewClient
+@inject DashboardSuggestionsClient DashboardSuggestionsClient
 
 <PageTitle>Dashboard | Tralanz Books</PageTitle>
 
-<CitusPageHeader Model="_header" />
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Size="CitusButtonSize.Small"
+                     Variant="CitusButtonVariant.Ghost"
+                     LeadingIcon="IconName.Refresh"
+                     Disabled="@_isLoading"
+                     OnClick="ReloadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
 
+@if (_isLoading)
+{
+    <div class="mb-6"><CitusLoadingBar /></div>
+}
+
+@*
+    Row 1 — top-line KPIs. Each card reads from one of the canonical
+    reports (AR Aging / AP Aging / Trial Balance / Income Statement)
+    so the dashboard never carries its own aggregation logic — it
+    just reuses what the report endpoints already compute. When the
+    company isn't provisioned in the accounting core yet, the
+    underlying clients return null and the cards render the
+    "—" placeholder.
+*@
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <CitusStatCard
-        Label="Active company"
-        Value="@ShellState.ActiveCompany.CompanyName"
-        Description="@ShellState.ActiveCompany.CompanyCode"
-        Icon="IconName.BuildingSkyscraper"
+        Label="A/R outstanding"
+        Value="@FormatMoney(_arAging?.TotalOutstandingAmountBase, _arAging?.BaseCurrencyCode)"
+        Description="@($"{_arAging?.OpenItemCount ?? 0} open · {FormatMoney(_arAging?.TotalOverdueAmountBase, _arAging?.BaseCurrencyCode)} overdue")"
+        Icon="IconName.Receipt"
         Tone="StatTone.Primary" />
     <CitusStatCard
-        Label="Operator"
-        Value="@ShellState.User.DisplayName"
-        Description="Backend-authoritative business session."
-        Icon="IconName.User"
-        Tone="StatTone.Success" />
-    <CitusStatCard
-        Label="Accessible companies"
-        Value="@ShellState.AvailableCompanies.Count.ToString()"
-        Description="Membership-scoped company contexts."
-        Icon="IconName.World"
+        Label="A/P outstanding"
+        Value="@FormatMoney(_apAging?.TotalOutstandingAmountBase, _apAging?.BaseCurrencyCode)"
+        Description="@($"{_apAging?.OpenItemCount ?? 0} open · {FormatMoney(_apAging?.TotalOverdueAmountBase, _apAging?.BaseCurrencyCode)} overdue")"
+        Icon="IconName.FileInvoice"
         Tone="StatTone.Info" />
     <CitusStatCard
-        Label="Accounting API"
-        Value="@(_health?.Status ?? "Unavailable")"
-        Description="Business shell read path into the accounting backend."
-        Icon="IconName.Activity"
+        Label="Cash on hand"
+        Value="@FormatMoney(_cashOnHand, _trialBalance?.BaseCurrencyCode)"
+        Description="@($"Across {_bankAccountCount} bank / cash account(s)")"
+        Icon="IconName.Wallet"
+        Tone="StatTone.Success" />
+    <CitusStatCard
+        Label="@($"Revenue MTD ({DateTime.UtcNow:MMM yyyy})")"
+        Value="@FormatMoney(_incomeStatement?.TotalRevenue, _incomeStatement?.BaseCurrencyCode)"
+        Description="@($"Net income MTD: {FormatMoney(_incomeStatement?.NetIncome, _incomeStatement?.BaseCurrencyCode)}")"
+        Icon="IconName.ReportAnalytics"
         Tone="StatTone.Neutral" />
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-7 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Business shell direction</h2>
-            <p class="text-fg-muted text-sm mb-3">
-                This host is the first business-facing Blazor shell. It intentionally stops short of generic posting CRUD
-                and keeps accounting truth behind the Posting Engine.
-            </p>
-            <ul class="citus-bullet-list">
-                <li>Company context is always visible.</li>
-                <li>Maintenance mode stays visible and blocks backend writes.</li>
-                <li>Session headers are emitted server-side, not from browser-local truth.</li>
-            </ul>
-        </section>
+@*
+    Row 2 — Quick actions. Direct links to the create-new pages for
+    the most frequent operator actions. Mirrors the top-bar
+    CreateNewButton entries; lives here as a convenience because the
+    dashboard is the first stop.
+*@
+<section class="citus-panel mb-6">
+    <h2 class="citus-panel__title">Quick actions</h2>
+    <div class="flex flex-wrap gap-2">
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     LeadingIcon="IconName.Plus"
+                     OnClick="@(() => NavigationManager.NavigateTo("invoices/new"))">New invoice</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     LeadingIcon="IconName.Plus"
+                     OnClick="@(() => NavigationManager.NavigateTo("bills/new"))">New bill</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     LeadingIcon="IconName.Plus"
+                     OnClick="@(() => NavigationManager.NavigateTo("expenses/new"))">New expense</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     LeadingIcon="IconName.Plus"
+                     OnClick="@(() => NavigationManager.NavigateTo("manual-journals/new"))">New journal entry</CitusButton>
+    </div>
+</section>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Next business surfaces</h2>
+@*
+    Row 3 — AR / AP top-N tables side by side. Each table sorts the
+    full per-customer / per-vendor list returned by the aging report
+    by total outstanding desc and takes the first five. Footer link
+    drops the operator into the full aging report.
+*@
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <section class="citus-panel">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="citus-panel__title">Top customers by outstanding</h2>
+            <a href="reports/ar-aging" class="text-sm text-fg-muted hover:text-fg-default">View full aging →</a>
+        </div>
+        @if (_topArCustomers.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm">No open A/R balances.</p>
+        }
+        else
+        {
             <table class="citus-data-table">
                 <thead>
                     <tr>
-                        <th>Surface</th>
-                        <th>Why next</th>
+                        <th>Customer</th>
+                        <th class="text-right">Outstanding</th>
+                        <th class="text-right">Overdue</th>
+                        <th>Oldest due</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var row in _nextSurfaces)
+                    @foreach (var row in _topArCustomers)
                     {
                         <tr>
-                            <td>@row.Surface</td>
-                            <td>@row.Rationale</td>
+                            <td>@row.CustomerDisplayName</td>
+                            <td class="text-right">@FormatMoney(row.TotalOutstandingAmountBase, _arAging?.BaseCurrencyCode)</td>
+                            <td class="text-right">
+                                @if (row.TotalOverdueAmountBase > 0)
+                                {
+                                    <span class="text-fg-warning">@FormatMoney(row.TotalOverdueAmountBase, _arAging?.BaseCurrencyCode)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-subtle">—</span>
+                                }
+                            </td>
+                            <td>@(row.OldestDueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                         </tr>
                     }
                 </tbody>
             </table>
-        </section>
-    </div>
+        }
+    </section>
 
-    <div class="lg:col-span-5 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Session snapshot</h2>
-            <dl class="citus-definition-list">
-                <div><dt>User</dt><dd>@ShellState.User.Username</dd></div>
-                <div><dt>Email</dt><dd>@ShellState.User.Email</dd></div>
-                <div><dt>Base currency</dt><dd>@ShellState.ActiveCompany.BaseCurrencyCode</dd></div>
-                <div><dt>Multi-currency</dt><dd>@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "enabled" : "disabled")</dd></div>
-            </dl>
-        </section>
-
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Maintenance state</h2>
-            <p class="text-fg-muted text-sm">
-                @(ShellState.MaintenanceState.Enabled
-                    ? ShellState.MaintenanceState.Message
-                    : "Interactive business reads are available. Formal writes remain guarded by the backend.")
-            </p>
-        </section>
-    </div>
+    <section class="citus-panel">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="citus-panel__title">Top vendors by outstanding</h2>
+            <a href="reports/ap-aging" class="text-sm text-fg-muted hover:text-fg-default">View full aging →</a>
+        </div>
+        @if (_topApVendors.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm">No open A/P balances.</p>
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Vendor</th>
+                        <th class="text-right">Outstanding</th>
+                        <th class="text-right">Overdue</th>
+                        <th>Oldest due</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _topApVendors)
+                    {
+                        <tr>
+                            <td>@row.VendorDisplayName</td>
+                            <td class="text-right">@FormatMoney(row.TotalOutstandingAmountBase, _apAging?.BaseCurrencyCode)</td>
+                            <td class="text-right">
+                                @if (row.TotalOverdueAmountBase > 0)
+                                {
+                                    <span class="text-fg-warning">@FormatMoney(row.TotalOverdueAmountBase, _apAging?.BaseCurrencyCode)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-subtle">—</span>
+                                }
+                            </td>
+                            <td>@(row.OldestDueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
 </div>
+
+@*
+    Row 4 — Month-to-date P&L. The figures match the Income Statement
+    page exactly (same endpoint, same date window). Operator gets a
+    glanceable summary; the link drops into the full statement for
+    drill-down.
+*@
+<section class="citus-panel mb-6">
+    <div class="flex justify-between items-center mb-2">
+        <h2 class="citus-panel__title">@($"P&L — {DateTime.UtcNow:MMMM yyyy}")</h2>
+        <a href="reports/income-statement" class="text-sm text-fg-muted hover:text-fg-default">View income statement →</a>
+    </div>
+    @if (_incomeStatement is null)
+    {
+        <p class="text-fg-subtle text-sm">Income statement data unavailable for the active company.</p>
+    }
+    else
+    {
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+                <div class="text-xs text-fg-subtle">Revenue</div>
+                <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalRevenue, _incomeStatement.BaseCurrencyCode)</div>
+            </div>
+            <div>
+                <div class="text-xs text-fg-subtle">Cost of sales</div>
+                <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalCostOfSales, _incomeStatement.BaseCurrencyCode)</div>
+            </div>
+            <div>
+                <div class="text-xs text-fg-subtle">Expenses</div>
+                <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalExpenses, _incomeStatement.BaseCurrencyCode)</div>
+            </div>
+            <div>
+                <div class="text-xs text-fg-subtle">Net income</div>
+                <div class="text-lg font-semibold @(_incomeStatement.NetIncome >= 0 ? "text-fg-success" : "text-fg-warning")">
+                    @FormatMoney(_incomeStatement.NetIncome, _incomeStatement.BaseCurrencyCode)
+                </div>
+            </div>
+        </div>
+    }
+</section>
+
+@*
+    Row 5 — AI-generated suggestions. Read-only list for v1; Accept /
+    Dismiss / Snooze actions stay in the underlying API for a future
+    interactive iteration.
+*@
+@if (_suggestions.Count > 0)
+{
+    <section class="citus-panel mb-6">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="citus-panel__title">AI suggestions</h2>
+            <CitusBadge Color="@("blue")">@_suggestions.Count</CitusBadge>
+        </div>
+        <div class="flex flex-col gap-3">
+            @foreach (var suggestion in _suggestions.Take(5))
+            {
+                <div class="border border-border-default rounded-md p-3">
+                    <div class="flex justify-between items-start">
+                        <div class="font-medium">@suggestion.Title</div>
+                        <CitusBadge Color="@("default")">@($"{(int)(suggestion.Confidence * 100)}% confident")</CitusBadge>
+                    </div>
+                    <p class="text-fg-subtle text-sm mt-1">@suggestion.Reason</p>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@*
+    Row 6 — Recent activity feed. Last 10 posted / voided / reversed
+    journal entries across every source type. The full review surface
+    lives at /journal-entries; this panel is the quick "what just
+    happened" peek.
+*@
+<section class="citus-panel">
+    <div class="flex justify-between items-center mb-2">
+        <h2 class="citus-panel__title">Recent activity</h2>
+        <a href="journal-entries" class="text-sm text-fg-muted hover:text-fg-default">View all journal entries →</a>
+    </div>
+    @if (_recentJournals.Count == 0)
+    {
+        <p class="text-fg-subtle text-sm">No recent journal entries.</p>
+    }
+    else
+    {
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Entry #</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th class="text-right">Amount</th>
+                    <th>Posted</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var je in _recentJournals)
+                {
+                    <tr class="cursor-pointer" @onclick="@(() => NavigationManager.NavigateTo($"journal-entries/{je.Id:D}"))">
+                        <td>@je.DisplayNumber</td>
+                        <td>@(string.IsNullOrEmpty(je.SourceTypeLabel) ? je.SourceType : je.SourceTypeLabel)</td>
+                        <td><CitusDocumentStatusBadge Status="@je.Status" /></td>
+                        <td class="text-right">@FormatMoney(je.TotalDebit, je.BaseCurrencyCode)</td>
+                        <td>@(je.PostedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
 
 @code {
     private readonly PageHeaderModel _header = new()
     {
-        Eyebrow = "Business App",
-        Title = "Operational dashboard shell",
-        Subtitle = "Company-aware Blazor entrypoint for the main Citus product surface."
+        Eyebrow = "Business app",
+        Title = "Operator dashboard",
+        Subtitle = "Cash position, A/R + A/P aging, MTD P&L, and recent activity at a glance."
     };
 
-    private readonly IReadOnlyList<NextSurfaceRow> _nextSurfaces =
-    [
-        new("Journal Entry review shell", "Introduces business navigation without bypassing posting validation."),
-        new("Reports home", "Fits the read-first migration path and stays aligned with backend report truth."),
-        new("Settings > Company", "Reinforces company-aware control surfaces before deep transaction forms.")
-    ];
-
-    private ServiceHealthStatus? _health;
+    private bool _isLoading = true;
+    private ArAgingReportSummary? _arAging;
+    private ApAgingReportSummary? _apAging;
+    private TrialBalanceReportSummary? _trialBalance;
+    private IncomeStatementReportSummary? _incomeStatement;
+    private decimal _cashOnHand;
+    private int _bankAccountCount;
+    private IReadOnlyList<ArAgingCustomerSummary> _topArCustomers = Array.Empty<ArAgingCustomerSummary>();
+    private IReadOnlyList<ApAgingVendorSummary> _topApVendors = Array.Empty<ApAgingVendorSummary>();
+    private IReadOnlyList<JournalEntryReviewListItemSummary> _recentJournals = Array.Empty<JournalEntryReviewListItemSummary>();
+    private IReadOnlyList<DashboardSuggestionItem> _suggestions = Array.Empty<DashboardSuggestionItem>();
 
     protected override async Task OnInitializedAsync()
     {
-        _health = await AccountingHealthClient.GetHealthAsync();
+        await ReloadAsync();
     }
 
-    private sealed record class NextSurfaceRow(string Surface, string Rationale);
+    private async Task ReloadAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        var companyId = ShellState.ActiveCompany.Id;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+
+        // Fan out: every reader is independent so we run them in
+        // parallel. Failures degrade gracefully — each client logs
+        // the warning and returns null / an empty list.
+        var arTask = ArAgingClient.GetReportAsync(companyId, today);
+        var apTask = ApAgingClient.GetReportAsync(companyId, today);
+        var tbTask = TrialBalanceClient.GetReportAsync(companyId, today, includeZeroBalances: false);
+        var isTask = IncomeStatementClient.GetReportAsync(companyId, monthStart, today, includeZeroBalances: false);
+        var jeTask = JournalEntryReviewClient.GetRecentAsync(companyId, take: 10);
+        var suggestionTask = DashboardSuggestionsClient.GetActiveAsync();
+
+        await Task.WhenAll(arTask, apTask, tbTask, isTask, jeTask, suggestionTask);
+
+        _arAging = arTask.Result;
+        _apAging = apTask.Result;
+        _trialBalance = tbTask.Result;
+        _incomeStatement = isTask.Result;
+        _recentJournals = jeTask.Result;
+        _suggestions = suggestionTask.Result;
+
+        // Top-N customer / vendor extraction. Aging report doesn't
+        // pre-sort by outstanding; we do it client-side to keep the
+        // shared report API generic.
+        _topArCustomers = (_arAging?.CustomerRows ?? Array.Empty<ArAgingCustomerSummary>())
+            .Where(r => r.TotalOutstandingAmountBase > 0m)
+            .OrderByDescending(r => r.TotalOutstandingAmountBase)
+            .Take(5)
+            .ToArray();
+        _topApVendors = (_apAging?.VendorRows ?? Array.Empty<ApAgingVendorSummary>())
+            .Where(r => r.TotalOutstandingAmountBase > 0m)
+            .OrderByDescending(r => r.TotalOutstandingAmountBase)
+            .Take(5)
+            .ToArray();
+
+        // Cash position = sum of detail-bank-typed asset accounts.
+        // Trial Balance returns RootType + DetailType; we filter for
+        // RootType=Asset and a DetailType matching the common bank /
+        // cash labels. Falls back to RootType=Asset if no detail
+        // matches (some COA seeds skip the detail_type field).
+        if (_trialBalance is null)
+        {
+            _cashOnHand = 0m;
+            _bankAccountCount = 0;
+        }
+        else
+        {
+            var bankRows = _trialBalance.Rows
+                .Where(r => string.Equals(r.RootType, "Asset", StringComparison.OrdinalIgnoreCase))
+                .Where(r => IsBankOrCashAccount(r.DetailType))
+                .ToArray();
+            if (bankRows.Length == 0)
+            {
+                // Fall back to all asset accounts so the card still
+                // shows something useful when the COA hasn't labeled
+                // bank-type detail.
+                bankRows = _trialBalance.Rows
+                    .Where(r => string.Equals(r.RootType, "Asset", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            }
+            _cashOnHand = bankRows.Sum(r => r.NetBalance);
+            _bankAccountCount = bankRows.Length;
+        }
+
+        _isLoading = false;
+    }
+
+    private static bool IsBankOrCashAccount(string? detailType)
+    {
+        if (string.IsNullOrWhiteSpace(detailType)) return false;
+        return detailType.Contains("bank", StringComparison.OrdinalIgnoreCase)
+            || detailType.Contains("cash", StringComparison.OrdinalIgnoreCase)
+            || detailType.Contains("checking", StringComparison.OrdinalIgnoreCase)
+            || detailType.Contains("savings", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatMoney(decimal? amount, string? currency)
+    {
+        if (!amount.HasValue) return "—";
+        var prefix = string.IsNullOrEmpty(currency) ? string.Empty : $"{currency} ";
+        return $"{prefix}{amount.Value:N2}";
+    }
 }
