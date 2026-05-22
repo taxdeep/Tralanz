@@ -82,14 +82,20 @@ public sealed class PostCreditNoteCommandHandler
         return postResult with { TaskRollback = taskRollback };
     }
 
+    /// <summary>
+    /// H6-3: line-level when credit-note lines carry task_line_id;
+    /// legacy whole-task otherwise. Both can co-exist on one credit
+    /// note. Soft-failure preserved — any error surfaces in the
+    /// outcome but the credit JE stays committed.
+    /// </summary>
     private async Task<CreditNoteTaskRollbackOutcome?> TryRollbackLinkedTasksAsync(
         PostCreditNoteCommand command,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<Guid> taskIds;
+        IReadOnlyList<CreditNoteLineTaskLink> linkRows;
         try
         {
-            taskIds = await _documents.ListLinkedTaskIdsAsync(
+            linkRows = await _documents.ListLinkedTaskLineMappingsAsync(
                 command.CompanyId,
                 command.DocumentId,
                 cancellationToken);
@@ -99,27 +105,74 @@ public sealed class PostCreditNoteCommandHandler
             return new CreditNoteTaskRollbackOutcome(0, 0, ex.Message);
         }
 
-        if (taskIds.Count == 0)
+        if (linkRows.Count == 0)
         {
             return null;
         }
 
-        try
+        var lineLevelIds = linkRows
+            .Where(r => r.TaskLineId.HasValue)
+            .Select(r => r.TaskLineId!.Value)
+            .Distinct()
+            .ToArray();
+        var tasksHandledByLinePath = linkRows
+            .Where(r => r.TaskLineId.HasValue)
+            .Select(r => r.TaskId)
+            .ToHashSet();
+        var legacyTaskIds = linkRows
+            .Where(r => !r.TaskLineId.HasValue && !tasksHandledByLinePath.Contains(r.TaskId))
+            .Select(r => r.TaskId)
+            .Distinct()
+            .ToArray();
+
+        var processedCount = 0;
+        var skippedCount = 0;
+
+        if (lineLevelIds.Length > 0)
         {
-            var result = await _taskBilling.RollbackByTaskIdsAsync(
-                command.CompanyId,
-                taskIds,
-                command.UserId,
-                reason: null,
-                cancellationToken);
-            return new CreditNoteTaskRollbackOutcome(
-                ProcessedCount: result.ProcessedTasks.Count,
-                SkippedCount: result.SkippedTasks.Count,
-                ErrorMessage: null);
+            try
+            {
+                // The originating source identity isn't on the credit
+                // note line — credit notes can reverse multiple
+                // sources. The rollback clears the line stamps
+                // regardless of source; the recompute step then
+                // restores the affected task headers.
+                var result = await _taskBilling.RollbackLinesAsync(
+                    command.CompanyId,
+                    sourceType: "credit_note",
+                    sourceId: command.DocumentId,
+                    lineLevelIds,
+                    command.UserId,
+                    reason: $"Credit note {command.DocumentId:D} reversed billed lines.",
+                    cancellationToken);
+                processedCount += result.ProcessedTasks.Count;
+                skippedCount += result.SkippedTasks.Count;
+            }
+            catch (Exception ex)
+            {
+                return new CreditNoteTaskRollbackOutcome(processedCount, skippedCount, ex.Message);
+            }
         }
-        catch (Exception ex)
+
+        if (legacyTaskIds.Length > 0)
         {
-            return new CreditNoteTaskRollbackOutcome(0, 0, ex.Message);
+            try
+            {
+                var result = await _taskBilling.RollbackByTaskIdsAsync(
+                    command.CompanyId,
+                    legacyTaskIds,
+                    command.UserId,
+                    reason: null,
+                    cancellationToken);
+                processedCount += result.ProcessedTasks.Count;
+                skippedCount += result.SkippedTasks.Count;
+            }
+            catch (Exception ex)
+            {
+                return new CreditNoteTaskRollbackOutcome(processedCount, skippedCount, ex.Message);
+            }
         }
+
+        return new CreditNoteTaskRollbackOutcome(processedCount, skippedCount, ErrorMessage: null);
     }
 }

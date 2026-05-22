@@ -127,5 +127,11 @@ public class TaskLineLinkValidatorTests
         public virtual Task<TaskLineBillingSnapshot?> ReadLineBillingSnapshotAsync(
             CompanyId companyId, Guid taskId, CancellationToken cancellationToken) =>
             throw new NotImplementedException();
+        public virtual Task<Guid?> UnmarkLineBilledAsync(
+            CompanyId companyId, Guid taskLineId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+        public virtual Task<IReadOnlyList<Guid>> UnmarkLinesBySourceAsync(
+            CompanyId companyId, string sourceType, Guid sourceId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }

@@ -15,7 +15,12 @@ public sealed record PostRefundReceiptCommandResult(
     string JournalEntryDisplayNumber,
     string Status,
     DateTimeOffset PostedAt,
-    IReadOnlyList<string> Warnings)
+    IReadOnlyList<string> Warnings,
+    // H6-3: per-refund summary of the Task rollback hook. Null when
+    // the refund has no task-linked lines (typical cash-refund case).
+    // Reuses CreditNoteTaskRollbackOutcome (identical shape — keeps
+    // us from minting a fresh record type just to rename three ints).
+    CreditNoteTaskRollbackOutcome? TaskRollback = null)
 {
     public static PostRefundReceiptCommandResult FromPostingResult(PostingResult result) =>
         new(

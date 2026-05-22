@@ -698,6 +698,114 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             $"and cannot be re-billed by {sourceType} '{sourceId:D}'.");
     }
 
+    public async Task<Guid?> UnmarkLineBilledAsync(
+        CompanyId companyId,
+        Guid taskLineId,
+        CancellationToken cancellationToken)
+    {
+        if (taskLineId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Task line id is required to unmark a line.");
+        }
+
+        // Two-statement transaction: clear stamp + return parent task_id.
+        // The UPDATE is idempotent (`where billed_source_id is not null`)
+        // so a re-call on an already-cleared line is cheap. We still
+        // need the parent task id either way so the coordinator's
+        // recompute step targets the right header.
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        Guid? parentTaskId;
+        await using (var lookup = connection.CreateCommand())
+        {
+            lookup.Transaction = transaction;
+            lookup.CommandText =
+                """
+                select task_id
+                  from task_lines
+                 where company_id = @company_id
+                   and id = @task_line_id;
+                """;
+            lookup.Parameters.AddWithValue("company_id", companyId.Value);
+            lookup.Parameters.AddWithValue("task_line_id", taskLineId);
+            var raw = await lookup.ExecuteScalarAsync(cancellationToken);
+            if (raw is null || raw is DBNull)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+            parentTaskId = (Guid)raw;
+        }
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                update task_lines
+                   set billed_source_type    = null,
+                       billed_source_id      = null,
+                       billed_source_line_id = null,
+                       billed_at             = null
+                 where company_id = @company_id
+                   and id = @task_line_id
+                   and billed_source_id is not null;
+                """;
+            update.Parameters.AddWithValue("company_id", companyId.Value);
+            update.Parameters.AddWithValue("task_line_id", taskLineId);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return parentTaskId;
+    }
+
+    public async Task<IReadOnlyList<Guid>> UnmarkLinesBySourceAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sourceType))
+        {
+            throw new InvalidOperationException("Source type is required.");
+        }
+        if (sourceId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Source id is required.");
+        }
+
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // RETURNING the task_id of each cleared row, then dedupe in
+        // memory. The bulk UPDATE handles the row-locking; a re-call
+        // returns an empty set (idempotent).
+        command.CommandText =
+            """
+            update task_lines
+               set billed_source_type    = null,
+                   billed_source_id      = null,
+                   billed_source_line_id = null,
+                   billed_at             = null
+             where company_id = @company_id
+               and billed_source_type = @source_type
+               and billed_source_id   = @source_id
+            returning task_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("source_type", sourceType);
+        command.Parameters.AddWithValue("source_id", sourceId);
+
+        var taskIds = new HashSet<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            taskIds.Add(reader.GetGuid(0));
+        }
+        return taskIds.ToArray();
+    }
+
     public async Task<TaskLineBillingSnapshot?> ReadLineBillingSnapshotAsync(
         CompanyId companyId,
         Guid taskId,

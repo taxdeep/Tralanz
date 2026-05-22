@@ -523,6 +523,14 @@ public class TaskWorkflowStateMachineTests
             CompanyId companyId, Guid taskId, CancellationToken cancellationToken) =>
             throw new NotImplementedException();
 
+        public Task<Guid?> UnmarkLineBilledAsync(
+            CompanyId companyId, Guid taskLineId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<IReadOnlyList<Guid>> UnmarkLinesBySourceAsync(
+            CompanyId companyId, string sourceType, Guid sourceId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
         private static TaskRecord BuildSeed(TaskStatus status, string currency, IReadOnlyList<TaskLineRecord> lines, Guid? id = null) =>
             new()
             {

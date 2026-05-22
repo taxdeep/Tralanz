@@ -478,6 +478,8 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                   line_amount,
                   tax_code_id,
                   tax_amount,
+                  task_id,
+                  task_line_id,
                   created_at,
                   updated_at
                 )
@@ -493,6 +495,8 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                   @line_amount,
                   @tax_code_id,
                   @tax_amount,
+                  @task_id,
+                  @task_line_id,
                   now(),
                   now()
                 );
@@ -508,12 +512,48 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.Quantity * line.UnitPrice));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
+            // H6-3 (D8): refund receipt now persists task back-links
+            // so the post handler can release the matching task_lines
+            // (mirror of credit-note's reversal of invoice billing).
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_line_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskLineId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, refundNumber, "draft");
+    }
+
+    public async Task<IReadOnlyList<RefundReceiptLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid refundReceiptId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select id, task_id, task_line_id
+            from refund_receipt_lines
+            where company_id = @company_id
+              and refund_receipt_id = @refund_receipt_id
+              and task_id is not null
+            order by line_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("refund_receipt_id", refundReceiptId);
+
+        var rows = new List<RefundReceiptLineTaskLink>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new RefundReceiptLineTaskLink(
+                RefundReceiptLineId: reader.GetGuid(0),
+                TaskId: reader.GetGuid(1),
+                TaskLineId: reader.IsDBNull(2) ? null : reader.GetGuid(2)));
+        }
+        return rows;
     }
 
     private static void ValidateDraft(RefundReceiptDraftSaveModel draft)

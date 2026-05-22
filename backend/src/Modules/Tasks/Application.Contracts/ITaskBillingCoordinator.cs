@@ -90,6 +90,44 @@ public interface ITaskBillingCoordinator
         IReadOnlyList<TaskLineBillingMapping> mappings,
         UserId actorUserId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-3: line-level rollback. Mirror of
+    /// <see cref="MarkLinesAsBilledAsync"/>. For each task_line in
+    /// <paramref name="taskLineIds"/> the coordinator clears the
+    /// billing stamp (unconditional — the reversing document is the
+    /// authority for "release this line"), then recomputes the parent
+    /// task's header status. Header restores Billed|PartiallyBilled
+    /// → Completed when the last billed line is cleared; otherwise
+    /// the header may stay PartiallyBilled with fewer billed rows.
+    ///
+    /// Used by Credit Note + Refund Receipt post hooks. Idempotent:
+    /// re-call clears nothing additional and reports the same skipped
+    /// outcome.
+    /// </summary>
+    Task<TaskBillingResult> RollbackLinesAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        IReadOnlyList<Guid> taskLineIds,
+        UserId actorUserId,
+        string? reason,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-3: bulk rollback by source. Clears every <c>task_lines</c>
+    /// row whose <c>(billed_source_type, billed_source_id)</c>
+    /// matches; then recomputes each affected task. Used by the
+    /// Invoice Reverse path, which voids the entire invoice in one
+    /// shot without enumerating its lines. Idempotent.
+    /// </summary>
+    Task<TaskBillingResult> RollbackBySourceAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        UserId actorUserId,
+        string? reason,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>

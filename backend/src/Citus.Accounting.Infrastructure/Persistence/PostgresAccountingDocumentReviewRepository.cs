@@ -1550,14 +1550,41 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         {
             try
             {
-                var rollback = await _taskBilling!.RollbackBillingAsync(
+                // H6-3: switch to the line-level rollback path. The
+                // bulk RollbackBySourceAsync clears every task_lines
+                // row stamped by this invoice and recomputes the
+                // affected task headers — which now correctly
+                // distinguishes "fully reversed → Completed" from
+                // "still partially billed by another invoice →
+                // PartiallyBilled" instead of the old whole-task
+                // rollback that incorrectly cleared shared task state.
+                //
+                // Legacy header-billed tasks (no per-line stamp) are
+                // covered by the legacy fallback below so pre-H6-2a
+                // invoices keep working.
+                var rollback = await _taskBilling!.RollbackBySourceAsync(
                     companyId,
-                    request.DocumentId,
+                    sourceType: "invoice",
+                    sourceId: request.DocumentId,
                     actorId!.Value,
-                    reason: "Invoice reverse compensation (PR-6a / C-3).",
+                    reason: "Invoice reverse compensation (H6-3 line-level).",
                     cancellationToken);
                 taskRollbackProcessed = rollback.ProcessedTasks.Count;
                 taskRollbackSkipped = rollback.SkippedTasks.Count;
+
+                // Legacy fallback: any task whose header billed_invoice_id
+                // points at this invoice but whose lines were never stamped
+                // (pre-H6-2a era) still needs the whole-task rollback.
+                // RollbackBillingAsync reads tasks.billed_invoice_id and
+                // restores those rows in addition to the line-level set.
+                var legacy = await _taskBilling.RollbackBillingAsync(
+                    companyId,
+                    request.DocumentId,
+                    actorId.Value,
+                    reason: "Invoice reverse compensation (legacy header-level fallback).",
+                    cancellationToken);
+                taskRollbackProcessed += legacy.ProcessedTasks.Count;
+                taskRollbackSkipped += legacy.SkippedTasks.Count;
             }
             catch (Exception ex)
             {

@@ -123,7 +123,30 @@ public interface ICreditNoteDocumentRepository
         CompanyId companyId,
         Guid creditNoteId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-3: per-line task back-link lookup. Mirror of the invoice
+    /// repo method. The post handler uses the returned rows to drive
+    /// line-level Task rollback — lines with task_line_id go to the
+    /// new <c>RollbackLinesAsync</c> path; task_id-only rows fall
+    /// back to the legacy whole-task rollback.
+    /// </summary>
+    Task<IReadOnlyList<CreditNoteLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid creditNoteId,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Credit-note analog of <see cref="InvoiceLineTaskLink"/>. The post
+/// handler reads these rows and (per row) either releases a specific
+/// task_line via the H6-2 line-level path or whole-task-rollbacks
+/// via the legacy path.
+/// </summary>
+public sealed record class CreditNoteLineTaskLink(
+    Guid CreditNoteLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 // Surfaced as "credit memo" on the frontend even though the GL artifact
 // is a credit_note — same QBO-flavoured operator label split that the
@@ -450,7 +473,12 @@ public sealed record CreditNoteDraftLineSaveModel(
     // Per-line back-link to the Task the credit reverses. Persists into
     // credit_note_lines.task_id; the post handler rolls these tasks
     // back to Completed.
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    // H6-3: optional pin to a specific task_lines row that this credit
+    // line releases. When present, the post handler routes through
+    // RollbackLinesAsync (per-line audit). Null falls back to legacy
+    // whole-task rollback via TaskId alone.
+    Guid? TaskLineId = null);
 
 public sealed record BillDraftSaveModel(
     Guid? DocumentId,
@@ -2260,7 +2288,28 @@ public interface IRefundReceiptDocumentRepository
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         RefundReceiptDraftSaveModel draft,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-3: per-line task back-link lookup. Refund Receipt is the
+    /// reverse of Sales Receipt; when refund lines carry task_id /
+    /// task_line_id, the post handler releases the corresponding
+    /// task_lines (mirror of the credit-note path for AR invoices).
+    /// </summary>
+    Task<IReadOnlyList<RefundReceiptLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid refundReceiptId,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Refund-receipt analog of <see cref="CreditNoteLineTaskLink"/>.
+/// Same shape, distinct type so a future divergence doesn't force
+/// one row layout on the other.
+/// </summary>
+public sealed record class RefundReceiptLineTaskLink(
+    Guid RefundReceiptLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 public sealed record RefundReceiptListItem(
     Guid Id,
@@ -2303,7 +2352,13 @@ public sealed record RefundReceiptDraftLineSaveModel(
     decimal UnitPrice,
     Guid? TaxCodeId,
     decimal TaxAmount,
-    Guid? ItemId = null);
+    Guid? ItemId = null,
+    // H6-3 (D8): optional Task back-link. Persists into
+    // refund_receipt_lines.task_id (column added by the H6-1
+    // migration). Mirror of CreditNote's task back-link for AR
+    // invoices — refund receipts reverse sales receipts.
+    Guid? TaskId = null,
+    Guid? TaskLineId = null);
 
 // ========================================================================
 // Bank Transfer — single-line internal account move.

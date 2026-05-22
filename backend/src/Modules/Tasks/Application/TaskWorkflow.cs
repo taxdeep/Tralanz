@@ -285,16 +285,33 @@ public sealed class TaskWorkflow(
                 $"Task '{taskId:D}' was not found in the active company.");
 
         // No lines means nothing to bill — header stays where it is.
-        // Same for the "all lines un-billed" case; that's the rollback
-        // path which the H6-3 reverse-flow handler invokes separately.
-        if (snapshot.TotalLineCount == 0 || snapshot.BilledLineCount == 0)
+        if (snapshot.TotalLineCount == 0)
         {
             return await RequireExistingAsync(companyId, taskId, cancellationToken);
         }
 
-        var targetStatus = snapshot.BilledLineCount == snapshot.TotalLineCount
-            ? TaskStatus.Billed
-            : TaskStatus.PartiallyBilled;
+        // H6-3 reverse direction: when zero lines are billed, the
+        // header should restore to Completed if it was previously
+        // Billed or PartiallyBilled. From Open / Completed / Canceled
+        // the zero-billed case is a no-op (nothing was ever billed).
+        TaskStatus targetStatus;
+        if (snapshot.BilledLineCount == 0)
+        {
+            if (snapshot.CurrentStatus is TaskStatus.Billed or TaskStatus.PartiallyBilled)
+            {
+                targetStatus = TaskStatus.Completed;
+            }
+            else
+            {
+                return await RequireExistingAsync(companyId, taskId, cancellationToken);
+            }
+        }
+        else
+        {
+            targetStatus = snapshot.BilledLineCount == snapshot.TotalLineCount
+                ? TaskStatus.Billed
+                : TaskStatus.PartiallyBilled;
+        }
 
         if (targetStatus == snapshot.CurrentStatus)
         {
@@ -316,6 +333,10 @@ public sealed class TaskWorkflow(
         {
             TaskStatus.PartiallyBilled => $"Partially billed by {sourceType} {sourceId:D}.",
             TaskStatus.Billed => $"Billed by {sourceType} {sourceId:D}.",
+            // H6-3: 0-billed restore reached from either Billed (full
+            // void) or PartiallyBilled (last bill voided). The source
+            // identifies the document that triggered the rollback.
+            TaskStatus.Completed => $"Restored after {sourceType} {sourceId:D} released the last billed line.",
             _ => null,
         };
 

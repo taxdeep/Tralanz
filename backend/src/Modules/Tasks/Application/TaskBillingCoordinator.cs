@@ -372,6 +372,172 @@ public sealed class TaskBillingCoordinator(
         };
     }
 
+    public async Task<TaskBillingResult> RollbackLinesAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        IReadOnlyList<Guid> taskLineIds,
+        UserId actorUserId,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        if (companyId.Value is null)
+        {
+            throw new InvalidOperationException("Company context is required for line-level rollback.");
+        }
+        if (string.IsNullOrWhiteSpace(sourceType))
+        {
+            throw new InvalidOperationException("Source type is required.");
+        }
+        if (sourceId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Source id is required.");
+        }
+        if (actorUserId.Value is null)
+        {
+            throw new InvalidOperationException("An acting user is required.");
+        }
+
+        if (taskLineIds is null || taskLineIds.Count == 0)
+        {
+            return Empty(sourceId);
+        }
+
+        var sanitized = taskLineIds
+            .Where(static id => id != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (sanitized.Length == 0)
+        {
+            return Empty(sourceId);
+        }
+
+        // First pass: clear each line and remember which task it lived
+        // on. The store's UnmarkLineBilledAsync is idempotent and
+        // returns the parent task id even when the line was already
+        // un-billed, so the recompute step still fires on the right
+        // header (covers concurrent un-stamps and same-source re-runs
+        // without losing the audit transition).
+        var touchedTasks = new HashSet<Guid>();
+        foreach (var lineId in sanitized)
+        {
+            var parentTaskId = await store.UnmarkLineBilledAsync(companyId, lineId, cancellationToken);
+            if (parentTaskId.HasValue && parentTaskId.Value != Guid.Empty)
+            {
+                touchedTasks.Add(parentTaskId.Value);
+            }
+        }
+
+        // Second pass: per-task header recompute. Workflow handles
+        // the four directions:
+        //   * Billed → Completed (all lines un-billed, full rollback)
+        //   * Billed → PartiallyBilled (partial rollback, some still billed)
+        //   * PartiallyBilled → Completed (last billed line cleared)
+        //   * PartiallyBilled (no change, mid-state)
+        var processed = new List<TaskSummary>(touchedTasks.Count);
+        var skipped = new List<TaskSummary>();
+        foreach (var taskId in touchedTasks)
+        {
+            var before = await store.GetAsync(companyId, taskId, cancellationToken);
+            if (before is null) continue;
+
+            var recomputed = await workflow.RecomputeAndTransitionFromLinesAsync(
+                companyId,
+                taskId,
+                sourceType,
+                sourceId,
+                actorUserId,
+                cancellationToken);
+
+            if (recomputed.Status != before.Status)
+            {
+                processed.Add(ToSummary(recomputed));
+            }
+            else
+            {
+                skipped.Add(ToSummary(recomputed));
+            }
+        }
+
+        return new TaskBillingResult
+        {
+            InvoiceId = sourceId,
+            ProcessedTasks = processed,
+            SkippedTasks = skipped,
+        };
+    }
+
+    public async Task<TaskBillingResult> RollbackBySourceAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        UserId actorUserId,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        if (companyId.Value is null)
+        {
+            throw new InvalidOperationException("Company context is required for bulk rollback.");
+        }
+        if (string.IsNullOrWhiteSpace(sourceType))
+        {
+            throw new InvalidOperationException("Source type is required.");
+        }
+        if (sourceId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Source id is required.");
+        }
+        if (actorUserId.Value is null)
+        {
+            throw new InvalidOperationException("An acting user is required.");
+        }
+
+        // Single bulk UPDATE: clears every task_lines row stamped by
+        // this source. Returns the distinct affected task ids so we
+        // can fan out the recompute step. Idempotent — a re-call
+        // after the source is already un-stamped returns an empty
+        // set.
+        var affectedTaskIds = await store.UnmarkLinesBySourceAsync(
+            companyId, sourceType, sourceId, cancellationToken);
+
+        if (affectedTaskIds.Count == 0)
+        {
+            return Empty(sourceId);
+        }
+
+        var processed = new List<TaskSummary>(affectedTaskIds.Count);
+        var skipped = new List<TaskSummary>();
+        foreach (var taskId in affectedTaskIds)
+        {
+            var before = await store.GetAsync(companyId, taskId, cancellationToken);
+            if (before is null) continue;
+
+            var recomputed = await workflow.RecomputeAndTransitionFromLinesAsync(
+                companyId,
+                taskId,
+                sourceType,
+                sourceId,
+                actorUserId,
+                cancellationToken);
+
+            if (recomputed.Status != before.Status)
+            {
+                processed.Add(ToSummary(recomputed));
+            }
+            else
+            {
+                skipped.Add(ToSummary(recomputed));
+            }
+        }
+
+        return new TaskBillingResult
+        {
+            InvoiceId = sourceId,
+            ProcessedTasks = processed,
+            SkippedTasks = skipped,
+        };
+    }
+
     private static TaskBillingResult Empty(Guid invoiceId) => new()
     {
         InvoiceId = invoiceId,
