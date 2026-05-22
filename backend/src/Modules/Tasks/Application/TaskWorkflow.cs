@@ -202,10 +202,14 @@ public sealed class TaskWorkflow(
         RequireActor(actorUserId);
 
         var existing = await RequireExistingAsync(companyId, taskId, cancellationToken);
+        // H6: PartiallyBilled tasks can't be cancelled — some lines are
+        // already on a posted Invoice / Sales Receipt and the FK would
+        // dangle. Operator must void the source document first to
+        // un-bill the lines, then cancel.
         if (existing.Status is not (TaskStatus.Open or TaskStatus.Completed))
         {
             throw new InvalidOperationException(
-                $"Task is in status '{existing.Status.ToToken()}' and cannot be cancelled. Only open or completed tasks may be cancelled.");
+                $"Task is in status '{existing.Status.ToToken()}' and cannot be cancelled. Only open or completed tasks may be cancelled; partially-billed or billed tasks must have their source documents voided first.");
         }
 
         return await TransitionOrThrowAsync(
@@ -235,16 +239,20 @@ public sealed class TaskWorkflow(
         }
 
         var existing = await RequireExistingAsync(companyId, taskId, cancellationToken);
-        if (existing.Status != TaskStatus.Completed)
+        // H6: accept both Completed (whole-task bill) and PartiallyBilled
+        // (the final bill that covers the remaining un-billed lines).
+        // The line-level marking + the auto Completed→PartiallyBilled
+        // transition both ship in H6-2.
+        if (existing.Status is not (TaskStatus.Completed or TaskStatus.PartiallyBilled))
         {
             throw new InvalidOperationException(
-                $"Task is in status '{existing.Status.ToToken()}' and cannot be marked billed; only completed tasks may bill.");
+                $"Task is in status '{existing.Status.ToToken()}' and cannot be marked billed; only completed or partially-billed tasks may flip to billed.");
         }
 
         return await TransitionOrThrowAsync(
             companyId,
             taskId,
-            TaskStatus.Completed,
+            existing.Status,
             TaskStatus.Billed,
             actorUserId,
             $"Billed by AR invoice {invoiceId:D}.",
@@ -264,16 +272,19 @@ public sealed class TaskWorkflow(
         RequireActor(actorUserId);
 
         var existing = await RequireExistingAsync(companyId, taskId, cancellationToken);
-        if (existing.Status != TaskStatus.Billed)
+        // H6: accept both Billed (whole-task rollback) and
+        // PartiallyBilled (rollback the last remaining bill). The
+        // line-level rollback path ships in H6-3.
+        if (existing.Status is not (TaskStatus.Billed or TaskStatus.PartiallyBilled))
         {
             throw new InvalidOperationException(
-                $"Task is in status '{existing.Status.ToToken()}' and cannot be restored to completed; only billed tasks may be rolled back.");
+                $"Task is in status '{existing.Status.ToToken()}' and cannot be restored to completed; only billed or partially-billed tasks may be rolled back.");
         }
 
         return await TransitionOrThrowAsync(
             companyId,
             taskId,
-            TaskStatus.Billed,
+            existing.Status,
             TaskStatus.Completed,
             actorUserId,
             reason,

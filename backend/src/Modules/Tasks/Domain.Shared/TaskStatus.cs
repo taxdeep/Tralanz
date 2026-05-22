@@ -18,6 +18,15 @@ public enum TaskStatus
 
     /// <summary>Terminal: the task was cancelled before billing.</summary>
     Canceled = 3,
+
+    /// <summary>
+    /// H6: at least one task line has been billed to an AR document
+    /// (Invoice or Sales Receipt) but at least one other line is still
+    /// un-billed. Transient between Completed and Billed. UN-billed
+    /// lines stay editable; billed lines are frozen. Auto-recomputed
+    /// by the billing coordinator after each bill / un-bill action.
+    /// </summary>
+    PartiallyBilled = 4,
 }
 
 public static class TaskStatusExtensions
@@ -28,6 +37,7 @@ public static class TaskStatusExtensions
         TaskStatus.Completed => "completed",
         TaskStatus.Billed => "billed",
         TaskStatus.Canceled => "canceled",
+        TaskStatus.PartiallyBilled => "partially_billed",
         _ => throw new InvalidOperationException($"Unknown task status '{status}'."),
     };
 
@@ -40,6 +50,8 @@ public static class TaskStatusExtensions
             case "billed": status = TaskStatus.Billed; return true;
             case "canceled":
             case "cancelled": status = TaskStatus.Canceled; return true;
+            case "partially_billed":
+            case "partiallybilled": status = TaskStatus.PartiallyBilled; return true;
             default: status = default; return false;
         }
     }

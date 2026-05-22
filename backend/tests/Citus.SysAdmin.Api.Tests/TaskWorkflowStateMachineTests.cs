@@ -265,6 +265,77 @@ public class TaskWorkflowStateMachineTests
         Assert.Contains("task.bill", CompanyMembershipPermissionCatalog.AllTokens);
     }
 
+    // =================================================================
+    // H6: PartiallyBilled state machine — new transitions
+    // =================================================================
+
+    [Fact]
+    public void TaskStatus_partially_billed_roundtrips_through_token()
+    {
+        Assert.Equal("partially_billed", TaskStatus.PartiallyBilled.ToToken());
+
+        Assert.True(TaskStatusExtensions.TryParse("partially_billed", out var snake));
+        Assert.Equal(TaskStatus.PartiallyBilled, snake);
+
+        // Permissive on the camelCase form too — the UI / JSON
+        // serializer might emit either.
+        Assert.True(TaskStatusExtensions.TryParse("partiallyBilled", out var camel));
+        Assert.Equal(TaskStatus.PartiallyBilled, camel);
+    }
+
+    [Fact]
+    public async Task Cancel_rejects_partially_billed_task()
+    {
+        // PartiallyBilled means at least one source-doc (Invoice /
+        // Sales Receipt) already references a task_line. Cancelling
+        // would orphan that FK. The operator must void the source
+        // doc first.
+        var store = new RecordingTaskStore();
+        store.SeedTaskInStatus(TaskStatus.PartiallyBilled);
+        var workflow = new TaskWorkflow(store, NullResolver.Instance, NullProjectionStore.Instance);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.CancelAsync(CompanyA, store.SeededTaskId, Actor, null, CancellationToken.None));
+        Assert.Contains("partially_billed", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MarkBilled_allowed_from_partially_billed()
+    {
+        // The "final" bill that covers the remaining un-billed task
+        // lines flips the header from PartiallyBilled → Billed. The
+        // line-level marking + auto Completed → PartiallyBilled
+        // transition both ship in H6-2; here we just verify the
+        // workflow-level allow-list.
+        var store = new RecordingTaskStore();
+        store.SeedTaskInStatus(TaskStatus.PartiallyBilled);
+        var workflow = new TaskWorkflow(store, NullResolver.Instance, NullProjectionStore.Instance);
+
+        var invoiceId = Guid.NewGuid();
+        var result = await workflow.MarkBilledAsync(
+            CompanyA, store.SeededTaskId, invoiceId, Actor, CancellationToken.None);
+
+        Assert.Equal(TaskStatus.Billed, result.Status);
+        Assert.Equal((TaskStatus.PartiallyBilled, TaskStatus.Billed), store.LastTransition);
+        Assert.Equal(invoiceId, store.LastBilledInvoiceId);
+    }
+
+    [Fact]
+    public async Task RestoreFromBilled_allowed_from_partially_billed()
+    {
+        // Symmetric path: void the only remaining bill on a
+        // PartiallyBilled task → header goes back to Completed.
+        var store = new RecordingTaskStore();
+        store.SeedTaskInStatus(TaskStatus.PartiallyBilled);
+        var workflow = new TaskWorkflow(store, NullResolver.Instance, NullProjectionStore.Instance);
+
+        var result = await workflow.RestoreFromBilledAsync(
+            CompanyA, store.SeededTaskId, Actor, "invoice voided", CancellationToken.None);
+
+        Assert.Equal(TaskStatus.Completed, result.Status);
+        Assert.Equal((TaskStatus.PartiallyBilled, TaskStatus.Completed), store.LastTransition);
+    }
+
     private sealed class StubResolver(decimal unitPrice) : IItemPriceResolver
     {
         public InventoryItemPriceQuery? LastQuery { get; private set; }
