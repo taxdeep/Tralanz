@@ -59,6 +59,12 @@ begin
   loop
     execute format('alter table %I enable row level security', t);
 
+    -- citus_app is the table owner; Postgres exempts table owners
+    -- from RLS by default. FORCE ROW LEVEL SECURITY makes the
+    -- policies apply to the owner role too — without it, citus_app
+    -- sees every row regardless of GUCs.
+    execute format('alter table %I force row level security', t);
+
     -- Drop-then-create makes the policy install re-runnable across
     -- future migration replays without throwing on duplicate name.
     execute format('drop policy if exists tenant_isolation on %I', t);
