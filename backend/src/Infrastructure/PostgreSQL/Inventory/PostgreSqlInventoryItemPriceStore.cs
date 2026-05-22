@@ -242,7 +242,7 @@ public sealed class PostgreSqlInventoryItemPriceStore(PostgreSqlConnectionFactor
               effective_from desc
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
         command.Parameters.AddWithValue("item_id", query.ItemId);
         command.Parameters.AddWithValue("currency_code", query.CurrencyCode);
         command.Parameters.AddWithValue("as_of", query.AsOf);

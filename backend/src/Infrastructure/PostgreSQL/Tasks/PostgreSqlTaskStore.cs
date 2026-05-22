@@ -128,7 +128,7 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             offset @skip
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
         command.Parameters.AddWithValue(
             "status",
             query.Status.HasValue ? (object)query.Status.Value.ToToken() : DBNull.Value);
