@@ -113,7 +113,45 @@ public sealed class JournalEntry
             throw new InvalidOperationException("Journal entry must contain at least one line.");
         }
 
+        // M6: defensive double-entry check at the domain layer. The
+        // authoritative balance enforcement still happens in
+        // DefaultPostingSupport.EnsureJournalInvariants (full invariants
+        // including FX snapshot + per-fragment validation) and
+        // PostgresJournalEntryWriter.EnsureDraftIsBalanced. This ctor
+        // check fires earlier — any caller that materializes a
+        // JournalEntry domain object with unbalanced lines gets a clear
+        // error at the point of construction rather than at write time.
+        EnsureBalanced(materializedLines);
+
         Lines = Array.AsReadOnly(materializedLines);
+    }
+
+    /// <summary>
+    /// Both transaction-currency and base-currency balance enforced
+    /// with 6-decimal rounding tolerance to match
+    /// <c>PostgreSqlJournalEntryWriter</c>'s precision band. The
+    /// realized-FX edge case (TxDebit = TxCredit = 0 with a non-zero
+    /// base leg) naturally passes here because 0 − 0 = 0 in TX.
+    /// </summary>
+    private static void EnsureBalanced(IReadOnlyList<JournalEntryLine> lines)
+    {
+        var txDebit = lines.Sum(static l => l.TxDebit);
+        var txCredit = lines.Sum(static l => l.TxCredit);
+        var txDelta = Math.Round(txDebit - txCredit, 6, MidpointRounding.ToEven);
+        if (txDelta != 0m)
+        {
+            throw new InvalidOperationException(
+                $"Journal entry is not balanced in transaction currency. Delta: {txDelta:0.00####}.");
+        }
+
+        var baseDebit = lines.Sum(static l => l.Debit);
+        var baseCredit = lines.Sum(static l => l.Credit);
+        var baseDelta = Math.Round(baseDebit - baseCredit, 6, MidpointRounding.ToEven);
+        if (baseDelta != 0m)
+        {
+            throw new InvalidOperationException(
+                $"Journal entry is not balanced in base currency. Delta: {baseDelta:0.00####}.");
+        }
     }
 
     public Guid Id { get; }
