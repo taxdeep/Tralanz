@@ -34,6 +34,22 @@ public sealed record class TaskMarginRow
     /// <summary>Sum of every task line — same as <c>tasks.total_billable_value</c>.</summary>
     public required decimal BillableValue { get; init; }
 
+    /// <summary>
+    /// H6-4: portion of <see cref="BillableValue"/> already covered by
+    /// a posted source document (Invoice or Sales Receipt). Computed
+    /// from <c>task_lines.line_amount</c> filtered on
+    /// <c>billed_source_id IS NOT NULL</c>. <c>BilledValue +
+    /// UnbilledValue = BillableValue</c>. For pre-H6-2a header-billed
+    /// tasks the migration backfill stamped every line, so the split
+    /// remains consistent.
+    /// </summary>
+    public required decimal BilledValue { get; init; }
+
+    /// <summary>
+    /// H6-4: portion of <see cref="BillableValue"/> still un-billed.
+    /// </summary>
+    public required decimal UnbilledValue { get; init; }
+
     /// <summary>Live SUM across bill_lines + expense_lines with this task_id.</summary>
     public required decimal DirectCost { get; init; }
 

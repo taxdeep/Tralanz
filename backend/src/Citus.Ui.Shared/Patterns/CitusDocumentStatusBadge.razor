@@ -50,6 +50,15 @@
         "closed" => "green",
         "completed" => "green",
         "billed" => "gold",
+        // H6-4: PartiallyBilled is the in-progress side of the
+        // Completed→Billed transition for Tasks. Blue keeps it in the
+        // "in-progress settlement" family alongside partially_paid /
+        // partially_applied (which also use blue). The enum's
+        // ToString form is "PartiallyBilled"; the wire/JSON form is
+        // "partially_billed". Accept both so callers don't need to
+        // normalize before passing.
+        "partially_billed" => "blue",
+        "partiallybilled" => "blue",
         "reversed" => "orange",
         "voided" => "default",
         "cancelled" => "default",
@@ -66,6 +75,8 @@
         "posted" => "Posted",
         "partially_paid" => "Partially paid",
         "partially_applied" => "Partially applied",
+        "partially_billed" => "Partially billed",
+        "partiallybilled" => "Partially billed",
         "paid" => "Paid",
         "closed" => "Closed",
         "completed" => "Completed",

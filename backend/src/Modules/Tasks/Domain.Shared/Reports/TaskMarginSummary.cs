@@ -15,6 +15,16 @@ public sealed record class TaskMarginSummary
 
     public required decimal TotalBillableValue { get; init; }
 
+    /// <summary>
+    /// H6-4: sum of per-row <c>BilledValue</c> across the filtered
+    /// set. <c>TotalBilledValue + TotalUnbilledValue =
+    /// TotalBillableValue</c>.
+    /// </summary>
+    public required decimal TotalBilledValue { get; init; }
+
+    /// <summary>H6-4: sum of per-row <c>UnbilledValue</c>.</summary>
+    public required decimal TotalUnbilledValue { get; init; }
+
     public required decimal TotalDirectCost { get; init; }
 
     public required decimal TotalGrossMargin { get; init; }

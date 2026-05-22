@@ -60,6 +60,8 @@ public sealed class TaskMarginReportClient(HttpClient httpClient, ILogger<TaskMa
         {
             TaskCount = 0,
             TotalBillableValue = 0m,
+            TotalBilledValue = 0m,
+            TotalUnbilledValue = 0m,
             TotalDirectCost = 0m,
             TotalGrossMargin = 0m,
             WeightedGrossMarginPercent = null,
