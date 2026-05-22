@@ -12909,7 +12909,10 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray(),
+                        line.TaxAmount,
+                        ItemId: null,
+                        TaskId: line.TaskId,
+                        TaskLineId: line.TaskLineId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
@@ -14888,6 +14891,11 @@ internal sealed record class SalesReceiptLineHttpRequest
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
+    // H6-2b: optional Task back-link. Same semantics as the invoice
+    // line wire shape — TaskId alone falls back to legacy whole-task
+    // marking, TaskLineId pins to a specific line for partial billing.
+    public Guid? TaskId { get; init; }
+    public Guid? TaskLineId { get; init; }
 }
 
 internal sealed record class RefundReceiptSaveAndPostHttpRequest

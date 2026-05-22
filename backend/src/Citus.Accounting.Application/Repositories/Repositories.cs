@@ -2159,7 +2159,30 @@ public interface ISalesReceiptDocumentRepository
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         SalesReceiptDraftSaveModel draft,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-2b: per-line task back-link lookup. Mirror of
+    /// <see cref="IInvoiceDocumentRepository.ListLinkedTaskLineMappingsAsync"/>.
+    /// The post handler uses the returned rows to drive line-level
+    /// Task billing (sourceType = "sales_receipt"). Rows missing
+    /// TaskLineId fall back to header-level marking through the
+    /// existing whole-task path.
+    /// </summary>
+    Task<IReadOnlyList<SalesReceiptLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid salesReceiptId,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Sales-receipt analog of <see cref="InvoiceLineTaskLink"/>.
+/// Same shape; kept as a distinct type so a future schema divergence
+/// between the two doesn't force one row layout on the other.
+/// </summary>
+public sealed record class SalesReceiptLineTaskLink(
+    Guid SalesReceiptLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 public sealed record SalesReceiptListItem(
     Guid Id,
@@ -2201,7 +2224,16 @@ public sealed record SalesReceiptDraftLineSaveModel(
     decimal UnitPrice,
     Guid? TaxCodeId,
     decimal TaxAmount,
-    Guid? ItemId = null);
+    Guid? ItemId = null,
+    // H6-2b: optional Task back-link. When non-null the line persists
+    // into sales_receipt_lines.task_id (column added by the H6-1
+    // migration). Pairs with TaskLineId below to drive the new
+    // line-level billing path; TaskId alone falls back to the legacy
+    // whole-task marking (same dual behavior as invoices in H6-2a).
+    Guid? TaskId = null,
+    // H6-2b: pins to a specific task_lines row. Same semantics as
+    // InvoiceDraftLineSaveModel.TaskLineId.
+    Guid? TaskLineId = null);
 
 // ========================================================================
 // Refund Receipt — cash-out customer refund.

@@ -475,6 +475,8 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                   line_amount,
                   tax_code_id,
                   tax_amount,
+                  task_id,
+                  task_line_id,
                   created_at,
                   updated_at
                 )
@@ -490,6 +492,8 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                   @line_amount,
                   @tax_code_id,
                   @tax_amount,
+                  @task_id,
+                  @task_line_id,
                   now(),
                   now()
                 );
@@ -505,12 +509,51 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.Quantity * line.UnitPrice));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
+            // H6-2b: task_id + task_line_id columns added by the H6-1
+            // schema migration (the D8 set — sales_receipt_lines and
+            // refund_receipt_lines weren't in the H-4 batch). Both
+            // remain optional; absence falls back to legacy header-
+            // level marking via task_id alone (matches H6-2a's invoice
+            // behavior).
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_line_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskLineId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, receiptNumber, "draft");
+    }
+
+    public async Task<IReadOnlyList<SalesReceiptLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid salesReceiptId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select id, task_id, task_line_id
+            from sales_receipt_lines
+            where company_id = @company_id
+              and sales_receipt_id = @sales_receipt_id
+              and task_id is not null
+            order by line_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("sales_receipt_id", salesReceiptId);
+
+        var rows = new List<SalesReceiptLineTaskLink>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new SalesReceiptLineTaskLink(
+                SalesReceiptLineId: reader.GetGuid(0),
+                TaskId: reader.GetGuid(1),
+                TaskLineId: reader.IsDBNull(2) ? null : reader.GetGuid(2)));
+        }
+        return rows;
     }
 
     private static void ValidateDraft(SalesReceiptDraftSaveModel draft)
