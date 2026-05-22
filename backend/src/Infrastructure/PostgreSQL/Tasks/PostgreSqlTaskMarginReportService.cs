@@ -61,9 +61,20 @@ public sealed class PostgreSqlTaskMarginReportService(PostgreSqlConnectionFactor
         var skip = Math.Max(0, query.Skip);
         var baseCurrency = query.BaseCurrencyCode.Trim().ToUpperInvariant();
 
+        // H6: PartiallyBilled tasks have at least one billed line, so
+        // they belong in both modes — Billed-only callers want to see
+        // every task with a billed line, not just the all-lines-billed
+        // terminal ones; Operational mode wants everything except the
+        // cancelled tombstones.
         var statusTokens = query.Mode == TaskMarginReportMode.Billed
-            ? new[] { TaskStatus.Billed.ToToken() }
-            : new[] { TaskStatus.Open.ToToken(), TaskStatus.Completed.ToToken(), TaskStatus.Billed.ToToken() };
+            ? new[] { TaskStatus.Billed.ToToken(), TaskStatus.PartiallyBilled.ToToken() }
+            : new[]
+            {
+                TaskStatus.Open.ToToken(),
+                TaskStatus.Completed.ToToken(),
+                TaskStatus.Billed.ToToken(),
+                TaskStatus.PartiallyBilled.ToToken(),
+            };
 
         var dateColumn = query.Mode == TaskMarginReportMode.Billed
             ? "t.billed_at::date"
