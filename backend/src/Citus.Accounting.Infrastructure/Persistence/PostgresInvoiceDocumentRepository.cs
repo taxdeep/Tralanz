@@ -512,6 +512,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   warehouse_id,
                   uom_code,
                   task_id,
+                  task_line_id,
                   created_at,
                   updated_at
                 )
@@ -531,6 +532,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   @warehouse_id,
                   @uom_code,
                   @task_id,
+                  @task_line_id,
                   now(),
                   now()
                 );
@@ -553,6 +555,11 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             // (Batch 8). When the invoice is created via "Bill this task"
             // every line carries the source task id; otherwise null.
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
+            // H6-2: task_line_id pins to a specific task_lines row.
+            // Optional — null falls back to legacy whole-task billing
+            // via task_id alone (no UI yet sends this field; the post
+            // handler accepts both shapes).
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_line_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskLineId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -586,6 +593,37 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             ids.Add(reader.GetGuid(0));
         }
         return ids;
+    }
+
+    public async Task<IReadOnlyList<InvoiceLineTaskLink>> ListLinkedTaskLineMappingsAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select id, task_id, task_line_id
+            from invoice_lines
+            where company_id = @company_id
+              and invoice_id = @invoice_id
+              and task_id is not null
+            order by line_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("invoice_id", invoiceId);
+
+        var rows = new List<InvoiceLineTaskLink>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new InvoiceLineTaskLink(
+                InvoiceLineId: reader.GetGuid(0),
+                TaskId: reader.GetGuid(1),
+                TaskLineId: reader.IsDBNull(2) ? null : reader.GetGuid(2)));
+        }
+        return rows;
     }
 
     public async Task<SourceDocumentDraftSaveResult> SubmitDraftAsync(

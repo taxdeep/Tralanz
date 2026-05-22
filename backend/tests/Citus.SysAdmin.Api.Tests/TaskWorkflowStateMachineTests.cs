@@ -511,6 +511,18 @@ public class TaskWorkflowStateMachineTests
         public Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(CompanyId companyId, IReadOnlyList<Guid> taskIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<TaskDisplayLookup>>(Array.Empty<TaskDisplayLookup>());
 
+        // H6-2 line-billing methods — these state-machine tests exercise
+        // workflow transitions, not the line-marking coordinator path,
+        // so stubs throw to surface accidental wiring.
+        public Task<TaskLineBillingStampOutcome> MarkLineBilledAsync(
+            CompanyId companyId, Guid taskLineId, string sourceType, Guid sourceId,
+            Guid? sourceLineId, DateTimeOffset billedAtUtc, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<TaskLineBillingSnapshot?> ReadLineBillingSnapshotAsync(
+            CompanyId companyId, Guid taskId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
         private static TaskRecord BuildSeed(TaskStatus status, string currency, IReadOnlyList<TaskLineRecord> lines, Guid? id = null) =>
             new()
             {

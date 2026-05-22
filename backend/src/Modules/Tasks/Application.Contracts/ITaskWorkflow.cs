@@ -80,4 +80,25 @@ public interface ITaskWorkflow
         UserId actorUserId,
         string? reason,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-2: after the coordinator has stamped one or more
+    /// <c>task_lines</c> billed for a given source, recompute the
+    /// header status from the line-level state and transition if
+    /// needed. The rules (D2/D3 confirmed):
+    ///   * billed == total > 0          → Billed
+    ///   * 0 &lt; billed &lt; total    → PartiallyBilled
+    ///   * billed == 0                   → no transition (caller is
+    ///                                     responsible for the prior
+    ///                                     state, e.g. rollback path)
+    /// Pass-through when the resulting status matches the current
+    /// header status. Returns the (possibly unchanged) task record.
+    /// </summary>
+    Task<TaskRecord> RecomputeAndTransitionFromLinesAsync(
+        CompanyId companyId,
+        Guid taskId,
+        string sourceType,
+        Guid sourceId,
+        UserId actorUserId,
+        CancellationToken cancellationToken);
 }

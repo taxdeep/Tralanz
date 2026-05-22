@@ -240,6 +240,138 @@ public sealed class TaskBillingCoordinator(
         };
     }
 
+    public async Task<TaskBillingResult> MarkLinesAsBilledAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        Guid? customerId,
+        IReadOnlyList<TaskLineBillingMapping> mappings,
+        UserId actorUserId,
+        CancellationToken cancellationToken)
+    {
+        if (companyId.Value is null)
+        {
+            throw new InvalidOperationException("Company context is required for line-level task billing.");
+        }
+        if (string.IsNullOrWhiteSpace(sourceType))
+        {
+            throw new InvalidOperationException("Source type ('invoice' | 'sales_receipt') is required.");
+        }
+        if (sourceId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Source document id is required.");
+        }
+        if (actorUserId.Value is null)
+        {
+            throw new InvalidOperationException("An acting user is required.");
+        }
+        if (mappings is null || mappings.Count == 0)
+        {
+            throw new InvalidOperationException("At least one task-line mapping is required.");
+        }
+
+        // Sanitize: drop any mappings missing required ids.
+        var sanitized = mappings
+            .Where(static m => m.TaskId != Guid.Empty && m.TaskLineId != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (sanitized.Length == 0)
+        {
+            throw new InvalidOperationException("At least one non-empty (taskId, taskLineId) pair is required.");
+        }
+
+        // Group by task so the per-task validation and recompute each
+        // see all of that task's mappings together. Distinct task ids
+        // drive the cross-customer check.
+        var byTask = sanitized
+            .GroupBy(m => m.TaskId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
+
+        // First pass: pre-flight validation. We refuse to start writing
+        // if any task fails — matches the all-or-nothing semantics of
+        // the legacy header-level MarkAsBilledAsync path.
+        foreach (var taskId in byTask.Keys)
+        {
+            var task = await store.GetAsync(companyId, taskId, cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"Task '{taskId:D}' was not found in the active company. Cross-company billing is not permitted.");
+
+            if (customerId.HasValue && task.CustomerId != customerId.Value)
+            {
+                throw new InvalidOperationException(
+                    $"Task '{task.TaskNo}' is attached to a different customer than the source document. A single source cannot bill task lines from mixed customers.");
+            }
+
+            // Status gate: only Open / Completed / PartiallyBilled may
+            // accept new line-level bills. Billed (all-lines-covered)
+            // and Canceled are terminal for new bills.
+            if (task.Status is not (TaskStatus.Open or TaskStatus.Completed or TaskStatus.PartiallyBilled))
+            {
+                throw new InvalidOperationException(
+                    $"Task '{task.TaskNo}' is in status '{task.Status.ToToken()}' and cannot accept new line-level bills.");
+            }
+        }
+
+        // Second pass: write each line. The store's idempotent UPDATE
+        // makes a same-source re-run a no-op; a different-source
+        // re-stamp throws from the store (data-integrity signal that
+        // bypasses the post-handler's soft-failure catch).
+        var billedAtUtc = DateTimeOffset.UtcNow;
+        var newlyStampedCount = 0;
+        var skippedStampCount = 0;
+        foreach (var mapping in sanitized)
+        {
+            var outcome = await store.MarkLineBilledAsync(
+                companyId,
+                mapping.TaskLineId,
+                sourceType,
+                sourceId,
+                mapping.SourceLineId,
+                billedAtUtc,
+                cancellationToken);
+            if (outcome.WasNewlyStamped) newlyStampedCount++;
+            else skippedStampCount++;
+        }
+
+        // Third pass: per-task header status recompute. Each call is
+        // idempotent — if the header is already at the right status
+        // (e.g. a same-source re-run where nothing was newly stamped),
+        // the workflow returns the current record without transition.
+        var processed = new List<TaskSummary>(byTask.Count);
+        var skipped = new List<TaskSummary>();
+        foreach (var taskId in byTask.Keys)
+        {
+            var beforeStatus = (await store.GetAsync(companyId, taskId, cancellationToken))?.Status;
+            var recomputed = await workflow.RecomputeAndTransitionFromLinesAsync(
+                companyId,
+                taskId,
+                sourceType,
+                sourceId,
+                actorUserId,
+                cancellationToken);
+
+            if (recomputed.Status != beforeStatus)
+            {
+                processed.Add(ToSummary(recomputed));
+            }
+            else
+            {
+                skipped.Add(ToSummary(recomputed));
+            }
+        }
+
+        return new TaskBillingResult
+        {
+            // For invoice-sourced calls, the legacy field name "InvoiceId"
+            // still applies. For sales-receipt-sourced calls the caller
+            // ignores this field (the source id lives in the wire-shape
+            // outcome the caller wraps around our result).
+            InvoiceId = sourceId,
+            ProcessedTasks = processed,
+            SkippedTasks = skipped,
+        };
+    }
+
     private static TaskBillingResult Empty(Guid invoiceId) => new()
     {
         InvoiceId = invoiceId,

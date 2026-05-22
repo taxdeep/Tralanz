@@ -231,6 +231,15 @@ public class TaskSearchProjectionContractTests
         public Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(CompanyId companyId, IReadOnlyList<Guid> taskIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<TaskDisplayLookup>>(Array.Empty<TaskDisplayLookup>());
 
+        public Task<TaskLineBillingStampOutcome> MarkLineBilledAsync(
+            CompanyId companyId, Guid taskLineId, string sourceType, Guid sourceId,
+            Guid? sourceLineId, DateTimeOffset billedAtUtc, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<TaskLineBillingSnapshot?> ReadLineBillingSnapshotAsync(
+            CompanyId companyId, Guid taskId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
         private static TaskRecord Build(Guid id, TaskStatus status, string currency = "USD") =>
             new()
             {

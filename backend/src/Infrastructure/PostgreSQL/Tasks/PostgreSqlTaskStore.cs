@@ -1,6 +1,7 @@
 using Citus.Modules.Tasks.Application.Contracts;
 using Citus.Modules.Tasks.Domain.Shared;
 using Npgsql;
+using NpgsqlTypes;
 using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus;
 
 namespace Infrastructure.PostgreSQL.Tasks;
@@ -129,15 +130,22 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             limit @take;
             """;
         command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
-        command.Parameters.AddWithValue(
-            "status",
-            query.Status.HasValue ? (object)query.Status.Value.ToToken() : DBNull.Value);
-        command.Parameters.AddWithValue(
-            "customer_id",
-            query.CustomerId.HasValue ? (object)query.CustomerId.Value : DBNull.Value);
-        command.Parameters.AddWithValue(
-            "assignee_filter",
-            query.OnlyAssignedToUserId.HasValue ? (object)query.OnlyAssignedToUserId.Value.Value : DBNull.Value);
+        // The nullable filters use the (@x is null or col = @x) pattern;
+        // without an explicit NpgsqlDbType Postgres can't infer the type
+        // from `@x is null` alone and raises 42P08 — explicit type
+        // hints fix it on both DBNull and value paths.
+        command.Parameters.Add(new NpgsqlParameter("status", NpgsqlDbType.Text)
+        {
+            Value = query.Status.HasValue ? (object)query.Status.Value.ToToken() : DBNull.Value,
+        });
+        command.Parameters.Add(new NpgsqlParameter("customer_id", NpgsqlDbType.Uuid)
+        {
+            Value = query.CustomerId.HasValue ? (object)query.CustomerId.Value : DBNull.Value,
+        });
+        command.Parameters.Add(new NpgsqlParameter("assignee_filter", NpgsqlDbType.Text)
+        {
+            Value = query.OnlyAssignedToUserId.HasValue ? (object)query.OnlyAssignedToUserId.Value.Value : DBNull.Value,
+        });
         command.Parameters.AddWithValue("skip", Math.Max(0, query.Skip));
         command.Parameters.AddWithValue("take", Math.Clamp(query.Take, 1, 200));
 
@@ -569,6 +577,169 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                 Title: reader.GetString(2)));
         }
         return rows;
+    }
+
+    public async Task<TaskLineBillingStampOutcome> MarkLineBilledAsync(
+        CompanyId companyId,
+        Guid taskLineId,
+        string sourceType,
+        Guid sourceId,
+        Guid? sourceLineId,
+        DateTimeOffset billedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        if (taskLineId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Task line id is required to mark a line billed.");
+        }
+        if (string.IsNullOrWhiteSpace(sourceType))
+        {
+            throw new InvalidOperationException("Source type is required.");
+        }
+        if (sourceId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Source id is required.");
+        }
+
+        // Idempotent UPDATE: only writes when billed_source_id IS NULL.
+        // The follow-up SELECT lets us distinguish three cases:
+        //   1. Newly stamped (UPDATE wrote 1 row) → WasNewlyStamped=true
+        //   2. Already stamped by SAME source → WasNewlyStamped=false, no error
+        //   3. Already stamped by DIFFERENT source → raise
+        // H6-1's schema migration added the polymorphic columns; the
+        // partial index ix_task_lines_billing_state covers the
+        // WHERE billed_source_id IS NULL probe used here.
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                update task_lines
+                   set billed_source_type    = @source_type,
+                       billed_source_id      = @source_id,
+                       billed_source_line_id = @source_line_id,
+                       billed_at             = @billed_at
+                 where company_id = @company_id
+                   and id = @task_line_id
+                   and billed_source_id is null;
+                """;
+            update.Parameters.AddWithValue("company_id", companyId.Value);
+            update.Parameters.AddWithValue("task_line_id", taskLineId);
+            update.Parameters.AddWithValue("source_type", sourceType);
+            update.Parameters.AddWithValue("source_id", sourceId);
+            update.Parameters.AddWithValue("source_line_id",
+                sourceLineId.HasValue ? (object)sourceLineId.Value : DBNull.Value);
+            update.Parameters.AddWithValue("billed_at", billedAtUtc);
+            var rowsUpdated = await update.ExecuteNonQueryAsync(cancellationToken);
+
+            if (rowsUpdated == 1)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new TaskLineBillingStampOutcome(
+                    WasNewlyStamped: true,
+                    SourceType: sourceType,
+                    SourceId: sourceId);
+            }
+        }
+
+        // Already stamped (or row missing). Read the current state so
+        // we can return the idempotent-no-op outcome or raise on
+        // source mismatch.
+        string? existingSourceType;
+        Guid? existingSourceId;
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText =
+                """
+                select billed_source_type, billed_source_id
+                  from task_lines
+                 where company_id = @company_id
+                   and id = @task_line_id;
+                """;
+            select.Parameters.AddWithValue("company_id", companyId.Value);
+            select.Parameters.AddWithValue("task_line_id", taskLineId);
+
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw new InvalidOperationException(
+                    $"Task line '{taskLineId:D}' was not found in the active company.");
+            }
+            existingSourceType = reader.IsDBNull(0) ? null : reader.GetString(0);
+            existingSourceId = reader.IsDBNull(1) ? null : reader.GetGuid(1);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        if (existingSourceId is null)
+        {
+            // UPDATE failed but row is still NULL — should not happen
+            // outside of a concurrent race the next caller will retry.
+            throw new InvalidOperationException(
+                $"Task line '{taskLineId:D}' could not be marked billed; a concurrent operation may have moved it.");
+        }
+
+        if (existingSourceId.Value == sourceId &&
+            string.Equals(existingSourceType, sourceType, StringComparison.Ordinal))
+        {
+            return new TaskLineBillingStampOutcome(
+                WasNewlyStamped: false,
+                SourceType: existingSourceType!,
+                SourceId: existingSourceId.Value);
+        }
+
+        throw new InvalidOperationException(
+            $"Task line '{taskLineId:D}' is already billed by {existingSourceType} '{existingSourceId:D}' " +
+            $"and cannot be re-billed by {sourceType} '{sourceId:D}'.");
+    }
+
+    public async Task<TaskLineBillingSnapshot?> ReadLineBillingSnapshotAsync(
+        CompanyId companyId,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        if (taskId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Task id is required.");
+        }
+
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select t.id,
+                   t.customer_id,
+                   t.status,
+                   count(tl.id)::int               as total_lines,
+                   count(tl.billed_source_id)::int as billed_lines
+              from tasks t
+              left join task_lines tl
+                on tl.task_id = t.id
+               and tl.company_id = t.company_id
+             where t.company_id = @company_id
+               and t.id = @task_id
+             group by t.id, t.customer_id, t.status;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("task_id", taskId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new TaskLineBillingSnapshot(
+            TaskId: reader.GetGuid(0),
+            CustomerId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+            CurrentStatus: TaskStatusExtensions.Parse(reader.GetString(2)),
+            TotalLineCount: reader.GetInt32(3),
+            BilledLineCount: reader.GetInt32(4));
     }
 
     public async Task<IReadOnlyList<TaskStateTransitionRecord>> ListTransitionsAsync(

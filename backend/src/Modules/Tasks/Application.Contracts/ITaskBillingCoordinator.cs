@@ -68,7 +68,41 @@ public interface ITaskBillingCoordinator
         UserId actorUserId,
         string? reason,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// H6-2: line-level billing marker. The caller passes one mapping
+    /// per task_line the source document covers; the coordinator
+    /// validates cross-customer / not-already-billed-by-different-source,
+    /// stamps each line, then recomputes each touched task's header
+    /// status (Open|Completed → PartiallyBilled, or → Billed when the
+    /// final un-billed line on the task gets covered).
+    ///
+    /// Idempotent: a second call with the same (sourceType, sourceId,
+    /// mappings) returns the same result and writes nothing. A call
+    /// that re-maps a line to a DIFFERENT source surfaces loud through
+    /// <see cref="ITaskStore.MarkLineBilledAsync"/>.
+    /// </summary>
+    Task<TaskBillingResult> MarkLinesAsBilledAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        Guid? customerId,
+        IReadOnlyList<TaskLineBillingMapping> mappings,
+        UserId actorUserId,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// One row from the post-handler's "for each invoice/receipt line
+/// that points at a task_line, here's the link". Carries enough to
+/// stamp the task_line + record the source line id for audit /
+/// rollback. <see cref="SourceLineId"/> is the document line that did
+/// the billing (so H6-3's rollback can find it again).
+/// </summary>
+public sealed record class TaskLineBillingMapping(
+    Guid TaskId,
+    Guid TaskLineId,
+    Guid? SourceLineId);
 
 /// <summary>
 /// Per-call summary the coordinator returns. <see cref="ProcessedTasks"/>

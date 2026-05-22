@@ -260,6 +260,76 @@ public sealed class TaskWorkflow(
             cancellationToken);
     }
 
+    public async Task<TaskRecord> RecomputeAndTransitionFromLinesAsync(
+        CompanyId companyId,
+        Guid taskId,
+        string sourceType,
+        Guid sourceId,
+        UserId actorUserId,
+        CancellationToken cancellationToken)
+    {
+        RequireCompany(companyId);
+        RequireTaskId(taskId);
+        RequireActor(actorUserId);
+        if (string.IsNullOrWhiteSpace(sourceType))
+        {
+            throw new InvalidOperationException("Source type is required for the line-billing recompute.");
+        }
+        if (sourceId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Source id is required for the line-billing recompute.");
+        }
+
+        var snapshot = await store.ReadLineBillingSnapshotAsync(companyId, taskId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Task '{taskId:D}' was not found in the active company.");
+
+        // No lines means nothing to bill — header stays where it is.
+        // Same for the "all lines un-billed" case; that's the rollback
+        // path which the H6-3 reverse-flow handler invokes separately.
+        if (snapshot.TotalLineCount == 0 || snapshot.BilledLineCount == 0)
+        {
+            return await RequireExistingAsync(companyId, taskId, cancellationToken);
+        }
+
+        var targetStatus = snapshot.BilledLineCount == snapshot.TotalLineCount
+            ? TaskStatus.Billed
+            : TaskStatus.PartiallyBilled;
+
+        if (targetStatus == snapshot.CurrentStatus)
+        {
+            // Already at the right header status — idempotent no-op.
+            return await RequireExistingAsync(companyId, taskId, cancellationToken);
+        }
+
+        // Stamp the AR invoice id on the task header only when the
+        // task is transitioning all the way to Billed via an invoice.
+        // PartiallyBilled / sales-receipt sources leave billed_invoice_id
+        // alone — the per-line audit trail lives on task_lines.
+        Guid? billedInvoiceId =
+            targetStatus == TaskStatus.Billed &&
+            string.Equals(sourceType, "invoice", StringComparison.Ordinal)
+                ? sourceId
+                : null;
+
+        var reason = targetStatus switch
+        {
+            TaskStatus.PartiallyBilled => $"Partially billed by {sourceType} {sourceId:D}.",
+            TaskStatus.Billed => $"Billed by {sourceType} {sourceId:D}.",
+            _ => null,
+        };
+
+        return await TransitionOrThrowAsync(
+            companyId,
+            taskId,
+            snapshot.CurrentStatus,
+            targetStatus,
+            actorUserId,
+            reason,
+            billedInvoiceId,
+            cancellationToken);
+    }
+
     public async Task<TaskRecord> RestoreFromBilledAsync(
         CompanyId companyId,
         Guid taskId,

@@ -120,5 +120,12 @@ public class TaskLineLinkValidatorTests
             Task.FromResult<IReadOnlyList<TaskSummary>>(Array.Empty<TaskSummary>());
         public virtual Task<IReadOnlyList<TaskDisplayLookup>> LookupDisplayAsync(CompanyId companyId, IReadOnlyList<Guid> taskIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<TaskDisplayLookup>>(Array.Empty<TaskDisplayLookup>());
+        public virtual Task<TaskLineBillingStampOutcome> MarkLineBilledAsync(
+            CompanyId companyId, Guid taskLineId, string sourceType, Guid sourceId,
+            Guid? sourceLineId, DateTimeOffset billedAtUtc, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+        public virtual Task<TaskLineBillingSnapshot?> ReadLineBillingSnapshotAsync(
+            CompanyId companyId, Guid taskId, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }

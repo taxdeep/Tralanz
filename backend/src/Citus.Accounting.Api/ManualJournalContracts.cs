@@ -259,7 +259,15 @@ public sealed record SaveInvoiceDraftLineHttpRequest(
     // Batch 8 PostgresTaskLinkSchemaInitializer), and the post handler
     // uses these distinct task_ids to flip the source tasks
     // Completed -> Billed after the invoice posts.
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    // H6-2: optional pin to a specific task_lines row. When present,
+    // the post handler stamps THAT line as billed and recomputes the
+    // task header status (Open|Completed -> PartiallyBilled, or ->
+    // Billed when this is the final un-billed line). Null falls back
+    // to the legacy whole-task path via TaskId alone (matches
+    // pre-H6-2 behavior; existing drafts in the DB without
+    // task_line_id keep working unchanged).
+    Guid? TaskLineId = null);
 
 public sealed record InvoiceLookupQuery(CompanyId CompanyId);
 
