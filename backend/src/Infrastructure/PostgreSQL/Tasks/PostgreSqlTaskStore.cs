@@ -1,6 +1,7 @@
 using Citus.Modules.Tasks.Application.Contracts;
 using Citus.Modules.Tasks.Domain.Shared;
 using Npgsql;
+using NpgsqlTypes;
 using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus;
 
 namespace Infrastructure.PostgreSQL.Tasks;
@@ -129,15 +130,22 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             limit @take;
             """;
         command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
-        command.Parameters.AddWithValue(
-            "status",
-            query.Status.HasValue ? (object)query.Status.Value.ToToken() : DBNull.Value);
-        command.Parameters.AddWithValue(
-            "customer_id",
-            query.CustomerId.HasValue ? (object)query.CustomerId.Value : DBNull.Value);
-        command.Parameters.AddWithValue(
-            "assignee_filter",
-            query.OnlyAssignedToUserId.HasValue ? (object)query.OnlyAssignedToUserId.Value.Value : DBNull.Value);
+        // The nullable filters use the (@x is null or col = @x) pattern;
+        // without an explicit NpgsqlDbType Postgres can't infer the type
+        // from `@x is null` alone and raises 42P08 — explicit type
+        // hints fix it on both DBNull and value paths.
+        command.Parameters.Add(new NpgsqlParameter("status", NpgsqlDbType.Text)
+        {
+            Value = query.Status.HasValue ? (object)query.Status.Value.ToToken() : DBNull.Value,
+        });
+        command.Parameters.Add(new NpgsqlParameter("customer_id", NpgsqlDbType.Uuid)
+        {
+            Value = query.CustomerId.HasValue ? (object)query.CustomerId.Value : DBNull.Value,
+        });
+        command.Parameters.Add(new NpgsqlParameter("assignee_filter", NpgsqlDbType.Text)
+        {
+            Value = query.OnlyAssignedToUserId.HasValue ? (object)query.OnlyAssignedToUserId.Value.Value : DBNull.Value,
+        });
         command.Parameters.AddWithValue("skip", Math.Max(0, query.Skip));
         command.Parameters.AddWithValue("take", Math.Clamp(query.Take, 1, 200));
 
