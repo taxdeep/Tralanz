@@ -20,7 +20,12 @@ public sealed record PostSalesReceiptCommandResult(
     string JournalEntryDisplayNumber,
     string Status,
     DateTimeOffset PostedAt,
-    IReadOnlyList<string> Warnings)
+    IReadOnlyList<string> Warnings,
+    // H6-2b: per-receipt summary of the line-level / whole-task billing
+    // hook the handler runs after the JE has committed. Null when the
+    // receipt has no task-linked lines (the common case for cash sales
+    // not tied to a service-delivery Task).
+    InvoiceTaskBillingOutcome? TaskBilling = null)
 {
     public static PostSalesReceiptCommandResult FromPostingResult(PostingResult result) =>
         new(
