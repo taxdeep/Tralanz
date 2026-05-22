@@ -842,7 +842,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       'inventory_adjustment_loss'
                     )),
                   constraint ck_inventory_documents_status
-                    check (status in ('draft', 'submitted', 'posted', 'cancelled', 'shipped', 'received')),
+                    check (status in ('draft', 'submitted', 'posted', 'cancelled', 'shipped', 'received', 'voided', 'reversed')),
                   constraint ck_inventory_documents_movement_direction
                     check (movement_direction in ('inbound', 'outbound', 'internal', 'neutral'))
                 );
