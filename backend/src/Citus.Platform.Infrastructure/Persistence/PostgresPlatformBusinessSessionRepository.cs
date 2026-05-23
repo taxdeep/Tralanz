@@ -445,7 +445,14 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             return Failed("account_locked", "Platform account is locked.");
         }
 
-        var membership = await ResolveMembershipContextAsync(
+        // M17 follow-up: strict membership read (no fallback to "any
+        // active company"). ValidateSessionAsync must enforce the
+        // session-token ↔ active_company_id bind invariant; falling
+        // back to the user's first available company would silently
+        // re-bind a session that legitimately lost access to its
+        // stamped company. If the user no longer has membership in
+        // session.ActiveCompanyId, the session itself is invalid.
+        var membership = await ReadMembershipContextAsync(
             connection,
             transaction,
             session.UserId,
@@ -510,7 +517,16 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             return Failed("expired_session", "Business session was revoked after account security settings changed.");
         }
 
-        var membership = await ResolveMembershipContextAsync(
+        // M17 follow-up: strict membership read (no fallback). The
+        // caller explicitly named which company to switch into; if
+        // the user has no active membership in THAT specific company,
+        // the switch must fail with "company_not_available" — NOT
+        // silently land on the user's first available company (which
+        // is what ResolveMembershipContextAsync's fallback path
+        // would do). Verified via curl test: switch to a non-existent
+        // company id used to return 200 with the user's previously-
+        // bound company; now returns 403 cleanly.
+        var membership = await ReadMembershipContextAsync(
             connection,
             transaction,
             session.UserId,
