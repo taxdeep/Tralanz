@@ -1,3 +1,5 @@
+using Citus.Modules.UnityAi.Application.Contracts;
+
 namespace Citus.Accounting.Api;
 
 public sealed record UnitysearchUsageHttpRequest
@@ -68,4 +70,46 @@ public sealed record AccountUpsertHttpRequest
     public string? CurrencyCode { get; init; }
     public bool? AllowManualPosting { get; init; }
     public bool? IsActive { get; init; }
+}
+
+internal static class UnityAiHttpRequestMapper
+{
+    public static string? NormalizeSearchQuery(string? query) =>
+        string.IsNullOrWhiteSpace(query) ? null : query.Trim().ToLowerInvariant();
+
+    public static UnitysearchEventInput BuildUnitysearchEventInput(
+        CompanyId companyId,
+        UserId userId,
+        UnitysearchUsageHttpRequest request) =>
+        new(
+            CompanyId: companyId,
+            UserId: userId,
+            SessionId: request.SessionId,
+            Context: request.Context.Trim(),
+            EntityType: request.EntityType.Trim(),
+            Query: request.Query,
+            NormalizedQuery: NormalizeSearchQuery(request.Query),
+            EventType: request.EventType.Trim(),
+            SelectedEntityId: request.SelectedEntityId,
+            RankPosition: request.RankPosition,
+            ResultCount: request.ResultCount,
+            SourceRoute: request.SourceRoute,
+            AnchorContext: request.AnchorContext,
+            AnchorEntityType: request.AnchorEntityType,
+            AnchorEntityId: request.AnchorEntityId,
+            MetadataJson: request.MetadataJson);
+
+    public static ReportUsageEventInput BuildReportUsageEventInput(
+        CompanyId companyId,
+        UserId userId,
+        ReportUsageHttpRequest request) =>
+        new(
+            CompanyId: companyId,
+            UserId: userId,
+            ReportKey: request.ReportKey.Trim(),
+            EventType: request.EventType.Trim(),
+            DateRangeKey: request.DateRangeKey,
+            FiltersJson: request.FiltersJson,
+            SourceRoute: request.SourceRoute,
+            MetadataJson: request.MetadataJson);
 }

@@ -1,3 +1,5 @@
+using Citus.Modules.Inventory.Application.Contracts;
+
 namespace Citus.Accounting.Api;
 
 /// <summary>
@@ -10,3 +12,19 @@ public sealed record WarehouseRenameHttpRequest(
     string? WarehouseCode,
     string Name,
     string? Description);
+
+internal static class WarehouseRequestMapper
+{
+    public static InventoryWarehouseUpsertRequest BuildWarehouseUpsertRequest(
+        CompanyId companyId,
+        UserId userId,
+        Guid warehouseId,
+        WarehouseRenameHttpRequest request) =>
+        new(
+            CompanyId: companyId,
+            UserId: userId,
+            WarehouseId: warehouseId,
+            WarehouseCode: (request.WarehouseCode ?? string.Empty).Trim().ToUpperInvariant(),
+            Name: request.Name.Trim(),
+            Description: string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim());
+}

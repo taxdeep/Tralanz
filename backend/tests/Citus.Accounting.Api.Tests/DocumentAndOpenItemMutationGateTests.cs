@@ -27,7 +27,6 @@ public sealed class DocumentAndOpenItemMutationGateTests
         var guard = CreateGuard(CreateInactiveContext());
         var request = new SaveInvoiceDraftHttpRequest(
             CompanyId,
-            UserId,
             CustomerId,
             new DateOnly(2026, 04, 15),
             new DateOnly(2026, 05, 15),
@@ -126,7 +125,6 @@ public sealed class DocumentAndOpenItemMutationGateTests
         var guard = CreateGuard(CreateInactiveContext());
         var request = new RequestOpenItemAdjustmentHttpRequest(
             CompanyId,
-            UserId,
             "write_off",
             new DateOnly(2026, 04, 15),
             25m,
@@ -150,7 +148,6 @@ public sealed class DocumentAndOpenItemMutationGateTests
         var guard = CreateGuard(CreateActiveContext());
         var request = new ExecuteOpenItemAdjustmentRequestHttpRequest(
             CompanyId,
-            UserId,
             AdjustmentAccountId,
             new DateOnly(2026, 04, 15),
             "execute-adjustment");
@@ -177,7 +174,6 @@ public sealed class DocumentAndOpenItemMutationGateTests
         var guard = CreateGuard(CreateInactiveContext());
         var request = new PrepareReceivePaymentDraftHttpRequest(
             CompanyId,
-            UserId,
             CustomerId,
             BankAccountId,
             new DateOnly(2026, 04, 15),
@@ -205,7 +201,6 @@ public sealed class DocumentAndOpenItemMutationGateTests
         var guard = CreateGuard(CreateActiveContext());
         var request = new PostPayBillHttpRequest(
             CompanyId,
-            UserId,
             null,
             "post-pay-bill");
 
@@ -273,7 +268,6 @@ public sealed class DocumentAndOpenItemMutationGateTests
         var guard = CreateGuard(CreateInactiveContext());
         var request = new SaveOpenItemAdjustmentAccountMappingHttpRequest(
             CompanyId,
-            UserId,
             null,
             "ar_open_item",
             "write_off",
@@ -296,8 +290,7 @@ public sealed class DocumentAndOpenItemMutationGateTests
     {
         var guard = CreateGuard(CreateActiveContext());
         var request = new DeactivateOpenItemAdjustmentAccountMappingHttpRequest(
-            CompanyId,
-            UserId);
+            CompanyId);
 
         var result = await guard.EvaluateAsync(
             HttpMethods.Post,

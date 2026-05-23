@@ -54,6 +54,23 @@ public sealed class BusinessRequestContractGuardTests
     }
 
     [Fact]
+    public void Validate_RejectsDirectCompanyArgumentMismatch()
+    {
+        var guard = new BusinessRequestContractGuard();
+        var session = new BusinessSessionContext
+        {
+            UserId = UserId.FromOrdinal(1),
+            ActiveCompanyId = CompanyId.FromOrdinal(1)
+        };
+
+        var result = guard.Validate([CompanyId.FromOrdinal(2)], session);
+
+        Assert.False(result.Allowed);
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Contains("does not match the active company context", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Validate_RejectsUserMismatch()
     {
         var guard = new BusinessRequestContractGuard();
@@ -72,6 +89,23 @@ public sealed class BusinessRequestContractGuardTests
             }
         ],
         session);
+
+        Assert.False(result.Allowed);
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Contains("does not match the authenticated business session", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_RejectsDirectUserArgumentMismatch()
+    {
+        var guard = new BusinessRequestContractGuard();
+        var session = new BusinessSessionContext
+        {
+            UserId = UserId.FromOrdinal(1),
+            ActiveCompanyId = CompanyId.FromOrdinal(1)
+        };
+
+        var result = guard.Validate([UserId.FromOrdinal(2)], session);
 
         Assert.False(result.Allowed);
         Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);

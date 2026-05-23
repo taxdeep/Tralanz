@@ -119,6 +119,103 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
     }
 
     [Fact]
+    public async Task PostBillCommandHandler_PostsSubmittedBillAndCreatesApOpenItem()
+    {
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var executionContextAccessor = new PostgresExecutionContextAccessor();
+        var billRepository = new PostgresBillDocumentRepository(connectionFactory, executionContextAccessor);
+        var postingEngine = new DefaultPostingEngine(
+            new DefaultPostingValidator(),
+            new NullPostingPeriodPolicyValidator(),
+            new NullTaxEngine(),
+            new LocalFirstFxResolutionService(new PostgresFxSnapshotRepository(connectionFactory, executionContextAccessor)),
+            new AccountingPostingFragmentBuilder(),
+            new DefaultJournalAggregator(),
+            new PostgresJournalEntryWriter(connectionFactory, executionContextAccessor));
+        var openItemRepository = new PostgresApOpenItemRepository(connectionFactory, executionContextAccessor);
+        var handler = new PostBillCommandHandler(
+            billRepository,
+            postingEngine,
+            openItemRepository,
+            new PostgresBillReceiptMatchingRepository(connectionFactory, executionContextAccessor),
+            new PostgresPurchaseOrderDocumentRepository(connectionFactory, executionContextAccessor),
+            new PostgresUnitOfWork(connectionFactory, executionContextAccessor));
+
+        Guid expenseAccountId = default;
+        Guid payableControlAccountId = default;
+        UserId userId = default;
+        Guid billId = Guid.Empty;
+        Guid journalEntryId = Guid.Empty;
+        Guid openItemId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            payableControlAccountId = await CreatePayableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            expenseAccountId = await CreateExpenseAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            billId = (await billRepository.SaveDraftAsync(
+                new BillDraftSaveModel(
+                    null,
+                    CompanyId,
+                    userId,
+                    VendorId,
+                    new DateOnly(2026, 4, 14),
+                    new DateOnly(2026, 5, 14),
+                    "USD",
+                    "USD",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Submitted bill posting regression",
+                    [new BillDraftLineSaveModel(1, expenseAccountId, "Submitted bill posting regression", 64m, null, 0m, false)]),
+                CancellationToken.None)).DocumentId;
+
+            var submitResult = await billRepository.SubmitDraftAsync(
+                CompanyId,
+                userId,
+                billId,
+                CancellationToken.None);
+            Assert.Equal("submitted", submitResult.Status);
+
+            var postResult = await handler.HandleAsync(
+                new PostBillCommand(
+                    CompanyId,
+                    billId,
+                    userId,
+                    AcceptedFxSnapshotId: null,
+                    IdempotencyKey: $"bill-post-regression:{billId:D}"),
+                CancellationToken.None);
+
+            journalEntryId = postResult.JournalEntryId;
+            openItemId = await GetApOpenItemIdForSourceAsync(
+                connectionFactory,
+                "bill",
+                billId,
+                CancellationToken.None);
+
+            Assert.Equal("posted", await GetDocumentStatusAsync(connectionFactory, "bills", billId, CancellationToken.None));
+            Assert.Equal("posted", await GetJournalEntryStatusAsync(connectionFactory, journalEntryId, CancellationToken.None));
+            var openItem = await GetApOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
+            Assert.NotNull(openItem);
+            Assert.Equal("open", openItem!.Status);
+            Assert.Equal(64m, openItem.OpenAmountTx);
+            Assert.Equal(64m, openItem.OpenAmountBase);
+        }
+        finally
+        {
+            await CleanupApOpenItemAsync(connectionFactory, openItemId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, journalEntryId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "bill_lines", "bill_id", "bills", billId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task SaveDraftAsync_RejectsPostedBillAndVendorCreditUpdates()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -4564,6 +4661,29 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.CommandText = "select status from ap_open_items where id = @open_item_id;";
         command.Parameters.AddWithValue("open_item_id", openItemId);
         return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static async Task<Guid> GetApOpenItemIdForSourceAsync(
+        PostgresConnectionFactory connectionFactory,
+        string sourceType,
+        Guid sourceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select id
+            from ap_open_items
+            where source_type = @source_type
+              and source_id = @source_id
+            order by created_at desc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("source_type", sourceType);
+        command.Parameters.AddWithValue("source_id", sourceId);
+        var rawValue = await command.ExecuteScalarAsync(cancellationToken);
+        return rawValue is Guid id ? id : Guid.Empty;
     }
 
     private static async Task<Guid> CreateSettlementApplicationForOpenItemAsync(

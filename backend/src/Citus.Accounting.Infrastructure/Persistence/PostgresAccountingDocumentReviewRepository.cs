@@ -1432,7 +1432,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 request.CompensationSourceType);
         }
 
-        await using var scope = await PostgresCommandScope.CreateAsync(
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
             _connections,
             _executionContextAccessor,
             cancellationToken);
@@ -1483,6 +1483,8 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 ExecutedAt = executedAt
             },
             cancellationToken);
+
+        await scope.CommitAsync(cancellationToken);
 
         var updatedRequest = await GetReverseRequestAsync(
             companyId,
@@ -1688,6 +1690,17 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             }
         }
 
+        if (applications.Count == 0)
+        {
+            return await LoadSettlementUnapplyRecoveryAsync(
+                scope,
+                companyId,
+                normalizedSourceType,
+                documentId,
+                requestId,
+                cancellationToken);
+        }
+
         foreach (var application in applications)
         {
             var targetTable = application.TargetOpenItemType switch
@@ -1742,6 +1755,45 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             applications.Count,
             applications.Sum(static application => application.AppliedAmountTx),
             applications.Sum(static application => application.AppliedAmountBase));
+    }
+
+    private static async Task<SettlementUnapplyResult> LoadSettlementUnapplyRecoveryAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        string normalizedSourceType,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              count(*)::integer as application_count,
+              coalesce(sum((payload ->> 'AppliedAmountTx')::numeric), 0) as total_applied_amount_tx,
+              coalesce(sum((payload ->> 'AppliedAmountBase')::numeric), 0) as total_applied_amount_base
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'settlement_application_reversal'
+              and action = 'settlement_application_reversed'
+              and payload ->> 'RequestId' = @request_id
+              and payload ->> 'SourceType' = @source_type
+              and payload ->> 'SourceId' = @document_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("request_id", requestId.ToString("D"));
+        command.Parameters.AddWithValue("source_type", normalizedSourceType);
+        command.Parameters.AddWithValue("document_id", documentId.ToString("D"));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new SettlementUnapplyResult(0, 0m, 0m);
+        }
+
+        return new SettlementUnapplyResult(
+            reader.GetInt32(reader.GetOrdinal("application_count")),
+            reader.GetDecimal(reader.GetOrdinal("total_applied_amount_tx")),
+            reader.GetDecimal(reader.GetOrdinal("total_applied_amount_base")));
     }
 
     private static async Task AppendSettlementApplicationReversalAuditAsync(
@@ -1934,10 +1986,12 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             $"""
             update {tableName}
             set status = 'reversed',
-                updated_at = now()
+                updated_at = case
+                    when status = 'reversed' then updated_at
+                    else now()
+                end
             where company_id = @company_id
-              and id = @document_id
-              and status <> 'reversed';
+              and id = @document_id;
             """);
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);

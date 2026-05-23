@@ -277,6 +277,202 @@ public sealed class BusinessApprovalAuthorityTests
         Assert.Equal("authority_allowed", decision.OutcomeCode);
     }
 
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsArUserToPostInvoices()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("ar"),
+            "sales",
+            "post invoices");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_BlocksApUserFromPostingInvoices()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("ap"),
+            "sales",
+            "post invoices");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_business_operation_authority", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsApUserToPostBills()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("ap"),
+            "purchases",
+            "post bills");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsPaymentsUserToPostSettlements()
+    {
+        var receivePaymentDecision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("payments"),
+            "ar_payments",
+            "post receive payments");
+        var payBillDecision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("payments"),
+            "ap_payments",
+            "post pay bills");
+
+        Assert.True(receivePaymentDecision.Allowed);
+        Assert.True(payBillDecision.Allowed);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_BlocksArUserFromPostingManualJournals()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("ar"),
+            "accounting",
+            "post manual journals");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_business_operation_authority", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsBookGovernanceToPostManualJournals()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("company_book_governance"),
+            "accounting",
+            "post manual journals");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_BlocksArUserFromVoidingJournalEntries()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("ar"),
+            "accounting",
+            "void journal entries");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_business_operation_authority", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsOwnerToVoidJournalEntries()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("owner"),
+            "accounting",
+            "void journal entries");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsReportsUserToExportReports()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("reports"),
+            "reports",
+            "export reports");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_BlocksArUserFromExportingReports()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("ar"),
+            "reports",
+            "export reports");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_business_operation_authority", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsInventoryUserToManageInventory()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("inventory"),
+            "inventory",
+            "save inventory receipts");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_BlocksReportsUserFromManagingInventory()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("reports"),
+            "inventory",
+            "save inventory receipts");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_business_operation_authority", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsTaskUserToUpdateTasks()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("tasks"),
+            "tasks",
+            "update action-center tasks");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_BlocksSalesUserFromUpdatingTasks()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("sales"),
+            "tasks",
+            "update action-center tasks");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_business_operation_authority", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_AllowsBankingUserToPostBankingDocuments()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("banking"),
+            "banking",
+            "save and post bank deposits");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void EvaluateBusinessOperation_BlocksSalesUserFromPostingBankingDocuments()
+    {
+        var decision = BusinessApprovalAuthority.EvaluateBusinessOperation(
+            CreateSession("sales"),
+            "banking",
+            "save and post bank deposits");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_business_operation_authority", decision.OutcomeCode);
+    }
+
     private static BusinessSessionContext CreateSession(params string[] roles) =>
         new()
         {

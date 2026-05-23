@@ -15,6 +15,20 @@ public sealed class BusinessRequestContractGuard
 
             var type = argument.GetType();
 
+            if (argument is CompanyId directCompanyId &&
+                !directCompanyId.Equals(session.ActiveCompanyId))
+            {
+                return BusinessRequestGuardResult.Reject(
+                    $"Request company '{directCompanyId}' does not match the active company context '{session.ActiveCompanyId}'.");
+            }
+
+            if (argument is UserId directUserId &&
+                !directUserId.Equals(session.UserId))
+            {
+                return BusinessRequestGuardResult.Reject(
+                    $"Request user '{directUserId}' does not match the authenticated business session '{session.UserId}'.");
+            }
+
             if (TryReadCompanyIdProperty(type, argument, "CompanyId", out var companyId) &&
                 !companyId.Equals(session.ActiveCompanyId))
             {

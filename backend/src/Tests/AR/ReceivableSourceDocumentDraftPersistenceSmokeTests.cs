@@ -1400,7 +1400,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
     }
 
     [Fact]
-    public async Task CompleteReverseRequestExecutionAsync_RecordsJournalEntryReversalForSubmittedInvoice()
+    public async Task CompleteReverseRequestExecutionAsync_CompletesWhenSourceAlreadyMarkedReversed()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
         var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -1504,6 +1504,12 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
+
+            await MarkDocumentReversedAsync(
+                connectionFactory,
+                "invoices",
+                invoiceId,
+                CancellationToken.None);
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
                 CompanyId.FromOrdinal(1),
@@ -2013,6 +2019,199 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal(1m, reversalEvent.AppliedAmountTx);
             Assert.Equal(1m, reversalEvent.AppliedAmountBase);
             settlementApplicationId = Guid.Empty;
+        }
+        finally
+        {
+            await CleanupSettlementApplicationAsync(connectionFactory, settlementApplicationId, CancellationToken.None);
+            await CleanupAuditLogEntityAsync(connectionFactory, receivePaymentId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, compensationJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, journalEntryId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "receive_payment_lines", "receive_payment_id", "receive_payments", receivePaymentId, CancellationToken.None);
+            await CleanupArOpenItemAsync(connectionFactory, openItemId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, revenueAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, receivableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task CompleteReverseRequestExecutionAsync_RecoversSettlementUnapplySummaryWhenApplicationsAlreadyDeleted()
+    {
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
+        var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+
+        Guid receivableControlAccountId = default;
+        Guid revenueAccountId = default;
+        UserId userId = default;
+        Guid invoiceId = Guid.NewGuid();
+        Guid receivePaymentId = Guid.Empty;
+        Guid openItemId = Guid.Empty;
+        Guid journalEntryId = Guid.Empty;
+        Guid compensationJournalEntryId = Guid.Empty;
+        Guid settlementApplicationId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            receivableControlAccountId = await CreateReceivableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            revenueAccountId = await CreateRevenueAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            openItemId = await CreateArOpenItemForSourceAsync(
+                connectionFactory,
+                CompanyId,
+                CustomerId,
+                "invoice",
+                invoiceId,
+                CancellationToken.None);
+
+            receivePaymentId = await InsertReceivePaymentAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                CustomerId,
+                revenueAccountId,
+                openItemId,
+                CancellationToken.None);
+
+            settlementApplicationId = await ApplySettlementApplicationForOpenItemAsync(
+                connectionFactory,
+                CompanyId,
+                "ar_open_item",
+                openItemId,
+                "receive_payment",
+                receivePaymentId,
+                userId,
+                CancellationToken.None);
+
+            journalEntryId = await InsertJournalEntryWithBalancedLinesAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "receive_payment",
+                receivePaymentId,
+                revenueAccountId,
+                receivableControlAccountId,
+                1m,
+                "JE-SMOKE-AR-RP-REV-RECOVER-001",
+                CancellationToken.None);
+
+            var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
+                CompanyId.FromOrdinal(1),
+                "receive_payment",
+                receivePaymentId,
+                CancellationToken.None);
+            var originalReviewBeforeReverse = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                journalEntryId,
+                CancellationToken.None);
+
+            Assert.NotNull(sourceReviewBeforeReverse);
+            Assert.Equal(journalEntryId, sourceReviewBeforeReverse!.JournalEntryId);
+            Assert.Equal("posted", sourceReviewBeforeReverse.JournalEntryStatus);
+            Assert.NotNull(originalReviewBeforeReverse);
+            Assert.Equal("receive_payment", originalReviewBeforeReverse!.SourceType);
+            Assert.Equal(receivePaymentId, originalReviewBeforeReverse.SourceId);
+            Assert.Equal("posted", originalReviewBeforeReverse.Status);
+
+            var attempt = await reviewRepository.AttemptReverseAsync(
+                CompanyId.FromOrdinal(1),
+                "receive_payment",
+                receivePaymentId,
+                userId,
+                CancellationToken.None);
+
+            Assert.NotNull(attempt);
+            Assert.Equal("request_recorded", attempt!.OutcomeCode);
+
+            var submitResult = await reviewRepository.SubmitReverseRequestAsync(
+                CompanyId.FromOrdinal(1),
+                "receive_payment",
+                receivePaymentId,
+                attempt.RequestId!.Value,
+                userId,
+                CancellationToken.None);
+
+            Assert.NotNull(submitResult);
+            Assert.Equal("submitted", submitResult!.OutcomeCode);
+
+            var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
+                CompanyId.FromOrdinal(1),
+                "receive_payment",
+                receivePaymentId,
+                attempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+
+            Assert.NotNull(executeResult);
+            Assert.Equal("execution_request_recorded", executeResult!.OutcomeCode);
+
+            var lifecycleResult = await lifecycleStore.ReverseAsync(
+                CompanyId,
+                journalEntryId,
+                userId,
+                CancellationToken.None);
+
+            compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
+
+            await SimulateSettlementApplicationAlreadyUnappliedAsync(
+                connectionFactory,
+                CompanyId,
+                settlementApplicationId,
+                attempt.RequestId.Value,
+                userId,
+                CancellationToken.None);
+            settlementApplicationId = Guid.Empty;
+
+            var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
+                CompanyId.FromOrdinal(1),
+                "receive_payment",
+                receivePaymentId,
+                attempt.RequestId.Value,
+                userId,
+                lifecycleResult.CompensationJournalEntryId,
+                lifecycleResult.CompensationDisplayNumber,
+                lifecycleResult.CompensationSourceType,
+                lifecycleResult.LifecycleAt,
+                CancellationToken.None);
+
+            Assert.NotNull(completionResult);
+            Assert.True(completionResult!.Executed);
+            Assert.Equal("journal_entry_reversed", completionResult.OutcomeCode);
+
+            var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "receive_payments", receivePaymentId, CancellationToken.None);
+            var openItem = await GetArOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
+            var applicationCount = await CountSettlementApplicationsForSourceAsync(
+                connectionFactory,
+                "receive_payment",
+                receivePaymentId,
+                CancellationToken.None);
+            var reversalAuditCount = await CountSettlementApplicationReversalAuditsForSourceAsync(
+                connectionFactory,
+                "receive_payment",
+                receivePaymentId,
+                CancellationToken.None);
+            var completionSummary = await GetReverseCompletionSettlementSummaryAsync(
+                connectionFactory,
+                attempt.RequestId.Value,
+                CancellationToken.None);
+
+            Assert.Equal("reversed", sourceStatus);
+            Assert.NotNull(openItem);
+            Assert.Equal("open", openItem!.Status);
+            Assert.Equal(55m, openItem.OpenAmountTx);
+            Assert.Equal(55m, openItem.OpenAmountBase);
+            Assert.Equal(0, applicationCount);
+            Assert.Equal(1, reversalAuditCount);
+            Assert.NotNull(completionSummary);
+            Assert.Equal(1, completionSummary!.ApplicationCount);
+            Assert.Equal(1m, completionSummary.TotalAppliedAmountTx);
+            Assert.Equal(1m, completionSummary.TotalAppliedAmountBase);
         }
         finally
         {
@@ -4025,6 +4224,24 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task MarkDocumentReversedAsync(
+        PostgresConnectionFactory connectionFactory,
+        string headerTable,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        if (documentId == Guid.Empty)
+        {
+            return;
+        }
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"update {headerTable} set status = 'reversed', updated_at = now() where id = @document_id;";
+        command.Parameters.AddWithValue("document_id", documentId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<Guid> InsertJournalEntryAsync(
         PostgresConnectionFactory connectionFactory,
         CompanyId companyId,
@@ -5193,6 +5410,217 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("source_id", sourceId.ToString("D"));
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
+
+    private static async Task<ReverseCompletionSettlementSummary?> GetReverseCompletionSettlementSummaryAsync(
+        PostgresConnectionFactory connectionFactory,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              (payload ->> 'SettlementApplicationsUnapplied')::integer as application_count,
+              (payload ->> 'SettlementApplicationsUnappliedAmountTx')::numeric as total_applied_amount_tx,
+              (payload ->> 'SettlementApplicationsUnappliedAmountBase')::numeric as total_applied_amount_base
+            from audit_logs
+            where entity_type = 'source_document_reverse_request'
+              and action = 'reverse_execution_completed'
+              and entity_id = @request_id
+            order by created_at desc, id desc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("request_id", requestId.ToString("D"));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ReverseCompletionSettlementSummary(
+            reader.GetInt32(reader.GetOrdinal("application_count")),
+            reader.GetDecimal(reader.GetOrdinal("total_applied_amount_tx")),
+            reader.GetDecimal(reader.GetOrdinal("total_applied_amount_base")));
+    }
+
+    private static async Task SimulateSettlementApplicationAlreadyUnappliedAsync(
+        PostgresConnectionFactory connectionFactory,
+        CompanyId companyId,
+        Guid applicationId,
+        Guid requestId,
+        UserId userId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        Guid sourceId;
+        Guid targetOpenItemId;
+        string applicationType;
+        string sourceType;
+        string targetOpenItemType;
+        decimal appliedAmountTx;
+        decimal appliedAmountBase;
+        decimal? settlementFxRate;
+        decimal? realizedFxAmount;
+        DateTimeOffset createdAt;
+        string? createdByUserId;
+
+        await using (var selectCommand = connection.CreateCommand())
+        {
+            selectCommand.Transaction = transaction;
+            selectCommand.CommandText =
+                """
+                select
+                  application_type,
+                  source_type,
+                  source_id,
+                  target_open_item_type,
+                  target_open_item_id,
+                  applied_amount_tx,
+                  applied_amount_base,
+                  settlement_fx_rate,
+                  realized_fx_amount,
+                  created_at,
+                  created_by_user_id
+                from settlement_applications
+                where company_id = @company_id
+                  and id = @application_id
+                limit 1;
+                """;
+            selectCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            selectCommand.Parameters.AddWithValue("application_id", applicationId);
+
+            await using var reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new InvalidOperationException("Settlement application fixture was not found.");
+            }
+
+            applicationType = reader.GetString(reader.GetOrdinal("application_type"));
+            sourceType = reader.GetString(reader.GetOrdinal("source_type"));
+            sourceId = reader.GetGuid(reader.GetOrdinal("source_id"));
+            targetOpenItemType = reader.GetString(reader.GetOrdinal("target_open_item_type"));
+            targetOpenItemId = reader.GetGuid(reader.GetOrdinal("target_open_item_id"));
+            appliedAmountTx = reader.GetDecimal(reader.GetOrdinal("applied_amount_tx"));
+            appliedAmountBase = reader.GetDecimal(reader.GetOrdinal("applied_amount_base"));
+            settlementFxRate = reader.IsDBNull(reader.GetOrdinal("settlement_fx_rate"))
+                ? null
+                : reader.GetDecimal(reader.GetOrdinal("settlement_fx_rate"));
+            realizedFxAmount = reader.IsDBNull(reader.GetOrdinal("realized_fx_amount"))
+                ? null
+                : reader.GetDecimal(reader.GetOrdinal("realized_fx_amount"));
+            createdAt = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"));
+            createdByUserId = reader.IsDBNull(reader.GetOrdinal("created_by_user_id"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("created_by_user_id"));
+        }
+
+        var targetTable = targetOpenItemType switch
+        {
+            "ar_open_item" => "ar_open_items",
+            "ap_open_item" => "ap_open_items",
+            _ => throw new InvalidOperationException($"Unsupported target open item type '{targetOpenItemType}'.")
+        };
+
+        await using (var updateCommand = connection.CreateCommand())
+        {
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText =
+                $"""
+                update {targetTable}
+                set open_amount_tx = least(original_amount_tx, open_amount_tx + @applied_amount_tx),
+                    open_amount_base = least(original_amount_base, open_amount_base + @applied_amount_base),
+                    status = case
+                        when least(original_amount_tx, open_amount_tx + @applied_amount_tx) <= 0 then 'closed'
+                        when least(original_amount_tx, open_amount_tx + @applied_amount_tx) >= original_amount_tx then 'open'
+                        else 'partially_applied'
+                    end,
+                    updated_at = now()
+                where company_id = @company_id
+                  and id = @target_open_item_id
+                  and status <> 'voided';
+                """;
+            updateCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            updateCommand.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
+            updateCommand.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
+            updateCommand.Parameters.AddWithValue("applied_amount_base", appliedAmountBase);
+            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var auditCommand = connection.CreateCommand())
+        {
+            auditCommand.Transaction = transaction;
+            auditCommand.CommandText =
+                """
+                insert into audit_logs (
+                  id,
+                  company_id,
+                  actor_type,
+                  actor_id,
+                  entity_type,
+                  entity_id,
+                  action,
+                  payload
+                )
+                values (
+                  @id,
+                  @company_id,
+                  'user',
+                  @actor_id,
+                  'settlement_application_reversal',
+                  @entity_id,
+                  'settlement_application_reversed',
+                  @payload::jsonb
+                );
+                """;
+            auditCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+            auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            auditCommand.Parameters.AddWithValue("actor_id", userId.Value);
+            auditCommand.Parameters.AddWithValue("entity_id", applicationId.ToString("D"));
+            auditCommand.Parameters.AddWithValue("payload", System.Text.Json.JsonSerializer.Serialize(new
+            {
+                RequestId = requestId,
+                SettlementApplicationId = applicationId,
+                ApplicationType = applicationType,
+                SourceType = sourceType,
+                SourceId = sourceId,
+                TargetOpenItemType = targetOpenItemType,
+                TargetOpenItemId = targetOpenItemId,
+                AppliedAmountTx = appliedAmountTx,
+                AppliedAmountBase = appliedAmountBase,
+                SettlementFxRate = settlementFxRate,
+                RealizedFxAmount = realizedFxAmount,
+                OriginalApplicationCreatedAt = createdAt,
+                OriginalApplicationCreatedByUserId = createdByUserId,
+                ReversalMode = "governed_reverse_execution_unapply"
+            }));
+            await auditCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var deleteCommand = connection.CreateCommand())
+        {
+            deleteCommand.Transaction = transaction;
+            deleteCommand.CommandText =
+                """
+                delete from settlement_applications
+                where company_id = @company_id
+                  and id = @application_id;
+                """;
+            deleteCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            deleteCommand.Parameters.AddWithValue("application_id", applicationId);
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private sealed record ReverseCompletionSettlementSummary(
+        int ApplicationCount,
+        decimal TotalAppliedAmountTx,
+        decimal TotalAppliedAmountBase);
 
     private sealed record OpenItemSnapshot(
         string Status,

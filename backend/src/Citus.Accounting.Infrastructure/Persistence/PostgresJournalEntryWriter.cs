@@ -481,7 +481,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                              updated_at = now()
                          where company_id = @company_id
                            and id = @source_id
-                           and status in ('draft', 'issued');
+                           and status in ('draft', 'issued', 'submitted');
                          """,
             "sales_receipt" => """
                                 update sales_receipts
@@ -544,7 +544,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                           updated_at = now()
                       where company_id = @company_id
                         and id = @source_id
-                        and status = 'draft';
+                        and status = 'submitted';
                       """,
             "vendor_credit" => """
                                 update vendor_credits

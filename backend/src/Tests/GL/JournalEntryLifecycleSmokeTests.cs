@@ -98,6 +98,43 @@ public sealed class JournalEntryLifecycleSmokeTests
     }
 
     [Fact]
+    public async Task ReverseAsync_IsIdempotentWhenOriginalAlreadyReversedAndCompensationExists()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            var firstLifecycle = await fixture.LifecycleWorkflow.ReverseAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                UserId,
+                CancellationToken.None);
+
+            var retryLifecycle = await fixture.LifecycleWorkflow.ReverseAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                UserId,
+                CancellationToken.None);
+
+            var sourceJournalEntries = await CountSourceJournalEntriesAsync(
+                fixture.ConnectionFactory,
+                CompanyId,
+                fixture.DocumentId,
+                "manual_journal_reversal",
+                CancellationToken.None);
+
+            Assert.Equal(firstLifecycle.CompensationJournalEntryId, retryLifecycle.CompensationJournalEntryId);
+            Assert.Equal(firstLifecycle.CompensationDisplayNumber, retryLifecycle.CompensationDisplayNumber);
+            Assert.Equal("manual_journal_reversal", retryLifecycle.CompensationSourceType);
+            Assert.Equal(1, sourceJournalEntries);
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    [Fact]
     public async Task ReverseAsync_PreservesForeignCurrencyTraceAcrossReviewAndSourceChain()
     {
         var fixture = await CreateFixtureAsync();
@@ -629,6 +666,29 @@ public sealed class JournalEntryLifecycleSmokeTests
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task<int> CountSourceJournalEntriesAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        CompanyId companyId,
+        Guid sourceId,
+        string sourceType,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select count(*)
+            from journal_entries
+            where company_id = @company_id
+              and source_id = @source_id
+              and source_type = @source_type;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("source_id", sourceId);
+        command.Parameters.AddWithValue("source_type", sourceType);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
     private static async Task ExecuteDeleteAsync(

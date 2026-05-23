@@ -19,7 +19,7 @@ public sealed class DefaultPostingValidator : IPostingValidator
             throw new InvalidOperationException("Posting document company does not match the active company context.");
         }
 
-        if (document.Status is not ("draft" or "posted"))
+        if (document.Status is not ("draft" or "submitted" or "posted"))
         {
             throw new InvalidOperationException(
                 $"Document status '{document.Status}' cannot enter the posting engine.");

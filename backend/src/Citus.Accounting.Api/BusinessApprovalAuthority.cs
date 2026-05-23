@@ -41,6 +41,97 @@ public static class BusinessApprovalAuthority
         "company_accounting_settings"
     ];
 
+    private static readonly IReadOnlyList<string> AccountingPostRoles =
+    [
+        "owner",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> SalesPostRoles =
+    [
+        "owner",
+        "ar",
+        "sales",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> PurchasePostRoles =
+    [
+        "owner",
+        "ap",
+        "purchases",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> ArPaymentPostRoles =
+    [
+        "owner",
+        "ar",
+        "sales",
+        "payments",
+        "banking",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> ApPaymentPostRoles =
+    [
+        "owner",
+        "ap",
+        "purchases",
+        "payments",
+        "banking",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> ReportsExportRoles =
+    [
+        "owner",
+        "reports",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> InventoryOperationRoles =
+    [
+        "owner",
+        "inventory",
+        "ap",
+        "purchases",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> TaskOperationRoles =
+    [
+        "owner",
+        "tasks",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    private static readonly IReadOnlyList<string> BankingOperationRoles =
+    [
+        "owner",
+        "payments",
+        "banking",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
     public static bool CanApproveOpenItemAdjustment(BusinessSessionContext? session) =>
         session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
 
@@ -65,6 +156,37 @@ public static class BusinessApprovalAuthority
 
     public static bool CanAccessBankReconciliation(BusinessSessionContext? session) =>
         session?.Roles.Any(IsBankReconciliationRole) == true;
+
+    public static Decision EvaluateBusinessOperation(
+        BusinessSessionContext? session,
+        string moduleCode,
+        string operationCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(moduleCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationCode);
+
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {operationCode} in {moduleCode}.");
+        }
+
+        var allowedRoles = ResolveBusinessOperationRoles(moduleCode);
+        if (!session.Roles.Any(role => allowedRoles.Contains(NormalizeRole(role), StringComparer.Ordinal)))
+        {
+            return new Decision(
+                false,
+                "blocked_business_operation_authority",
+                $"The current business session is not authorized to {operationCode} in {moduleCode}.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {operationCode} in {moduleCode}.");
+    }
 
     public static bool CanApprovePurchaseOrder(BusinessSessionContext? session) =>
         session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
@@ -411,6 +533,24 @@ public static class BusinessApprovalAuthority
         BankReconciliationRoles.Contains(
             role.Trim().ToLowerInvariant(),
             StringComparer.Ordinal);
+
+    private static IReadOnlyList<string> ResolveBusinessOperationRoles(string moduleCode) =>
+        NormalizeRole(moduleCode) switch
+        {
+            "accounting" => AccountingPostRoles,
+            "sales" => SalesPostRoles,
+            "purchases" => PurchasePostRoles,
+            "ar_payments" => ArPaymentPostRoles,
+            "ap_payments" => ApPaymentPostRoles,
+            "reports" => ReportsExportRoles,
+            "inventory" => InventoryOperationRoles,
+            "tasks" => TaskOperationRoles,
+            "banking" => BankingOperationRoles,
+            _ => Array.Empty<string>()
+        };
+
+    private static string NormalizeRole(string role) =>
+        role.Trim().ToLowerInvariant();
 
     public sealed record Decision(
         bool Allowed,

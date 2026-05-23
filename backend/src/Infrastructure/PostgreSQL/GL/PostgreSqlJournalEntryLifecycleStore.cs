@@ -98,13 +98,6 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
 
         var lifecycleBehavior = ResolveLifecycleBehavior(original.SourceType, originalStatus, compensationSourceType);
 
-        if (!string.Equals(original.Status, "posted", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new JournalEntryLifecycleException(
-                "invalid_document_status",
-                "Only posted journal entries can be voided or reversed.");
-        }
-
         var existingCompensation = await TryFindExistingCompensationAsync(
             connection,
             transaction,
@@ -115,6 +108,14 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
 
         if (existingCompensation is not null)
         {
+            if (!string.Equals(original.Status, "posted", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(original.Status, originalStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new JournalEntryLifecycleException(
+                    "invalid_document_status",
+                    "Only posted journal entries can be voided or reversed.");
+            }
+
             await transaction.CommitAsync(cancellationToken);
             return new JournalEntryLifecycleResult(
                 original.Id,
@@ -124,6 +125,13 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                 existingCompensation.Id,
                 existingCompensation.DisplayNumber,
                 lifecycleBehavior.CompensationSourceType);
+        }
+
+        if (!string.Equals(original.Status, "posted", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new JournalEntryLifecycleException(
+                "invalid_document_status",
+                "Only posted journal entries can be voided or reversed.");
         }
 
         var originalLines = await LoadOriginalLinesAsync(connection, transaction, companyId, journalEntryId, cancellationToken);

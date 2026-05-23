@@ -4,23 +4,37 @@ public static class CompanyMembershipPermissionCatalog
 {
     public const string Ar = "ar";
     public const string Ap = "ap";
+    public const string Sales = "sales";
+    public const string Purchases = "purchases";
+    public const string Payments = "payments";
+    public const string Banking = "banking";
     public const string Approve = "approve";
     public const string Reports = "reports";
     public const string SettingsAccess = "settings_access";
     public const string CompanyAccountingSettings = "company_accounting_settings";
     public const string CompanyBookGovernance = "company_book_governance";
     public const string Reconciliation = "reconciliation";
+    public const string AuditLog = "audit_log";
+    public const string Tasks = "tasks";
+    public const string Inventory = "inventory";
 
     public static IReadOnlyList<CompanyMembershipPermissionOption> Options { get; } =
     [
         new(Ar, "AR", "Access customer-side receivables workflows.", IsGovernancePermission: false),
         new(Ap, "AP", "Access vendor-side payables workflows.", IsGovernancePermission: false),
+        new(Sales, "Sales", "Access sales documents and customer-side selling workflows.", IsGovernancePermission: false),
+        new(Purchases, "Purchases", "Access purchase documents and vendor-side buying workflows.", IsGovernancePermission: false),
+        new(Payments, "Payments", "Access payment and settlement workflows.", IsGovernancePermission: false),
+        new(Banking, "Banking", "Access banking and cash movement workflows.", IsGovernancePermission: false),
         new(Approve, "Approve", "Access controlled approval-oriented business actions.", IsGovernancePermission: false),
         new(Reports, "Reports", "Access company-scoped report surfaces.", IsGovernancePermission: false),
         new(SettingsAccess, "Settings Access", "Access company settings surfaces.", IsGovernancePermission: false),
         new(CompanyAccountingSettings, "Company Accounting Settings", "Manage accounting-governing company settings.", IsGovernancePermission: true),
         new(CompanyBookGovernance, "Book Governance", "Manage books, accounting standards, and book-governing policies.", IsGovernancePermission: true),
-        new(Reconciliation, "Reconciliation", "Access reconciliation control workflows.", IsGovernancePermission: false)
+        new(Reconciliation, "Reconciliation", "Access reconciliation control workflows.", IsGovernancePermission: false),
+        new(AuditLog, "Audit Log", "Access company audit log review surfaces.", IsGovernancePermission: true),
+        new(Tasks, "Tasks", "Access task and action-management workflows.", IsGovernancePermission: false),
+        new(Inventory, "Inventory", "Access inventory item, warehouse, and movement workflows.", IsGovernancePermission: false)
     ];
 
     public static IReadOnlyList<string> NormalizeTokens(IEnumerable<string> tokens)
