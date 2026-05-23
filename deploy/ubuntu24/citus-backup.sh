@@ -29,8 +29,14 @@ set +a
 : "${CITUS_DB_HOST:?CITUS_DB_HOST missing in $ENV_FILE}"
 : "${CITUS_DB_PORT:?CITUS_DB_PORT missing in $ENV_FILE}"
 : "${CITUS_DB_NAME:?CITUS_DB_NAME missing in $ENV_FILE}"
-: "${CITUS_DB_USER:?CITUS_DB_USER missing in $ENV_FILE}"
-: "${CITUS_DB_PASSWORD:?CITUS_DB_PASSWORD missing in $ENV_FILE}"
+# M13: dump as citus_backup (BYPASSRLS), not citus_app. citus_app is
+# the table owner + non-bypassrls, and FORCE row-level-security
+# applies to owner roles — pg_dump as citus_app would fail with
+# "query would be affected by row-level security policy". The
+# upgrade.sh provisions both the role and these env vars; if they're
+# missing the deploy hasn't run since M13 — re-run upgrade.sh.
+: "${CITUS_BACKUP_DB_USER:?CITUS_BACKUP_DB_USER missing in $ENV_FILE — re-run upgrade.sh to provision the M13 backup role}"
+: "${CITUS_BACKUP_DB_PASSWORD:?CITUS_BACKUP_DB_PASSWORD missing in $ENV_FILE — re-run upgrade.sh to provision the M13 backup role}"
 
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
@@ -43,10 +49,10 @@ tmp="${dump}.partial"
 # disk space is cheaper than the next backup window. Atomic rename
 # at the end so a crash mid-dump doesn't leave a half-file that
 # looks like a real backup.
-PGPASSWORD="$CITUS_DB_PASSWORD" pg_dump \
+PGPASSWORD="$CITUS_BACKUP_DB_PASSWORD" pg_dump \
   --host="$CITUS_DB_HOST" \
   --port="$CITUS_DB_PORT" \
-  --username="$CITUS_DB_USER" \
+  --username="$CITUS_BACKUP_DB_USER" \
   --format=custom \
   --no-owner \
   --no-privileges \

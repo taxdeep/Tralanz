@@ -318,24 +318,39 @@ ensure_env_defaults() {
 # stays in sync with the database.
 ensure_db_connection_string() {
   local db_host db_port db_name db_user db_password
+  local backup_user backup_password
   db_host="$(read_env_value CITUS_DB_HOST)"
   db_port="$(read_env_value CITUS_DB_PORT)"
   db_name="$(read_env_value CITUS_DB_NAME)"
   db_user="$(read_env_value CITUS_DB_USER)"
   db_password="$(read_env_value CITUS_DB_PASSWORD)"
+  backup_user="$(read_env_value CITUS_BACKUP_DB_USER)"
+  backup_password="$(read_env_value CITUS_BACKUP_DB_PASSWORD)"
   : "${db_host:=127.0.0.1}"
   : "${db_port:=5432}"
   : "${db_name:=citus_accounting}"
   : "${db_user:=citus_app}"
+  : "${backup_user:=citus_backup}"
   if [[ -z "${db_password}" ]]; then
     db_password="$(generate_secret)"
     log "CITUS_DB_PASSWORD missing from ${ENV_FILE}; generated a new secret and will sync the Postgres role."
+  fi
+  # M13: citus_backup is a BYPASSRLS read-only role used by pg_dump.
+  # citus_app is non-bypassrls + FORCE row-level-security applies to
+  # owner roles, so it cannot pg_dump RLS-enabled tables. The backup
+  # role's password is auto-generated and synced into Postgres by
+  # ensure_postgres_database.
+  if [[ -z "${backup_password}" ]]; then
+    backup_password="$(generate_secret)"
+    log "CITUS_BACKUP_DB_PASSWORD missing from ${ENV_FILE}; generated a new secret and will sync the Postgres role."
   fi
   append_env_if_missing "CITUS_DB_HOST" "${db_host}"
   append_env_if_missing "CITUS_DB_PORT" "${db_port}"
   append_env_if_missing "CITUS_DB_NAME" "${db_name}"
   append_env_if_missing "CITUS_DB_USER" "${db_user}"
   append_env_if_missing "CITUS_DB_PASSWORD" "${db_password}"
+  append_env_if_missing "CITUS_BACKUP_DB_USER" "${backup_user}"
+  append_env_if_missing "CITUS_BACKUP_DB_PASSWORD" "${backup_password}"
   if ! grep -q "^CITUS_ACCOUNTING_DB=" "${ENV_FILE}" 2>/dev/null; then
     append_env_if_missing "CITUS_ACCOUNTING_DB" \
       "Host=${db_host};Port=${db_port};Database=${db_name};Username=${db_user};Password=${db_password};Pooling=true"
@@ -351,12 +366,14 @@ ensure_env_file() {
     return
   fi
 
-  local db_password
+  local db_password backup_password
   db_password="${CITUS_DB_PASSWORD:-$(generate_secret)}"
+  backup_password="${CITUS_BACKUP_DB_PASSWORD:-$(generate_secret)}"
   local db_host="${CITUS_DB_HOST:-127.0.0.1}"
   local db_port="${CITUS_DB_PORT:-5432}"
   local db_name="${CITUS_DB_NAME:-citus_accounting}"
   local db_user="${CITUS_DB_USER:-citus_app}"
+  local backup_user="${CITUS_BACKUP_DB_USER:-citus_backup}"
   local frontend_host="${CITUS_FRONTEND_HOST:-127.0.0.1}"
   local api_host="${CITUS_API_HOST:-127.0.0.1}"
   local frontend_port="${CITUS_FRONTEND_PORT:-3000}"
@@ -384,6 +401,8 @@ CITUS_DB_PORT=${db_port}
 CITUS_DB_NAME=${db_name}
 CITUS_DB_USER=${db_user}
 CITUS_DB_PASSWORD=${db_password}
+CITUS_BACKUP_DB_USER=${backup_user}
+CITUS_BACKUP_DB_PASSWORD=${backup_password}
 CITUS_ACCOUNTING_DB=Host=${db_host};Port=${db_port};Database=${db_name};Username=${db_user};Password=${db_password};Pooling=true
 AppHost__PublicBaseUrl=http://${frontend_host}:${frontend_port}/
 AppHost__AccountingApiBaseUrl=http://${api_host}:${accounting_port}/
@@ -1065,6 +1084,25 @@ SQL
   if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${CITUS_DB_NAME}'" | grep -q 1; then
     sudo -u postgres createdb --owner="${CITUS_DB_USER}" "${CITUS_DB_NAME}"
   fi
+
+  # M13: citus_backup is the BYPASSRLS read-only role used by pg_dump.
+  # citus_app cannot dump RLS-enabled tables (FORCE applies to owner
+  # roles), so backups need a dedicated escape hatch. Granting
+  # pg_read_all_data covers current AND future tables — no per-table
+  # GRANT churn when new tables ship.
+  log "Ensuring PostgreSQL backup role exists."
+  sudo -u postgres psql "${CITUS_DB_NAME}" \
+    -v ON_ERROR_STOP=1 \
+    --set=citus_backup_user="${CITUS_BACKUP_DB_USER}" \
+    --set=citus_backup_password="${CITUS_BACKUP_DB_PASSWORD}" <<'SQL'
+SELECT CASE
+  WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'citus_backup_user')
+    THEN format('ALTER ROLE %I WITH LOGIN BYPASSRLS PASSWORD %L', :'citus_backup_user', :'citus_backup_password')
+  ELSE format('CREATE ROLE %I LOGIN BYPASSRLS PASSWORD %L', :'citus_backup_user', :'citus_backup_password')
+END
+\gexec
+GRANT pg_read_all_data TO :"citus_backup_user";
+SQL
 }
 
 apply_backend_baseline_if_needed() {
@@ -1645,11 +1683,16 @@ backup_datastores() {
   mkdir -p "${BACKUP_DIR}"
 
   if command -v pg_dump >/dev/null 2>&1; then
-    PGPASSWORD="${CITUS_DB_PASSWORD}" \
+    # M13: dump as citus_backup (BYPASSRLS). citus_app cannot dump
+    # RLS-enabled tables — FORCE row-level-security applies to owner
+    # roles, so pg_dump would fail with "query would be affected by
+    # row-level security policy". The backup role is provisioned by
+    # ensure_postgres_database immediately before this runs.
+    PGPASSWORD="${CITUS_BACKUP_DB_PASSWORD}" \
       pg_dump \
         -h "${CITUS_DB_HOST}" \
         -p "${CITUS_DB_PORT}" \
-        -U "${CITUS_DB_USER}" \
+        -U "${CITUS_BACKUP_DB_USER}" \
         -Fc \
         -f "${BACKUP_DIR}/accounting-${timestamp}.dump" \
         "${CITUS_DB_NAME}"
@@ -1780,10 +1823,14 @@ upgrade_main() {
   fi
 
   stop_application_services
-  backup_datastores
   sync_source_tree
+  # ensure_postgres_database runs BEFORE backup_datastores so the
+  # M13 BYPASSRLS-equipped citus_backup role exists in time for the
+  # pg_dump call. Both steps are read-only against the existing
+  # schema, so this reordering only affects role provisioning timing.
   ensure_postgres_database
   apply_backend_baseline_if_needed
+  backup_datastores
   apply_pending_migrations
   publish_backends
   bootstrap_platform_core
