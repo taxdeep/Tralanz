@@ -56,6 +56,7 @@ using Modules.AP.Expenses;
 using Modules.AP.PurchaseOrders;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
+using Infrastructure.PostgreSQL.Inventory.Posting;
 using Infrastructure.PostgreSQL.Numbering;
 using Infrastructure.PostgreSQL.Tax;
 using Infrastructure.PostgreSQL.UnitySearch;
@@ -131,6 +132,14 @@ builder.Services.AddSingleton<IReceiptInventoryCostLayerEmissionStore, PostgreSq
 builder.Services.AddSingleton<IReceiptGrIrBridgeStore, PostgreSqlReceiptGrIrBridgeStore>();
 builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
 builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipmentStore>();
+// P0-3b-1 (AUDIT_2026-05-20 C3): inventory adjustment GL handler.
+// PostgreSqlInventoryAdjustmentStore now requires the GL poster so the
+// Adjustment Gain/Loss + Approved Write-off paths can emit their Dr/Cr
+// JE in the same tx as the subledger writes. Sibling Workflow stays
+// unregistered until an API surface lands; the store registration is
+// the integration point for the upcoming PR.
+builder.Services.AddSingleton<IInventoryAdjustmentGlPoster, PostgreSqlInventoryAdjustmentGlPoster>();
+builder.Services.AddSingleton<IInventoryAdjustmentStore, PostgreSqlInventoryAdjustmentStore>();
 builder.Services.AddSingleton(
     static services => new BusinessSessionDirectory(
         services.GetRequiredService<IOptions<BusinessSessionOptions>>(),
