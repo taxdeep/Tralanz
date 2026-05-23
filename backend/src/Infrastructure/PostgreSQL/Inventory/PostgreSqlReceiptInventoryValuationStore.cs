@@ -12,15 +12,18 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
 
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
+    private readonly InventoryReceiptExecutionContextAccessor _executionContextAccessor;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlReceiptInventoryValuationStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore)
+        IInventoryFoundationStore foundationStore,
+        InventoryReceiptExecutionContextAccessor executionContextAccessor)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
+        _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -38,6 +41,20 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
+        // M4 (P2-10): join the receipt workflow's ambient tx so this
+        // step rolls back atomically with activation + emission.
+        if (_executionContextAccessor.Current is { } ambient)
+        {
+            await EnsureSchemaAsync(ambient.Connection, cancellationToken, allowCreate: false);
+            return await RefreshReceiptValuationCoreAsync(
+                ambient.Connection,
+                ambient.Transaction,
+                companyId,
+                userId,
+                receiptDocumentId,
+                cancellationToken);
+        }
+
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
 
@@ -51,31 +68,67 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
-            await InsertValuationLinesAsync(
+            var summary = await RefreshReceiptValuationCoreAsync(
                 connection,
                 transaction,
                 companyId,
                 userId,
                 receiptDocumentId,
                 cancellationToken);
-
-            var summary = await LoadReceiptValuationSummaryAsync(
-                connection,
-                transaction,
-                companyId,
-                receiptDocumentId,
-                hasActivationLines: true,
-                hasMatchingAllocations: true,
-                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-
-            return summary ?? BuildEmptySummary(receiptDocumentId);
+            return summary;
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            try
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+            catch
+            {
+                // Preserve the original failure.
+            }
             throw;
         }
+    }
+
+    private async Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        // Table-existence check is a no-op for the ambient-tx path
+        // because the workflow's activation step already ran on the
+        // same tx and would have failed earlier if these tables
+        // didn't exist. Repeating the check here is harmless and
+        // keeps the helper self-contained for the standalone path.
+        if (!await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken) ||
+            !await TableExistsAsync(connection, MatchingAllocationsTableName, cancellationToken))
+        {
+            return await LoadReceiptValuationSummaryAsync(connection, transaction, companyId, receiptDocumentId, hasActivationLines: false, hasMatchingAllocations: false, cancellationToken)
+                ?? BuildEmptySummary(receiptDocumentId);
+        }
+
+        await InsertValuationLinesAsync(
+            connection,
+            transaction,
+            companyId,
+            userId,
+            receiptDocumentId,
+            cancellationToken);
+
+        var summary = await LoadReceiptValuationSummaryAsync(
+            connection,
+            transaction,
+            companyId,
+            receiptDocumentId,
+            hasActivationLines: true,
+            hasMatchingAllocations: true,
+            cancellationToken);
+        return summary ?? BuildEmptySummary(receiptDocumentId);
     }
 
     public async Task<ReceiptInventoryValuationSummary?> GetReceiptValuationSummaryAsync(
