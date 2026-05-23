@@ -1,5 +1,6 @@
 using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Inventory.Domain.Shared;
+using Infrastructure.PostgreSQL.Inventory.Posting;
 using Npgsql;
 
 namespace Infrastructure.PostgreSQL.Inventory;
@@ -8,15 +9,18 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
 {
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
+    private readonly IInventoryTransferGlPoster _glPoster;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlInventoryTransferStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore)
+        IInventoryFoundationStore foundationStore,
+        IInventoryTransferGlPoster glPoster)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
+        _glPoster = glPoster ?? throw new ArgumentNullException(nameof(glPoster));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -1169,21 +1173,19 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         string? idempotencyKey,
         CancellationToken cancellationToken)
     {
-        // P0-3 (C3) fail-fast guard. Transfer ship decrements the source
-        // warehouse's on_hand_qty + opens in_transit_out. If source and
-        // destination share the same inventory-asset account the net GL
-        // is zero, but the spec (Q2=A) requires every movement to post
-        // an explicit JE — either to an in-transit clearing account for
-        // cross-location moves, or a balanced same-account entry that
-        // makes the movement auditable in the GL. Until that handler
-        // ships this entry point is gated. Today no API endpoint reaches
-        // it (IInventoryTransferStore is unregistered in DI).
-        throw new NotImplementedException(
-            "Transfer ship is gated by AUDIT_2026-05-20 C3: " +
-            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
-            "before re-enabling this path.");
-
-#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch.
+        // P0-3b-3 (AUDIT_2026-05-20 C3 closure): transfer ship now emits
+        // a balancing audit-trail JE alongside the subledger writes
+        // (Dr 14000 in-transit hold / Cr 14000 source warehouse). V1
+        // single-account model means net-zero balance impact, but the
+        // JE captures the movement in the GL so auditors can trace
+        // every inventory mutation. Idempotency is per-leg (the
+        // receive side has its own source_type and JE).
+        //
+        // Atomicity: the GL poster runs on the same NpgsqlTransaction
+        // as every subledger write below; any failure cascades to the
+        // outer catch and rolls back the entire ship operation
+        // (document insert, qty adjusts, ledger entries, cost-layer
+        // consumptions, warehouse_transfers status update).
         var foundationSummary = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -1225,8 +1227,15 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
 
             var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, transaction, companyId, cancellationToken);
             var shipDocumentId = Guid.NewGuid();
+            var shipDocumentNumber = $"TRSHIP-{transfer.TransferNumber}";
             var movementTimestamp = DateTimeOffset.UtcNow;
             var negativeStockAllowed = foundationSummary.CostingPolicy?.NegativeStockAllowed == true;
+            // P0-3b-3: accumulate the per-line cost-base into a single
+            // total that drives the audit-trail JE below. The cost
+            // values come from the FIFO/Avg consumption result of each
+            // line, identical to the values used in inventory_ledger_entries
+            // — same numbers, same source of truth.
+            var totalShippedCostBase = 0m;
 
             await using (var insertDocumentCommand = connection.CreateCommand())
             {
@@ -1374,6 +1383,8 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                     insertConsumptionCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                     await insertConsumptionCommand.ExecuteNonQueryAsync(cancellationToken);
                 }
+
+                totalShippedCostBase = decimal.Round(totalShippedCostBase + lineCostResult.TotalCostBase, 6, MidpointRounding.AwayFromZero);
             }
 
             await using (var updateTransferCommand = connection.CreateCommand())
@@ -1394,6 +1405,27 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 updateTransferCommand.Parameters.AddWithValue("shipped_by_user_id", userId.Value);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
             }
+
+            // GL leg — Ship side. Same-tx with every subledger write
+            // above. Per-leg idempotency: re-running ShipCoreAsync after
+            // a successful run is blocked upstream by the status check
+            // (only 'submitted' transfers can ship), so the GL probe
+            // here is more of a defense-in-depth — it makes the poster
+            // safe even if the upstream guard ever changes.
+            await _glPoster.AppendAsync(
+                connection,
+                transaction,
+                new InventoryTransferGlPostingRequest(
+                    CompanyId: companyId,
+                    UserId: userId,
+                    TransferId: transferId,
+                    TransferNumber: transfer.TransferNumber,
+                    LegDocumentNumber: shipDocumentNumber,
+                    PostingDate: postingDate,
+                    BaseCurrencyCode: baseCurrencyCode,
+                    Leg: InventoryTransferGlLeg.Ship,
+                    TotalCostBase: totalShippedCostBase),
+                cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
 
@@ -1422,16 +1454,15 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
         string? idempotencyKey,
         CancellationToken cancellationToken)
     {
-        // P0-3 (C3) fail-fast guard. Transfer receive credits the
-        // destination warehouse's on_hand_qty + closes in_transit_in.
-        // Same GL-symmetry concern as ShipCoreAsync above — gated until
-        // the matching JE handler lands per Q2=A. See AUDIT_2026-05-20 C3.
-        throw new NotImplementedException(
-            "Transfer receive is gated by AUDIT_2026-05-20 C3: " +
-            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
-            "before re-enabling this path.");
-
-#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch.
+        // P0-3b-3 (AUDIT_2026-05-20 C3 closure): transfer receive emits
+        // its own balancing audit-trail JE on the same NpgsqlTransaction
+        // as the destination-warehouse subledger writes (Dr 14000
+        // destination / Cr 14000 in-transit clear). The receive JE is
+        // independent of the ship JE — different source_type — so each
+        // leg is idempotent on its own. In V1 with no manufacturing
+        // variance, the receive amount equals the ship amount (sum of
+        // shipped cost layers), so the two JEs balance against each
+        // other across the transfer lifecycle.
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -1451,7 +1482,14 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
             var shippedLineCosts = await LoadShippedLineCostsAsync(connection, transaction, companyId, transferId, cancellationToken);
             var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, transaction, companyId, cancellationToken);
             var receiveDocumentId = Guid.NewGuid();
+            var receiveDocumentNumber = $"TRRCV-{transfer.TransferNumber}";
             var movementTimestamp = DateTimeOffset.UtcNow;
+            // P0-3b-3: same accumulator pattern as ShipCoreAsync, driving
+            // the receive-side audit-trail JE below. In V1 no-variance
+            // mode, totalReceivedCostBase == totalShippedCostBase, but
+            // we recompute from the persisted shipped-line-costs rather
+            // than trust an in-memory copy.
+            var totalReceivedCostBase = 0m;
 
             await using (var insertDocumentCommand = connection.CreateCommand())
             {
@@ -1560,6 +1598,8 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 insertLayerCommand.Parameters.AddWithValue("remaining_cost_base", shippedCost);
                 insertLayerCommand.Parameters.AddWithValue("created_at", movementTimestamp);
                 await insertLayerCommand.ExecuteNonQueryAsync(cancellationToken);
+
+                totalReceivedCostBase = decimal.Round(totalReceivedCostBase + shippedCost, 6, MidpointRounding.AwayFromZero);
             }
 
             await using (var updateTransferCommand = connection.CreateCommand())
@@ -1580,6 +1620,25 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                 updateTransferCommand.Parameters.AddWithValue("received_by_user_id", userId.Value);
                 await updateTransferCommand.ExecuteNonQueryAsync(cancellationToken);
             }
+
+            // GL leg — Receive side. Independent idempotency key from
+            // the Ship side (different source_type). Same-tx atomicity:
+            // a poster failure here rolls back every destination-side
+            // subledger write made above.
+            await _glPoster.AppendAsync(
+                connection,
+                transaction,
+                new InventoryTransferGlPostingRequest(
+                    CompanyId: companyId,
+                    UserId: userId,
+                    TransferId: transferId,
+                    TransferNumber: transfer.TransferNumber,
+                    LegDocumentNumber: receiveDocumentNumber,
+                    PostingDate: postingDate,
+                    BaseCurrencyCode: baseCurrencyCode,
+                    Leg: InventoryTransferGlLeg.Receive,
+                    TotalCostBase: totalReceivedCostBase),
+                cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
 
