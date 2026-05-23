@@ -12,15 +12,18 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
 
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
+    private readonly InventoryReceiptExecutionContextAccessor _executionContextAccessor;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlReceiptInventoryCostLayerEmissionStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore)
+        IInventoryFoundationStore foundationStore,
+        InventoryReceiptExecutionContextAccessor executionContextAccessor)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
+        _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -37,6 +40,20 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
+
+        // M4 (P2-10): join the receipt workflow's ambient tx so
+        // emission rolls back atomically with activation + valuation.
+        if (_executionContextAccessor.Current is { } ambient)
+        {
+            await EnsureSchemaAsync(ambient.Connection, cancellationToken, allowCreate: false);
+            return await EmitReceiptCostLayersCoreAsync(
+                ambient.Connection,
+                ambient.Transaction,
+                companyId,
+                userId,
+                receiptDocumentId,
+                cancellationToken);
+        }
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
@@ -60,33 +77,73 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
-            await AcquireReceiptEmissionLockAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
-            await InsertEmissionLinesAsync(
+            var summary = await EmitReceiptCostLayersCoreAsync(
                 connection,
                 transaction,
                 companyId,
                 userId,
                 receiptDocumentId,
                 cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return summary;
+        }
+        catch
+        {
+            try
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+            catch
+            {
+                // Preserve the original failure.
+            }
+            throw;
+        }
+    }
 
-            var summary = await LoadReceiptCostLayerEmissionSummaryAsync(
+    private async Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
+        var hasValuationLines = await TableExistsAsync(connection, ValuationLinesTableName, cancellationToken);
+        if (!hasActivationLines || !hasValuationLines)
+        {
+            return await LoadReceiptCostLayerEmissionSummaryAsync(
                 connection,
                 transaction,
                 companyId,
                 receiptDocumentId,
-                hasActivationLines: true,
-                hasValuationLines: true,
+                hasActivationLines,
+                hasValuationLines,
                 hasEmissionLines: true,
-                cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+                cancellationToken)
+                ?? BuildEmptySummary(receiptDocumentId);
+        }
 
-            return summary ?? BuildEmptySummary(receiptDocumentId);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        await AcquireReceiptEmissionLockAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
+        await InsertEmissionLinesAsync(
+            connection,
+            transaction,
+            companyId,
+            userId,
+            receiptDocumentId,
+            cancellationToken);
+
+        var summary = await LoadReceiptCostLayerEmissionSummaryAsync(
+            connection,
+            transaction,
+            companyId,
+            receiptDocumentId,
+            hasActivationLines: true,
+            hasValuationLines: true,
+            hasEmissionLines: true,
+            cancellationToken);
+        return summary ?? BuildEmptySummary(receiptDocumentId);
     }
 
     public async Task<ReceiptInventoryCostLayerEmissionSummary?> GetReceiptCostLayerEmissionSummaryAsync(

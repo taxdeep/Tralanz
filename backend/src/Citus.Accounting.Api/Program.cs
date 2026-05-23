@@ -123,6 +123,13 @@ builder.Services.Configure<BusinessSessionOptions>(builder.Configuration.GetSect
 builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
 builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySessionContextStore>();
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
+// M4 (AUDIT_2026-05-20 P2-10): inventory receipt UoW + ambient
+// execution-context accessor. The accessor wraps an AsyncLocal so
+// scope is intrinsic to the async flow, not the DI scope —
+// Singleton is correct. The UoW depends on the accessor + factory
+// and is also stateless beyond those.
+builder.Services.AddSingleton<InventoryReceiptExecutionContextAccessor>();
+builder.Services.AddSingleton<IInventoryReceiptUnitOfWork, PostgreSqlInventoryReceiptUnitOfWork>();
 builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
 builder.Services.AddSingleton<IInventoryModuleActivationStore, PostgresInventoryModuleActivationStore>();
 builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();

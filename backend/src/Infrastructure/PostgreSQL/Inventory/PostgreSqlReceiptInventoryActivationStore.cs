@@ -13,15 +13,18 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
 
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
+    private readonly InventoryReceiptExecutionContextAccessor _executionContextAccessor;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlReceiptInventoryActivationStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore)
+        IInventoryFoundationStore foundationStore,
+        InventoryReceiptExecutionContextAccessor executionContextAccessor)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
+        _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -68,92 +71,132 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
+        // M4 (P2-10): join the workflow's ambient tx when present, so
+        // activation + valuation + emission commit as one unit and a
+        // valuation/emission failure rolls back the activation rows.
+        if (_executionContextAccessor.Current is { } ambient)
+        {
+            await EnsureSchemaAsync(ambient.Connection, cancellationToken, allowCreate: false);
+            return await ActivatePostedReceiptCoreAsync(
+                ambient.Connection,
+                ambient.Transaction,
+                companyId,
+                userId,
+                receiptDocumentId,
+                cancellationToken);
+        }
+
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            var receipt = await LoadReceiptRecordAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
-            ValidateReceiptForActivation(receipt, allowDraft: false);
-
-            var existingActivations = await LoadActivationRowsAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
-            if (existingActivations.Count > 0)
+            var result = await ActivatePostedReceiptCoreAsync(
+                connection,
+                transaction,
+                companyId,
+                userId,
+                receiptDocumentId,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            try
             {
-                var activatedLineNumbers = existingActivations
-                    .Select(static row => row.ReceiptLineNumber)
-                    .Distinct()
-                    .OrderBy(static value => value)
-                    .ToArray();
-                var receiptLineNumbers = receipt.Lines
-                    .Select(static line => line.LineNumber)
-                    .OrderBy(static value => value)
-                    .ToArray();
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+            catch
+            {
+                // Preserve the original failure; rollback can fail
+                // if the connection is already broken.
+            }
+            throw;
+        }
+    }
 
-                if (!activatedLineNumbers.SequenceEqual(receiptLineNumbers))
-                {
-                    throw new InvalidOperationException("Receipt inventory activation is in an inconsistent partial state and requires investigation before retry.");
-                }
+    private async Task<ReceiptInventoryActivationSummary> ActivatePostedReceiptCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        var receipt = await LoadReceiptRecordAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
+        ValidateReceiptForActivation(receipt, allowDraft: false);
 
-                var existingSummary = await LoadReceiptActivationSummaryAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return existingSummary ?? throw new InvalidOperationException("Receipt inventory activation summary could not be loaded.");
+        var existingActivations = await LoadActivationRowsAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
+        if (existingActivations.Count > 0)
+        {
+            var activatedLineNumbers = existingActivations
+                .Select(static row => row.ReceiptLineNumber)
+                .Distinct()
+                .OrderBy(static value => value)
+                .ToArray();
+            var receiptLineNumbers = receipt.Lines
+                .Select(static line => line.LineNumber)
+                .OrderBy(static value => value)
+                .ToArray();
+
+            if (!activatedLineNumbers.SequenceEqual(receiptLineNumbers))
+            {
+                throw new InvalidOperationException("Receipt inventory activation is in an inconsistent partial state and requires investigation before retry.");
             }
 
-            var itemMap = await LoadItemMapAsync(
-                connection,
-                transaction,
-                companyId,
-                receipt.Lines.Select(static line => line.ItemId).Distinct().ToArray(),
-                cancellationToken);
-            var warehouseMap = await LoadWarehouseMapAsync(
-                connection,
-                transaction,
-                companyId,
-                [receipt.WarehouseId],
-                cancellationToken);
+            var existingSummary = await LoadReceiptActivationSummaryAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
+            return existingSummary ?? throw new InvalidOperationException("Receipt inventory activation summary could not be loaded.");
+        }
 
-            ValidateInventoryAnchors(receipt, itemMap, warehouseMap);
+        var itemMap = await LoadItemMapAsync(
+            connection,
+            transaction,
+            companyId,
+            receipt.Lines.Select(static line => line.ItemId).Distinct().ToArray(),
+            cancellationToken);
+        var warehouseMap = await LoadWarehouseMapAsync(
+            connection,
+            transaction,
+            companyId,
+            [receipt.WarehouseId],
+            cancellationToken);
 
-            var activatedAt = DateTimeOffset.UtcNow;
-            var inventoryDocumentId = Guid.NewGuid();
-            var inventoryDocumentNumber = BuildActivationDocumentNumber(receipt.ReceiptDate);
+        ValidateInventoryAnchors(receipt, itemMap, warehouseMap);
 
-            await InsertInventoryDocumentAsync(
+        var activatedAt = DateTimeOffset.UtcNow;
+        var inventoryDocumentId = Guid.NewGuid();
+        var inventoryDocumentNumber = BuildActivationDocumentNumber(receipt.ReceiptDate);
+
+        await InsertInventoryDocumentAsync(
+            connection,
+            transaction,
+            companyId,
+            userId,
+            receipt,
+            inventoryDocumentId,
+            inventoryDocumentNumber,
+            activatedAt,
+            cancellationToken);
+
+        foreach (var line in receipt.Lines.OrderBy(static line => line.LineNumber))
+        {
+            await ActivateLineAsync(
                 connection,
                 transaction,
                 companyId,
                 userId,
                 receipt,
+                line,
                 inventoryDocumentId,
-                inventoryDocumentNumber,
                 activatedAt,
                 cancellationToken);
-
-            foreach (var line in receipt.Lines.OrderBy(static line => line.LineNumber))
-            {
-                await ActivateLineAsync(
-                    connection,
-                    transaction,
-                    companyId,
-                    userId,
-                    receipt,
-                    line,
-                    inventoryDocumentId,
-                    activatedAt,
-                    cancellationToken);
-            }
-
-            await ClearActivationFailuresAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
-            var summary = await LoadReceiptActivationSummaryAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return summary ?? throw new InvalidOperationException("Receipt inventory activation summary could not be loaded.");
         }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+
+        await ClearActivationFailuresAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
+        var summary = await LoadReceiptActivationSummaryAsync(connection, transaction, companyId, receiptDocumentId, cancellationToken);
+        return summary ?? throw new InvalidOperationException("Receipt inventory activation summary could not be loaded.");
     }
 
     public async Task RecordActivationFailureAsync(
