@@ -1,5 +1,6 @@
 using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Inventory.Domain.Shared;
+using Infrastructure.PostgreSQL.Inventory.Posting;
 using Npgsql;
 
 namespace Infrastructure.PostgreSQL.Inventory;
@@ -8,15 +9,18 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
 {
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
+    private readonly IInventoryManufacturingGlPoster _glPoster;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlInventoryManufacturingStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore)
+        IInventoryFoundationStore foundationStore,
+        IInventoryManufacturingGlPoster glPoster)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
+        _glPoster = glPoster ?? throw new ArgumentNullException(nameof(glPoster));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -253,20 +257,23 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // P0-3 (C3) fail-fast guard. Manufacturing posts produce finished-
-        // goods inventory and consume raw-material inventory — a clean
-        // double-sided GL entry (Dr Finished Goods / Cr Raw Materials,
-        // optionally via a WIP staging account) is required to keep the
-        // GL Inventory Asset balance aligned with the inventory subledger.
-        // Today no endpoint reaches this path; the guard prevents silent
-        // drift if the workflow is ever wired up before the GL handler
-        // ships. Tracked as a follow-up batch in AUDIT_2026-05-20.md.
-        throw new NotImplementedException(
-            "Manufacturing posting is gated by AUDIT_2026-05-20 C3: " +
-            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
-            "before re-enabling this path.");
-
-#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch.
+        // P0-3b-2 (AUDIT_2026-05-20 C3 closure): manufacturing posts the
+        // raw-material issue + finished-goods receipt subledger entries
+        // together with a balancing audit-trail JE on the same tx.
+        //
+        // V1 single-account COA model: both legs of the JE point at the
+        // company's `inventory_asset` account (Dr 14000 / Cr 14000). The
+        // total = sum of consumed raw-material cost layers (which under
+        // the no-variance V1 rule equals the finished-goods cost). Net
+        // balance impact is zero, but the JE records the manufacturing
+        // event in the GL audit trail and preserves the system-wide
+        // invariant "every inventory mutation emits a JE". A future
+        // multi-account COA (RM / WIP / FG) replaces the credit-side
+        // account without changing the rest of this flow.
+        //
+        // If the poster throws (e.g. inventory_asset SystemRole unbound,
+        // period closed), the outer catch rolls back every subledger
+        // write made above.
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -384,6 +391,25 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
             await UpsertOnHandBalanceAsync(connection, transaction, request.CompanyId, bom.OutputItemId, request.WarehouseId, normalizedOutputQuantity, cancellationToken);
             await InsertLedgerEntryAsync(connection, transaction, receiptLedgerEntryId, request.CompanyId, bom.OutputItemId, request.WarehouseId, receiptDocumentId, receiptLineId, "inbound", "manufacturing_receipt", request.PostingDate, normalizedOutputQuantity, outputQuantityAfter, totalConsumedCostBase, outputCostAfter, BuildLedgerMemo(receiptDocumentNumber, 1), createdAt, cancellationToken);
             await InsertCostLayerAsync(connection, transaction, costLayerId, request.CompanyId, bom.OutputItemId, request.WarehouseId, receiptDocumentId, receiptLineId, receiptLedgerEntryId, request.PostingDate, normalizedOutputQuantity, outputUnitCostBase, totalConsumedCostBase, createdAt, cancellationToken);
+
+            // GL leg — V1 single-account audit-trail JE keyed on the
+            // manufacturing run id. Runs on the inventory tx; failure
+            // rolls back every subledger write made above. See file
+            // header for V1 vs future-multi-account-COA discussion.
+            await _glPoster.AppendAsync(
+                connection,
+                transaction,
+                new InventoryManufacturingGlPostingRequest(
+                    CompanyId: request.CompanyId,
+                    UserId: request.UserId,
+                    ManufacturingRunId: runId,
+                    ManufacturingRunNumber: runNumber,
+                    IssueDocumentNumber: issueDocumentNumber,
+                    ReceiptDocumentNumber: receiptDocumentNumber,
+                    PostingDate: request.PostingDate,
+                    BaseCurrencyCode: baseCurrencyCode,
+                    TotalConsumedCostBase: totalConsumedCostBase),
+                cancellationToken);
 
             var summary = new InventoryManufacturingSummary(runId, request.CompanyId, runNumber, bom.BomId, bom.BomCode, bom.OutputItemId, itemMap[bom.OutputItemId].ItemCode, itemMap[bom.OutputItemId].Name, warehouse.Id, warehouse.WarehouseCode, warehouse.Name, normalizedOutputQuantity, totalConsumedCostBase, outputUnitCostBase, issueDocumentNumber, receiptDocumentNumber, createdAt, NormalizeOptionalText(request.Memo));
 

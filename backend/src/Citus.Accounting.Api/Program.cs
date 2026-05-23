@@ -140,6 +140,12 @@ builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipme
 // the integration point for the upcoming PR.
 builder.Services.AddSingleton<IInventoryAdjustmentGlPoster, PostgreSqlInventoryAdjustmentGlPoster>();
 builder.Services.AddSingleton<IInventoryAdjustmentStore, PostgreSqlInventoryAdjustmentStore>();
+// P0-3b-2 (AUDIT_2026-05-20 C3): manufacturing GL handler. Same DI
+// shape as the adjustment poster from P0-3b-1: register both the
+// poster and the store so a future API surface can resolve the chain
+// without further wiring.
+builder.Services.AddSingleton<IInventoryManufacturingGlPoster, PostgreSqlInventoryManufacturingGlPoster>();
+builder.Services.AddSingleton<IInventoryManufacturingStore, PostgreSqlInventoryManufacturingStore>();
 builder.Services.AddSingleton(
     static services => new BusinessSessionDirectory(
         services.GetRequiredService<IOptions<BusinessSessionOptions>>(),
