@@ -1,5 +1,6 @@
 using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Inventory.Domain.Shared;
+using Infrastructure.PostgreSQL.Inventory.Posting;
 using Npgsql;
 
 namespace Infrastructure.PostgreSQL.Inventory;
@@ -8,15 +9,18 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 {
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
+    private readonly IInventoryAdjustmentGlPoster _glPoster;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlInventoryAdjustmentStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore)
+        IInventoryFoundationStore foundationStore,
+        IInventoryAdjustmentGlPoster glPoster)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
+        _glPoster = glPoster ?? throw new ArgumentNullException(nameof(glPoster));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -55,28 +59,18 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // P0-3 (C3) fail-fast guard. The forward subledger writes below
-        // (qty + cost layers + balances + ledger entries) work correctly,
-        // but committing them without the matching Dr/Cr journal entry
-        // leaves the books in the state where
-        // `inventory subledger × unit cost != GL Inventory Asset` —
-        // the audit's C3 critical risk. The user's Q2=A confirmed every
-        // inventory movement must auto-emit a GL JE; the matching
-        // handler (mirror of PostSalesIssueCogsCommandHandler) is tracked
-        // as a follow-up batch in AUDIT_2026-05-20.md. Until that handler
-        // ships, this entry point is gated to prevent silent GL drift
-        // if the workflow is ever wired into an API / Blazor surface.
-        //
-        // Today no endpoint reaches this path (InventoryAdjustmentWorkflow
-        // and IInventoryAdjustmentStore are not registered in DI), so
-        // the guard is a future-proofing safety net rather than a live
-        // block.
-        throw new NotImplementedException(
-            "Inventory adjustment (Gain / Loss / Write-off) posting is gated by AUDIT_2026-05-20 C3: " +
-            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
-            "before re-enabling this path.");
-
-#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch that ships the GL handler.
+        // P0-3b-1 (AUDIT_2026-05-20 C3 closure): the subledger writes
+        // below (qty + cost layers + balances + ledger entries) commit
+        // together with the matching Dr/Cr GL journal entry on the
+        // SAME tx so the sub-ledger × unit-cost product reconciles to
+        // the GL Inventory Asset balance after every adjustment. The
+        // GL poster (Posting/PostgreSqlInventoryAdjustmentGlPoster)
+        // runs at the bottom of the try-block, before commit; its
+        // failure cascades to the outer catch and rolls back every
+        // write made here. Per Q2=A:
+        //   Gain      → Dr Inventory Asset / Cr Inventory Adjustment
+        //   Loss      → Dr Inventory Adjustment / Cr Inventory Asset
+        //   WriteOff  → same as Loss.
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -224,6 +218,27 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 }
             }
 
+            // GL leg — Q2=A. Runs on the same connection/tx as the
+            // subledger writes above; if it throws (e.g. SystemRole
+            // account not pinned, closed period), the outer catch
+            // block rolls everything back. totalCostBase is the sum
+            // of cost_delta_base on the inventory_ledger_entries rows
+            // we just inserted, so the GL amount matches the subledger
+            // by construction.
+            await _glPoster.AppendAsync(
+                connection,
+                transaction,
+                new InventoryAdjustmentGlPostingRequest(
+                    CompanyId: request.CompanyId,
+                    UserId: request.UserId,
+                    InventoryDocumentId: documentId,
+                    InventoryDocumentNumber: documentNumber,
+                    PostingDate: request.PostingDate,
+                    BaseCurrencyCode: baseCurrencyCode,
+                    Kind: ToGlKind(request.AdjustmentKind),
+                    TotalCostBase: totalCostBase),
+                cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
 
             return new InventoryAdjustmentSummary(
@@ -250,6 +265,14 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             throw;
         }
     }
+
+    private static InventoryAdjustmentGlKind ToGlKind(InventoryAdjustmentKind kind) => kind switch
+    {
+        InventoryAdjustmentKind.Gain => InventoryAdjustmentGlKind.Gain,
+        InventoryAdjustmentKind.Loss => InventoryAdjustmentGlKind.Loss,
+        InventoryAdjustmentKind.WriteOff => InventoryAdjustmentGlKind.WriteOff,
+        _ => throw new InvalidOperationException($"Unsupported inventory adjustment kind '{kind}'.")
+    };
 
     public async Task<InventoryAdjustmentSummary> RequestWriteOffAsync(
         InventoryWriteOffRequestPostRequest request,
@@ -396,17 +419,13 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // P0-3 (C3) fail-fast guard. Same rationale as PostAsync above —
-        // the approved-write-off post path mutates qty + cost layers
-        // without emitting the matching Dr Write-off Expense / Cr
-        // Inventory Asset journal entry. Gated until the GL handler
-        // ships per Q2=A. See AUDIT_2026-05-20 C3 follow-up.
-        throw new NotImplementedException(
-            "Approved write-off posting is gated by AUDIT_2026-05-20 C3: " +
-            "GL journal entry handler not yet implemented. See Q2=A in project_business_rules_2026_05_20.md " +
-            "before re-enabling this path.");
-
-#pragma warning disable CS0162 // Unreachable code — preserved for the follow-up batch.
+        // P0-3b-1 (AUDIT_2026-05-20 C3 closure): same atomicity story as
+        // PostAsync above — qty + cost layers + balances mutate
+        // together with a Dr Inventory Adjustment / Cr Inventory Asset
+        // GL entry on the same tx. The GL poster runs at the bottom
+        // of the try-block, before commit; failure rolls back every
+        // subledger write made here. Approved write-off uses the same
+        // JE shape as Adjustment Loss per Q2=A.
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -537,6 +556,28 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 command.Parameters.AddWithValue("posted_by_user_id", request.UserId.Value);
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
+
+            // GL leg — Q2=A: Approved Write-off → Dr Inventory Adjustment / Cr Inventory Asset.
+            // Same atomicity story as PostAsync: the poster runs on the
+            // inventory tx, so a GL failure rolls back qty + cost +
+            // balances + document-status writes together. totalCostBase
+            // is the sum of cost_delta_base on the inventory_ledger_entries
+            // rows we just inserted.
+            var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(
+                connection, transaction, request.CompanyId, cancellationToken);
+            await _glPoster.AppendAsync(
+                connection,
+                transaction,
+                new InventoryAdjustmentGlPostingRequest(
+                    CompanyId: request.CompanyId,
+                    UserId: request.UserId,
+                    InventoryDocumentId: request.DocumentId,
+                    InventoryDocumentNumber: document.DocumentNumber,
+                    PostingDate: document.PostingDate,
+                    BaseCurrencyCode: baseCurrencyCode,
+                    Kind: InventoryAdjustmentGlKind.WriteOff,
+                    TotalCostBase: totalCostBase),
+                cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
 
