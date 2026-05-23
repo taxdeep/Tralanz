@@ -46,3 +46,16 @@ internal sealed class BusinessResetPasswordRequest
 
     public string NewPassword { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// M17 (AUDIT_2026-05-20 P2-4): wire-shape for
+/// <c>POST /auth/switch-active-company</c>. The Blazor client calls
+/// this when the user picks a new company from the topbar or
+/// MyCompanies page; the server updates business_sessions.active_company_id
+/// and returns the refreshed session summary, then the client flips
+/// its X-Active-Company-Id header in lockstep.
+/// </summary>
+internal sealed class BusinessSwitchActiveCompanyRequest
+{
+    public string ActiveCompanyId { get; set; } = string.Empty;
+}

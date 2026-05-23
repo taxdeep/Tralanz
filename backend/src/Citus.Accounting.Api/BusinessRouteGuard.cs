@@ -53,6 +53,27 @@ public sealed class BusinessRouteGuard(
                 StatusCodes.Status401Unauthorized);
         }
 
+        // M17 (AUDIT_2026-05-20 P2-4): bind the session token to the
+        // ActiveCompanyId. Without this check, a stolen token can be
+        // used against any company the user is a member of, expanding
+        // the blast radius from one company to N. The token's
+        // active_company_id is stamped at login (or on the dedicated
+        // switch-active-company endpoint) and persisted on the
+        // business_sessions row; we reject when the request's header
+        // claims a different company than the row carries.
+        //
+        // Legitimate company switching goes through
+        // `POST /accounting/business-session/switch-active-company`
+        // which updates the row AND returns the new
+        // ActiveCompanyId so the client can flip its header in lockstep.
+        if (tokenResult.Session.ActiveCompanyId != session.ActiveCompanyId)
+        {
+            return BusinessRequestGuardResult.Reject(
+                "The business session token is not bound to the requested active company. " +
+                "Switch the active company via /business-session/switch-active-company before retrying.",
+                StatusCodes.Status401Unauthorized);
+        }
+
         var directoryResult = await sessionDirectory.ResolveAsync(session, cancellationToken);
         if (!directoryResult.Success)
         {

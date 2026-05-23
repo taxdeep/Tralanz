@@ -4,6 +4,7 @@
 @inject NavigationManager Navigation
 @inject CitusToastService Message
 @inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
+@inject Citus.Business.Blazor.Services.BusinessAuthenticationClient BusinessAuthenticationClient
 @inject Citus.Business.Blazor.Services.CompanyProvisioningClient CompanyProvisioning
 
 @*
@@ -271,26 +272,25 @@
         if (_switchingTo is not null) return;
         if (companyId.Value is null || companyId == ShellState.ActiveCompany.Id) return;
 
-        var previousCompanyId = ShellState.ActiveCompany.Id;
         _switchingTo = companyId;
         try
         {
-            if (!ShellState.TrySetActiveCompany(companyId))
+            // M17 (AUDIT_2026-05-20 P2-4): call the server's switch
+            // endpoint FIRST so business_sessions.active_company_id
+            // gets updated; flip ShellState only on success. See
+            // BusinessTopBar.OnCompanyChangedAsync for the same flow
+            // — both surfaces have to call the bind-aware endpoint
+            // now that the route guard rejects header/DB mismatches.
+            var outcome = await BusinessAuthenticationClient.SwitchActiveCompanyAsync(companyId);
+            if (!outcome.Succeeded || outcome.Session is null)
             {
-                await Message.WarningAsync("The selected company is not available in this session.");
+                await Message.WarningAsync(outcome.ErrorMessage
+                    ?? "Unable to switch active company. Please try again.");
                 return;
             }
 
-            var context = await BusinessSessionClient.GetContextAsync();
-            if (context is null)
-            {
-                ShellState.TrySetActiveCompany(previousCompanyId);
-                await Message.WarningAsync("Unable to refresh the business session after switching company.");
-                return;
-            }
-
-            ShellState.ApplySessionContext(context);
-            await Message.SuccessAsync($"Active company switched to {context.ActiveCompany.CompanyName}.");
+            ShellState.ApplyAuthenticatedSession(ShellState.SessionToken, outcome.Session);
+            await Message.SuccessAsync($"Active company switched to {outcome.Session.ActiveCompany.CompanyName}.");
             Navigation.NavigateTo("dashboard");
         }
         finally
@@ -356,28 +356,35 @@
                 return;
             }
 
-            // Auto-switch into the new company. Mirrors OnSwitchAsync —
-            // ShellState.TrySetActiveCompany expects the company to be
-            // in AvailableCompanies, which won't include the brand-new
-            // one yet, so we rely on GetContextAsync to refresh the
-            // membership list before flipping the active company.
-            var context = await BusinessSessionClient.GetContextAsync();
-            if (context is null)
+            // Auto-switch into the new company. M17 (AUDIT_2026-05-20 P2-4):
+            // call the server's switch endpoint FIRST. The repository
+            // resolves the membership freshly so the brand-new company
+            // (owner = current user) is recognised even though it
+            // wasn't in ShellState.AvailableCompanies before this
+            // request. The returned summary includes the refreshed
+            // AvailableCompanies list, so ShellState ends up consistent.
+            if (CompanyId.TryParse(outcome.Saved.CompanyId, out var newCompanyId))
             {
-                await Message.SuccessAsync($"Company '{outcome.Saved.CompanyName}' created. Sign out / in to switch into it.");
-                _isCreating = false;
-                StateHasChanged();
-                return;
-            }
-
-            ShellState.ApplySessionContext(context);
-            if (CompanyId.TryParse(outcome.Saved.CompanyId, out var newCompanyId)
-                && ShellState.TrySetActiveCompany(newCompanyId))
-            {
-                var refreshed = await BusinessSessionClient.GetContextAsync();
-                if (refreshed is not null)
+                var switchOutcome = await BusinessAuthenticationClient.SwitchActiveCompanyAsync(newCompanyId);
+                if (switchOutcome.Succeeded && switchOutcome.Session is not null)
                 {
-                    ShellState.ApplySessionContext(refreshed);
+                    ShellState.ApplyAuthenticatedSession(ShellState.SessionToken, switchOutcome.Session);
+                }
+                else
+                {
+                    // Auto-switch failed — company is created but the
+                    // user is still on the old active company. Tell
+                    // them how to switch manually.
+                    await Message.SuccessAsync(
+                        $"Company '{outcome.Saved.CompanyName}' created. Switch into it from this page if it doesn't appear automatically.");
+                    var refreshed = await BusinessSessionClient.GetContextAsync();
+                    if (refreshed is not null)
+                    {
+                        ShellState.ApplySessionContext(refreshed);
+                    }
+                    _isCreating = false;
+                    StateHasChanged();
+                    return;
                 }
             }
 

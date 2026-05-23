@@ -948,6 +948,69 @@ app.MapPost(
         return Results.NoContent();
     });
 
+// M17 (AUDIT_2026-05-20 P2-4): switch the session's active company.
+// Updates business_sessions.active_company_id on the server (so the
+// M17 bind check in BusinessRouteGuard sees the new company) and
+// returns the refreshed session summary. The Blazor client uses the
+// returned summary to update BusinessShellState BEFORE flipping the
+// X-Active-Company-Id header on subsequent requests — order matters
+// because the bind check rejects any mismatch between header and
+// DB-stored active_company_id.
+app.MapPost(
+    "/auth/switch-active-company",
+    async (
+        BusinessSwitchActiveCompanyRequest request,
+        HttpContext httpContext,
+        Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository repository,
+        Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
+        CancellationToken cancellationToken) =>
+    {
+        var token = ReadBusinessSessionToken(httpContext);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!CompanyId.TryParse(request.ActiveCompanyId, out var requestedCompanyId))
+        {
+            return Results.Json(
+                new { message = "Active company id is missing or malformed." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await repository.SwitchActiveCompanyAsync(token, requestedCompanyId, cancellationToken);
+        if (!result.Succeeded)
+        {
+            // Distinguish "session not bound to this company at all"
+            // (403) from "session invalid / expired" (401). The repo
+            // surfaces both as FailureCode strings.
+            var status = result.FailureCode switch
+            {
+                "company_not_available" => StatusCodes.Status403Forbidden,
+                _ => StatusCodes.Status401Unauthorized
+            };
+            return Results.Json(
+                new { message = string.IsNullOrWhiteSpace(result.FailureMessage)
+                    ? "Active-company switch failed." : result.FailureMessage,
+                    code = result.FailureCode },
+                statusCode: status);
+        }
+
+        var summary = await BuildBusinessSessionSummaryAsync(
+            contextWorkflow,
+            result.UserId,
+            result.ActiveCompanyId,
+            cancellationToken);
+        if (summary is null)
+        {
+            return Results.Json(
+                new { message = "Active company switched but the refreshed company access could not be resolved." },
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        return Results.Ok(summary);
+    });
+
 // ---------------------------------------------------------------------------
 // Self-serve password reset (Business shell only). Pair of public endpoints:
 // /auth/forgot-password issues a token + sends an email; /auth/reset-password

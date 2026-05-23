@@ -191,23 +191,36 @@
             return;
         }
 
-        var previousCompanyId = ShellState.ActiveCompany.Id;
-        if (!ShellState.TrySetActiveCompany(companyId))
+        // M17 (AUDIT_2026-05-20 P2-4): the server side is now the
+        // source of truth for which company a session is "active in".
+        // Call the switch endpoint FIRST so business_sessions.active_company_id
+        // gets updated; only then flip the local state. If we flipped
+        // local state first, the next request would carry a header
+        // pointing at the new company while the DB still references
+        // the old one — the route guard's M17 bind check would 401
+        // every subsequent request until the next page reload.
+        var membershipPreview = ShellState.AvailableCompanies.FirstOrDefault(candidate => candidate.Id == companyId);
+        if (membershipPreview is null)
         {
             await Message.WarningAsync("The selected company is not available in this business session.");
             return;
         }
 
-        var context = await BusinessSessionClient.GetContextAsync();
-        if (context is null)
+        var outcome = await BusinessAuthenticationClient.SwitchActiveCompanyAsync(companyId);
+        if (!outcome.Succeeded || outcome.Session is null)
         {
-            ShellState.TrySetActiveCompany(previousCompanyId);
-            await Message.WarningAsync("Unable to refresh the business session after switching company.");
+            await Message.WarningAsync(outcome.ErrorMessage
+                ?? "Unable to switch active company. Please try again.");
             return;
         }
 
-        ShellState.ApplySessionContext(context);
-        await Message.SuccessAsync($"Active company switched to {context.ActiveCompany.CompanyName}.");
+        // Apply the server's refreshed summary in one step — this
+        // updates ActiveCompany so subsequent requests carry the
+        // matching header. ApplyAuthenticatedSession also refreshes
+        // User + AvailableCompanies so role/membership changes that
+        // landed between sign-in and this switch surface immediately.
+        ShellState.ApplyAuthenticatedSession(ShellState.SessionToken, outcome.Session);
+        await Message.SuccessAsync($"Active company switched to {outcome.Session.ActiveCompany.CompanyName}.");
         NavigationManager.NavigateTo("dashboard");
     }
 }
