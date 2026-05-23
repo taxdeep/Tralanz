@@ -146,6 +146,11 @@ builder.Services.AddSingleton<IInventoryAdjustmentStore, PostgreSqlInventoryAdju
 // without further wiring.
 builder.Services.AddSingleton<IInventoryManufacturingGlPoster, PostgreSqlInventoryManufacturingGlPoster>();
 builder.Services.AddSingleton<IInventoryManufacturingStore, PostgreSqlInventoryManufacturingStore>();
+// P0-3b-3 (AUDIT_2026-05-20 C3 final closure): transfer GL handler.
+// Single poster handles both Ship and Receive legs (distinguished by
+// the request's Leg enum, idempotent per leg via distinct source_types).
+builder.Services.AddSingleton<IInventoryTransferGlPoster, PostgreSqlInventoryTransferGlPoster>();
+builder.Services.AddSingleton<IInventoryTransferStore, PostgreSqlInventoryTransferStore>();
 builder.Services.AddSingleton(
     static services => new BusinessSessionDirectory(
         services.GetRequiredService<IOptions<BusinessSessionOptions>>(),
