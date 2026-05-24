@@ -79,9 +79,33 @@ public sealed class BusinessRouteGuardTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_RejectsTokenActiveCompanyMismatch()
+    {
+        // M17 (P2-4): the session token is bound to one ActiveCompanyId.
+        // A request whose ActiveCompanyId header points at a different
+        // company than the token was issued for must be rejected before
+        // the membership directory is even consulted.
+        var guard = CreateGuard();
+
+        var result = await guard.EvaluateAsync(
+            HttpMethods.Get,
+            CreateHeaders(UserId, CompanyId.FromOrdinal(2)),
+            Array.Empty<object?>(),
+            maintenanceState: null,
+            CancellationToken.None);
+
+        Assert.False(result.Allowed);
+        Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
+        Assert.Contains("not bound to the requested active company", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task EvaluateAsync_RejectsUserCompanyMembershipMismatch()
     {
-        var guard = CreateGuard();
+        // Token + header agree on CompanyId.FromOrdinal(2), so the M17
+        // binding gate passes; but the fixture user has no membership in
+        // company 2, so BusinessSessionDirectory rejects with 403.
+        var guard = CreateGuard(sessionUserId: UserId, sessionActiveCompanyId: CompanyId.FromOrdinal(2));
 
         var result = await guard.EvaluateAsync(
             HttpMethods.Get,
@@ -303,11 +327,14 @@ public sealed class BusinessRouteGuardTests
         CreateGuard(sessionUserId: UserId);
 
     private static BusinessRouteGuard CreateGuard(UserId sessionUserId) =>
+        CreateGuard(sessionUserId, CompanyId);
+
+    private static BusinessRouteGuard CreateGuard(UserId sessionUserId, CompanyId sessionActiveCompanyId) =>
         new(
             new BusinessSessionRequestReader(),
             new BusinessRequestContractGuard(),
             new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions())),
-            new StubPlatformBusinessSessionRepository(sessionUserId, CompanyId));
+            new StubPlatformBusinessSessionRepository(sessionUserId, sessionActiveCompanyId));
 
     private static BusinessRouteGuard CreateGuard(ICompanySessionContextWorkflow workflow) =>
         new(

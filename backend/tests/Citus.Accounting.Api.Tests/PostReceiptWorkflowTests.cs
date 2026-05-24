@@ -18,7 +18,7 @@ public sealed class PostReceiptWorkflowTests
         var activationStore = new FakeReceiptInventoryActivationStore();
         var valuationStore = new FakeReceiptInventoryValuationStore();
         var emissionStore = new FakeReceiptInventoryCostLayerEmissionStore();
-        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore);
+        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore, new FakeInventoryReceiptUnitOfWork());
 
         var result = await workflow.PostAsync(companyId, userId, documentId, CancellationToken.None);
 
@@ -40,7 +40,7 @@ public sealed class PostReceiptWorkflowTests
         var activationStore = new FakeReceiptInventoryActivationStore();
         var valuationStore = new FakeReceiptInventoryValuationStore();
         var emissionStore = new FakeReceiptInventoryCostLayerEmissionStore();
-        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore);
+        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore, new FakeInventoryReceiptUnitOfWork());
 
         var result = await workflow.PostAsync(companyId, userId, documentId, CancellationToken.None);
 
@@ -62,7 +62,7 @@ public sealed class PostReceiptWorkflowTests
         var activationStore = new FakeReceiptInventoryActivationStore();
         var valuationStore = new FakeReceiptInventoryValuationStore();
         var emissionStore = new FakeReceiptInventoryCostLayerEmissionStore();
-        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore);
+        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore, new FakeInventoryReceiptUnitOfWork());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => workflow.PostAsync(companyId, userId, documentId, CancellationToken.None));
@@ -239,5 +239,11 @@ public sealed class PostReceiptWorkflowTests
 
         public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> GetReceiptCostLayerEmissionReconciliationSummariesAsync(CompanyId companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>>(new Dictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>());
+    }
+
+    private sealed class FakeInventoryReceiptUnitOfWork : IInventoryReceiptUnitOfWork
+    {
+        public Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken) =>
+            action(cancellationToken);
     }
 }
