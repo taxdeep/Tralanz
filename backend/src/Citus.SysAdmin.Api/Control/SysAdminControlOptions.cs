@@ -19,7 +19,7 @@ public sealed class SysAdminOperatorOptions
 {
     public string DisplayName { get; set; } = "Platform Administrator";
 
-    public string Email { get; set; } = "sysadmin@citus.local";
+    public string Email { get; set; } = "sysadmin@tralanz.local";
 
     public List<string> Roles { get; set; } = ["sysadmin"];
 }

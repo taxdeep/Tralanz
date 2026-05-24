@@ -1,8 +1,9 @@
 @*
     /preview -- P0 smoke page. Demonstrates that Radzen + Tailwind v4 +
-    Tabler sprite + ThemeService all work together. Will be removed (or
-    locked behind dev-only) once we have real pages built on the new
-    primitives. Not in any nav menu.
+    Tabler sprite + ThemeService all work together. Not in any nav
+    menu. DEBUG-only: this file is excluded from Release builds by
+    a csproj <Content Remove> condition, so the @page route is
+    unreachable in production.
 *@
 
 @page "/preview"
@@ -14,7 +15,7 @@
 <section class="flex flex-col gap-6 p-6">
     <header class="flex items-center justify-between">
         <div>
-            <h1 class="text-2xl font-semibold text-fg">Citus design preview</h1>
+            <h1 class="text-2xl font-semibold text-fg">Tralanz design preview</h1>
             <p class="text-sm text-fg-muted">P0 smoke surface — atoms, icons, tokens, theme.</p>
         </div>
         <div class="flex items-center gap-2">
@@ -51,7 +52,7 @@
                         Placeholder="Search invoices…"
                         LeadingIcon="IconName.Search" />
             <CitusInput TValue="string" @bind-Value="_email"
-                        Placeholder="email@citus.local"
+                        Placeholder="email@tralanz.local"
                         HelperText="Tabular numbers + Inter render here." />
         </div>
     </article>

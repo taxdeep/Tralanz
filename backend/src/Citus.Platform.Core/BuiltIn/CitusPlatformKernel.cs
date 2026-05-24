@@ -356,7 +356,7 @@ public static class CitusPlatformKernel
         Module(
             id: Guid.Parse("1e962b0c-ac00-476d-ba52-fa09c8f4efcc"),
             key: PlatformModuleKeys.Accounting,
-            name: "Citus Accounting",
+            name: "Tralanz Accounting",
             description: "Posting-engine-driven accounting bounded context registered inside the shared platform kernel.",
             routePrefix: "/accounting",
             isSystemModule: false,

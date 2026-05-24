@@ -36,4 +36,16 @@
           IgnoreExitCode="false" />
   </Target>
 
+  <!-- /preview is a design-token smoke page (Radzen + Tailwind + theme
+       harness). It must not be reachable in production: AUDIT_2026-05-20
+       Low-tier finding (page accessible in prod with placeholder copy).
+       Excluding the .razor file from non-Debug builds keeps the @page
+       route from being registered at all — preferred over a #if DEBUG
+       wrapper because Razor's directive section doesn't process C#
+       preprocessor directives, so the route would still emit in
+       Release. -->
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Content Remove="Components\Pages\PreviewPage.razor" />
+  </ItemGroup>
+
 </Project>

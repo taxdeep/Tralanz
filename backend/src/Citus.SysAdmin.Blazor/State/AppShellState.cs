@@ -109,7 +109,7 @@ public sealed class AppShellState
     public SysAdminOperatorSummary Operator { get; private set; } = new()
     {
         DisplayName = "Platform Administrator",
-        Email = "sysadmin@citus.local",
+        Email = "sysadmin@tralanz.local",
         Roles = ["sysadmin"]
     };
 
@@ -214,7 +214,7 @@ public sealed class AppShellState
         Operator = new SysAdminOperatorSummary
         {
             DisplayName = "Platform Administrator",
-            Email = "sysadmin@citus.local",
+            Email = "sysadmin@tralanz.local",
             Roles = ["sysadmin"]
         };
         ActiveCompany = new CompanyContextSummary

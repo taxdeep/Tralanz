@@ -21,7 +21,7 @@ public sealed class SysAdminAuthOptions
 
         public bool AllowInNonDevelopment { get; set; }
 
-        public string Email { get; set; } = "sysadmin@citus.local";
+        public string Email { get; set; } = "sysadmin@tralanz.local";
 
         public string DisplayName { get; set; } = "Platform Administrator";
 
