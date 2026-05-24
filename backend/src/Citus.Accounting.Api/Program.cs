@@ -8507,6 +8507,317 @@ static string? ValidateBankReconciliationRequest(BankReconciliationCompleteHttpR
     return null;
 }
 
+static string? ValidateBankReconciliationDraftOpen(BankReconciliationDraftOpenHttpRequest request)
+{
+    if (request.BankAccountId == Guid.Empty) return "Statement account is required.";
+    if (request.StatementDate == default) return "Statement date is required.";
+    return null;
+}
+
+// ===========================================================================
+// R-1: Bank reconciliation DRAFT lifecycle endpoints.
+//
+// See BANKING_RECONCILE_PLAN.md Sections 7 (state machine) and 10 (API
+// surface). Each endpoint is gated by RequireBankReconciliationAuthority,
+// matching the existing /reconciliation/ledger + /reconciliation/complete
+// endpoints. The legacy two endpoints above remain functional so the
+// current /reconciliation page keeps working until R-3 replaces it.
+// ===========================================================================
+
+accounting.MapPost(
+    "/reconciliation/draft",
+    async (
+        BankReconciliationDraftOpenHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "open_draft");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var validation = ValidateBankReconciliationDraftOpen(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var draft = await store.OpenDraftAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                new BankReconciliationDraftOpenInput(
+                    request.BankAccountId,
+                    request.StatementDate,
+                    request.OpeningBalance,
+                    request.EndingBalance,
+                    request.Notes),
+                cancellationToken);
+            return Results.Ok(draft);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/reconciliation/draft",
+    async (
+        Guid? accountId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        if (accountId is null || accountId == Guid.Empty)
+        {
+            return Results.BadRequest(new { message = "accountId query parameter is required." });
+        }
+
+        var draft = await store.FindOpenDraftForAccountAsync(
+            session.ActiveCompanyId,
+            accountId.Value,
+            cancellationToken);
+        return draft is null ? Results.NoContent() : Results.Ok(draft);
+    });
+
+accounting.MapGet(
+    "/reconciliation/draft/{draftId:guid}",
+    async (
+        Guid draftId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var draft = await store.LoadDraftAsync(session.ActiveCompanyId, draftId, cancellationToken);
+        return draft is null
+            ? Results.NotFound(new { message = $"Reconciliation draft '{draftId:D}' was not found." })
+            : Results.Ok(draft);
+    });
+
+accounting.MapGet(
+    "/reconciliation/draft/{draftId:guid}/candidates",
+    async (
+        Guid draftId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var candidates = await store.ListDraftCandidatesAsync(
+                session.ActiveCompanyId,
+                draftId,
+                cancellationToken);
+            return Results.Ok(new BankReconciliationDraftCandidatesResponse(draftId, candidates));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.NotFound(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/reconciliation/draft/{draftId:guid}/cleared",
+    async (
+        Guid draftId,
+        BankReconciliationDraftToggleHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "edit_draft");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        if (request.LedgerEntryId == Guid.Empty)
+        {
+            return Results.BadRequest(new { message = "ledgerEntryId is required." });
+        }
+
+        try
+        {
+            var draft = await store.ToggleLineAsync(
+                session.ActiveCompanyId,
+                draftId,
+                request.LedgerEntryId,
+                request.Cleared,
+                cancellationToken);
+            return Results.Ok(draft);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapMethods(
+    "/reconciliation/draft/{draftId:guid}",
+    new[] { HttpMethods.Patch },
+    async (
+        Guid draftId,
+        BankReconciliationDraftPatchHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "edit_draft");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var draft = await store.PatchStatementInfoAsync(
+                session.ActiveCompanyId,
+                draftId,
+                new BankReconciliationDraftPatchInput(
+                    request.OpeningBalance,
+                    request.EndingBalance,
+                    request.StatementDate,
+                    request.Notes),
+                cancellationToken);
+            return Results.Ok(draft);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapDelete(
+    "/reconciliation/draft/{draftId:guid}",
+    async (
+        Guid draftId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "abandon_draft");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            await store.AbandonDraftAsync(session.ActiveCompanyId, session.UserId, draftId, cancellationToken);
+            return Results.NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/reconciliation/draft/{draftId:guid}/complete",
+    async (
+        Guid draftId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "complete");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var summary = await store.CompleteDraftAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                draftId,
+                cancellationToken);
+            return Results.Ok(summary);
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.Conflict(new
+            {
+                message = "This statement or one of its ledger entries has already been reconciled.",
+                constraint = ex.ConstraintName
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/reconciliation/{reconciliationId:guid}/undo",
+    async (
+        Guid reconciliationId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "undo");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            await store.UndoCompletedAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                reconciliationId,
+                cancellationToken);
+            return Results.NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
 static IResult? RequireBankReconciliationAuthority(
     BusinessSessionContext? session,
     string transitionCode)

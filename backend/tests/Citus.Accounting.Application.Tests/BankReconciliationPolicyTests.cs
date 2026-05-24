@@ -50,6 +50,23 @@ public sealed class BankReconciliationPolicyTests
         Assert.False(BankReconciliationPolicy.IsZeroDifference(calculation.Difference));
     }
 
+    [Theory]
+    [InlineData(BankReconciliationStatus.InProgress, BankReconciliationStatusTokens.InProgress)]
+    [InlineData(BankReconciliationStatus.Completed, BankReconciliationStatusTokens.Completed)]
+    [InlineData(BankReconciliationStatus.Abandoned, BankReconciliationStatusTokens.Abandoned)]
+    public void StatusTokens_RoundTrip(BankReconciliationStatus status, string token)
+    {
+        Assert.Equal(token, status.ToToken());
+        Assert.Equal(status, BankReconciliationStatusTokens.FromToken(token));
+    }
+
+    [Fact]
+    public void StatusTokens_RejectsUnknownToken()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => BankReconciliationStatusTokens.FromToken("scheduled"));
+    }
+
     private static BankReconciliationLedgerEntry Entry(decimal signedAmountBase) => new(
         Guid.NewGuid(),
         Guid.NewGuid(),
