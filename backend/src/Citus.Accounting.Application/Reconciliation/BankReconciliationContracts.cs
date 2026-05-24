@@ -147,6 +147,22 @@ public sealed record BankReconciliationDraftCandidate(
     BankReconciliationLedgerEntry Entry,
     bool ClearedInThisDraft);
 
+/// <summary>
+/// R-2: a row in the Bank Register list. Same ledger entry payload
+/// as the reconcile candidates, plus the row's current reconciliation
+/// status (unreconciled / in someone's draft / cleared by a completed
+/// reconciliation). The register shows EVERYTHING posted on a bank
+/// account (including FX revaluation entries with tx_debit =
+/// tx_credit = 0); the reconcile candidate list filters those out
+/// per boundary B3, but the register surfaces them for transparency.
+/// </summary>
+public sealed record BankRegisterEntry(
+    BankReconciliationLedgerEntry Entry,
+    bool IsCleared,
+    bool IsInDraft,
+    Guid? ReconciliationId,
+    DateOnly? ClearedOnStatementDate);
+
 public interface IBankReconciliationStore
 {
     Task<IReadOnlyList<BankReconciliationLedgerEntry>> ListUnreconciledLedgerEntriesAsync(
@@ -248,6 +264,19 @@ public interface IBankReconciliationStore
         CompanyId companyId,
         UserId actorUserId,
         Guid reconciliationId,
+        CancellationToken cancellationToken);
+
+    /// <summary>R-2: list ledger entries for a bank / cash / credit-card
+    /// account, posting_date DESC, each row tagged with its
+    /// reconciliation status. Includes FX revaluation entries (the
+    /// reconcile candidate query filters them out, but the register
+    /// surfaces them so operators can see why the base carrying value
+    /// drifted from the transaction-currency cleared balance). Cursor
+    /// pagination is R-5; V1 caps at 200 rows.</summary>
+    Task<IReadOnlyList<BankRegisterEntry>> ListBankRegisterAsync(
+        CompanyId companyId,
+        Guid bankAccountId,
+        int take,
         CancellationToken cancellationToken);
 }
 

@@ -35,3 +35,7 @@ public sealed record BankReconciliationDraftToggleHttpRequest(
 public sealed record BankReconciliationDraftCandidatesResponse(
     Guid DraftId,
     IReadOnlyList<BankReconciliationDraftCandidate> Candidates);
+
+public sealed record BankRegisterResponse(
+    Guid AccountId,
+    IReadOnlyList<BankRegisterEntry> Entries);

@@ -1244,6 +1244,115 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<BankRegisterEntry>> ListBankRegisterAsync(
+        CompanyId companyId,
+        Guid bankAccountId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (bankAccountId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Bank register requires an account.");
+        }
+        if (take <= 0 || take > 500)
+        {
+            take = Math.Clamp(take, 1, 200);
+        }
+
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await EnsureReconcilableAccountAsync(connection, null, companyId, bankAccountId, cancellationToken);
+
+        var items = new List<BankRegisterEntry>();
+        await using var command = connection.CreateCommand();
+        // Mirror of LedgerEntrySelectSql but with the LEFT JOIN to
+        // bank_reconciliations so we can return statement_date when
+        // the row is cleared. Ordered posting_date DESC so the most-
+        // recent activity shows first (register view, not statement
+        // view).
+        command.CommandText =
+            """
+            select
+              le.id as ledger_entry_id,
+              le.journal_entry_id,
+              le.journal_entry_line_id,
+              le.posting_date,
+              le.account_id,
+              a.code as account_code,
+              a.name as account_name,
+              je.display_number,
+              je.source_type,
+              je.source_id,
+              le.transaction_currency_code,
+              le.tx_debit,
+              le.tx_credit,
+              le.debit,
+              le.credit,
+              case
+                when a.root_type in ('asset', 'expense', 'cost_of_sales') then le.debit - le.credit
+                else le.credit - le.debit
+              end as signed_amount_base,
+              case
+                when a.root_type in ('asset', 'expense', 'cost_of_sales') then le.tx_debit - le.tx_credit
+                else le.tx_credit - le.tx_debit
+              end as signed_amount_transaction,
+              coalesce(jel.description, '') as description,
+              le.reconciliation_draft_id,
+              le.reconciliation_id,
+              br.statement_date as cleared_on_statement_date
+            from ledger_entries le
+            inner join journal_entries je
+              on je.company_id = le.company_id
+             and je.id = le.journal_entry_id
+            inner join journal_entry_lines jel
+              on jel.company_id = le.company_id
+             and jel.id = le.journal_entry_line_id
+            inner join accounts a
+              on a.company_id = le.company_id
+             and a.id = le.account_id
+            left join bank_reconciliations br
+              on br.company_id = le.company_id
+             and br.id = le.reconciliation_id
+            where le.company_id = @company_id
+              and le.account_id = @bank_account_id
+              and je.status = 'posted'
+            order by le.posting_date desc, le.created_at desc, le.id desc
+            limit @take;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bank_account_id", bankAccountId);
+        command.Parameters.AddWithValue("take", take);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var reconciliationIdCol = -1;
+        var reconciliationDraftIdCol = -1;
+        var clearedStatementDateCol = -1;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (reconciliationIdCol < 0)
+            {
+                reconciliationIdCol = reader.GetOrdinal("reconciliation_id");
+                reconciliationDraftIdCol = reader.GetOrdinal("reconciliation_draft_id");
+                clearedStatementDateCol = reader.GetOrdinal("cleared_on_statement_date");
+            }
+            var entry = MapLedgerEntry(reader);
+            var reconciliationId = reader.IsDBNull(reconciliationIdCol)
+                ? (Guid?)null
+                : reader.GetGuid(reconciliationIdCol);
+            var isInDraft = !reader.IsDBNull(reconciliationDraftIdCol);
+            var clearedOn = reader.IsDBNull(clearedStatementDateCol)
+                ? (DateOnly?)null
+                : reader.GetFieldValue<DateOnly>(clearedStatementDateCol);
+            items.Add(new BankRegisterEntry(
+                entry,
+                reconciliationId.HasValue,
+                isInDraft,
+                reconciliationId,
+                clearedOn));
+        }
+
+        return items;
+    }
+
     private static async Task<IReadOnlyList<BankReconciliationLedgerEntry>> LoadDraftLedgerEntriesForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

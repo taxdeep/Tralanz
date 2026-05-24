@@ -25,6 +25,30 @@ public sealed class BankReconciliationClient(HttpClient httpClient, ILogger<Bank
         }
     }
 
+    public async Task<BankRegisterOutcome> ListBankRegisterAsync(
+        Guid accountId,
+        int take = 200,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/bank-register/{accountId:D}?take={take}";
+            var response = await httpClient.GetFromJsonAsync<BankRegisterResponse>(url, cancellationToken);
+            return new BankRegisterOutcome(
+                true,
+                response?.Entries ?? Array.Empty<BankRegisterEntryDto>(),
+                null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read bank register for account {AccountId}.", accountId);
+            return new BankRegisterOutcome(
+                false,
+                Array.Empty<BankRegisterEntryDto>(),
+                "Unable to load bank register entries.");
+        }
+    }
+
     public async Task<BankReconciliationCompleteOutcome> CompleteAsync(
         BankReconciliationCompletePayload payload,
         CancellationToken cancellationToken = default)
@@ -128,3 +152,22 @@ public sealed record BankReconciliationSummaryDto(
     int LineCount,
     UserId CompletedByUserId,
     DateTimeOffset CompletedAt);
+
+// R-2: Bank Register DTOs. Wire-level shape of the
+// /accounting/bank-register/{accountId} response.
+
+public sealed record BankRegisterResponse(
+    Guid AccountId,
+    IReadOnlyList<BankRegisterEntryDto> Entries);
+
+public sealed record BankRegisterEntryDto(
+    BankReconciliationLedgerEntrySummary Entry,
+    bool IsCleared,
+    bool IsInDraft,
+    Guid? ReconciliationId,
+    DateOnly? ClearedOnStatementDate);
+
+public sealed record BankRegisterOutcome(
+    bool Succeeded,
+    IReadOnlyList<BankRegisterEntryDto> Entries,
+    string? ErrorMessage);
