@@ -163,6 +163,66 @@ public sealed record BankRegisterEntry(
     Guid? ReconciliationId,
     DateOnly? ClearedOnStatementDate);
 
+/// <summary>
+/// R-4: lightweight summary of the previous reconciliation for an
+/// account. Drives the carry-forward prefill on the Start
+/// reconciling form. Returned by GetLastCompletedAsync; null when
+/// the account has never been reconciled.
+/// </summary>
+public sealed record BankReconciliationLastCompleted(
+    Guid ReconciliationId,
+    DateOnly StatementDate,
+    decimal EndingBalance,
+    DateTimeOffset CompletedAt);
+
+/// <summary>
+/// R-4: full report payload for a completed or undone-and-now-
+/// abandoned reconciliation. Header + frozen line snapshot from
+/// bank_reconciliation_lines. Display columns (account name /
+/// display number / description) come from CURRENT joined data —
+/// the financial fields (signed amounts, debits, credits) are the
+/// snapshot at completion time and are the audit anchor.
+/// </summary>
+public sealed record BankReconciliationReport(
+    Guid ReconciliationId,
+    Guid BankAccountId,
+    string BankAccountCode,
+    string BankAccountName,
+    DateOnly StatementDate,
+    string Status,
+    decimal OpeningBalance,
+    decimal EndingBalance,
+    decimal ClearedIncrease,
+    decimal ClearedDecrease,
+    decimal CalculatedEndingBalance,
+    decimal Difference,
+    int LineCount,
+    string? Notes,
+    UserId? CreatedByUserId,
+    DateTimeOffset CreatedAt,
+    UserId? CompletedByUserId,
+    DateTimeOffset? CompletedAt,
+    UserId? AbandonedByUserId,
+    DateTimeOffset? AbandonedAt,
+    IReadOnlyList<BankReconciliationReportLine> Lines);
+
+public sealed record BankReconciliationReportLine(
+    Guid LedgerEntryId,
+    Guid JournalEntryId,
+    Guid JournalEntryLineId,
+    DateOnly PostingDate,
+    string DisplayNumber,
+    string AccountCode,
+    string AccountName,
+    string Description,
+    string TransactionCurrencyCode,
+    decimal TxDebit,
+    decimal TxCredit,
+    decimal Debit,
+    decimal Credit,
+    decimal SignedAmountBase,
+    decimal SignedAmountTransaction);
+
 public interface IBankReconciliationStore
 {
     Task<IReadOnlyList<BankReconciliationLedgerEntry>> ListUnreconciledLedgerEntriesAsync(
@@ -277,6 +337,25 @@ public interface IBankReconciliationStore
         CompanyId companyId,
         Guid bankAccountId,
         int take,
+        CancellationToken cancellationToken);
+
+    /// <summary>R-4: most-recent completed reconciliation for the
+    /// account. Drives carry-forward prefill of beginning balance
+    /// on the next draft. Null when the account has no prior
+    /// completed reconciliation (first-time setup).</summary>
+    Task<BankReconciliationLastCompleted?> GetLastCompletedAsync(
+        CompanyId companyId,
+        Guid bankAccountId,
+        CancellationToken cancellationToken);
+
+    /// <summary>R-4: full report payload for a completed (or undone-
+    /// and-abandoned) reconciliation. Returns null when the row
+    /// doesn't exist or is still in_progress. For an abandoned row
+    /// the snapshot lines may be empty (Undo deletes them); the
+    /// header still includes who/when undid it.</summary>
+    Task<BankReconciliationReport?> LoadReconciliationReportAsync(
+        CompanyId companyId,
+        Guid reconciliationId,
         CancellationToken cancellationToken);
 }
 

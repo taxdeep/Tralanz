@@ -1,0 +1,236 @@
+@page "/banking/reconciliation/{ReconciliationIdRaw}/report"
+
+@inject BankReconciliationClient ReconciliationClient
+@inject NavigationManager Navigation
+@inject CitusToastService Message
+
+<PageTitle>Reconciliation report | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        @if (_report is not null && _report.Status == "completed")
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Danger="true"
+                         Size="CitusButtonSize.Small"
+                         Disabled="@_isBusy"
+                         OnClick="() => _showUndoConfirm = true">
+                Undo reconciliation
+            </CitusButton>
+        }
+        <a class="citus-button" href="@($"banking/register/{_report?.BankAccountId:D}")">
+            Back to register
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.List" />
+}
+else if (_report is null)
+{
+    <CitusEmpty Title="Reconciliation not found"
+                Description="The reconciliation is still in progress or does not exist in this company."
+                Icon="IconName.AlertCircle" />
+}
+else
+{
+    @if (_report.Status == "abandoned")
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning"
+                    ShowIcon="true"
+                    Message="@($"This reconciliation was undone on {_report.AbandonedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "an unknown date"}. The cleared line snapshot has been removed but the header is retained for audit.")"
+                    Class="mb-4" />
+    }
+
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Statement summary</h2>
+            <CitusBadge Color="@(_report.Status == "completed" ? "green" : "neutral")">@_report.Status</CitusBadge>
+        </header>
+        <table class="citus-keyvalue">
+            <tbody>
+                <tr><th>Account</th><td>@_report.BankAccountCode @_report.BankAccountName</td></tr>
+                <tr><th>Statement date</th><td>@_report.StatementDate.ToString("yyyy-MM-dd")</td></tr>
+                <tr><th>Beginning balance</th><td>@FormatAmount(_report.OpeningBalance)</td></tr>
+                <tr><th>+ Cleared inflow</th><td>@FormatAmount(_report.ClearedIncrease)</td></tr>
+                <tr><th>− Cleared outflow</th><td>@FormatAmount(_report.ClearedDecrease)</td></tr>
+                <tr><th>Calculated ending</th><td>@FormatAmount(_report.CalculatedEndingBalance)</td></tr>
+                <tr><th>Statement ending</th><td>@FormatAmount(_report.EndingBalance)</td></tr>
+                <tr><th>Difference</th><td class="@(Math.Abs(_report.Difference) < 0.005m ? "text-success" : "text-warning")">@FormatAmount(_report.Difference)</td></tr>
+                <tr><th>Cleared lines</th><td>@_report.LineCount</td></tr>
+                @if (_report.CompletedByUserId is not null)
+                {
+                    <tr><th>Completed by</th><td>@_report.CompletedByUserId.Value (@(_report.CompletedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? ""))</td></tr>
+                }
+                @if (_report.AbandonedByUserId is not null)
+                {
+                    <tr><th>Undone by</th><td>@_report.AbandonedByUserId.Value (@(_report.AbandonedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? ""))</td></tr>
+                }
+                @if (!string.IsNullOrWhiteSpace(_report.Notes))
+                {
+                    <tr><th>Notes</th><td><pre style="white-space: pre-wrap; font-family: inherit;">@_report.Notes</pre></td></tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <section class="citus-panel mt-4">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Cleared ledger entries</h2>
+            <span class="text-sm text-fg-muted">@_report.Lines.Count rows</span>
+        </header>
+        @if (_report.Lines.Count == 0)
+        {
+            <p class="text-fg-muted text-sm">
+                @(_report.Status == "abandoned"
+                    ? "Cleared line snapshot was deleted when this reconciliation was undone."
+                    : "No cleared entries.")
+            </p>
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 7rem">Date</th>
+                        <th>Display #</th>
+                        <th>Account</th>
+                        <th>Memo</th>
+                        <th class="text-right" style="width: 8rem">Payment</th>
+                        <th class="text-right" style="width: 8rem">Deposit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _report.Lines)
+                    {
+                        <tr>
+                            <td>@line.PostingDate.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                <a class="citus-link"
+                                   href="@($"journal-entry/review/{line.JournalEntryId:D}")"
+                                   target="_blank">@line.DisplayNumber</a>
+                            </td>
+                            <td>@line.AccountCode @line.AccountName</td>
+                            <td>@line.Description</td>
+                            <td class="text-right">@FormatNegativeOnly(line.SignedAmountTransaction)</td>
+                            <td class="text-right">@FormatPositiveOnly(line.SignedAmountTransaction)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@if (_showUndoConfirm && _report is not null)
+{
+    <div class="citus-modal-backdrop" @onclick="() => _showUndoConfirm = false">
+        <div class="citus-modal" @onclick:stopPropagation>
+            <header class="citus-modal__header">
+                <CitusIcon Name="IconName.AlertCircle" Size="IconSize.Display" />
+                <h2 class="citus-modal__title">Undo this reconciliation?</h2>
+            </header>
+            <p class="text-fg-muted mb-2">
+                The cleared ledger entries will become unreconciled again and the line snapshot will be removed.
+            </p>
+            <p class="text-fg-muted mb-4">
+                <strong>LIFO rule:</strong> only the most recent completed reconciliation for this account can be undone.
+                If a later reconciliation exists you must undo it first.
+            </p>
+            <div class="flex justify-end gap-2">
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             OnClick="() => _showUndoConfirm = false">
+                    Cancel
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Danger="true"
+                             Disabled="@_isBusy"
+                             OnClick="UndoAsync">
+                    @(_isBusy ? "Undoing..." : "Undo")
+                </CitusButton>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? ReconciliationIdRaw { get; set; }
+
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Banking / Reconciliation",
+        Title = "Reconciliation report",
+        Subtitle = "Header and frozen line snapshot. Use Undo for strict LIFO reversal of the most recent reconciliation."
+    };
+
+    private Guid? _reconciliationId;
+    private BankReconciliationReportDto? _report;
+    private bool _isLoading;
+    private bool _isBusy;
+    private bool _showUndoConfirm;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Guid.TryParse(ReconciliationIdRaw, out var id))
+        {
+            return;
+        }
+        _reconciliationId = id;
+        await LoadReportAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Guid.TryParse(ReconciliationIdRaw, out var id) && id != _reconciliationId)
+        {
+            _reconciliationId = id;
+            await LoadReportAsync();
+        }
+    }
+
+    private async Task LoadReportAsync()
+    {
+        if (_reconciliationId is not { } id) return;
+        _isLoading = true;
+        _error = null;
+        StateHasChanged();
+        _report = await ReconciliationClient.LoadReportAsync(id);
+        _isLoading = false;
+    }
+
+    private async Task UndoAsync()
+    {
+        if (_reconciliationId is not { } id) return;
+        _isBusy = true;
+        _error = null;
+        StateHasChanged();
+
+        var outcome = await ReconciliationClient.UndoCompletedAsync(id);
+        _isBusy = false;
+        _showUndoConfirm = false;
+        if (!outcome.Succeeded)
+        {
+            _error = outcome.ErrorMessage ?? "Unable to undo this reconciliation.";
+            return;
+        }
+        await Message.SuccessAsync("Reconciliation undone.");
+        await LoadReportAsync();
+    }
+
+    private static string FormatAmount(decimal amount) =>
+        amount.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatPositiveOnly(decimal signedAmount) =>
+        signedAmount > 0m ? signedAmount.ToString("N2") : "";
+
+    private static string FormatNegativeOnly(decimal signedAmount) =>
+        signedAmount < 0m ? Math.Abs(signedAmount).ToString("N2") : "";
+}
