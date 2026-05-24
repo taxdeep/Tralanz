@@ -260,3 +260,35 @@ Related architecture / design documents:
 
 - [backend/README.md](./backend/README.md)
 - [backend/Citus.Accounting.sln](./backend/Citus.Accounting.sln)
+
+## Running tests locally
+
+The Postgres-backed test suites (`Tests.AR`, `Tests.AP`, `Tests.GL`,
+`Tests.CompanyAccess`) connect to a developer-local `citus_accounting`
+database via the `CITUS_ACCOUNTING_DB` env var (default
+`Host=localhost;Port=5432;...;Password=change-me`). Unlike the
+production deploy path, dev does NOT auto-apply
+`deploy/migrations/*.sql` to that DB — so after pulling new migrations
+you need to sync the dev DB once:
+
+```pwsh
+pwsh tools/sync-test-db.ps1
+```
+
+Optional flag if the permission-foundation migration aborts because
+seed companies have no active owner:
+
+```pwsh
+pwsh tools/sync-test-db.ps1 -SeedC000001Owner
+```
+
+The script is idempotent (uses the same `schema_migrations` tracking
+table the production runner uses) and soft-fails per-migration so a
+single broken file doesn't stop the chain.
+
+Known dev-only "expected failure":
+[`2026-05-22-m13-row-level-security.sql`](./deploy/migrations/2026-05-22-m13-row-level-security.sql)
+attaches RLS policies to the `citus_app` role, which only the
+production `install.sh` provisions. Local dev runs as superuser, so
+this migration's `GRANT` statements fail with `42704`. The test
+suites that don't enter strict-mode RLS continue to work without it.

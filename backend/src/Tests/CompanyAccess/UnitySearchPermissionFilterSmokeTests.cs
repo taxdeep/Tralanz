@@ -157,11 +157,11 @@ public sealed class UnitySearchPermissionFilterSmokeTests
               (@user_b_id, @user_b_email, 'user.b.permfilter','hashed', 'active');
 
             insert into company_memberships (
-              id, company_id, user_id, role, permissions, is_active, is_owner, status
+              id, company_id, user_id, role, permissions, is_active, is_owner
             ) values
-              (gen_random_uuid(), @company_id, @owner_id,  'owner', '[]'::jsonb, true, true,  'active'),
-              (gen_random_uuid(), @company_id, @user_a_id, 'user',  '[]'::jsonb, true, false, 'active'),
-              (gen_random_uuid(), @company_id, @user_b_id, 'user',  '[]'::jsonb, true, false, 'active');
+              (gen_random_uuid(), @company_id, @owner_id,  'owner', '[]'::jsonb, true, true),
+              (gen_random_uuid(), @company_id, @user_a_id, 'user',  '[]'::jsonb, true, false),
+              (gen_random_uuid(), @company_id, @user_b_id, 'user',  '[]'::jsonb, true, false);
 
             -- Three search_documents rows, one per entity_type we're
             -- gating. Each carries the matching new fine-grained
