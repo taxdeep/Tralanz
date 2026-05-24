@@ -136,6 +136,7 @@ public sealed class BusinessShellState
             Title = "Banking",
             Items =
             [
+                new NavMenuItem { Title = "Bank Register", Href = "banking/register", Icon = IconName.BuildingBank },
                 new NavMenuItem { Title = "Reconciliation", Href = "reconciliation", Icon = IconName.CircleCheck },
                 new NavMenuItem { Title = "Account Transfers", Href = "bank-transfers", Icon = IconName.ArrowLeft },
                 new NavMenuItem { Title = "Bank Deposits", Href = "bank-deposits", Icon = IconName.Cash }

@@ -1,0 +1,236 @@
+@page "/banking/register"
+@page "/banking/register/{AccountIdRaw}"
+
+@inject BusinessShellState ShellState
+@inject AccountClient AccountClient
+@inject BankReconciliationClient ReconciliationClient
+@inject NavigationManager Navigation
+
+<PageTitle>Bank Register | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        @if (_selectedAccountId is { } id)
+        {
+            <a class="citus-button citus-button--primary" href="@($"reconciliation")">
+                <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
+                <span>Reconcile</span>
+            </a>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Account</h2>
+    </header>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+            <label class="text-sm font-medium block mb-1">Bank / cash / credit-card account</label>
+            <select class="citus-form-field__input"
+                    value="@(_selectedAccountId?.ToString("D") ?? string.Empty)"
+                    @onchange="OnAccountChanged">
+                <option value="">Select an account</option>
+                @foreach (var account in _bankAccounts)
+                {
+                    <option value="@account.Id.ToString("D")">@account.Code @account.Name (@FormatAccountKind(account)) — @(account.CurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode)</option>
+                }
+            </select>
+        </div>
+        @if (_selectedAccountId.HasValue)
+        {
+            <div class="flex items-end">
+                <CitusButton LeadingIcon="IconName.Refresh"
+                             Size="CitusButtonSize.Small"
+                             Disabled="@_isLoading"
+                             OnClick="LoadRegisterAsync">
+                    @(_isLoading ? "Loading..." : "Refresh")
+                </CitusButton>
+            </div>
+        }
+    </div>
+</section>
+
+@if (_selectedAccountId.HasValue)
+{
+    <section class="citus-panel mt-4">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Register</h2>
+            <span class="text-sm text-fg-muted">@_entries.Count rows · @_clearedCount cleared</span>
+        </header>
+
+        @if (_isLoading)
+        {
+            <CitusSkeleton Variant="SkeletonVariant.List" />
+        }
+        else if (_entries.Count == 0)
+        {
+            <CitusEmpty Title="No posted entries on this account"
+                        Description="Bank, cash, and credit-card accounts populate this view once journal entries that touch them are posted."
+                        Icon="IconName.Receipt" />
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 7rem">Date</th>
+                        <th style="width: 7rem">Cleared</th>
+                        <th>Display #</th>
+                        <th>Memo</th>
+                        <th class="text-right" style="width: 8rem">Payment</th>
+                        <th class="text-right" style="width: 8rem">Deposit</th>
+                        <th style="width: 4rem; text-align: center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _entries)
+                    {
+                        <tr>
+                            <td>@row.Entry.PostingDate.ToString("yyyy-MM-dd")</td>
+                            <td>@(row.ClearedOnStatementDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            <td>
+                                <a class="citus-link"
+                                   href="@($"journal-entry/review/{row.Entry.JournalEntryId:D}")">
+                                    @row.Entry.DisplayNumber
+                                </a>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(row.Entry.Description) ? row.Entry.SourceType : row.Entry.Description)</td>
+                            <td class="text-right">@FormatNegativeOnly(row.Entry.SignedAmountTransaction)</td>
+                            <td class="text-right">@FormatPositiveOnly(row.Entry.SignedAmountTransaction)</td>
+                            <td class="text-center">
+                                @if (row.IsCleared)
+                                {
+                                    <CitusBadge Color="green">✓</CitusBadge>
+                                }
+                                else if (row.IsInDraft)
+                                {
+                                    <CitusBadge Color="blue">Draft</CitusBadge>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-muted">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Banking",
+        Title = "Bank register",
+        Subtitle = "Every posted journal entry on a bank, cash, or credit-card account. Cleared entries show the statement date that locked them."
+    };
+
+    [Parameter] public string? AccountIdRaw { get; set; }
+
+    private Guid? _selectedAccountId;
+    private IReadOnlyList<AccountSummary> _bankAccounts = Array.Empty<AccountSummary>();
+    private IReadOnlyList<BankRegisterEntryDto> _entries = Array.Empty<BankRegisterEntryDto>();
+    private bool _isLoading;
+    private string? _error;
+
+    private int _clearedCount => _entries.Count(e => e.IsCleared);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var assetAccounts = await AccountClient.ListAsync(rootType: "asset");
+        var liabilityAccounts = await AccountClient.ListAsync(rootType: "liability");
+        _bankAccounts = assetAccounts
+            .Concat(liabilityAccounts)
+            .Where(a => a.IsActive && IsReconcilable(a))
+            .OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (Guid.TryParse(AccountIdRaw, out var routeId))
+        {
+            _selectedAccountId = routeId;
+            await LoadRegisterAsync();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Support direct navigation between /banking/register and
+        // /banking/register/{id} without remount.
+        if (Guid.TryParse(AccountIdRaw, out var routeId) && routeId != _selectedAccountId)
+        {
+            _selectedAccountId = routeId;
+            await LoadRegisterAsync();
+        }
+        else if (string.IsNullOrWhiteSpace(AccountIdRaw) && _selectedAccountId.HasValue)
+        {
+            _selectedAccountId = null;
+            _entries = Array.Empty<BankRegisterEntryDto>();
+        }
+    }
+
+    private static bool IsReconcilable(AccountSummary account) =>
+        (account.RootType == "asset" && (account.DetailType == "bank" || account.DetailType == "cash"))
+        || (account.RootType == "liability" && account.DetailType == "credit_card");
+
+    private static string FormatAccountKind(AccountSummary account) => account.DetailType switch
+    {
+        "bank" => "Bank",
+        "cash" => "Cash",
+        "credit_card" => "Credit card",
+        _ => account.DetailType ?? "Account"
+    };
+
+    private static string FormatPositiveOnly(decimal signedAmount) =>
+        signedAmount > 0m ? signedAmount.ToString("N2") : "";
+
+    private static string FormatNegativeOnly(decimal signedAmount) =>
+        signedAmount < 0m ? Math.Abs(signedAmount).ToString("N2") : "";
+
+    private async Task OnAccountChanged(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var id))
+        {
+            // Push the new account into the URL so a refresh / share
+            // lands on the same account.
+            Navigation.NavigateTo($"banking/register/{id:D}");
+        }
+        else
+        {
+            _selectedAccountId = null;
+            _entries = Array.Empty<BankRegisterEntryDto>();
+            Navigation.NavigateTo("banking/register");
+        }
+        await Task.CompletedTask;
+    }
+
+    private async Task LoadRegisterAsync()
+    {
+        if (_selectedAccountId is not { } accountId)
+        {
+            return;
+        }
+        _isLoading = true;
+        _error = null;
+        StateHasChanged();
+
+        var outcome = await ReconciliationClient.ListBankRegisterAsync(accountId);
+        if (!outcome.Succeeded)
+        {
+            _error = outcome.ErrorMessage;
+            _entries = Array.Empty<BankRegisterEntryDto>();
+        }
+        else
+        {
+            _entries = outcome.Entries;
+        }
+        _isLoading = false;
+    }
+}

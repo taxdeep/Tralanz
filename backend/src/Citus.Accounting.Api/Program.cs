@@ -8818,6 +8818,52 @@ accounting.MapPost(
         }
     });
 
+// ===========================================================================
+// R-2: Bank Register endpoint. Read-only view of every posted ledger entry
+// on a bank / cash / credit-card account, with cleared/uncleared status and
+// (when cleared) a pointer back to the reconciliation that locked it. Used
+// by the Bank Register Blazor page in /banking/register/{accountId}.
+//
+// Pagination: simple LIMIT @take in V1. Cursor pagination + virtual scroll
+// land in R-5 along with the rest of the perf hardening.
+// ===========================================================================
+
+accounting.MapGet(
+    "/bank-register/{accountId:guid}",
+    async (
+        Guid accountId,
+        int? take,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+        if (accountId == Guid.Empty)
+        {
+            return Results.BadRequest(new { message = "Bank account id is required." });
+        }
+
+        try
+        {
+            var entries = await store.ListBankRegisterAsync(
+                session.ActiveCompanyId,
+                accountId,
+                take ?? 200,
+                cancellationToken);
+            return Results.Ok(new BankRegisterResponse(accountId, entries));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
 static IResult? RequireBankReconciliationAuthority(
     BusinessSessionContext? session,
     string transitionCode)
