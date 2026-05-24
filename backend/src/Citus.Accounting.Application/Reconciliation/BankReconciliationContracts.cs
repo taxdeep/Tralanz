@@ -3,6 +3,44 @@ using SharedKernel.Identity;
 
 namespace Citus.Accounting.Application.Reconciliation;
 
+/// <summary>
+/// R-1: lifecycle states for bank_reconciliations rows.
+/// in_progress = draft (operator marking cleared, can leave / resume).
+/// completed   = signed off, JE lines locked, snapshot stored in lines table.
+/// abandoned   = "Close without saving" or undone after completion.
+///               Row is retained for audit, not reused.
+/// Wire tokens match the bank_reconciliations.status CHECK constraint.
+/// </summary>
+public enum BankReconciliationStatus
+{
+    InProgress,
+    Completed,
+    Abandoned
+}
+
+public static class BankReconciliationStatusTokens
+{
+    public const string InProgress = "in_progress";
+    public const string Completed = "completed";
+    public const string Abandoned = "abandoned";
+
+    public static string ToToken(this BankReconciliationStatus status) => status switch
+    {
+        BankReconciliationStatus.InProgress => InProgress,
+        BankReconciliationStatus.Completed => Completed,
+        BankReconciliationStatus.Abandoned => Abandoned,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown bank reconciliation status.")
+    };
+
+    public static BankReconciliationStatus FromToken(string token) => token switch
+    {
+        InProgress => BankReconciliationStatus.InProgress,
+        Completed => BankReconciliationStatus.Completed,
+        Abandoned => BankReconciliationStatus.Abandoned,
+        _ => throw new ArgumentOutOfRangeException(nameof(token), token, "Unknown bank reconciliation status token.")
+    };
+}
+
 public sealed record BankReconciliationLedgerEntry(
     Guid LedgerEntryId,
     Guid JournalEntryId,
@@ -53,6 +91,62 @@ public sealed record BankReconciliationSummary(
     UserId CompletedByUserId,
     DateTimeOffset CompletedAt);
 
+/// <summary>
+/// R-1: input to open a draft via POST /draft. The operator picks
+/// the bank account, supplies the statement ending balance and date
+/// (mandatory), and may override the auto-derived beginning balance
+/// (defaults to the previous completed reconciliation's ending
+/// balance). Notes are optional.
+/// </summary>
+public sealed record BankReconciliationDraftOpenInput(
+    Guid BankAccountId,
+    DateOnly StatementDate,
+    decimal OpeningBalance,
+    decimal EndingBalance,
+    string? Notes);
+
+/// <summary>
+/// R-1: input to PATCH /draft/{id}. All fields nullable — only the
+/// provided ones change. Used by the "Edit info" side drawer.
+/// </summary>
+public sealed record BankReconciliationDraftPatchInput(
+    decimal? OpeningBalance,
+    decimal? EndingBalance,
+    DateOnly? StatementDate,
+    string? Notes);
+
+/// <summary>
+/// R-1: snapshot of an in-progress draft, with running totals
+/// computed live from ledger_entries.reconciliation_draft_id = id.
+/// Returned by every draft endpoint so the UI can re-render the
+/// 4-card summary without a separate read.
+/// </summary>
+public sealed record BankReconciliationDraft(
+    Guid Id,
+    Guid BankAccountId,
+    DateOnly StatementDate,
+    decimal OpeningBalance,
+    decimal EndingBalance,
+    decimal ClearedIncrease,
+    decimal ClearedDecrease,
+    decimal CalculatedEndingBalance,
+    decimal Difference,
+    int ClearedLineCount,
+    string? Notes,
+    UserId CreatedByUserId,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastModifiedAt);
+
+/// <summary>
+/// R-1: a candidate ledger entry shown on the reconcile workspace
+/// row list. ClearedInThisDraft is the green-check state — true
+/// when the entry's reconciliation_draft_id equals the current
+/// draft's id.
+/// </summary>
+public sealed record BankReconciliationDraftCandidate(
+    BankReconciliationLedgerEntry Entry,
+    bool ClearedInThisDraft);
+
 public interface IBankReconciliationStore
 {
     Task<IReadOnlyList<BankReconciliationLedgerEntry>> ListUnreconciledLedgerEntriesAsync(
@@ -65,6 +159,95 @@ public interface IBankReconciliationStore
         CompanyId companyId,
         UserId completedByUserId,
         BankReconciliationCompleteInput input,
+        CancellationToken cancellationToken);
+
+    // ---------------------------------------------------------------
+    // R-1 draft lifecycle methods. See BANKING_RECONCILE_PLAN.md
+    // sections 7 (state machine), 9 (LIFO undo), 10 (API surface).
+    // ---------------------------------------------------------------
+
+    /// <summary>Open a new draft. Fails with InvalidOperationException
+    /// ("draft_already_open_for_account") if one is already in flight
+    /// for this (company, account), enforced by the partial unique
+    /// index in the schema migration.</summary>
+    Task<BankReconciliationDraft> OpenDraftAsync(
+        CompanyId companyId,
+        UserId createdByUserId,
+        BankReconciliationDraftOpenInput input,
+        CancellationToken cancellationToken);
+
+    /// <summary>Load a draft by id. Returns null if the row doesn't
+    /// exist OR is not in_progress. Used by Resume.</summary>
+    Task<BankReconciliationDraft?> LoadDraftAsync(
+        CompanyId companyId,
+        Guid draftId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Used by the Reconcile entry page to detect "is there
+    /// a draft to resume for this account?". Returns null if none.</summary>
+    Task<BankReconciliationDraft?> FindOpenDraftForAccountAsync(
+        CompanyId companyId,
+        Guid bankAccountId,
+        CancellationToken cancellationToken);
+
+    /// <summary>List candidates for this draft: every ledger entry on
+    /// the bank account, posted, not in any completed reconciliation,
+    /// FX-revaluation entries filtered out (tx_debit = tx_credit = 0,
+    /// boundary B3). Each carries a flag indicating whether it is
+    /// currently marked cleared in THIS draft.</summary>
+    Task<IReadOnlyList<BankReconciliationDraftCandidate>> ListDraftCandidatesAsync(
+        CompanyId companyId,
+        Guid draftId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Toggle a ledger entry's draft mark on or off. Returns
+    /// the refreshed draft summary so the UI can redraw totals.</summary>
+    Task<BankReconciliationDraft> ToggleLineAsync(
+        CompanyId companyId,
+        Guid draftId,
+        Guid ledgerEntryId,
+        bool cleared,
+        CancellationToken cancellationToken);
+
+    /// <summary>Update statement fields mid-session (Edit info drawer).
+    /// Cleared selections are preserved.</summary>
+    Task<BankReconciliationDraft> PatchStatementInfoAsync(
+        CompanyId companyId,
+        Guid draftId,
+        BankReconciliationDraftPatchInput input,
+        CancellationToken cancellationToken);
+
+    /// <summary>"Close without saving". Clears every
+    /// reconciliation_draft_id pointing at this draft, marks the
+    /// header row status='abandoned'. The header is retained for
+    /// audit (Section 7), not deleted.</summary>
+    Task AbandonDraftAsync(
+        CompanyId companyId,
+        UserId actorUserId,
+        Guid draftId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Finalize a draft: difference must be < 0.005. Inside
+    /// one SERIALIZABLE tx: snapshot the draft-marked entries into
+    /// bank_reconciliation_lines, move ledger_entries.reconciliation_draft_id
+    /// to reconciliation_id, status='completed'. After this call the
+    /// referenced ledger entries are locked (Section 8).</summary>
+    Task<BankReconciliationSummary> CompleteDraftAsync(
+        CompanyId companyId,
+        UserId completedByUserId,
+        Guid draftId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Undo a completed reconciliation. Strict LIFO: rejects
+    /// with InvalidOperationException ("reconciliation_undo_not_latest")
+    /// if any later completed reconciliation exists for the same
+    /// account. On success the previously-cleared ledger entries
+    /// become unreconciled again; the header row stays as
+    /// status='abandoned' for audit.</summary>
+    Task UndoCompletedAsync(
+        CompanyId companyId,
+        UserId actorUserId,
+        Guid reconciliationId,
         CancellationToken cancellationToken);
 }
 

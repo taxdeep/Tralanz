@@ -26,11 +26,9 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
             and le.account_id = @bank_account_id
             and le.posting_date <= @statement_date
             and je.status = 'posted'
-            and not exists (
-              select 1
-              from bank_reconciliation_lines brl
-              where brl.ledger_entry_id = le.id
-            )
+            and le.reconciliation_id is null
+            and le.reconciliation_draft_id is null
+            and (le.tx_debit <> 0 or le.tx_credit <> 0)
             order by le.posting_date asc, le.created_at asc, le.id asc
             limit 500;
             """);
@@ -129,6 +127,31 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                     cancellationToken);
             }
 
+            // R-1: also stamp ledger_entries.reconciliation_id so the
+            // line-level cleared state stays in sync with the
+            // snapshot table. Without this, the candidate query in
+            // ListUnreconciledLedgerEntriesAsync (which now filters on
+            // reconciliation_id IS NULL after R-1) would re-surface
+            // the same entries for double-reconciliation. Equivalent
+            // to the flip-step in CompleteDraftAsync.
+            var ledgerEntryIds = lockedEntries.Select(e => e.LedgerEntryId).ToArray();
+            await using (var stamp = connection.CreateCommand())
+            {
+                stamp.Transaction = transaction;
+                stamp.CommandText =
+                    """
+                    update ledger_entries
+                       set reconciliation_id = @reconciliation_id
+                     where company_id = @company_id
+                       and id = any(@ledger_entry_ids)
+                       and reconciliation_id is null;
+                    """;
+                stamp.Parameters.AddWithValue("reconciliation_id", reconciliationId);
+                stamp.Parameters.AddWithValue("company_id", companyId.Value);
+                stamp.Parameters.AddWithValue("ledger_entry_ids", ledgerEntryIds);
+                await stamp.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             await transaction.CommitAsync(cancellationToken);
 
             return new BankReconciliationSummary(
@@ -209,11 +232,9 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
             and le.posting_date <= @statement_date
             and le.id = any(@ledger_entry_ids)
             and je.status = 'posted'
-            and not exists (
-              select 1
-              from bank_reconciliation_lines brl
-              where brl.ledger_entry_id = le.id
-            )
+            and le.reconciliation_id is null
+            and le.reconciliation_draft_id is null
+            and (le.tx_debit <> 0 or le.tx_credit <> 0)
             for update of le;
             """);
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -385,7 +406,8 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
             when a.root_type in ('asset', 'expense', 'cost_of_sales') then le.tx_debit - le.tx_credit
             else le.tx_credit - le.tx_debit
           end as signed_amount_transaction,
-          coalesce(jel.description, '') as description
+          coalesce(jel.description, '') as description,
+          le.reconciliation_draft_id
         from ledger_entries le
         inner join journal_entries je
           on je.company_id = le.company_id
@@ -418,4 +440,835 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         reader.GetDecimal(reader.GetOrdinal("signed_amount_base")),
         reader.GetDecimal(reader.GetOrdinal("signed_amount_transaction")),
         reader.GetString(reader.GetOrdinal("description")));
+
+    // =====================================================================
+    // R-1: draft lifecycle. See BANKING_RECONCILE_PLAN.md sections 7 / 10.
+    //
+    // Backwards-compatibility note: the existing ListUnreconciledLedgerEntriesAsync
+    // and CompleteAsync paths above continue to work against the new schema
+    // (the column-based reconciliation_id check is equivalent to the existing
+    // NOT EXISTS bank_reconciliation_lines join). R-3 replaces those paths
+    // with draft-driven equivalents; for now they're left in place so the
+    // existing /reconciliation page doesn't break.
+    // =====================================================================
+
+    public async Task<BankReconciliationDraft> OpenDraftAsync(
+        CompanyId companyId,
+        UserId createdByUserId,
+        BankReconciliationDraftOpenInput input,
+        CancellationToken cancellationToken)
+    {
+        if (input.BankAccountId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Statement account is required.");
+        }
+        if (input.StatementDate == default)
+        {
+            throw new InvalidOperationException("Statement date is required.");
+        }
+
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            await EnsureReconcilableAccountAsync(connection, transaction, companyId, input.BankAccountId, cancellationToken);
+
+            var draftId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var difference = input.EndingBalance - input.OpeningBalance;
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText =
+                    """
+                    insert into bank_reconciliations (
+                      id, company_id, bank_account_id, statement_date,
+                      opening_balance, ending_balance,
+                      cleared_increase, cleared_decrease,
+                      calculated_ending_balance, difference,
+                      status, line_count, notes,
+                      created_by_user_id, last_modified_at,
+                      completed_by_user_id, completed_at, created_at
+                    )
+                    values (
+                      @id, @company_id, @bank_account_id, @statement_date,
+                      @opening_balance, @ending_balance,
+                      0, 0,
+                      @opening_balance, @difference,
+                      'in_progress', 0, @notes,
+                      @created_by_user_id, @now,
+                      null, null, @now
+                    );
+                    """;
+                command.Parameters.AddWithValue("id", draftId);
+                command.Parameters.AddWithValue("company_id", companyId.Value);
+                command.Parameters.AddWithValue("bank_account_id", input.BankAccountId);
+                command.Parameters.AddWithValue("statement_date", input.StatementDate);
+                command.Parameters.AddWithValue("opening_balance", input.OpeningBalance);
+                command.Parameters.AddWithValue("ending_balance", input.EndingBalance);
+                command.Parameters.AddWithValue("difference", difference);
+                command.Parameters.AddWithValue("notes", (object?)input.Notes?.Trim() ?? DBNull.Value);
+                command.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
+                command.Parameters.AddWithValue("now", now);
+                try
+                {
+                    await command.ExecuteNonQueryAsync(cancellationToken);
+                }
+                catch (PostgresException ex) when (ex.SqlState == "23505" &&
+                    ex.ConstraintName == "ux_bank_reconciliations_in_progress_per_account")
+                {
+                    throw new InvalidOperationException(
+                        "draft_already_open_for_account: another reconciliation draft is already open for this account. Resume or close it first.");
+                }
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return new BankReconciliationDraft(
+                draftId,
+                input.BankAccountId,
+                input.StatementDate,
+                input.OpeningBalance,
+                input.EndingBalance,
+                0m,
+                0m,
+                input.OpeningBalance,
+                difference,
+                0,
+                input.Notes?.Trim(),
+                createdByUserId,
+                now,
+                now);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<BankReconciliationDraft?> LoadDraftAsync(
+        CompanyId companyId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        return await LoadDraftCoreAsync(connection, null, companyId, draftId, cancellationToken);
+    }
+
+    public async Task<BankReconciliationDraft?> FindOpenDraftForAccountAsync(
+        CompanyId companyId,
+        Guid bankAccountId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select id
+            from bank_reconciliations
+            where company_id = @company_id
+              and bank_account_id = @bank_account_id
+              and status = 'in_progress'
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bank_account_id", bankAccountId);
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        if (raw is not Guid draftId)
+        {
+            return null;
+        }
+        return await LoadDraftCoreAsync(connection, null, companyId, draftId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<BankReconciliationDraftCandidate>> ListDraftCandidatesAsync(
+        CompanyId companyId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        var draft = await LoadDraftCoreAsync(connection, null, companyId, draftId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Reconciliation draft '{draftId:D}' was not found in the active company or is no longer in progress.");
+
+        var items = new List<BankReconciliationDraftCandidate>();
+        await using var command = connection.CreateCommand();
+        command.CommandText = LedgerEntrySelectSql(
+            """
+            le.company_id = @company_id
+              and le.account_id = @bank_account_id
+              and le.posting_date <= @statement_date
+              and je.status = 'posted'
+              and le.reconciliation_id is null
+              and (le.reconciliation_draft_id is null
+                   or le.reconciliation_draft_id = @draft_id)
+              and (le.tx_debit <> 0 or le.tx_credit <> 0)
+              order by le.posting_date asc, le.created_at asc, le.id asc
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bank_account_id", draft.BankAccountId);
+        command.Parameters.AddWithValue("statement_date", draft.StatementDate);
+        command.Parameters.AddWithValue("draft_id", draftId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var draftCol = -1;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (draftCol < 0)
+            {
+                draftCol = reader.GetOrdinal("reconciliation_draft_id");
+            }
+            var entry = MapLedgerEntry(reader);
+            var cleared = !reader.IsDBNull(draftCol)
+                && reader.GetGuid(draftCol) == draftId;
+            items.Add(new BankReconciliationDraftCandidate(entry, cleared));
+        }
+
+        return items;
+    }
+
+    public async Task<BankReconciliationDraft> ToggleLineAsync(
+        CompanyId companyId,
+        Guid draftId,
+        Guid ledgerEntryId,
+        bool cleared,
+        CancellationToken cancellationToken)
+    {
+        if (ledgerEntryId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Ledger entry id is required.");
+        }
+
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        try
+        {
+            var draft = await LoadDraftCoreAsync(connection, transaction, companyId, draftId, cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"Reconciliation draft '{draftId:D}' was not found in the active company or is no longer in progress.");
+
+            int rows;
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                if (cleared)
+                {
+                    // Mark cleared. Only flips entries that are
+                    // currently unreconciled OR already in this same
+                    // draft (idempotent re-check). Refuses entries in
+                    // a different draft or in any completed
+                    // reconciliation.
+                    command.CommandText =
+                        """
+                        update ledger_entries
+                           set reconciliation_draft_id = @draft_id
+                         where company_id = @company_id
+                           and id = @ledger_entry_id
+                           and account_id = @bank_account_id
+                           and reconciliation_id is null
+                           and (reconciliation_draft_id is null
+                                or reconciliation_draft_id = @draft_id);
+                        """;
+                }
+                else
+                {
+                    // Uncheck: only clears the mark if this draft owns
+                    // it. Won't touch an entry owned by another draft
+                    // or already completed.
+                    command.CommandText =
+                        """
+                        update ledger_entries
+                           set reconciliation_draft_id = null
+                         where company_id = @company_id
+                           and id = @ledger_entry_id
+                           and account_id = @bank_account_id
+                           and reconciliation_draft_id = @draft_id;
+                        """;
+                }
+                command.Parameters.AddWithValue("company_id", companyId.Value);
+                command.Parameters.AddWithValue("ledger_entry_id", ledgerEntryId);
+                command.Parameters.AddWithValue("bank_account_id", draft.BankAccountId);
+                command.Parameters.AddWithValue("draft_id", draftId);
+                rows = await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (rows == 0)
+            {
+                throw new InvalidOperationException(
+                    "ledger_entry_not_in_account_or_locked: the ledger entry was not found on this bank account, " +
+                    "is already in another draft, or has been completed in a prior reconciliation.");
+            }
+
+            await TouchDraftAsync(connection, transaction, draftId, cancellationToken);
+            var refreshed = await LoadDraftCoreAsync(connection, transaction, companyId, draftId, cancellationToken)
+                ?? throw new InvalidOperationException("Draft disappeared during toggle.");
+            await transaction.CommitAsync(cancellationToken);
+            return refreshed;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<BankReconciliationDraft> PatchStatementInfoAsync(
+        CompanyId companyId,
+        Guid draftId,
+        BankReconciliationDraftPatchInput input,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        try
+        {
+            var draft = await LoadDraftCoreAsync(connection, transaction, companyId, draftId, cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"Reconciliation draft '{draftId:D}' was not found in the active company or is no longer in progress.");
+
+            var openingBalance = input.OpeningBalance ?? draft.OpeningBalance;
+            var endingBalance = input.EndingBalance ?? draft.EndingBalance;
+            var statementDate = input.StatementDate ?? draft.StatementDate;
+            var notes = input.Notes is null ? draft.Notes : input.Notes.Trim();
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText =
+                    """
+                    update bank_reconciliations
+                       set opening_balance = @opening_balance,
+                           ending_balance = @ending_balance,
+                           statement_date = @statement_date,
+                           notes = @notes,
+                           last_modified_at = now()
+                     where company_id = @company_id
+                       and id = @id
+                       and status = 'in_progress';
+                    """;
+                command.Parameters.AddWithValue("opening_balance", openingBalance);
+                command.Parameters.AddWithValue("ending_balance", endingBalance);
+                command.Parameters.AddWithValue("statement_date", statementDate);
+                command.Parameters.AddWithValue("notes", (object?)notes ?? DBNull.Value);
+                command.Parameters.AddWithValue("company_id", companyId.Value);
+                command.Parameters.AddWithValue("id", draftId);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            var refreshed = await LoadDraftCoreAsync(connection, transaction, companyId, draftId, cancellationToken)
+                ?? throw new InvalidOperationException("Draft disappeared during patch.");
+            await transaction.CommitAsync(cancellationToken);
+            return refreshed;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task AbandonDraftAsync(
+        CompanyId companyId,
+        UserId actorUserId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            // Lock the header row first; ensures we see a consistent
+            // status and prevents a race where two callers both try
+            // to abandon.
+            await using (var lockCmd = connection.CreateCommand())
+            {
+                lockCmd.Transaction = transaction;
+                lockCmd.CommandText =
+                    """
+                    select status
+                    from bank_reconciliations
+                    where company_id = @company_id and id = @id
+                    for update;
+                    """;
+                lockCmd.Parameters.AddWithValue("company_id", companyId.Value);
+                lockCmd.Parameters.AddWithValue("id", draftId);
+                var status = await lockCmd.ExecuteScalarAsync(cancellationToken) as string;
+                if (status is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Reconciliation draft '{draftId:D}' was not found in the active company.");
+                }
+                if (!string.Equals(status, BankReconciliationStatusTokens.InProgress, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"not_in_progress: reconciliation '{draftId:D}' has status '{status}' and cannot be abandoned.");
+                }
+            }
+
+            await using (var clearCmd = connection.CreateCommand())
+            {
+                clearCmd.Transaction = transaction;
+                clearCmd.CommandText =
+                    """
+                    update ledger_entries
+                       set reconciliation_draft_id = null
+                     where company_id = @company_id
+                       and reconciliation_draft_id = @draft_id;
+                    """;
+                clearCmd.Parameters.AddWithValue("company_id", companyId.Value);
+                clearCmd.Parameters.AddWithValue("draft_id", draftId);
+                await clearCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var headerCmd = connection.CreateCommand())
+            {
+                headerCmd.Transaction = transaction;
+                headerCmd.CommandText =
+                    """
+                    update bank_reconciliations
+                       set status = 'abandoned',
+                           abandoned_at = now(),
+                           abandoned_by_user_id = @actor,
+                           last_modified_at = now()
+                     where company_id = @company_id
+                       and id = @id;
+                    """;
+                headerCmd.Parameters.AddWithValue("actor", actorUserId.Value);
+                headerCmd.Parameters.AddWithValue("company_id", companyId.Value);
+                headerCmd.Parameters.AddWithValue("id", draftId);
+                await headerCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<BankReconciliationSummary> CompleteDraftAsync(
+        CompanyId companyId,
+        UserId completedByUserId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            // Lock the header.
+            await using (var lockCmd = connection.CreateCommand())
+            {
+                lockCmd.Transaction = transaction;
+                lockCmd.CommandText =
+                    """
+                    select status
+                    from bank_reconciliations
+                    where company_id = @company_id and id = @id
+                    for update;
+                    """;
+                lockCmd.Parameters.AddWithValue("company_id", companyId.Value);
+                lockCmd.Parameters.AddWithValue("id", draftId);
+                var status = await lockCmd.ExecuteScalarAsync(cancellationToken) as string;
+                if (status is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Reconciliation draft '{draftId:D}' was not found in the active company.");
+                }
+                if (!string.Equals(status, BankReconciliationStatusTokens.InProgress, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"not_in_progress: reconciliation '{draftId:D}' has status '{status}' and cannot be completed.");
+                }
+            }
+
+            // Load draft + cleared entries with FOR UPDATE on the
+            // ledger rows so the JE-locking trigger sees a stable set.
+            var draft = await LoadDraftCoreAsync(connection, transaction, companyId, draftId, cancellationToken)
+                ?? throw new InvalidOperationException("Draft disappeared between lock and load.");
+
+            if (!BankReconciliationPolicy.IsZeroDifference(draft.Difference))
+            {
+                throw new InvalidOperationException(
+                    $"difference_nonzero: current difference is {draft.Difference:N2}. Reconciliation cannot complete until the difference is within {BankReconciliationPolicy.ZeroTolerance}.");
+            }
+
+            var lockedEntries = await LoadDraftLedgerEntriesForUpdateAsync(
+                connection, transaction, companyId, draftId, cancellationToken);
+            if (lockedEntries.Count != draft.ClearedLineCount)
+            {
+                throw new InvalidOperationException(
+                    "Draft line count drifted during commit; retry the completion.");
+            }
+
+            var completedAt = DateTimeOffset.UtcNow;
+
+            // Flip ledger_entries from draft to completed in one shot.
+            await using (var flip = connection.CreateCommand())
+            {
+                flip.Transaction = transaction;
+                flip.CommandText =
+                    """
+                    update ledger_entries
+                       set reconciliation_id = @id,
+                           reconciliation_draft_id = null
+                     where company_id = @company_id
+                       and reconciliation_draft_id = @id;
+                    """;
+                flip.Parameters.AddWithValue("id", draftId);
+                flip.Parameters.AddWithValue("company_id", companyId.Value);
+                await flip.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Promote the header to completed and stamp the totals.
+            await using (var header = connection.CreateCommand())
+            {
+                header.Transaction = transaction;
+                header.CommandText =
+                    """
+                    update bank_reconciliations
+                       set status = 'completed',
+                           cleared_increase = @cleared_increase,
+                           cleared_decrease = @cleared_decrease,
+                           calculated_ending_balance = @calculated_ending_balance,
+                           difference = @difference,
+                           line_count = @line_count,
+                           completed_by_user_id = @completed_by_user_id,
+                           completed_at = @completed_at,
+                           last_modified_at = @completed_at
+                     where company_id = @company_id
+                       and id = @id;
+                    """;
+                header.Parameters.AddWithValue("cleared_increase", draft.ClearedIncrease);
+                header.Parameters.AddWithValue("cleared_decrease", draft.ClearedDecrease);
+                header.Parameters.AddWithValue("calculated_ending_balance", draft.CalculatedEndingBalance);
+                header.Parameters.AddWithValue("difference", draft.Difference);
+                header.Parameters.AddWithValue("line_count", draft.ClearedLineCount);
+                header.Parameters.AddWithValue("completed_by_user_id", completedByUserId.Value);
+                header.Parameters.AddWithValue("completed_at", completedAt);
+                header.Parameters.AddWithValue("company_id", companyId.Value);
+                header.Parameters.AddWithValue("id", draftId);
+                await header.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Snapshot each entry into the lines table (audit defensive copy).
+            foreach (var entry in lockedEntries)
+            {
+                await InsertReconciliationLineAsync(
+                    connection,
+                    transaction,
+                    draftId,
+                    companyId,
+                    entry,
+                    cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return new BankReconciliationSummary(
+                draftId,
+                draft.BankAccountId,
+                draft.StatementDate,
+                draft.OpeningBalance,
+                draft.EndingBalance,
+                draft.ClearedIncrease,
+                draft.ClearedDecrease,
+                draft.CalculatedEndingBalance,
+                draft.Difference,
+                draft.ClearedLineCount,
+                completedByUserId,
+                completedAt);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task UndoCompletedAsync(
+        CompanyId companyId,
+        UserId actorUserId,
+        Guid reconciliationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            // Lock the target reconciliation row.
+            Guid bankAccountId;
+            DateOnly statementDate;
+            await using (var lockCmd = connection.CreateCommand())
+            {
+                lockCmd.Transaction = transaction;
+                lockCmd.CommandText =
+                    """
+                    select bank_account_id, statement_date, status
+                    from bank_reconciliations
+                    where company_id = @company_id and id = @id
+                    for update;
+                    """;
+                lockCmd.Parameters.AddWithValue("company_id", companyId.Value);
+                lockCmd.Parameters.AddWithValue("id", reconciliationId);
+                await using var reader = await lockCmd.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException(
+                        $"Reconciliation '{reconciliationId:D}' was not found in the active company.");
+                }
+                var status = reader.GetString(reader.GetOrdinal("status"));
+                if (!string.Equals(status, BankReconciliationStatusTokens.Completed, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"not_completed: reconciliation '{reconciliationId:D}' has status '{status}' and cannot be undone.");
+                }
+                bankAccountId = reader.GetGuid(reader.GetOrdinal("bank_account_id"));
+                statementDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("statement_date"));
+            }
+
+            // LIFO check: any later completed reconciliation for the
+            // same account?
+            await using (var lifo = connection.CreateCommand())
+            {
+                lifo.Transaction = transaction;
+                lifo.CommandText =
+                    """
+                    select id, statement_date
+                    from bank_reconciliations
+                    where company_id = @company_id
+                      and bank_account_id = @bank_account_id
+                      and status = 'completed'
+                      and (statement_date > @statement_date
+                           or (statement_date = @statement_date
+                               and completed_at > (
+                                 select completed_at
+                                 from bank_reconciliations
+                                 where company_id = @company_id and id = @id)))
+                    order by statement_date desc, completed_at desc
+                    limit 1;
+                    """;
+                lifo.Parameters.AddWithValue("company_id", companyId.Value);
+                lifo.Parameters.AddWithValue("bank_account_id", bankAccountId);
+                lifo.Parameters.AddWithValue("statement_date", statementDate);
+                lifo.Parameters.AddWithValue("id", reconciliationId);
+                await using var reader = await lifo.ExecuteReaderAsync(cancellationToken);
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    var laterId = reader.GetGuid(reader.GetOrdinal("id"));
+                    var laterDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("statement_date"));
+                    throw new InvalidOperationException(
+                        $"reconciliation_undo_not_latest: a later reconciliation exists ({laterId:D}, " +
+                        $"{laterDate:yyyy-MM-dd}). Undo it first.");
+                }
+            }
+
+            // Clear ledger pointers.
+            await using (var clearLedger = connection.CreateCommand())
+            {
+                clearLedger.Transaction = transaction;
+                clearLedger.CommandText =
+                    """
+                    update ledger_entries
+                       set reconciliation_id = null
+                     where company_id = @company_id
+                       and reconciliation_id = @id;
+                    """;
+                clearLedger.Parameters.AddWithValue("company_id", companyId.Value);
+                clearLedger.Parameters.AddWithValue("id", reconciliationId);
+                await clearLedger.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Delete snapshot rows.
+            await using (var deleteLines = connection.CreateCommand())
+            {
+                deleteLines.Transaction = transaction;
+                deleteLines.CommandText =
+                    """
+                    delete from bank_reconciliation_lines
+                     where company_id = @company_id
+                       and reconciliation_id = @id;
+                    """;
+                deleteLines.Parameters.AddWithValue("company_id", companyId.Value);
+                deleteLines.Parameters.AddWithValue("id", reconciliationId);
+                await deleteLines.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Mark header abandoned (retained for audit).
+            await using (var abandonHeader = connection.CreateCommand())
+            {
+                abandonHeader.Transaction = transaction;
+                abandonHeader.CommandText =
+                    """
+                    update bank_reconciliations
+                       set status = 'abandoned',
+                           abandoned_at = now(),
+                           abandoned_by_user_id = @actor,
+                           last_modified_at = now()
+                     where company_id = @company_id
+                       and id = @id;
+                    """;
+                abandonHeader.Parameters.AddWithValue("actor", actorUserId.Value);
+                abandonHeader.Parameters.AddWithValue("company_id", companyId.Value);
+                abandonHeader.Parameters.AddWithValue("id", reconciliationId);
+                await abandonHeader.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // R-1 internal helpers
+    // ---------------------------------------------------------------------
+
+    private static async Task<BankReconciliationDraft?> LoadDraftCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CompanyId companyId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        // Header + live totals computed from ledger_entries via a
+        // LEFT JOIN so an empty draft (0 cleared lines) still returns
+        // a row.
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select br.id,
+                   br.bank_account_id,
+                   br.statement_date,
+                   br.opening_balance,
+                   br.ending_balance,
+                   br.notes,
+                   br.created_by_user_id,
+                   br.created_at,
+                   br.last_modified_at,
+                   coalesce(t.cleared_increase, 0) as cleared_increase,
+                   coalesce(t.cleared_decrease, 0) as cleared_decrease,
+                   coalesce(t.line_count, 0) as line_count
+              from bank_reconciliations br
+              left join lateral (
+                select
+                  sum(case
+                        when (a.root_type in ('asset', 'expense', 'cost_of_sales') and (le.debit - le.credit) > 0)
+                          then (le.debit - le.credit)
+                        when (a.root_type not in ('asset', 'expense', 'cost_of_sales') and (le.credit - le.debit) > 0)
+                          then (le.credit - le.debit)
+                        else 0
+                      end) as cleared_increase,
+                  sum(case
+                        when (a.root_type in ('asset', 'expense', 'cost_of_sales') and (le.debit - le.credit) < 0)
+                          then abs(le.debit - le.credit)
+                        when (a.root_type not in ('asset', 'expense', 'cost_of_sales') and (le.credit - le.debit) < 0)
+                          then abs(le.credit - le.debit)
+                        else 0
+                      end) as cleared_decrease,
+                  count(*) as line_count
+                from ledger_entries le
+                inner join accounts a on a.company_id = le.company_id and a.id = le.account_id
+                where le.company_id = br.company_id
+                  and le.reconciliation_draft_id = br.id
+              ) t on true
+             where br.company_id = @company_id
+               and br.id = @id
+               and br.status = 'in_progress';
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("id", draftId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var bankAccountId = reader.GetGuid(reader.GetOrdinal("bank_account_id"));
+        var statementDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("statement_date"));
+        var openingBalance = reader.GetDecimal(reader.GetOrdinal("opening_balance"));
+        var endingBalance = reader.GetDecimal(reader.GetOrdinal("ending_balance"));
+        var notesOrd = reader.GetOrdinal("notes");
+        var notes = reader.IsDBNull(notesOrd) ? null : reader.GetString(notesOrd);
+        var createdByUserId = UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id")));
+        var createdAt = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"));
+        var lastModifiedAt = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_modified_at"));
+        var clearedIncrease = reader.GetDecimal(reader.GetOrdinal("cleared_increase"));
+        var clearedDecrease = reader.GetDecimal(reader.GetOrdinal("cleared_decrease"));
+        var lineCount = reader.GetInt64(reader.GetOrdinal("line_count"));
+        var calculatedEnding = openingBalance + clearedIncrease - clearedDecrease;
+        var difference = endingBalance - calculatedEnding;
+
+        return new BankReconciliationDraft(
+            draftId,
+            bankAccountId,
+            statementDate,
+            openingBalance,
+            endingBalance,
+            clearedIncrease,
+            clearedDecrease,
+            calculatedEnding,
+            difference,
+            (int)lineCount,
+            notes,
+            createdByUserId,
+            createdAt,
+            lastModifiedAt);
+    }
+
+    private static async Task TouchDraftAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update bank_reconciliations
+               set last_modified_at = now()
+             where id = @id
+               and status = 'in_progress';
+            """;
+        command.Parameters.AddWithValue("id", draftId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<BankReconciliationLedgerEntry>> LoadDraftLedgerEntriesForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        var items = new List<BankReconciliationLedgerEntry>();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = LedgerEntrySelectSql(
+            """
+            le.company_id = @company_id
+              and le.reconciliation_draft_id = @draft_id
+              and je.status = 'posted'
+              order by le.posting_date asc, le.created_at asc, le.id asc
+              for update of le
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("draft_id", draftId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(MapLedgerEntry(reader));
+        }
+        return items;
+    }
 }
