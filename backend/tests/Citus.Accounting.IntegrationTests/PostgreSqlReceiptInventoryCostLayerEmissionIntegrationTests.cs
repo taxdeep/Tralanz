@@ -34,9 +34,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
             var connectionFactory = new PostgreSqlConnectionFactory(schemaConnectionString);
             var foundationStore = new PostgreSqlInventoryFoundationStore(connectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(connectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(connectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(connectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(connectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(connectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(connectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
 
             var companyId = CompanyId.FromOrdinal(1);
             var userId = UserId.FromOrdinal(1);
@@ -118,9 +118,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
             var connectionFactory = new PostgreSqlConnectionFactory(schemaConnectionString);
             var foundationStore = new PostgreSqlInventoryFoundationStore(connectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(connectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(connectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(connectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(connectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(connectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(connectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(connectionFactory, foundationStore);
 
             var companyId = CompanyId.FromOrdinal(1);
@@ -207,9 +207,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
             var executionContextAccessor = new PostgresExecutionContextAccessor();
             var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
             var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
                 accountingConnectionFactory,
@@ -382,9 +382,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
             var executionContextAccessor = new PostgresExecutionContextAccessor();
             var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
             var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
                 accountingConnectionFactory,
@@ -523,9 +523,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
             var executionContextAccessor = new PostgresExecutionContextAccessor();
             var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
             var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
                 accountingConnectionFactory,
@@ -694,9 +694,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
             var executionContextAccessor = new PostgresExecutionContextAccessor();
             var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
             var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
                 accountingConnectionFactory,
@@ -904,9 +904,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
             var executionContextAccessor = new PostgresExecutionContextAccessor();
             var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
             var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
                 accountingConnectionFactory,
@@ -1142,9 +1142,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
             var executionContextAccessor = new PostgresExecutionContextAccessor();
             var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
-            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
-            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
-            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore, new InventoryReceiptExecutionContextAccessor());
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
             var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
                 accountingConnectionFactory,
