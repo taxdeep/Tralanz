@@ -8819,6 +8819,72 @@ accounting.MapPost(
     });
 
 // ===========================================================================
+// R-4: carry-forward + report endpoints.
+//
+//   GET /reconciliation/last-completed?accountId=...
+//     Returns the most-recent completed reconciliation summary used to
+//     prefill the beginning balance + statement date on the next Start
+//     form. 204 when the account has never been reconciled.
+//
+//   GET /reconciliation/{id}
+//     Full report payload for a completed (or undone-and-abandoned)
+//     reconciliation: header + frozen line snapshot. Drives the
+//     /banking/reconciliation/{id}/report page added in R-3+R-4.
+// ===========================================================================
+
+accounting.MapGet(
+    "/reconciliation/last-completed",
+    async (
+        Guid? accountId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+        if (accountId is null || accountId == Guid.Empty)
+        {
+            return Results.BadRequest(new { message = "accountId query parameter is required." });
+        }
+
+        var summary = await store.GetLastCompletedAsync(
+            session.ActiveCompanyId,
+            accountId.Value,
+            cancellationToken);
+        return summary is null ? Results.NoContent() : Results.Ok(summary);
+    });
+
+accounting.MapGet(
+    "/reconciliation/{reconciliationId:guid}",
+    async (
+        Guid reconciliationId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBankReconciliationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var report = await store.LoadReconciliationReportAsync(
+            session.ActiveCompanyId,
+            reconciliationId,
+            cancellationToken);
+        return report is null
+            ? Results.NotFound(new { message = $"Reconciliation '{reconciliationId:D}' was not found or is still in progress." })
+            : Results.Ok(report);
+    });
+
+// ===========================================================================
 // R-2: Bank Register endpoint. Read-only view of every posted ledger entry
 // on a bank / cash / credit-card account, with cleared/uncleared status and
 // (when cleared) a pointer back to the reconciliation that locked it. Used

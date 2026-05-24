@@ -473,6 +473,29 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         {
             await EnsureReconcilableAccountAsync(connection, transaction, companyId, input.BankAccountId, cancellationToken);
 
+            // R-4 carry-forward audit. Look up the most recent
+            // completed reconciliation; if its ending_balance doesn't
+            // match the operator's submitted opening_balance (beyond
+            // rounding tolerance), prepend an audit note so the
+            // override is visible on the completed reconciliation
+            // forever. Operator is still allowed to override — banks
+            // sometimes start a fresh series after an account
+            // migration, and the operator alone owns that judgment.
+            var lastCompleted = await GetLastCompletedCoreAsync(
+                connection, transaction, companyId, input.BankAccountId, cancellationToken);
+            var notesBuilder = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim();
+            if (lastCompleted is not null &&
+                Math.Abs(lastCompleted.EndingBalance - input.OpeningBalance) >= BankReconciliationPolicy.ZeroTolerance)
+            {
+                var auditLine =
+                    $"[{DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss}Z] Operator overrode auto-derived beginning balance " +
+                    $"from {lastCompleted.EndingBalance:N2} (prior reconciliation {lastCompleted.ReconciliationId:D}, " +
+                    $"statement {lastCompleted.StatementDate:yyyy-MM-dd}) to {input.OpeningBalance:N2}.";
+                notesBuilder = string.IsNullOrWhiteSpace(notesBuilder)
+                    ? auditLine
+                    : auditLine + Environment.NewLine + notesBuilder;
+            }
+
             var draftId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
             var difference = input.EndingBalance - input.OpeningBalance;
@@ -508,7 +531,7 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                 command.Parameters.AddWithValue("opening_balance", input.OpeningBalance);
                 command.Parameters.AddWithValue("ending_balance", input.EndingBalance);
                 command.Parameters.AddWithValue("difference", difference);
-                command.Parameters.AddWithValue("notes", (object?)input.Notes?.Trim() ?? DBNull.Value);
+                command.Parameters.AddWithValue("notes", (object?)notesBuilder ?? DBNull.Value);
                 command.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
                 command.Parameters.AddWithValue("now", now);
                 try
@@ -536,7 +559,7 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                 input.OpeningBalance,
                 difference,
                 0,
-                input.Notes?.Trim(),
+                notesBuilder,
                 createdByUserId,
                 now,
                 now);
@@ -546,6 +569,184 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    public async Task<BankReconciliationLastCompleted?> GetLastCompletedAsync(
+        CompanyId companyId,
+        Guid bankAccountId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        return await GetLastCompletedCoreAsync(connection, null, companyId, bankAccountId, cancellationToken);
+    }
+
+    private static async Task<BankReconciliationLastCompleted?> GetLastCompletedCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CompanyId companyId,
+        Guid bankAccountId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id, statement_date, ending_balance, completed_at
+            from bank_reconciliations
+            where company_id = @company_id
+              and bank_account_id = @bank_account_id
+              and status = 'completed'
+            order by statement_date desc, completed_at desc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bank_account_id", bankAccountId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+        return new BankReconciliationLastCompleted(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("statement_date")),
+            reader.GetDecimal(reader.GetOrdinal("ending_balance")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("completed_at")));
+    }
+
+    public async Task<BankReconciliationReport?> LoadReconciliationReportAsync(
+        CompanyId companyId,
+        Guid reconciliationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+
+        // Header + account display.
+        BankReconciliationReport? report;
+        await using (var header = connection.CreateCommand())
+        {
+            header.CommandText =
+                """
+                select br.id, br.bank_account_id, a.code, a.name,
+                       br.statement_date, br.status,
+                       br.opening_balance, br.ending_balance,
+                       br.cleared_increase, br.cleared_decrease,
+                       br.calculated_ending_balance, br.difference,
+                       br.line_count, br.notes,
+                       br.created_by_user_id, br.created_at,
+                       br.completed_by_user_id, br.completed_at,
+                       br.abandoned_by_user_id, br.abandoned_at
+                from bank_reconciliations br
+                inner join accounts a
+                  on a.company_id = br.company_id and a.id = br.bank_account_id
+                where br.company_id = @company_id
+                  and br.id = @id
+                  and br.status in ('completed', 'abandoned');
+                """;
+            header.Parameters.AddWithValue("company_id", companyId.Value);
+            header.Parameters.AddWithValue("id", reconciliationId);
+            await using var reader = await header.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+            UserId? created = reader.IsDBNull(reader.GetOrdinal("created_by_user_id"))
+                ? null
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id")));
+            UserId? completed = reader.IsDBNull(reader.GetOrdinal("completed_by_user_id"))
+                ? null
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("completed_by_user_id")));
+            UserId? abandoned = reader.IsDBNull(reader.GetOrdinal("abandoned_by_user_id"))
+                ? null
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("abandoned_by_user_id")));
+            DateTimeOffset? completedAt = reader.IsDBNull(reader.GetOrdinal("completed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("completed_at"));
+            DateTimeOffset? abandonedAt = reader.IsDBNull(reader.GetOrdinal("abandoned_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("abandoned_at"));
+            string? notes = reader.IsDBNull(reader.GetOrdinal("notes"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("notes"));
+
+            report = new BankReconciliationReport(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetGuid(reader.GetOrdinal("bank_account_id")),
+                reader.GetString(reader.GetOrdinal("code")),
+                reader.GetString(reader.GetOrdinal("name")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("statement_date")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetDecimal(reader.GetOrdinal("opening_balance")),
+                reader.GetDecimal(reader.GetOrdinal("ending_balance")),
+                reader.GetDecimal(reader.GetOrdinal("cleared_increase")),
+                reader.GetDecimal(reader.GetOrdinal("cleared_decrease")),
+                reader.GetDecimal(reader.GetOrdinal("calculated_ending_balance")),
+                reader.GetDecimal(reader.GetOrdinal("difference")),
+                reader.GetInt32(reader.GetOrdinal("line_count")),
+                notes,
+                created,
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+                completed,
+                completedAt,
+                abandoned,
+                abandonedAt,
+                Array.Empty<BankReconciliationReportLine>());
+        }
+
+        // Lines snapshot. Empty list for abandoned reconciliations
+        // (Undo deletes them) — that's intentional, the header is
+        // still preserved for audit but the financial detail is in
+        // the new reconciliation that re-cleared those entries.
+        var lines = new List<BankReconciliationReportLine>();
+        await using (var lineCmd = connection.CreateCommand())
+        {
+            lineCmd.CommandText =
+                """
+                select brl.ledger_entry_id, brl.journal_entry_id, brl.journal_entry_line_id,
+                       brl.posting_date, je.display_number,
+                       a.code as account_code, a.name as account_name,
+                       coalesce(jel.description, '') as description,
+                       brl.transaction_currency_code,
+                       brl.tx_debit, brl.tx_credit, brl.debit, brl.credit,
+                       brl.signed_amount_base, brl.signed_amount_transaction
+                from bank_reconciliation_lines brl
+                inner join journal_entries je
+                  on je.company_id = brl.company_id and je.id = brl.journal_entry_id
+                inner join journal_entry_lines jel
+                  on jel.company_id = brl.company_id and jel.id = brl.journal_entry_line_id
+                inner join ledger_entries le
+                  on le.company_id = brl.company_id and le.id = brl.ledger_entry_id
+                inner join accounts a
+                  on a.company_id = brl.company_id and a.id = le.account_id
+                where brl.company_id = @company_id
+                  and brl.reconciliation_id = @id
+                order by brl.posting_date asc, brl.id asc;
+                """;
+            lineCmd.Parameters.AddWithValue("company_id", companyId.Value);
+            lineCmd.Parameters.AddWithValue("id", reconciliationId);
+            await using var reader = await lineCmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                lines.Add(new BankReconciliationReportLine(
+                    reader.GetGuid(reader.GetOrdinal("ledger_entry_id")),
+                    reader.GetGuid(reader.GetOrdinal("journal_entry_id")),
+                    reader.GetGuid(reader.GetOrdinal("journal_entry_line_id")),
+                    reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
+                    reader.GetString(reader.GetOrdinal("display_number")),
+                    reader.GetString(reader.GetOrdinal("account_code")),
+                    reader.GetString(reader.GetOrdinal("account_name")),
+                    reader.GetString(reader.GetOrdinal("description")),
+                    reader.GetString(reader.GetOrdinal("transaction_currency_code")),
+                    reader.GetDecimal(reader.GetOrdinal("tx_debit")),
+                    reader.GetDecimal(reader.GetOrdinal("tx_credit")),
+                    reader.GetDecimal(reader.GetOrdinal("debit")),
+                    reader.GetDecimal(reader.GetOrdinal("credit")),
+                    reader.GetDecimal(reader.GetOrdinal("signed_amount_base")),
+                    reader.GetDecimal(reader.GetOrdinal("signed_amount_transaction"))));
+            }
+        }
+
+        return report with { Lines = lines };
     }
 
     public async Task<BankReconciliationDraft?> LoadDraftAsync(

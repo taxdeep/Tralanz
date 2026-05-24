@@ -1,0 +1,593 @@
+@page "/banking/register/{AccountIdRaw}/reconcile"
+
+@using Citus.Accounting.Application.Reconciliation
+
+@inject BusinessShellState ShellState
+@inject AccountClient AccountClient
+@inject BankReconciliationClient ReconciliationClient
+@inject NavigationManager Navigation
+@inject CitusToastService Message
+
+<PageTitle>Reconcile | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        @if (_draft is not null && !_isBusy)
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Size="CitusButtonSize.Small"
+                         OnClick="() => _showEditInfo = !_showEditInfo">
+                @(_showEditInfo ? "Hide info" : "Edit info")
+            </CitusButton>
+            @if (BankReconciliationPolicy.IsZeroDifference(_draft.Difference))
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Size="CitusButtonSize.Small"
+                             Disabled="@_isBusy"
+                             OnClick="FinishNowAsync">
+                    Finish now
+                </CitusButton>
+            }
+            else
+            {
+                <CitusButton Variant="CitusButtonVariant.Default"
+                             Size="CitusButtonSize.Small"
+                             Disabled="@_isBusy"
+                             OnClick="SaveForLaterAsync">
+                    Save for later
+                </CitusButton>
+            }
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Size="CitusButtonSize.Small"
+                         Danger="true"
+                         Disabled="@_isBusy"
+                         OnClick="() => _showAbandonConfirm = true">
+                Close without saving
+            </CitusButton>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.List" />
+}
+else if (_account is null)
+{
+    <CitusEmpty Title="Account not found"
+                Description="The bank, cash, or credit-card account no longer exists in this company."
+                Icon="IconName.AlertCircle" />
+}
+else if (_draft is null)
+{
+    @* Start reconciling form *@
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Which account do you want to reconcile?</h2>
+        </header>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+                <label class="text-sm font-medium block mb-1">Account</label>
+                <div class="citus-form-field__input" style="background-color: var(--citus-color-bg-elevated);">
+                    @_account.Code @_account.Name (@FormatAccountKind(_account))
+                </div>
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Currency</label>
+                <div class="citus-form-field__input" style="background-color: var(--citus-color-bg-elevated);">
+                    @(_account.CurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode)
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="citus-panel mt-4">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Add the following information</h2>
+            @if (_lastCompleted is not null)
+            {
+                <span class="text-sm text-fg-muted">Last statement ending date @_lastCompleted.StatementDate.ToString("yyyy-MM-dd")</span>
+            }
+            else
+            {
+                <span class="text-sm text-fg-muted">No prior reconciliation on this account.</span>
+            }
+        </header>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+                <label class="text-sm font-medium block mb-1">Beginning balance</label>
+                <RadzenNumeric TValue="decimal" @bind-Value="_startOpeningBalance" Class="citus-control-full" />
+                @if (_lastCompleted is not null && Math.Abs(_lastCompleted.EndingBalance - _startOpeningBalance) >= 0.005m)
+                {
+                    <p class="text-xs text-warning mt-1">
+                        ⚠ Differs from prior reconciliation's ending balance (@_lastCompleted.EndingBalance.ToString("N2")). Override will be recorded in audit notes.
+                    </p>
+                }
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Statement ending balance</label>
+                <RadzenNumeric TValue="decimal" @bind-Value="_startEndingBalance" Class="citus-control-full" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Statement ending date</label>
+                <RadzenDatePicker TValue="DateTime?"
+                                  DateFormat="yyyy-MM-dd"
+                                  ShowTime="false"
+                                  @bind-Value="_startStatementDateNullable"
+                                  Class="citus-control-full" />
+            </div>
+            <div class="md:col-span-3">
+                <label class="text-sm font-medium block mb-1">Notes (optional)</label>
+                <CitusInput TValue="string" @bind-Value="_startNotes" Placeholder="Reference or review note" />
+            </div>
+        </div>
+        <div class="mt-4">
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Disabled="@(_isBusy || _startStatementDateNullable is null)"
+                         OnClick="StartReconcilingAsync">
+                @(_isBusy ? "Opening draft..." : "Start reconciling")
+            </CitusButton>
+        </div>
+    </section>
+}
+else
+{
+    @* Workspace *@
+    <section class="citus-panel">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="text-center">
+                <p class="text-fg-muted text-xs uppercase">Statement ending</p>
+                <p class="text-2xl font-semibold">@FormatAmount(_draft.EndingBalance)</p>
+            </div>
+            <div class="text-center">
+                <p class="text-fg-muted text-xs uppercase">Cleared</p>
+                <p class="text-2xl font-semibold">@FormatAmount(_draft.CalculatedEndingBalance)</p>
+                <p class="text-xs text-fg-muted">
+                    Beginning @FormatAmount(_draft.OpeningBalance)
+                    + @FormatAmount(_draft.ClearedIncrease) − @FormatAmount(_draft.ClearedDecrease)
+                </p>
+            </div>
+            <div class="text-center">
+                <p class="text-fg-muted text-xs uppercase">Cleared lines</p>
+                <p class="text-2xl font-semibold">@_draft.ClearedLineCount</p>
+            </div>
+            <div class="text-center">
+                <p class="text-fg-muted text-xs uppercase">Difference</p>
+                <p class="text-2xl font-semibold @(BankReconciliationPolicy.IsZeroDifference(_draft.Difference) ? "text-success" : "text-warning")">
+                    @FormatAmount(_draft.Difference)
+                </p>
+                @if (BankReconciliationPolicy.IsZeroDifference(_draft.Difference))
+                {
+                    <CitusBadge Color="green">Ready to finish</CitusBadge>
+                }
+                else
+                {
+                    <CitusBadge Color="orange">Not balanced</CitusBadge>
+                }
+            </div>
+        </div>
+    </section>
+
+    @if (_showEditInfo)
+    {
+        <section class="citus-panel mt-4">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Edit statement information</h2>
+            </header>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Beginning balance</label>
+                    <RadzenNumeric TValue="decimal" @bind-Value="_editOpeningBalance" Class="citus-control-full" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Statement ending balance</label>
+                    <RadzenNumeric TValue="decimal" @bind-Value="_editEndingBalance" Class="citus-control-full" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Statement ending date</label>
+                    <RadzenDatePicker TValue="DateTime?"
+                                      DateFormat="yyyy-MM-dd"
+                                      ShowTime="false"
+                                      @bind-Value="_editStatementDateNullable"
+                                      Class="citus-control-full" />
+                </div>
+                <div class="md:col-span-3">
+                    <label class="text-sm font-medium block mb-1">Notes</label>
+                    <CitusInput TValue="string" @bind-Value="_editNotes" Placeholder="Reference or review note" />
+                </div>
+            </div>
+            <div class="mt-4 flex gap-2">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="@_isBusy"
+                             OnClick="ApplyEditInfoAsync">
+                    @(_isBusy ? "Saving..." : "Save")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             Disabled="@_isBusy"
+                             OnClick="() => _showEditInfo = false">
+                    Cancel
+                </CitusButton>
+            </div>
+        </section>
+    }
+
+    <section class="citus-panel mt-4">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Ledger entries up to @_draft.StatementDate.ToString("yyyy-MM-dd")</h2>
+            <span class="text-sm text-fg-muted">@_candidates.Count rows · @_draft.ClearedLineCount cleared</span>
+        </header>
+
+        @if (_candidates.Count == 0)
+        {
+            <CitusEmpty Title="No candidate entries"
+                        Description="There are no unreconciled posted ledger entries on this account on or before the statement date."
+                        Icon="IconName.Receipt" />
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 3rem">Clear</th>
+                        <th style="width: 7rem">Date</th>
+                        <th>Display #</th>
+                        <th>Memo</th>
+                        <th class="text-right" style="width: 8rem">Payment</th>
+                        <th class="text-right" style="width: 8rem">Deposit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _candidates)
+                    {
+                        <tr>
+                            <td>
+                                <input type="checkbox"
+                                       checked="@row.ClearedInThisDraft"
+                                       disabled="@_isBusy"
+                                       @onchange="@(e => OnToggleLineAsync(row.Entry.LedgerEntryId, e.Value is true))" />
+                            </td>
+                            <td>@row.Entry.PostingDate.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                <a class="citus-link"
+                                   href="@($"journal-entry/review/{row.Entry.JournalEntryId:D}")"
+                                   target="_blank">@row.Entry.DisplayNumber</a>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(row.Entry.Description) ? row.Entry.SourceType : row.Entry.Description)</td>
+                            <td class="text-right">@FormatNegativeOnly(row.Entry.SignedAmountTransaction)</td>
+                            <td class="text-right">@FormatPositiveOnly(row.Entry.SignedAmountTransaction)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@if (_completed is not null)
+{
+    <div class="citus-modal-backdrop" @onclick="DismissCompletionModal">
+        <div class="citus-modal" @onclick:stopPropagation>
+            <header class="citus-modal__header text-center">
+                <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Display" />
+                <h2 class="citus-modal__title">You reconciled this account</h2>
+            </header>
+            <p class="text-center text-fg-muted mb-4">
+                @_completed.LineCount ledger entries cleared.
+                Difference @FormatAmount(_completed.Difference).
+            </p>
+            <div class="flex justify-center gap-2">
+                <CitusButton Variant="CitusButtonVariant.Default" Disabled="true">
+                    Attach statement (V2)
+                </CitusButton>
+                <a class="citus-button" href="@($"banking/reconciliation/{_completed.ReconciliationId:D}/report")">
+                    View reconciliation report
+                </a>
+                <CitusButton Variant="CitusButtonVariant.Primary" OnClick="DismissCompletionModal">
+                    Done
+                </CitusButton>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showAbandonConfirm)
+{
+    <div class="citus-modal-backdrop" @onclick="() => _showAbandonConfirm = false">
+        <div class="citus-modal" @onclick:stopPropagation>
+            <header class="citus-modal__header">
+                <CitusIcon Name="IconName.AlertCircle" Size="IconSize.Display" />
+                <h2 class="citus-modal__title">Discard your in-progress reconciliation?</h2>
+            </header>
+            <p class="text-fg-muted mb-4">
+                Your cleared selections will be lost. Save for later if you want to come back to them.
+            </p>
+            <div class="flex justify-end gap-2">
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             OnClick="() => _showAbandonConfirm = false">
+                    Cancel
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Danger="true"
+                             Disabled="@_isBusy"
+                             OnClick="AbandonAsync">
+                    @(_isBusy ? "Closing..." : "Discard")
+                </CitusButton>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? AccountIdRaw { get; set; }
+
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Chart of accounts / Bank register",
+        Title = "Reconcile",
+        Subtitle = "Match posted bank, cash, or credit-card entries to the statement. Save and resume as needed."
+    };
+
+    private Guid? _accountId;
+    private AccountSummary? _account;
+    private BankReconciliationDraftDto? _draft;
+    private BankReconciliationLastCompletedDto? _lastCompleted;
+    private IReadOnlyList<BankReconciliationDraftCandidateDto> _candidates = Array.Empty<BankReconciliationDraftCandidateDto>();
+    private BankReconciliationSummaryDto? _completed;
+
+    private bool _isLoading;
+    private bool _isBusy;
+    private string? _error;
+
+    private decimal _startOpeningBalance;
+    private decimal _startEndingBalance;
+    private DateTime? _startStatementDateNullable = DateTime.Today;
+    private string? _startNotes;
+
+    private bool _showEditInfo;
+    private decimal _editOpeningBalance;
+    private decimal _editEndingBalance;
+    private DateTime? _editStatementDateNullable;
+    private string? _editNotes;
+
+    private bool _showAbandonConfirm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Guid.TryParse(AccountIdRaw, out var accountId))
+        {
+            Navigation.NavigateTo("banking/register", replace: true);
+            return;
+        }
+        _accountId = accountId;
+        await LoadAccountAndDraftStateAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Guid.TryParse(AccountIdRaw, out var accountId) && accountId != _accountId)
+        {
+            _accountId = accountId;
+            await LoadAccountAndDraftStateAsync();
+        }
+    }
+
+    private async Task LoadAccountAndDraftStateAsync()
+    {
+        if (_accountId is not { } accountId)
+        {
+            return;
+        }
+        _isLoading = true;
+        _error = null;
+        _draft = null;
+        _candidates = Array.Empty<BankReconciliationDraftCandidateDto>();
+        StateHasChanged();
+
+        // Account (merge asset + liability to cover credit cards).
+        var assets = await AccountClient.ListAsync(rootType: "asset");
+        var liabilities = await AccountClient.ListAsync(rootType: "liability");
+        _account = assets.Concat(liabilities).FirstOrDefault(a => a.Id == accountId);
+
+        if (_account is null)
+        {
+            _isLoading = false;
+            return;
+        }
+
+        // In-flight draft for this account, if any.
+        var draftOutcome = await ReconciliationClient.FindOpenDraftForAccountAsync(accountId);
+        if (!draftOutcome.Succeeded)
+        {
+            _error = draftOutcome.ErrorMessage;
+            _isLoading = false;
+            return;
+        }
+        _draft = draftOutcome.Draft;
+
+        // If there's a draft, load its candidates. If not, prime the
+        // Start form with the carry-forward suggestion.
+        if (_draft is not null)
+        {
+            await LoadCandidatesAsync();
+            PopulateEditInfoFromDraft();
+        }
+        else
+        {
+            _lastCompleted = await ReconciliationClient.GetLastCompletedAsync(accountId);
+            _startOpeningBalance = _lastCompleted?.EndingBalance ?? 0m;
+            _startEndingBalance = _startOpeningBalance;
+            _startStatementDateNullable = DateTime.Today;
+        }
+        _isLoading = false;
+    }
+
+    private async Task LoadCandidatesAsync()
+    {
+        if (_draft is null) return;
+        var outcome = await ReconciliationClient.ListCandidatesAsync(_draft.Id);
+        if (!outcome.Succeeded)
+        {
+            _error = outcome.ErrorMessage;
+            return;
+        }
+        _candidates = outcome.Candidates;
+    }
+
+    private void PopulateEditInfoFromDraft()
+    {
+        if (_draft is null) return;
+        _editOpeningBalance = _draft.OpeningBalance;
+        _editEndingBalance = _draft.EndingBalance;
+        _editStatementDateNullable = _draft.StatementDate.ToDateTime(TimeOnly.MinValue);
+        _editNotes = _draft.Notes;
+    }
+
+    private async Task StartReconcilingAsync()
+    {
+        if (_accountId is not { } accountId || _startStatementDateNullable is null) return;
+        _isBusy = true;
+        _error = null;
+        StateHasChanged();
+
+        var statementDate = DateOnly.FromDateTime(_startStatementDateNullable.Value);
+        var outcome = await ReconciliationClient.OpenDraftAsync(
+            new BankReconciliationDraftOpenPayload(
+                accountId,
+                statementDate,
+                _startOpeningBalance,
+                _startEndingBalance,
+                _startNotes));
+        _isBusy = false;
+        if (!outcome.Succeeded || outcome.Draft is null)
+        {
+            _error = outcome.ErrorMessage ?? "Unable to open a reconciliation draft.";
+            return;
+        }
+        _draft = outcome.Draft;
+        PopulateEditInfoFromDraft();
+        await LoadCandidatesAsync();
+    }
+
+    private async Task OnToggleLineAsync(Guid ledgerEntryId, bool cleared)
+    {
+        if (_draft is null) return;
+        _isBusy = true;
+        _error = null;
+        StateHasChanged();
+
+        var outcome = await ReconciliationClient.ToggleClearedAsync(_draft.Id, ledgerEntryId, cleared);
+        _isBusy = false;
+        if (!outcome.Succeeded || outcome.Draft is null)
+        {
+            _error = outcome.ErrorMessage ?? "Unable to update cleared status.";
+            return;
+        }
+        _draft = outcome.Draft;
+        // Local optimistic update of the candidate row's flag so we
+        // don't refetch the full list on every toggle.
+        _candidates = _candidates
+            .Select(c => c.Entry.LedgerEntryId == ledgerEntryId
+                ? c with { ClearedInThisDraft = cleared }
+                : c)
+            .ToArray();
+    }
+
+    private async Task ApplyEditInfoAsync()
+    {
+        if (_draft is null) return;
+        _isBusy = true;
+        _error = null;
+        StateHasChanged();
+
+        var outcome = await ReconciliationClient.PatchDraftAsync(
+            _draft.Id,
+            new BankReconciliationDraftPatchPayload(
+                _editOpeningBalance,
+                _editEndingBalance,
+                _editStatementDateNullable is null
+                    ? null
+                    : DateOnly.FromDateTime(_editStatementDateNullable.Value),
+                _editNotes));
+        _isBusy = false;
+        if (!outcome.Succeeded || outcome.Draft is null)
+        {
+            _error = outcome.ErrorMessage ?? "Unable to save statement information.";
+            return;
+        }
+        _draft = outcome.Draft;
+        _showEditInfo = false;
+        // If the statement date moved, candidates list may have
+        // changed (entries past the new date drop off). Re-fetch.
+        await LoadCandidatesAsync();
+    }
+
+    private async Task SaveForLaterAsync()
+    {
+        // "Save for later" is a no-op server-side — drafts persist on
+        // every toggle. Just navigate back to the register.
+        await Message.InfoAsync("Draft saved. Resume from the Bank Register or the Reconcile menu.");
+        Navigation.NavigateTo($"banking/register/{_accountId:D}");
+    }
+
+    private async Task AbandonAsync()
+    {
+        if (_draft is null) return;
+        _isBusy = true;
+        StateHasChanged();
+        var outcome = await ReconciliationClient.AbandonDraftAsync(_draft.Id);
+        _isBusy = false;
+        _showAbandonConfirm = false;
+        if (!outcome.Succeeded)
+        {
+            _error = outcome.ErrorMessage ?? "Unable to close the draft.";
+            return;
+        }
+        Navigation.NavigateTo($"banking/register/{_accountId:D}");
+    }
+
+    private async Task FinishNowAsync()
+    {
+        if (_draft is null) return;
+        _isBusy = true;
+        _error = null;
+        StateHasChanged();
+        var outcome = await ReconciliationClient.CompleteDraftAsync(_draft.Id);
+        _isBusy = false;
+        if (!outcome.Succeeded || outcome.Summary is null)
+        {
+            _error = outcome.ErrorMessage ?? "Unable to complete the reconciliation.";
+            return;
+        }
+        _completed = outcome.Summary;
+        _draft = null;
+        _candidates = Array.Empty<BankReconciliationDraftCandidateDto>();
+    }
+
+    private void DismissCompletionModal()
+    {
+        _completed = null;
+        Navigation.NavigateTo($"banking/register/{_accountId:D}");
+    }
+
+    private static string FormatAccountKind(AccountSummary account) => account.DetailType switch
+    {
+        "bank" => "Bank",
+        "cash" => "Cash",
+        "credit_card" => "Credit card",
+        _ => account.DetailType ?? "Account"
+    };
+
+    private static string FormatAmount(decimal amount) =>
+        amount.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatPositiveOnly(decimal signedAmount) =>
+        signedAmount > 0m ? signedAmount.ToString("N2") : "";
+
+    private static string FormatNegativeOnly(decimal signedAmount) =>
+        signedAmount < 0m ? Math.Abs(signedAmount).ToString("N2") : "";
+}

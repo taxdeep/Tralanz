@@ -12,7 +12,7 @@
     <Actions>
         @if (_selectedAccountId is { } id)
         {
-            <a class="citus-button citus-button--primary" href="@($"reconciliation")">
+            <a class="citus-button citus-button--primary" href="@($"banking/register/{id:D}/reconcile")">
                 <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
                 <span>Reconcile</span>
             </a>
