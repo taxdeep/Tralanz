@@ -65,6 +65,12 @@ else
     <section class="citus-panel mb-6">
         <h2 class="citus-panel__title">Actions</h2>
         <div class="flex flex-wrap gap-2 items-center">
+            @* Copy A3 Phase 2: More menu hosts secondary actions
+               (Copy today; Print / Audit history come later). The
+               state-specific primary actions (Receive payment, Issue
+               credit memo) stay as inline buttons because they're
+               the operator's main jobs on a posted invoice. *@
+            <CitusMoreMenu Items="@_moreItems" />
             @if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
             {
                 <a class="citus-button citus-button--primary" href="receive-payment">
@@ -246,6 +252,26 @@ else
         var account = _accounts.FirstOrDefault(a => a.Id == accountId.Value);
         return account is null ? accountId.Value.ToString("D") : $"{account.Code}  {account.Name}";
     }
+
+    // Copy A3 Phase 2: Copy is always allowed on an existing invoice
+    // (even on voided/reversed — operator may want to revive the
+    // invoice as a fresh draft with corrections).
+    private void CopyAsync()
+    {
+        if (_invoice is null) return;
+        Navigation.NavigateTo($"invoices/new?copyFrom={_invoice.Id:D}");
+    }
+
+    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _invoice is null
+        ? Array.Empty<CitusMoreMenuItem>()
+        : new[]
+        {
+            new CitusMoreMenuItem
+            {
+                Label = "Copy",
+                OnClick = EventCallback.Factory.Create(this, CopyAsync)
+            }
+        };
 
     private static string HumanizeStatus(string status) => status switch
     {

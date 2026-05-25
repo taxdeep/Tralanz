@@ -238,6 +238,12 @@
             else
             {
                 <div class="flex items-center justify-end gap-3">
+                    @* Copy A3 Phase 2: secondary actions (just Copy
+                       today, room for Print / Audit history later).
+                       Void + Edit stay as primary buttons because
+                       they have an inline confirm flow that's
+                       awkward to surface from a menu item. *@
+                    <CitusMoreMenu Items="@_moreItems" />
                     <CitusButton Variant="CitusButtonVariant.Primary"
                                  Danger="true"
                                  LeadingIcon="IconName.X"
@@ -429,6 +435,27 @@
             "voided" => $"This journal entry is voided. Voided at {review.VoidedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "an unavailable time"}.",
             "reversed" => $"This journal entry is reversed. Reversed at {review.ReversedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "an unavailable time"}.",
             _ => string.Empty
+        };
+
+    // Copy A3 Phase 2: navigate to /journal-entry/new with ?copyFrom=
+    // (distinct from the existing ?from= which is reserved for the
+    // edit-after-void flow). The new JE is fully independent of the
+    // source — no lineage, no reverse-link.
+    private void CopyAsync()
+    {
+        if (_review is null) return;
+        NavigationManager.NavigateTo($"journal-entry/new?copyFrom={_review.Id:D}");
+    }
+
+    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _review is null
+        ? Array.Empty<CitusMoreMenuItem>()
+        : new[]
+        {
+            new CitusMoreMenuItem
+            {
+                Label = "Copy",
+                OnClick = EventCallback.Factory.Create(this, CopyAsync)
+            }
         };
 
     private static string DisplayLineMarkers(JournalEntryReviewLineSummary line)

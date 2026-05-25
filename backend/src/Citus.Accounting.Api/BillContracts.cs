@@ -21,7 +21,11 @@ public sealed record BillUpsertHttpRequest(
     // Optimistic-concurrency token. Round-trips the updated_at the
     // editor saw on GET; the store rejects the UPDATE with a 409 if
     // the value no longer matches. Null on first save / opt-out.
-    DateTimeOffset? ExpectedUpdatedAt = null);
+    DateTimeOffset? ExpectedUpdatedAt = null,
+    // Copy A3 Phase 2: when set, the bill was prefilled from another
+    // bill via More → Copy. Recorded in audit_logs alongside the
+    // regular CREATE; no FK on the bills row.
+    Guid? CopiedFromBillId = null);
 
 public sealed record BillLineHttpRequest(
     int LineNumber,

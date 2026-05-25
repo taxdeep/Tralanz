@@ -181,6 +181,38 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         }
 
         await InsertLinesAsync(connection, transaction, companyId, billId, input.Lines, cancellationToken).ConfigureAwait(false);
+
+        // Copy A3 Phase 2: provenance audit. Same shape as the Expense
+        // store's expense_copied row — see PostgreSqlExpenseStore for
+        // the rationale. No FK on the bills row itself.
+        if (input.CopiedFromBillId is { } sourceBillId)
+        {
+            await using var auditCommand = connection.CreateCommand();
+            auditCommand.Transaction = transaction;
+            auditCommand.CommandText = """
+                INSERT INTO audit_logs (
+                    company_id, actor_type, actor_id,
+                    entity_type, entity_id, action, payload
+                )
+                VALUES (
+                    @company_id, 'user', @actor_id,
+                    'bill', @entity_id, 'bill_copied', @payload::jsonb
+                );
+                """;
+            auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            auditCommand.Parameters.AddWithValue("actor_id", createdByUserId.Value);
+            auditCommand.Parameters.AddWithValue("entity_id", billId);
+            auditCommand.Parameters.AddWithValue(
+                "payload",
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    source_bill_id = sourceBillId,
+                    new_bill_id = billId,
+                    new_entity_number = entityNumber
+                }));
+            await auditCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         var saved = await GetByIdAsync(companyId, billId, cancellationToken).ConfigureAwait(false);
