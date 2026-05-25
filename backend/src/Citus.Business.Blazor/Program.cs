@@ -51,12 +51,19 @@ builder.Services.AddHttpClient<BusinessWriteFlowClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+// AUDIT_2026-05-25: attach the BusinessSessionHeaderHandler. SwitchActiveCompanyAsync
+// and other authenticated endpoints on this client (profile read/update, switch-active-
+// company) rely on the standard X-Citus-Business-Session-Token header being attached
+// automatically from BusinessShellState. SignInAsync runs anonymously (empty token →
+// handler no-ops), and ResumeSession/SignOut already attach the header manually with
+// the just-captured token, so adding the handler is safe for every method on this client.
 builder.Services.AddHttpClient<BusinessAuthenticationClient>(
-    (serviceProvider, client) =>
-    {
-        var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
-        client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
-    });
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<BusinessSessionClient>(
         (serviceProvider, client) =>
         {
