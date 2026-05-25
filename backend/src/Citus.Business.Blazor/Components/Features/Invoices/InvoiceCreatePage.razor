@@ -550,12 +550,19 @@
                 taxDisplay = tax.Code;
             }
 
+            // task_lines columns are numeric(20,4) — they always come back
+            // with scale 4 even when the operator entered an integer / 2-dp
+            // value. RadzenNumeric falls back to the decimal's native scale
+            // for display, so "2.0000" / "60.0000" would otherwise leak into
+            // the editable invoice grid. Carry the operator-meant rule (Task
+            // qty = integer, Task price = 2-dp) through the prefill so the
+            // grid renders cleanly without changing the underlying schema.
             _lines.Add(new InvoiceLineEditState(
                 ItemId: line.ItemId,
                 ItemDisplay: itemDisplay,
                 Description: line.Description ?? string.Empty,
-                Quantity: line.Quantity,
-                UnitPrice: line.UnitPrice,
+                Quantity: Math.Round(line.Quantity, 0, MidpointRounding.AwayFromZero),
+                UnitPrice: Math.Round(line.UnitPrice, 2, MidpointRounding.AwayFromZero),
                 AccountId: accountId,
                 AccountDisplay: accountDisplay,
                 AccountCode: accountCode,
