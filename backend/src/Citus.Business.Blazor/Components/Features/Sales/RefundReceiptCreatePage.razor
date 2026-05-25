@@ -6,6 +6,8 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
+@inject RefundReceiptClient RefundReceiptClient
+@inject AccountClient AccountClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -35,6 +37,12 @@
 @if (ShellState.AreWritesBlocked)
 {
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (_isFromCopy)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Revise as needed and save to create a new refund receipt; the original is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -319,10 +327,73 @@
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+    // Phase 3.1
+    private bool _isFromCopy;
+
+    [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromRefundId { get; set; }
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
-    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        if (CopyFromRefundId is { } id && id != Guid.Empty)
+        {
+            await TryHydrateFromCopySourceAsync(id);
+        }
+    }
+
+    /// <summary>Phase 3.1: hydrate from an existing refund receipt.</summary>
+    private async Task TryHydrateFromCopySourceAsync(Guid sourceId)
+    {
+        RefundReceiptRecordDto? source;
+        try
+        {
+            source = await RefundReceiptClient.GetByIdAsync(sourceId, ShellState.ActiveCompany.Id);
+        }
+        catch { return; }
+        if (source is null)
+        {
+            _validation = "The refund receipt you copied from is not visible in this company.";
+            return;
+        }
+
+        var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
+        var accounts = await AccountClient.ListAsync();
+        var byId = accounts.ToDictionary(a => a.Id);
+
+        _isFromCopy = true;
+        _customerId = source.CustomerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = source.TransactionCurrencyCode;
+        _documentDate = DateTime.Today;
+        _fxRate = null;
+        _memo = source.Memo ?? string.Empty;
+        _customerPoNumber = string.Empty;
+        _paymentMethod = source.PaymentMethod ?? "cash";
+        _referenceNo = string.Empty;
+        _reason = string.Empty;
+        if (source.RefundFromAccountId is { } accId && byId.TryGetValue(accId, out var acct))
+        {
+            _refundFromAccountId = acct.Id;
+            _refundFromAccountDisplay = $"{acct.Code} {acct.Name}";
+            _refundFromAccountCode = acct.Code;
+        }
+
+        _lines.Clear();
+        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+        {
+            var displ = line.RevenueAccountId is { } rid && byId.TryGetValue(rid, out var a) ? $"{a.Code}  {a.Name}" : string.Empty;
+            var code = line.RevenueAccountId is { } rid2 && byId.TryGetValue(rid2, out var a2) ? a2.Code : string.Empty;
+            _lines.Add(new RefundLineEditState(
+                ItemId: Guid.Empty, ItemDisplay: string.Empty,
+                Description: line.Description ?? string.Empty,
+                Quantity: line.Quantity, UnitPrice: line.UnitPrice,
+                AccountId: line.RevenueAccountId, AccountDisplay: displ, AccountCode: code,
+                TaxCodeId: null, TaxCode: string.Empty));
+        }
+        if (_lines.Count == 0) _lines.Add(new RefundLineEditState());
+    }
 
     private async Task OnCustomerSelected(UnitySearchPickerOption option)
     {

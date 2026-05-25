@@ -6,6 +6,8 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
+@inject SalesReceiptClient SalesReceiptClient
+@inject AccountClient AccountClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -42,6 +44,12 @@
 @if (ShellState.AreWritesBlocked)
 {
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (_isFromCopy)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Revise as needed and save to create a new sales receipt; the original is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -344,10 +352,90 @@
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+    // Phase 3.1: source receipt id when prefilled via More → Copy.
+    private bool _isFromCopy;
+
+    [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromReceiptId { get; set; }
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
-    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        if (CopyFromReceiptId is { } id && id != Guid.Empty)
+        {
+            await TryHydrateFromCopySourceAsync(id);
+        }
+    }
+
+    /// <summary>
+    /// Phase 3.1: prefill the form from an existing sales receipt.
+    /// Customer + currency + lines copied; receipt date resets to
+    /// today, reference # / cheque info blanked, deposit account
+    /// preserved (operator can switch). The new receipt is fully
+    /// independent — no link back to source.
+    /// </summary>
+    private async Task TryHydrateFromCopySourceAsync(Guid sourceId)
+    {
+        SalesReceiptRecordDto? source;
+        try
+        {
+            source = await SalesReceiptClient.GetByIdAsync(sourceId, ShellState.ActiveCompany.Id);
+        }
+        catch
+        {
+            return;
+        }
+        if (source is null)
+        {
+            _validation = "The sales receipt you copied from is not visible in this company. The form is blank.";
+            return;
+        }
+
+        var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
+        var accounts = await AccountClient.ListAsync();
+        var accountsById = accounts.ToDictionary(a => a.Id);
+
+        _isFromCopy = true;
+        _customerId = source.CustomerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = source.TransactionCurrencyCode;
+        _documentDate = DateTime.Today;
+        _fxRate = null;
+        _memo = source.Memo ?? string.Empty;
+        _customerPoNumber = string.Empty;
+        _paymentMethod = source.PaymentMethod ?? "cash";
+        _referenceNo = string.Empty;
+        if (source.DepositToAccountId is { } depId && accountsById.TryGetValue(depId, out var acct))
+        {
+            _depositToAccountId = acct.Id;
+            _depositToAccountDisplay = $"{acct.Code} {acct.Name}";
+            _depositToAccountCode = acct.Code;
+        }
+
+        _lines.Clear();
+        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+        {
+            var accountDisplay = line.RevenueAccountId is { } rid && accountsById.TryGetValue(rid, out var a)
+                ? $"{a.Code}  {a.Name}"
+                : string.Empty;
+            var accountCode = line.RevenueAccountId is { } rid2 && accountsById.TryGetValue(rid2, out var a2)
+                ? a2.Code
+                : string.Empty;
+            _lines.Add(new SalesReceiptLineEditState(
+                ItemId: Guid.Empty,
+                ItemDisplay: string.Empty,
+                Description: line.Description ?? string.Empty,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                AccountId: line.RevenueAccountId,
+                AccountDisplay: accountDisplay,
+                AccountCode: accountCode,
+                TaxCodeId: null,         // SalesReceiptLineDto doesn't expose TaxCodeId
+                TaxCode: string.Empty));
+        }
+        if (_lines.Count == 0) _lines.Add(new SalesReceiptLineEditState());
+    }
 
     private async Task OnCustomerSelected(UnitySearchPickerOption option)
     {
