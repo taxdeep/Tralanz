@@ -150,11 +150,12 @@ public sealed class UnitySearchPermissionFilterSmokeTests
               'USD', false, 'active'
             );
 
+            -- X-4 test-isolation: append per-run UserId for unique username.
             insert into users (id, email, username, password_hash, status)
             values
-              (@owner_id,  @owner_email,  'owner.permfilter', 'hashed', 'active'),
-              (@user_a_id, @user_a_email, 'user.a.permfilter','hashed', 'active'),
-              (@user_b_id, @user_b_email, 'user.b.permfilter','hashed', 'active');
+              (@owner_id,  @owner_email,  'owner.permfilter.'  || @owner_id,  'hashed', 'active'),
+              (@user_a_id, @user_a_email, 'user.a.permfilter.' || @user_a_id, 'hashed', 'active'),
+              (@user_b_id, @user_b_email, 'user.b.permfilter.' || @user_b_id, 'hashed', 'active');
 
             insert into company_memberships (
               id, company_id, user_id, role, permissions, is_active, is_owner

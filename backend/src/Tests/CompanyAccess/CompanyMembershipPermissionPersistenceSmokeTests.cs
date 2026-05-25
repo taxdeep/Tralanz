@@ -33,10 +33,15 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
                 companyId,
                 targetMembershipId,
                 ownerUserId,
-                ["ap", "company_book_governance"],
+                ["ar.invoice.view", "ap.bill.view"],
                 CancellationToken.None);
 
-            Assert.Equal(["ap", "company_book_governance"], result.Membership.PermissionTokens);
+            // X-4: the store sorts permission tokens with StringComparer.Ordinal
+            // (PostgreSqlCompanyMembershipPermissionStore.ParsePermissionTokens /
+            //  ReadTokens / InsertAuditLogAsync), so the read-back order is
+            // alphabetical ("ap.bill.view" before "ar.invoice.view") even when
+            // the caller supplied them in a different order.
+            Assert.Equal(["ap.bill.view", "ar.invoice.view"], result.Membership.PermissionTokens);
 
             var audits = await workflow.ListRecentAuditAsync(companyId, 10, CancellationToken.None);
             var audit = audits.SingleOrDefault(record => record.MembershipId == targetMembershipId);
@@ -44,11 +49,14 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
             Assert.NotNull(audit);
             Assert.Equal(ownerUserId, audit!.ActorUserId);
             Assert.Equal(targetUserId, audit.TargetUserId);
-            Assert.Equal("member.audit", audit.TargetDisplayName);
+            // X-4: SeedAsync now suffixes the username with the UserId for
+            // per-run uniqueness ('member.audit.' || @target_user_id), so
+            // the audit's TargetDisplayName carries the suffix too.
+            Assert.Equal($"member.audit.{targetUserId.Value}", audit.TargetDisplayName);
             Assert.Equal("user", audit.TargetRole);
             Assert.Equal(["reports"], audit.PreviousPermissionTokens);
-            Assert.Equal(["ap", "company_book_governance"], audit.SavedPermissionTokens);
-            Assert.Equal(["ap", "company_book_governance"], audit.AddedPermissionTokens);
+            Assert.Equal(["ap.bill.view", "ar.invoice.view"], audit.SavedPermissionTokens);
+            Assert.Equal(["ap.bill.view", "ar.invoice.view"], audit.AddedPermissionTokens);
             Assert.Equal(["reports"], audit.RemovedPermissionTokens);
         }
         finally
@@ -133,10 +141,11 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
               'active'
             );
 
+            -- X-4 test-isolation: append per-run UserId for unique username.
             insert into users (id, email, username, password_hash, status)
             values
-              (@owner_user_id, @owner_email, 'owner.audit', 'hashed-password', 'active'),
-              (@target_user_id, @target_email, 'member.audit', 'hashed-password', 'active');
+              (@owner_user_id,  @owner_email,  'owner.audit.'  || @owner_user_id,  'hashed-password', 'active'),
+              (@target_user_id, @target_email, 'member.audit.' || @target_user_id, 'hashed-password', 'active');
 
             insert into company_memberships (
               id,

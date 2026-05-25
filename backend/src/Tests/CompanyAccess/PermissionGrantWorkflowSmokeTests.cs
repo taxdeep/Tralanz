@@ -212,11 +212,12 @@ public sealed class PermissionGrantWorkflowSmokeTests
               'USD', false, 'active'
             );
 
+            -- X-4 test-isolation: append per-run UserId for unique username.
             insert into users (id, email, username, password_hash, status)
             values
-              (@owner_id,  @owner_email,  'owner.grant',  'hashed', 'active'),
-              (@user_a_id, @user_a_email, 'user.a.grant', 'hashed', 'active'),
-              (@user_b_id, @user_b_email, 'user.b.grant', 'hashed', 'active');
+              (@owner_id,  @owner_email,  'owner.grant.'  || @owner_id,  'hashed', 'active'),
+              (@user_a_id, @user_a_email, 'user.a.grant.' || @user_a_id, 'hashed', 'active'),
+              (@user_b_id, @user_b_email, 'user.b.grant.' || @user_b_id, 'hashed', 'active');
 
             insert into company_memberships (
               id, company_id, user_id, role, permissions, is_active, is_owner
