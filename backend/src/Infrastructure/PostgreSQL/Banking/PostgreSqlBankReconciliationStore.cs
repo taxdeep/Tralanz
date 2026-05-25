@@ -116,16 +116,13 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                 lockedEntries.Count,
                 cancellationToken);
 
-            foreach (var entry in lockedEntries)
-            {
-                await InsertReconciliationLineAsync(
-                    connection,
-                    transaction,
-                    reconciliationId,
-                    companyId,
-                    entry,
-                    cancellationToken);
-            }
+            await InsertReconciliationLinesAsync(
+                connection,
+                transaction,
+                reconciliationId,
+                companyId,
+                lockedEntries,
+                cancellationToken);
 
             // R-1: also stamp ledger_entries.reconciliation_id so the
             // line-level cleared state stays in sync with the
@@ -321,14 +318,55 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task InsertReconciliationLineAsync(
+    // R-5 (P1): bulk-insert reconciliation_lines via unnest() over per-
+    // column arrays. The original per-row loop issued one round-trip per
+    // ledger entry while holding the SERIALIZABLE tx + JE-immutability
+    // trigger context — a 200-line statement = 200 sequential network
+    // hops. This single statement is N× faster (one round-trip, one
+    // planner pass, no per-row trigger context churn) and the unnest
+    // pattern is the idiomatic Postgres bulk-insert when you already
+    // have the rows materialized in app memory.
+    private static async Task InsertReconciliationLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid reconciliationId,
         CompanyId companyId,
-        BankReconciliationLedgerEntry entry,
+        IReadOnlyList<BankReconciliationLedgerEntry> entries,
         CancellationToken cancellationToken)
     {
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        var ledgerEntryIds = new Guid[entries.Count];
+        var journalEntryIds = new Guid[entries.Count];
+        var journalEntryLineIds = new Guid[entries.Count];
+        var postingDates = new DateOnly[entries.Count];
+        var transactionCurrencyCodes = new string[entries.Count];
+        var txDebits = new decimal[entries.Count];
+        var txCredits = new decimal[entries.Count];
+        var debits = new decimal[entries.Count];
+        var credits = new decimal[entries.Count];
+        var signedAmountBases = new decimal[entries.Count];
+        var signedAmountTransactions = new decimal[entries.Count];
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var e = entries[i];
+            ledgerEntryIds[i] = e.LedgerEntryId;
+            journalEntryIds[i] = e.JournalEntryId;
+            journalEntryLineIds[i] = e.JournalEntryLineId;
+            postingDates[i] = e.PostingDate;
+            transactionCurrencyCodes[i] = e.TransactionCurrencyCode;
+            txDebits[i] = e.TxDebit;
+            txCredits[i] = e.TxCredit;
+            debits[i] = e.Debit;
+            credits[i] = e.Credit;
+            signedAmountBases[i] = e.SignedAmountBase;
+            signedAmountTransactions[i] = e.SignedAmountTransaction;
+        }
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
@@ -348,35 +386,59 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
               signed_amount_base,
               signed_amount_transaction
             )
-            values (
+            select
               @reconciliation_id,
               @company_id,
-              @ledger_entry_id,
-              @journal_entry_id,
-              @journal_entry_line_id,
-              @posting_date,
-              @transaction_currency_code,
-              @tx_debit,
-              @tx_credit,
-              @debit,
-              @credit,
-              @signed_amount_base,
-              @signed_amount_transaction
+              t.ledger_entry_id,
+              t.journal_entry_id,
+              t.journal_entry_line_id,
+              t.posting_date,
+              t.transaction_currency_code,
+              t.tx_debit,
+              t.tx_credit,
+              t.debit,
+              t.credit,
+              t.signed_amount_base,
+              t.signed_amount_transaction
+            from unnest(
+              @ledger_entry_ids,
+              @journal_entry_ids,
+              @journal_entry_line_ids,
+              @posting_dates,
+              @transaction_currency_codes,
+              @tx_debits,
+              @tx_credits,
+              @debits,
+              @credits,
+              @signed_amount_bases,
+              @signed_amount_transactions
+            ) as t (
+              ledger_entry_id,
+              journal_entry_id,
+              journal_entry_line_id,
+              posting_date,
+              transaction_currency_code,
+              tx_debit,
+              tx_credit,
+              debit,
+              credit,
+              signed_amount_base,
+              signed_amount_transaction
             );
             """;
         command.Parameters.AddWithValue("reconciliation_id", reconciliationId);
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("ledger_entry_id", entry.LedgerEntryId);
-        command.Parameters.AddWithValue("journal_entry_id", entry.JournalEntryId);
-        command.Parameters.AddWithValue("journal_entry_line_id", entry.JournalEntryLineId);
-        command.Parameters.AddWithValue("posting_date", entry.PostingDate);
-        command.Parameters.AddWithValue("transaction_currency_code", entry.TransactionCurrencyCode);
-        command.Parameters.AddWithValue("tx_debit", entry.TxDebit);
-        command.Parameters.AddWithValue("tx_credit", entry.TxCredit);
-        command.Parameters.AddWithValue("debit", entry.Debit);
-        command.Parameters.AddWithValue("credit", entry.Credit);
-        command.Parameters.AddWithValue("signed_amount_base", entry.SignedAmountBase);
-        command.Parameters.AddWithValue("signed_amount_transaction", entry.SignedAmountTransaction);
+        command.Parameters.AddWithValue("ledger_entry_ids", ledgerEntryIds);
+        command.Parameters.AddWithValue("journal_entry_ids", journalEntryIds);
+        command.Parameters.AddWithValue("journal_entry_line_ids", journalEntryLineIds);
+        command.Parameters.AddWithValue("posting_dates", postingDates);
+        command.Parameters.AddWithValue("transaction_currency_codes", transactionCurrencyCodes);
+        command.Parameters.AddWithValue("tx_debits", txDebits);
+        command.Parameters.AddWithValue("tx_credits", txCredits);
+        command.Parameters.AddWithValue("debits", debits);
+        command.Parameters.AddWithValue("credits", credits);
+        command.Parameters.AddWithValue("signed_amount_bases", signedAmountBases);
+        command.Parameters.AddWithValue("signed_amount_transactions", signedAmountTransactions);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -796,6 +858,19 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
 
         var items = new List<BankReconciliationDraftCandidate>();
         await using var command = connection.CreateCommand();
+        // R-5 (P3): add a hard LIMIT so a pathologically stuck bank
+        // account (one that has accumulated >2000 unreconciled entries
+        // without ever being cleaned up) doesn't blow up the page load.
+        // Typical statement sizes are 100-500 lines; 2000 leaves a
+        // comfortable headroom. The partial index
+        // ix_ledger_entries_company_account_unreconciled already prunes
+        // to unreconciled rows for the account, so this is a defensive
+        // cap rather than the primary performance gate.
+        //
+        // No posting_date lower bound: aged outstanding items (e.g. a
+        // cheque issued 18 months ago that still hasn't cleared) are
+        // legitimate and the operator must be able to see and clear
+        // them. Filtering by date here would silently hide them.
         command.CommandText = LedgerEntrySelectSql(
             """
             le.company_id = @company_id
@@ -807,6 +882,7 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                    or le.reconciliation_draft_id = @draft_id)
               and (le.tx_debit <> 0 or le.tx_credit <> 0)
               order by le.posting_date asc, le.created_at asc, le.id asc
+              limit 2000
             """);
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("bank_account_id", draft.BankAccountId);
@@ -846,9 +922,41 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
-            var draft = await LoadDraftCoreAsync(connection, transaction, companyId, draftId, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    $"Reconciliation draft '{draftId:D}' was not found in the active company or is no longer in progress.");
+            // R-5 (P2): the pre-toggle path used to call LoadDraftCoreAsync
+            // (full aggregate + accounts JOIN + cleared-line projection)
+            // just to read bank_account_id and validate the draft is
+            // still in_progress. On a 500-line statement that's the same
+            // work as the post-toggle refresh, so every checkbox click
+            // was paying 2× the aggregation cost. Replaced with a cheap
+            // single-row read of (bank_account_id, status) — the same
+            // validation, none of the aggregation.
+            Guid bankAccountId;
+            await using (var headerCmd = connection.CreateCommand())
+            {
+                headerCmd.Transaction = transaction;
+                headerCmd.CommandText =
+                    """
+                    select bank_account_id, status
+                    from bank_reconciliations
+                    where company_id = @company_id
+                      and id = @draft_id;
+                    """;
+                headerCmd.Parameters.AddWithValue("company_id", companyId.Value);
+                headerCmd.Parameters.AddWithValue("draft_id", draftId);
+                await using var reader = await headerCmd.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException(
+                        $"Reconciliation draft '{draftId:D}' was not found in the active company or is no longer in progress.");
+                }
+                bankAccountId = reader.GetGuid(reader.GetOrdinal("bank_account_id"));
+                var status = reader.GetString(reader.GetOrdinal("status"));
+                if (!string.Equals(status, BankReconciliationStatusTokens.InProgress, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Reconciliation draft '{draftId:D}' was not found in the active company or is no longer in progress.");
+                }
+            }
 
             int rows;
             await using (var command = connection.CreateCommand())
@@ -890,7 +998,7 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                 }
                 command.Parameters.AddWithValue("company_id", companyId.Value);
                 command.Parameters.AddWithValue("ledger_entry_id", ledgerEntryId);
-                command.Parameters.AddWithValue("bank_account_id", draft.BankAccountId);
+                command.Parameters.AddWithValue("bank_account_id", bankAccountId);
                 command.Parameters.AddWithValue("draft_id", draftId);
                 rows = await command.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -1156,17 +1264,16 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                 await header.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            // Snapshot each entry into the lines table (audit defensive copy).
-            foreach (var entry in lockedEntries)
-            {
-                await InsertReconciliationLineAsync(
-                    connection,
-                    transaction,
-                    draftId,
-                    companyId,
-                    entry,
-                    cancellationToken);
-            }
+            // Snapshot the cleared entries into the lines table (audit
+            // defensive copy). R-5 (P1): bulk-inserted via unnest in a
+            // single round-trip — see InsertReconciliationLinesAsync.
+            await InsertReconciliationLinesAsync(
+                connection,
+                transaction,
+                draftId,
+                companyId,
+                lockedEntries,
+                cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
 
