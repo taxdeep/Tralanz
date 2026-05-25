@@ -3,6 +3,7 @@
 @inject BusinessShellState ShellState
 @inject ItemClient ItemClient
 @inject TaxCodeClient TaxCodeClient
+@inject UomClient UomClient
 @inject CitusToastService Message
 @inject IOptions<FeatureFlagsOptions> FeatureFlags
 
@@ -89,13 +90,32 @@
                     <p class="text-fg-subtle text-xs mt-1">@KindHint(_draft.ItemKind)</p>
                 }
             </div>
-            @if (_draft.ItemKind == "stock")
-            {
-                <div>
-                    <label class="text-sm font-medium block mb-1">Stock UoM</label>
-                    <CitusInput TValue="string" @bind-Value="_draft.StockUomCode" Placeholder="EA" />
-                </div>
-            }
+            @* UOM applies to every item kind, not just stock: service items
+               also need a UOM (hour / day / each) so Task line grids can
+               pick the right qty step. Dropdown sources from /accounting/uom
+               (per-company; seeded by the 2026-05-25 UOM foundation migration). *@
+            <div>
+                <label class="text-sm font-medium block mb-1">Unit of measure</label>
+                <select class="citus-form-field__input"
+                        value="@_draft.StockUomCode"
+                        @onchange="@(e => _draft.StockUomCode = e.Value?.ToString() ?? string.Empty)">
+                    <option value="">— None —</option>
+                    @foreach (var uom in _uoms)
+                    {
+                        <option value="@uom.Code">
+                            @($"{uom.Code} — {uom.Name}{(uom.DecimalPrecision == 0 ? " (integer)" : "")}")
+                        </option>
+                    }
+                </select>
+                @if (!string.IsNullOrWhiteSpace(_draft.StockUomCode) && _uoms.FirstOrDefault(u => u.Code == _draft.StockUomCode) is { } picked)
+                {
+                    <p class="text-fg-subtle text-xs mt-1">
+                        @(picked.DecimalPrecision == 0
+                            ? "Qty on lines will be limited to integers."
+                            : $"Qty on lines allows up to {picked.DecimalPrecision} decimal places.")
+                    </p>
+                }
+            </div>
         </div>
     </section>
 
@@ -348,6 +368,7 @@ else
     private IReadOnlyList<ItemSummary> _items = Array.Empty<ItemSummary>();
     private List<TaxCodeSummary> _salesTaxCodes = new();
     private List<TaxCodeSummary> _purchaseTaxCodes = new();
+    private IReadOnlyList<UomSummary> _uoms = Array.Empty<UomSummary>();
     private ItemDraft _draft = ItemDraft.Empty();
     private bool _isLoading = true;
     private bool _isCreating;
@@ -366,6 +387,7 @@ else
         try
         {
             _items = await ItemClient.ListAsync(includeInactive: true);
+            _uoms = await UomClient.ListAsync(includeInactive: false);
             var allTax = await TaxCodeClient.ListAsync();
             _salesTaxCodes = allTax
                 .Where(t => t.IsActive && (string.Equals(t.AppliesTo, "sales", StringComparison.OrdinalIgnoreCase) ||

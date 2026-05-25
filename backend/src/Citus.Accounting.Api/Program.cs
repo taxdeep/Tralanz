@@ -42,6 +42,7 @@ using Citus.Modules.Tasks.Domain.Shared.Reports;
 using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Accounts;
+using Infrastructure.PostgreSQL.Uom;
 using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Banking;
 using Infrastructure.PostgreSQL.Company;
@@ -374,6 +375,11 @@ builder.Services.AddSingleton<ITaxCodeStore, PostgreSqlTaxCodeStore>();
 // is_system rows are protected: update / activate-toggle refuse to
 // modify them so AR/AP/FX control accounts stay stable.
 builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
+
+// Per-company Units of Measure (UOM). Seeded by the 2026-05-25 UOM
+// foundation migration + a companies-after-insert trigger. Read-only
+// in V1; the operator-facing CRUD lands when Settings → UOM is added.
+builder.Services.AddSingleton<IUomStore, PostgreSqlUomStore>();
 
 // Customer master data (per-company). Anchors invoices, receive
 // payments, and AR open-item tracking. Entity numbers are
@@ -1301,6 +1307,28 @@ accounting.MapGet(
 
         var profile = await workflow.GetProfileAsync(session.ActiveCompanyId, cancellationToken);
         return Results.Ok(MapCurrencyProfile(profile));
+    });
+
+// -----------------------------------------------------------------------
+// Per-company Units of Measure (UOM). Read-only in V1 — the 2026-05-25
+// foundation migration seeds 8 defaults and a companies-after-insert
+// trigger seeds them for every new company. Drives the Item edit UOM
+// picker and the qty input step on Task / Invoice / Bill line grids.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/uom",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IUomStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows.Select(r => new UomHttpSummary(
+            r.Id, r.CompanyId, r.Code, r.Name, r.DecimalPrecision, r.Category, r.IsActive, r.CreatedAt, r.UpdatedAt)));
     });
 
 // -----------------------------------------------------------------------

@@ -10,6 +10,7 @@
 @inject ItemClient ItemClient
 @inject AccountClient AccountClient
 @inject TaxCodeClient TaxCodeClient
+@inject UomClient UomClient
 @inject SalesOrderClient SalesOrderClient
 @inject TaskClient TaskClient
 @inject InvoiceClient InvoiceClient
@@ -354,6 +355,12 @@
     // entries fall back to "missing account" and surface the validation error.
     private Dictionary<Guid, ItemSummary> _itemsById = new();
     private Dictionary<Guid, AccountSummary> _accountsById = new();
+    // UOM lookup: drives the Task-prefill rounding (qty precision follows
+    // the picked item's UOM). Default 2 when the item has no UOM or the
+    // master couldn't be loaded — lets fractional hour-based services
+    // through instead of force-flooring to integer.
+    private Dictionary<string, UomSummary> _uomsByCode = new(StringComparer.OrdinalIgnoreCase);
+    private const int DefaultUomPrecision = 2;
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
@@ -364,6 +371,8 @@
         _itemsById = items.ToDictionary(i => i.Id);
         var accounts = await AccountClient.ListAsync();
         _accountsById = accounts.ToDictionary(a => a.Id);
+        var uoms = await UomClient.ListAsync(includeInactive: false);
+        _uomsByCode = uoms.ToDictionary(u => u.Code, StringComparer.OrdinalIgnoreCase);
 
         if (FromSalesOrderId is { } soId && soId != Guid.Empty)
         {
@@ -550,18 +559,25 @@
                 taxDisplay = tax.Code;
             }
 
-            // task_lines columns are numeric(20,4) — they always come back
-            // with scale 4 even when the operator entered an integer / 2-dp
-            // value. RadzenNumeric falls back to the decimal's native scale
-            // for display, so "2.0000" / "60.0000" would otherwise leak into
-            // the editable invoice grid. Carry the operator-meant rule (Task
-            // qty = integer, Task price = 2-dp) through the prefill so the
-            // grid renders cleanly without changing the underlying schema.
+            // task_lines columns are numeric(20,4) so DB always returns scale 4
+            // even when the operator entered an integer ("2.0000") or 2-dp value
+            // ("60.0000"). RadzenNumeric falls back to the decimal's native scale
+            // for display, so without rounding the grid surfaces "2.0000" /
+            // "60.0000". Use the item's UOM precision to round qty (hours stay
+            // fractional, "each" floors to integer); price always rounds to 2
+            // decimals (CAD/USD billing convention).
+            var qtyPrecision = DefaultUomPrecision;
+            if (_itemsById.TryGetValue(line.ItemId, out var pickedItem)
+                && !string.IsNullOrWhiteSpace(pickedItem.StockUomCode)
+                && _uomsByCode.TryGetValue(pickedItem.StockUomCode!, out var uom))
+            {
+                qtyPrecision = uom.DecimalPrecision;
+            }
             _lines.Add(new InvoiceLineEditState(
                 ItemId: line.ItemId,
                 ItemDisplay: itemDisplay,
                 Description: line.Description ?? string.Empty,
-                Quantity: Math.Round(line.Quantity, 0, MidpointRounding.AwayFromZero),
+                Quantity: Math.Round(line.Quantity, qtyPrecision, MidpointRounding.AwayFromZero),
                 UnitPrice: Math.Round(line.UnitPrice, 2, MidpointRounding.AwayFromZero),
                 AccountId: accountId,
                 AccountDisplay: accountDisplay,
