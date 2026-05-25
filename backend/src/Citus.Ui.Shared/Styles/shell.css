@@ -3547,6 +3547,87 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     background: var(--citus-color-danger-bg, rgba(185, 28, 28, 0.08));
 }
 
+/* ---------- CoA Preview Pane (Batch A) ----------
+   Shown inside the ChartOfAccountsPage New/Edit drawer to surface
+   where the new (or being-edited) account will land in the active
+   chart. Mirrors QBO's "NEW ACCOUNT PREVIEW" affordance. */
+
+.citus-preview-pane {
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-elevated);
+    padding: var(--citus-space-3) var(--citus-space-4);
+}
+
+.citus-preview-pane__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-3);
+    padding-bottom: var(--citus-space-2);
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-preview-pane__title {
+    font-size: var(--citus-text-base);
+    font-weight: 600;
+    margin: 0;
+}
+
+.citus-preview-pane__subtitle {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+    margin: 0;
+}
+
+.citus-preview-pane__badge {
+    flex-shrink: 0;
+    background: var(--citus-color-info, #2563eb);
+    color: white;
+    font-size: var(--citus-text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--citus-radius-sm);
+    text-transform: uppercase;
+}
+
+.citus-preview-pane__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    max-height: 22rem;
+    overflow-y: auto;
+}
+
+.citus-preview-pane__row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    padding: 0.3rem 0.5rem;
+    border-radius: var(--citus-radius-sm);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-preview-pane__row.is-new {
+    background: var(--citus-color-info-bg, rgba(37, 99, 235, 0.08));
+    outline: 1px solid var(--citus-color-info, #2563eb);
+}
+
+.citus-preview-pane__code {
+    color: var(--citus-color-fg-muted);
+    min-width: 4rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.citus-preview-pane__name {
+    color: var(--citus-color-fg);
+}
+
 /* ---------- Narrow-page wrapper ----------
    Forms / detail pages (Profile, Settings sub-pages) read better when
    they aren't stretched to a 1080p+ viewport. Wrap their content in
