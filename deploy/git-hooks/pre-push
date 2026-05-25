@@ -77,9 +77,42 @@ for push_ref in "${PUSH_REFS[@]}"; do
   read -r local_ref local_sha remote_ref remote_sha <<< "${push_ref}"
 
   if [[ "${local_sha}" =~ ^0+$ ]]; then
+    # Branch deletion: refspec ":branch", no FF check applies.
     push_args+=(":${remote_ref}")
-  else
-    push_args+=("${local_ref}:${remote_ref}")
+    continue
+  fi
+
+  push_args+=("${local_ref}:${remote_ref}")
+
+  # Brand-new remote ref: nothing to compare against.
+  if [[ "${remote_sha}" =~ ^0+$ ]]; then
+    continue
+  fi
+
+  # Non-fast-forward detection. When the outer `git push` was
+  # invoked with --force / --force-with-lease (the typical post-
+  # rebase case), git passes the diverged ref to this hook. Our
+  # inner push below previously dropped that flag and failed with
+  # `non-fast-forward`, forcing the developer to set
+  # CITUS_SKIP_VERSION_HOOK=1 — which also skips the version-bump
+  # amend that's the whole point of this hook.
+  #
+  # We pass --force-with-lease=<ref>:<remote_sha> instead of plain
+  # --force so a concurrent push from another worktree / dev that
+  # advanced the remote ref since git gave us its sha still aborts
+  # safely. The lease's expected sha is exactly the value git
+  # handed us on stdin for this ref, so this is equivalent to
+  # `git push --force-with-lease` against the remote state git
+  # already observed.
+  #
+  # Note: this hook does NOT help when the outer push omits
+  # --force / --force-with-lease entirely. Git's client-side check
+  # rejects such pushes before invoking the hook (stdin arrives
+  # empty), so there is no ref for us to force. The dev still has
+  # to opt into force-pushing; we just stop dropping their opt-in
+  # on its way through the hook.
+  if ! git merge-base --is-ancestor "${remote_sha}" "${local_sha}" 2>/dev/null; then
+    push_args+=("--force-with-lease=${remote_ref}:${remote_sha}")
   fi
 done
 
@@ -87,3 +120,4 @@ printf 'Auto-bumped Citus version before push to %s (%s).\n' "${REMOTE_NAME}" "$
 CITUS_SKIP_VERSION_HOOK=1 git push --no-verify "${REMOTE_NAME}" "${push_args[@]}"
 echo "The original push is being cancelled intentionally because the hook already completed the versioned push."
 exit 1
+
