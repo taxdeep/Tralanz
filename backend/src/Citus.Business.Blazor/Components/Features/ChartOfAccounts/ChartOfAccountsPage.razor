@@ -305,6 +305,36 @@
             </select>
         </label>
 
+        @* Batch C: Make this a subaccount checkbox + parent picker.
+           When checked, the parent dropdown lists active accounts of
+           the same root type (excluding self when editing). Empty
+           parent ID = top-level account. *@
+        <label class="citus-form-field md:col-span-2">
+            <span class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                       checked="@_formIsSubaccount"
+                       @onchange="OnSubaccountToggled"
+                       disabled="@_isMutating" />
+                Make this a subaccount of another account
+            </span>
+        </label>
+        @if (_formIsSubaccount)
+        {
+            <label class="citus-form-field md:col-span-2">
+                <span class="citus-form-field__label">Parent account</span>
+                <select class="citus-form-field__input"
+                        value="@(_formParentAccountId?.ToString("D") ?? string.Empty)"
+                        @onchange="OnParentAccountChanged"
+                        disabled="@_isMutating">
+                    <option value="">— Pick a parent —</option>
+                    @foreach (var candidate in ParentCandidates())
+                    {
+                        <option value="@candidate.Id.ToString("D")">@candidate.Code  @candidate.Name</option>
+                    }
+                </select>
+            </label>
+        }
+
         @* Batch A: Currency only shows for Balance-Sheet accounts.
            P&L accounts (revenue / cost_of_sales / expense) net into base
            currency through the period close so they don't carry their
@@ -343,6 +373,29 @@
                 Active (available for selection on new transactions)
             </span>
         </label>
+
+        @* Batch D: lock account toggle. Server enforces — see
+           PostgreSqlAccountStore.SetLockAsync / UpdateAsync.
+           Only visible on Edit; on Create it doesn't make sense
+           (you can't lock an account that doesn't exist yet — save
+           first, then lock from the same drawer). *@
+        @if (_editingId is not null)
+        {
+            <label class="citus-form-field md:col-span-2">
+                <span class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox"
+                           checked="@_formIsLocked"
+                           @onchange="OnLockToggleChangedAsync"
+                           disabled="@_isMutating" />
+                    Lock account
+                    @if (_formIsLocked)
+                    {
+                        <CitusIcon Name="IconName.ShieldLock" Size="IconSize.Inline" />
+                        <span class="text-fg-muted">— code / name / type / currency are immutable until unlocked.</span>
+                    }
+                </span>
+            </label>
+        }
     </div>
 
     @* Batch A: Live preview pane. Renders the active accounts of the
@@ -472,8 +525,73 @@
     private string _formCurrencyCode = string.Empty;
     private bool _formAllowManualPosting = true;
     private bool _formIsActive = true;
+    // Batch C
+    private bool _formIsSubaccount;
+    private Guid? _formParentAccountId;
+    // Batch D — drives the "Lock account" toggle in Edit mode. Reset
+    // from the loaded row each time the drawer opens, so a stale flag
+    // from a previous edit doesn't pre-tick the checkbox.
+    private bool _formIsLocked;
 
     private List<AccountSummary> _rows = new();
+
+    /// <summary>
+    /// Batch C: candidate parents — active accounts of the same root
+    /// type, excluding self when editing. Same-root-type guard mirrors
+    /// QBO; the DB lets cross-root work for rare edge cases (e.g.
+    /// contra-asset child of equity), but the UI nudges toward the
+    /// 99% case.
+    /// </summary>
+    private IEnumerable<AccountSummary> ParentCandidates() =>
+        _rows
+            .Where(a => a.IsActive)
+            .Where(a => string.Equals(a.RootType ?? string.Empty, _formRootType, StringComparison.OrdinalIgnoreCase))
+            .Where(a => _editingId is null || a.Id != _editingId.Value)
+            .OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase);
+
+    private void OnSubaccountToggled(ChangeEventArgs args)
+    {
+        var checkedNow = (bool)(args.Value ?? false);
+        _formIsSubaccount = checkedNow;
+        if (!checkedNow)
+        {
+            // Unchecking should clear the parent reference so a stale
+            // pick doesn't leak through to Save.
+            _formParentAccountId = null;
+        }
+    }
+
+    private void OnParentAccountChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        _formParentAccountId = Guid.TryParse(raw, out var parsed) ? parsed : null;
+    }
+
+    /// <summary>Batch D: lock toggle.</summary>
+    private async Task OnLockToggleChangedAsync(ChangeEventArgs args)
+    {
+        if (_editingId is null) return;
+        var requested = (bool)(args.Value ?? false);
+        _isMutating = true;
+        try
+        {
+            var outcome = await AccountClient.SetLockAsync(_editingId.Value, requested);
+            if (outcome.Succeeded && outcome.Saved is { } row)
+            {
+                _formIsLocked = row.LockedAt is not null;
+                // Refresh the in-memory list so the lock icon / row state
+                // in the main grid stays in sync without a re-fetch.
+                var idx = _rows.FindIndex(r => r.Id == row.Id);
+                if (idx >= 0) _rows[idx] = row;
+            }
+            else
+            {
+                // Revert the checkbox to reflect server truth on failure.
+                _formIsLocked = !requested;
+            }
+        }
+        finally { _isMutating = false; }
+    }
 
     // Seed-from-template state.
     private bool _isSeedPanelOpen;
@@ -544,6 +662,10 @@
         _formCurrencyCode = string.Empty;
         _formAllowManualPosting = true;
         _formIsActive = true;
+        // Batch C / D reset
+        _formIsSubaccount = false;
+        _formParentAccountId = null;
+        _formIsLocked = false;
         _isFormOpen = true;
     }
 
@@ -557,6 +679,11 @@
         _formCurrencyCode = row.CurrencyCode ?? string.Empty;
         _formAllowManualPosting = row.AllowManualPosting;
         _formIsActive = row.IsActive;
+        // Batch C: hydrate parent state from the loaded row.
+        _formParentAccountId = row.ParentAccountId;
+        _formIsSubaccount = row.ParentAccountId is not null;
+        // Batch D
+        _formIsLocked = row.LockedAt is not null;
         _isFormOpen = true;
     }
 
@@ -602,7 +729,10 @@
                 DetailType: string.IsNullOrWhiteSpace(_formDetailType) ? null : _formDetailType.Trim(),
                 CurrencyCode: string.IsNullOrEmpty(currency) ? null : currency,
                 AllowManualPosting: _formAllowManualPosting,
-                IsActive: _formIsActive);
+                IsActive: _formIsActive,
+                // Batch C: parent id only sent when the subaccount checkbox
+                // is ticked AND a parent is picked; otherwise null = top-level.
+                ParentAccountId: _formIsSubaccount ? _formParentAccountId : null);
 
             var outcome = _editingId is null
                 ? await AccountClient.CreateAsync(payload)

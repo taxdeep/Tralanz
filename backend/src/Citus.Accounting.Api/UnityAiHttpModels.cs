@@ -68,4 +68,19 @@ public sealed record AccountUpsertHttpRequest
     public string? CurrencyCode { get; init; }
     public bool? AllowManualPosting { get; init; }
     public bool? IsActive { get; init; }
+    // Batch C: nullable self-reference. NULL or absent = top-level
+    // account. The store accepts cross-root-type parenting; the UI
+    // discourages it but the DB stays open.
+    public Guid? ParentAccountId { get; init; }
+}
+
+/// <summary>
+/// Batch D: payload for POST /accounting/accounts/{id}/lock or
+/// .../unlock. Lock=true → mark account locked; Lock=false → unlock.
+/// The actor is read from the session, not the body, so this DTO
+/// only needs the lock direction.
+/// </summary>
+public sealed record AccountLockHttpRequest
+{
+    public bool Lock { get; init; }
 }

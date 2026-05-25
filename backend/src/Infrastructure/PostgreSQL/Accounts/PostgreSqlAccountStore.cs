@@ -41,7 +41,11 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
                 "currency_code",
                 "allow_manual_posting",
                 "created_at",
-                "updated_at"
+                "updated_at",
+                // Batch C + D additions (migration 2026-05-25-coa-subaccount-and-lock.sql).
+                "parent_account_id",
+                "locked_at",
+                "locked_by_user_id"
             },
             "Account schema has not been installed. Apply database migrations before using chart-of-accounts records.",
             cancellationToken).ConfigureAwait(false);
@@ -97,13 +101,16 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
         command.CommandText = """
             INSERT INTO accounts (
                 id, company_id, entity_number, code, name, root_type, detail_type,
-                currency_code, allow_manual_posting, is_active, created_at, updated_at)
+                currency_code, allow_manual_posting, is_active, parent_account_id,
+                created_at, updated_at)
             VALUES (
                 @id, @company_id, @entity_number, @code, @name, @root_type, @detail_type,
-                @currency_code, @allow_manual_posting, @is_active, @now, @now)
+                @currency_code, @allow_manual_posting, @is_active, @parent_account_id,
+                @now, @now)
             RETURNING id, company_id, entity_number, code, name, root_type, detail_type,
                       is_active, is_system, is_system_default, system_key, system_role,
-                      currency_code, allow_manual_posting, created_at, updated_at;
+                      currency_code, allow_manual_posting, created_at, updated_at,
+                      parent_account_id, locked_at, locked_by_user_id;
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -116,6 +123,8 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
             string.IsNullOrWhiteSpace(input.CurrencyCode) ? (object)DBNull.Value : input.CurrencyCode.Trim().ToUpperInvariant());
         command.Parameters.AddWithValue("allow_manual_posting", input.AllowManualPosting);
         command.Parameters.AddWithValue("is_active", input.IsActive);
+        command.Parameters.AddWithValue("parent_account_id",
+            input.ParentAccountId.HasValue ? (object)input.ParentAccountId.Value : DBNull.Value);
         command.Parameters.AddWithValue("now", now);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -135,9 +144,39 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
         var now = DateTimeOffset.UtcNow;
 
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // Batch D: read the current row first so we can enforce the
+        // lock predicate at application layer. We refuse the UPDATE
+        // when locked_at IS NOT NULL AND any financial-truth field
+        // changed. Re-parenting (parent_account_id) and is_active are
+        // allowed even on locked accounts — see XML docs on
+        // SetLockAsync for the rationale.
+        AccountRecord? existing;
+        await using (var loadCmd = connection.CreateCommand())
+        {
+            loadCmd.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
+            loadCmd.Parameters.AddWithValue("company_id", companyId.Value);
+            loadCmd.Parameters.AddWithValue("id", accountId);
+            await using var loadReader = await loadCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            existing = await loadReader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(loadReader) : null;
+        }
+        if (existing is null)
+        {
+            return null;
+        }
+        if (existing.IsSystem)
+        {
+            // Mirrors the pre-Batch-D WHERE clause guard. Surface as
+            // a "no row returned" so callers see the same shape.
+            return null;
+        }
+        if (existing.LockedAt is not null && AnyFinancialFieldChanged(existing, input))
+        {
+            throw new InvalidOperationException(
+                $"Account {existing.Code} is locked. Unlock it before changing the code, name, type, detail, currency, or manual-posting flag.");
+        }
+
         await using var command = connection.CreateCommand();
-        // Reject system rows. AND is_system = FALSE prevents quiet
-        // mutations of control accounts (AR, AP, FX revaluation).
         command.CommandText = """
             UPDATE accounts
                SET code = @code,
@@ -147,11 +186,13 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
                    currency_code = @currency_code,
                    allow_manual_posting = @allow_manual_posting,
                    is_active = @is_active,
+                   parent_account_id = @parent_account_id,
                    updated_at = @now
              WHERE company_id = @company_id AND id = @id AND is_system = FALSE
             RETURNING id, company_id, entity_number, code, name, root_type, detail_type,
                       is_active, is_system, is_system_default, system_key, system_role,
-                      currency_code, allow_manual_posting, created_at, updated_at;
+                      currency_code, allow_manual_posting, created_at, updated_at,
+                      parent_account_id, locked_at, locked_by_user_id;
             """;
         command.Parameters.AddWithValue("id", accountId);
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -163,10 +204,135 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
             string.IsNullOrWhiteSpace(input.CurrencyCode) ? (object)DBNull.Value : input.CurrencyCode.Trim().ToUpperInvariant());
         command.Parameters.AddWithValue("allow_manual_posting", input.AllowManualPosting);
         command.Parameters.AddWithValue("is_active", input.IsActive);
+        command.Parameters.AddWithValue("parent_account_id",
+            input.ParentAccountId.HasValue ? (object)input.ParentAccountId.Value : DBNull.Value);
         command.Parameters.AddWithValue("now", now);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
+    }
+
+    /// <summary>
+    /// Batch D: the lock predicate compares the financial-truth fields
+    /// of the existing row against the incoming patch. Returns true if
+    /// any changed. Trim + case-fold mirror the persistence rules so
+    /// "  CASH " vs "Cash" doesn't read as a change.
+    /// </summary>
+    private static bool AnyFinancialFieldChanged(AccountRecord existing, AccountUpsertInput input)
+    {
+        var codeChanged = !string.Equals(existing.Code, input.Code?.Trim(), StringComparison.Ordinal);
+        var nameChanged = !string.Equals(existing.Name, input.Name?.Trim(), StringComparison.Ordinal);
+        var rootChanged = !string.Equals(existing.RootType, input.RootType, StringComparison.OrdinalIgnoreCase);
+        var detailChanged = !string.Equals(existing.DetailType ?? string.Empty, input.DetailType?.Trim() ?? string.Empty, StringComparison.Ordinal);
+        var existingCcy = existing.CurrencyCode?.Trim() ?? string.Empty;
+        var incomingCcy = input.CurrencyCode?.Trim().ToUpperInvariant() ?? string.Empty;
+        var ccyChanged = !string.Equals(existingCcy, incomingCcy, StringComparison.Ordinal);
+        var postingChanged = existing.AllowManualPosting != input.AllowManualPosting;
+        return codeChanged || nameChanged || rootChanged || detailChanged || ccyChanged || postingChanged;
+    }
+
+    public async Task<AccountRecord?> SetLockAsync(
+        CompanyId companyId,
+        Guid accountId,
+        AccountLockInput input,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Read first so the audit_log payload can record the prior state
+        // and so we can no-op when the lock is already in the desired state.
+        AccountRecord? before;
+        await using (var loadCmd = connection.CreateCommand())
+        {
+            loadCmd.Transaction = transaction;
+            loadCmd.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
+            loadCmd.Parameters.AddWithValue("company_id", companyId.Value);
+            loadCmd.Parameters.AddWithValue("id", accountId);
+            await using var loadReader = await loadCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            before = await loadReader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(loadReader) : null;
+        }
+        if (before is null) return null;
+
+        var isAlreadyLocked = before.LockedAt is not null;
+        if (input.Lock == isAlreadyLocked)
+        {
+            // No state change — surface the row as-is, skip audit.
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return before;
+        }
+
+        AccountRecord? after;
+        await using (var updateCmd = connection.CreateCommand())
+        {
+            updateCmd.Transaction = transaction;
+            updateCmd.CommandText = """
+                UPDATE accounts
+                   SET locked_at = @locked_at,
+                       locked_by_user_id = @locked_by_user_id,
+                       updated_at = @now
+                 WHERE company_id = @company_id AND id = @id AND is_system = FALSE
+                RETURNING id, company_id, entity_number, code, name, root_type, detail_type,
+                          is_active, is_system, is_system_default, system_key, system_role,
+                          currency_code, allow_manual_posting, created_at, updated_at,
+                          parent_account_id, locked_at, locked_by_user_id;
+                """;
+            updateCmd.Parameters.AddWithValue("id", accountId);
+            updateCmd.Parameters.AddWithValue("company_id", companyId.Value);
+            updateCmd.Parameters.AddWithValue("locked_at",
+                input.Lock ? (object)now : DBNull.Value);
+            updateCmd.Parameters.AddWithValue("locked_by_user_id",
+                input.Lock && input.ActorUserId is { } u && u.Value is not null
+                    ? (object)u.Value
+                    : DBNull.Value);
+            updateCmd.Parameters.AddWithValue("now", now);
+            await using var updateReader = await updateCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            after = await updateReader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(updateReader) : null;
+        }
+
+        if (after is null)
+        {
+            // System account — silently ignore (matches the pre-existing
+            // is_system guard's "return null" contract).
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        // Append a row to audit_logs so the lock / unlock event is
+        // traceable. payload includes prior state + actor.
+        await using (var auditCmd = connection.CreateCommand())
+        {
+            auditCmd.Transaction = transaction;
+            auditCmd.CommandText = """
+                INSERT INTO audit_logs (
+                    company_id, actor_type, actor_id,
+                    entity_type, entity_id, action, payload)
+                VALUES (
+                    @company_id, 'user', @actor_id,
+                    'account', @entity_id, @action, @payload::jsonb);
+                """;
+            auditCmd.Parameters.AddWithValue("company_id", companyId.Value);
+            auditCmd.Parameters.AddWithValue("actor_id",
+                input.ActorUserId is { } u && u.Value is not null ? (object)u.Value : DBNull.Value);
+            auditCmd.Parameters.AddWithValue("entity_id", accountId);
+            auditCmd.Parameters.AddWithValue("action",
+                input.Lock ? "account_locked" : "account_unlocked");
+            auditCmd.Parameters.AddWithValue("payload",
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    account_id = accountId,
+                    account_code = before.Code,
+                    prior_locked_at = before.LockedAt,
+                    prior_locked_by_user_id = before.LockedByUserId,
+                    new_locked_at = after.LockedAt,
+                    new_locked_by_user_id = after.LockedByUserId
+                }));
+            await auditCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return after;
     }
 
     public async Task<AccountRecord?> SetActiveAsync(
@@ -189,7 +355,8 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
              WHERE company_id = @company_id AND id = @id AND is_system = FALSE
             RETURNING id, company_id, entity_number, code, name, root_type, detail_type,
                       is_active, is_system, is_system_default, system_key, system_role,
-                      currency_code, allow_manual_posting, created_at, updated_at;
+                      currency_code, allow_manual_posting, created_at, updated_at,
+                      parent_account_id, locked_at, locked_by_user_id;
             """;
         command.Parameters.AddWithValue("id", accountId);
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -229,7 +396,8 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
             ON CONFLICT (company_id, code) DO NOTHING
             RETURNING id, company_id, entity_number, code, name, root_type, detail_type,
                       is_active, is_system, is_system_default, system_key, system_role,
-                      currency_code, allow_manual_posting, created_at, updated_at;
+                      currency_code, allow_manual_posting, created_at, updated_at,
+                      parent_account_id, locked_at, locked_by_user_id;
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -268,7 +436,8 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     private const string SelectColumns = """
         SELECT id, company_id, entity_number, code, name, root_type, detail_type,
                is_active, is_system, is_system_default, system_key, system_role,
-               currency_code, allow_manual_posting, created_at, updated_at
+               currency_code, allow_manual_posting, created_at, updated_at,
+               parent_account_id, locked_at, locked_by_user_id
         FROM accounts
         """;
 
@@ -288,5 +457,8 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
         CurrencyCode: reader.IsDBNull(12) ? null : reader.GetString(12).Trim(),
         AllowManualPosting: reader.GetBoolean(13),
         CreatedAt: reader.GetFieldValue<DateTimeOffset>(14),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(15));
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(15),
+        ParentAccountId: reader.IsDBNull(16) ? null : reader.GetGuid(16),
+        LockedAt: reader.IsDBNull(17) ? null : reader.GetFieldValue<DateTimeOffset>(17),
+        LockedByUserId: reader.IsDBNull(18) ? null : reader.GetString(18).Trim());
 }

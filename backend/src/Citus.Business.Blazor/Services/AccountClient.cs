@@ -124,6 +124,37 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
         }
     }
 
+    /// <summary>
+    /// Batch D: lock or unlock an account. While locked, the server
+    /// refuses to modify financial-truth fields (code/name/root_type/
+    /// detail_type/currency/allow_manual_posting). Re-parenting and
+    /// activate/deactivate still work even when locked.
+    /// </summary>
+    public async Task<AccountMutationOutcome> SetLockAsync(
+        Guid id,
+        bool @lock,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                $"accounting/accounts/{id:D}/lock",
+                new AccountLockPayload(@lock),
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new AccountMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
+            }
+            var saved = await response.Content.ReadFromJsonAsync<AccountSummary>(cancellationToken);
+            return new AccountMutationOutcome(true, saved, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to toggle account lock flag.");
+            return new AccountMutationOutcome(false, null, "Unable to reach the server. Please try again.");
+        }
+    }
+
     private async Task<AccountMutationOutcome> SendUpsertAsync(
         HttpMethod method,
         string path,
@@ -188,7 +219,12 @@ public sealed record AccountSummary(
     string? CurrencyCode,
     bool AllowManualPosting,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    // Batch C: null = top-level account.
+    Guid? ParentAccountId = null,
+    // Batch D: when non-null, account is locked.
+    DateTimeOffset? LockedAt = null,
+    string? LockedByUserId = null);
 
 public sealed record AccountUpsertPayload(
     string Code,
@@ -197,7 +233,12 @@ public sealed record AccountUpsertPayload(
     string? DetailType,
     string? CurrencyCode,
     bool AllowManualPosting,
-    bool IsActive);
+    bool IsActive,
+    // Batch C
+    Guid? ParentAccountId = null);
+
+/// <summary>Batch D: lock-toggle payload.</summary>
+public sealed record AccountLockPayload(bool Lock);
 
 public sealed record AccountMutationOutcome(bool Succeeded, AccountSummary? Saved, string? ErrorMessage);
 
