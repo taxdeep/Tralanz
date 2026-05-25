@@ -9,6 +9,7 @@
 @inject BusinessShellState ShellState
 @inject TaskClient TaskClient
 @inject ItemClient ItemClient
+@inject CustomerClient CustomerClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
@@ -86,6 +87,27 @@ else
                 <div>
                     <label class="text-sm font-medium block mb-1">Title</label>
                     <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" />
+                </div>
+                <div>
+                    @* Customer is optional in the schema, but required if the
+                       operator wants to bill this task later — the "Create
+                       invoice" button on TaskDetailPage only appears when
+                       customer_id is set. Capturing it here avoids the
+                       round-trip back through PUT /tasks/{id}. *@
+                    <label class="text-sm font-medium block mb-1">Customer (optional)</label>
+                    <select class="citus-form-field__input"
+                            value="@(_customerId?.ToString("D") ?? string.Empty)"
+                            @onchange="OnCustomerChanged">
+                        <option value="">— None —</option>
+                        @foreach (var customer in _customers)
+                        {
+                            <option value="@customer.Id.ToString("D")">
+                                @(string.IsNullOrWhiteSpace(customer.CustomerNumber)
+                                    ? customer.DisplayName
+                                    : $"{customer.CustomerNumber} — {customer.DisplayName}")
+                            </option>
+                        }
+                    </select>
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Currency</label>
@@ -217,11 +239,17 @@ else
     private string? _description;
     private string _currency = string.Empty;
     private DateOnly _serviceDate = DateOnly.FromDateTime(DateTime.UtcNow);
+    private Guid? _customerId;
 
     // Item lookup powers the Item-pick → unit-price / description auto-fill.
     // Loaded once on init; the picker still hits the search index server-
     // side, this dict only resolves SourceId → ItemSummary on pick.
     private Dictionary<Guid, ItemSummary> _itemsById = new();
+
+    // Customer list backs the dropdown + drives the currency auto-update on
+    // pick. Keyed by Id so the OnCustomerChanged handler resolves quickly.
+    private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
+    private Dictionary<Guid, CustomerSummary> _customersById = new();
 
     private List<LineDraft> _lines = new() { new LineDraft() };
 
@@ -232,7 +260,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode ?? "USD";
-        await LoadItemsAsync();
+        await Task.WhenAll(LoadItemsAsync(), LoadCustomersAsync());
         _isLoading = false;
     }
 
@@ -247,6 +275,40 @@ else
         {
             // Picker can still search; we just lose the auto-fill nicety.
             _itemsById = new();
+        }
+    }
+
+    private async Task LoadCustomersAsync()
+    {
+        try
+        {
+            var customers = await CustomerClient.ListAsync(includeInactive: false);
+            _customers = customers;
+            _customersById = customers.ToDictionary(c => c.Id);
+        }
+        catch
+        {
+            _customers = Array.Empty<CustomerSummary>();
+            _customersById = new();
+        }
+    }
+
+    private void OnCustomerChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(raw) || !Guid.TryParse(raw, out var id))
+        {
+            _customerId = null;
+            return;
+        }
+        _customerId = id;
+        // Customer's default currency wins on pick — matches the Bill /
+        // Invoice flow. Operator can still override the Currency field
+        // manually if the task is billable in a non-default currency.
+        if (_customersById.TryGetValue(id, out var customer)
+            && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
+        {
+            _currency = customer.DefaultCurrencyCode;
         }
     }
 
@@ -358,6 +420,7 @@ else
             {
                 Title = _title!.Trim(),
                 Description = string.IsNullOrWhiteSpace(_description) ? null : _description!.Trim(),
+                CustomerId = _customerId,
                 CurrencyCode = _currency.Trim().ToUpperInvariant(),
                 ServiceDate = _serviceDate,
                 Lines = seedLines,
