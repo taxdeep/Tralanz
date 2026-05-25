@@ -2218,12 +2218,28 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
             // is a bug — it would silently make TX-grouped reports
             // understate that fragment's GL impact. Reject early
             // with the role name so the regression is obvious.
+            //
+            // X-5: extend the bypass to UNREALIZED FX revaluation. By
+            // accounting definition, period-end remeasurement only
+            // adjusts the BASE carrying amount of a foreign-currency
+            // AR/AP open item — the TX amount is unchanged because
+            // the obligation is still owed in the foreign currency.
+            // Both fragments emitted by AppendBalanceSideAwareRevaluation
+            // Fragments (control:accounts_receivable / :accounts_payable
+            // on one side, fx:unrealized_offset on the other) therefore
+            // legitimately carry TxDebit=TxCredit=0. TX-grouped reports
+            // SHOULD NOT pick these up — a revaluation isn't a TX-
+            // currency transaction, just a valuation adjustment. The
+            // original H2 author only allow-listed fx:realized*; this
+            // bypass widens it for the FX revaluation document type
+            // without weakening the rule for any other posting flow.
             var hasBaseImpact = fragment.Debit > 0m || fragment.Credit > 0m;
             var hasTxImpact = fragment.TxDebit > 0m || fragment.TxCredit > 0m;
             if (hasBaseImpact && !hasTxImpact)
             {
                 var role = fragment.PostingRole ?? string.Empty;
-                if (!role.StartsWith(RealizedFxPostingRolePrefix, StringComparison.Ordinal))
+                var isFxRevaluation = document is FxRevaluationDocument;
+                if (!isFxRevaluation && !role.StartsWith(RealizedFxPostingRolePrefix, StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException(
                         $"Posting fragment carries base-currency amounts with both transaction-currency legs zero, but its posting_role '{role}' is not a realized-FX leg. Only fragments with posting_role starting with '{RealizedFxPostingRolePrefix}' may legally drop both TX legs.");
