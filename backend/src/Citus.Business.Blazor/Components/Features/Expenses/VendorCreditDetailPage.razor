@@ -4,6 +4,7 @@
 @inject VendorCreditClient VendorCreditClient
 @inject AccountClient AccountClient
 @inject VendorClient VendorClient
+@inject NavigationManager Navigation
 
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
@@ -43,6 +44,14 @@ else
                        Description="@($"Due {_doc.DueDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
     </div>
+
+    @* Copy A3 Phase 3: actions bar with the standard More menu. *@
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Actions</h2>
+        <div class="flex flex-wrap gap-2 items-center">
+            <CitusMoreMenu Items="@_moreItems" />
+        </div>
+    </section>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
@@ -173,6 +182,20 @@ else
         var account = _accounts.FirstOrDefault(a => a.Id == accountId);
         return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
     }
+
+    // Copy A3 Phase 3.
+    private void CopyAsync()
+    {
+        if (_doc is null) return;
+        Navigation.NavigateTo($"vendor-credits/new?copyFrom={_doc.Id:D}");
+    }
+
+    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _doc is null
+        ? Array.Empty<CitusMoreMenuItem>()
+        : new[]
+        {
+            new CitusMoreMenuItem { Label = "Copy", OnClick = EventCallback.Factory.Create(this, CopyAsync) }
+        };
 
     private static string HumanizeStatus(string status) => status switch
     {

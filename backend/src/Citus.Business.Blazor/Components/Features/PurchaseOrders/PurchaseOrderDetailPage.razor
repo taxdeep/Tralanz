@@ -56,6 +56,10 @@ else
     <section class="citus-panel mb-6">
         <h2 class="citus-panel__title">Actions</h2>
         <div class="flex flex-wrap gap-2 items-center">
+            @* Copy A3 Phase 3: More menu hosts Copy. Lifecycle actions
+               (Send / Convert / Cancel / Void) stay as inline buttons
+               because they're context-specific to PO status. *@
+            <CitusMoreMenu Items="@_moreItems" />
             @if (_po.Status == "draft")
             {
                 <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
@@ -283,6 +287,22 @@ else
         if (!string.IsNullOrWhiteSpace(country)) parts.Add(country);
         return parts.Count == 0 ? "—" : string.Join(", ", parts);
     }
+
+    // Copy A3 Phase 3: navigate to /purchase-orders/new with ?copyFrom=.
+    // PO copy works from any status (operator may want to re-issue a
+    // closed/cancelled PO with corrections).
+    private void CopyAsync()
+    {
+        if (_po is null) return;
+        Navigation.NavigateTo($"purchase-orders/new?copyFrom={_po.Id:D}");
+    }
+
+    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _po is null
+        ? Array.Empty<CitusMoreMenuItem>()
+        : new[]
+        {
+            new CitusMoreMenuItem { Label = "Copy", OnClick = EventCallback.Factory.Create(this, CopyAsync) }
+        };
 
     private static string HumanizeStatus(string status) => status switch
     {
