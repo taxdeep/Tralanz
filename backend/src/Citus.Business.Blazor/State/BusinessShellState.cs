@@ -45,6 +45,16 @@ public sealed class BusinessShellState
         new Dictionary<string, bool>(StringComparer.Ordinal);
 
     /// <summary>
+    /// Raised after any state mutation that affects derived UI surfaces
+    /// (BusinessNavMenu, CreateNewButton, etc.). Components that render
+    /// from ShellState should subscribe in OnInitialized and call
+    /// StateHasChanged in the handler so toggling a module flag, switching
+    /// companies, or applying a new session updates the sidebar without
+    /// a page refresh.
+    /// </summary>
+    public event Action? OnChanged;
+
+    /// <summary>
     /// True when the named per-company module flag is on. Drives the
     /// nav menu and any in-page "Send to {module}" affordances.
     /// Defaults to false (fail-closed) for unknown keys so a missed
@@ -56,7 +66,11 @@ public sealed class BusinessShellState
         return ModuleFlags.TryGetValue(moduleKey.Trim().ToLowerInvariant(), out var enabled) && enabled;
     }
 
-    public void ApplyModuleFlags(IReadOnlyDictionary<string, bool> flags) => ModuleFlags = flags;
+    public void ApplyModuleFlags(IReadOnlyDictionary<string, bool> flags)
+    {
+        ModuleFlags = flags;
+        OnChanged?.Invoke();
+    }
 
     public IReadOnlyList<NavSection> NavigationSections { get; } =
     [
@@ -195,6 +209,7 @@ public sealed class BusinessShellState
         ActiveCompany = context.ActiveCompany;
         AvailableCompanies = context.AvailableCompanies;
         MaintenanceState = context.MaintenanceState;
+        OnChanged?.Invoke();
     }
 
     public void ApplyAuthenticatedSession(
@@ -207,6 +222,7 @@ public sealed class BusinessShellState
         AvailableCompanies = session.AvailableCompanies.Count > 0
             ? session.AvailableCompanies
             : new[] { session.ActiveCompany };
+        OnChanged?.Invoke();
     }
 
     /// <summary>
@@ -223,6 +239,7 @@ public sealed class BusinessShellState
         }
 
         User = User with { DisplayName = displayName.Trim() };
+        OnChanged?.Invoke();
     }
 
     public void ClearAuthenticatedSession()
@@ -236,6 +253,8 @@ public sealed class BusinessShellState
             Enabled = false,
             Message = "Platform runtime is accepting interactive changes."
         };
+        ModuleFlags = new Dictionary<string, bool>(StringComparer.Ordinal);
+        OnChanged?.Invoke();
     }
 
     private BusinessUserSummary BuildSignedOutUser() => new()

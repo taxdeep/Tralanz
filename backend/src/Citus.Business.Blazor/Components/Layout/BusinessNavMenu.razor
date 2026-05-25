@@ -8,7 +8,15 @@
     Batch 6: items carrying a ModuleKey are filtered against
     ShellState.ModuleFlags. A section whose items all fail the filter
     is suppressed entirely so the sidebar doesn't show empty headers.
+
+    2026-05-25: subscribe to ShellState.OnChanged so toggling a module
+    flag (Settings → Optional Modules) or switching companies updates
+    the sidebar live, without a page refresh. The previous behaviour
+    relied on accidental re-renders from elsewhere — CreateNewButton
+    happened to refresh on each <details> click but this nav did not.
 *@
+
+@implements IDisposable
 
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
 
@@ -45,4 +53,16 @@
 
 @code {
     [Parameter] public bool Collapsed { get; set; }
+
+    protected override void OnInitialized()
+    {
+        ShellState.OnChanged += HandleShellChanged;
+    }
+
+    public void Dispose()
+    {
+        ShellState.OnChanged -= HandleShellChanged;
+    }
+
+    private void HandleShellChanged() => InvokeAsync(StateHasChanged);
 }
