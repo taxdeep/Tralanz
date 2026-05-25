@@ -34,15 +34,29 @@
 
 @if (!string.IsNullOrWhiteSpace(_prefilledFromDisplayNumber))
 {
+    @* Copy A3 Phase 2: this banner serves two distinct flows now —
+       the legacy ?from= (edit-after-void) and the new ?copyFrom=
+       (Copy). _isFromCopy disambiguates the wording: copy = source is
+       UNCHANGED, edit = source was just voided. *@
     <CitusAlert Severity="CitusAlertSeverity.Info"
                 ShowIcon="true"
                 Class="mb-4">
         <MessageTemplate>
-            <strong>Pre-filled from @_prefilledFromDisplayNumber.</strong>
-            <div class="text-fg-muted text-sm mt-1">
-                The original entry has been voided (a compensating entry was auto-posted).
-                Adjust the lines below and submit to record the corrected version.
-            </div>
+            @if (_isFromCopy)
+            {
+                <strong>This is a copy of @_prefilledFromDisplayNumber.</strong>
+                <div class="text-fg-muted text-sm mt-1">
+                    The original entry is unchanged. Adjust the lines below and submit to post a new, independent journal entry.
+                </div>
+            }
+            else
+            {
+                <strong>Pre-filled from @_prefilledFromDisplayNumber.</strong>
+                <div class="text-fg-muted text-sm mt-1">
+                    The original entry has been voided (a compensating entry was auto-posted).
+                    Adjust the lines below and submit to record the corrected version.
+                </div>
+            }
         </MessageTemplate>
     </CitusAlert>
 }
@@ -339,6 +353,15 @@
     [SupplyParameterFromQuery(Name = "from")]
     public Guid? FromJournalEntryId { get; set; }
 
+    /// <summary>
+    /// Copy A3 Phase 2: optional ?copyFrom={journalEntryId} query param.
+    /// Distinct from ?from= — the source is NOT voided, the form is just
+    /// pre-filled with the source's lines and the new entry is fully
+    /// independent. Drives the "This is a copy" banner wording variant.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "copyFrom")]
+    public Guid? CopyFromJournalEntryId { get; set; }
+
     private DateTime? _date = DateTime.Today;
     private string _description = string.Empty;
     private string _journalNumber = string.Empty;
@@ -350,8 +373,16 @@
     private string? _validationMessage;
     private WriteFlowResult? _lastResult;
     /// <summary>Display number of the source JE when this form was opened
-    /// via Edit ("from=..." in the URL). Drives the info banner at the top.</summary>
+    /// via Edit ("from=..." in the URL) OR via Copy ("copyFrom=" in the URL).
+    /// Drives the info banner at the top — see also _isFromCopy.</summary>
     private string? _prefilledFromDisplayNumber;
+    /// <summary>
+    /// Copy A3 Phase 2: true when prefill came from the ?copyFrom= path
+    /// (NOT the legacy ?from= edit-after-void path). Disambiguates the
+    /// banner wording — "copy" means source is unchanged; "edit" means
+    /// source was just voided.
+    /// </summary>
+    private bool _isFromCopy;
 
     private decimal _totalDebit => _lines.Sum(l => l.Debit);
     private decimal _totalCredit => _lines.Sum(l => l.Credit);
@@ -366,9 +397,20 @@
         // form with its lines so the operator only edits the cells that
         // actually need correcting. Date stays today (we're recording a
         // correction now, not back-dating).
-        if (FromJournalEntryId is { } fromId && fromId != Guid.Empty)
+        //
+        // Copy A3 Phase 2: ?copyFrom= is a parallel path. Same hydration
+        // logic, different semantics (source unchanged) and different
+        // banner wording. We accept either param; copyFrom takes
+        // precedence if both happen to be present (which shouldn't
+        // happen in practice).
+        var prefillSourceId = CopyFromJournalEntryId is { } copyId && copyId != Guid.Empty
+            ? copyId
+            : (FromJournalEntryId is { } fromId && fromId != Guid.Empty ? fromId : (Guid?)null);
+        _isFromCopy = prefillSourceId == CopyFromJournalEntryId && CopyFromJournalEntryId is not null;
+
+        if (prefillSourceId is { } sourceId)
         {
-            var source = await JournalEntryReviewClient.GetAsync(ShellState.ActiveCompany.Id, fromId);
+            var source = await JournalEntryReviewClient.GetAsync(ShellState.ActiveCompany.Id, sourceId);
             if (source is not null && source.Lines.Count > 0)
             {
                 _prefilledFromDisplayNumber = source.DisplayNumber;

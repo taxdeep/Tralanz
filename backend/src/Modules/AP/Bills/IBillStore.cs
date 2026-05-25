@@ -156,7 +156,11 @@ public sealed record BillUpsertInput(
     // When non-null, UpdateAsync's UPDATE narrows on updated_at; a
     // mismatch raises ConcurrencyConflictException so the route can
     // surface 409. Null = legacy opt-out behaviour preserved.
-    DateTimeOffset? ExpectedUpdatedAt = null);
+    DateTimeOffset? ExpectedUpdatedAt = null,
+    // Copy A3 Phase 2: source bill id. When non-null, CreateAsync
+    // also writes a `bill_copied` audit_logs row inside the same tx.
+    // No FK on the bills row itself — the audit row is the only link.
+    Guid? CopiedFromBillId = null);
 
 public sealed record BillLineInput(
     int LineNumber,

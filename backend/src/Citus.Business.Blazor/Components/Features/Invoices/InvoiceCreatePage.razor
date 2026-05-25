@@ -12,6 +12,7 @@
 @inject TaxCodeClient TaxCodeClient
 @inject SalesOrderClient SalesOrderClient
 @inject TaskClient TaskClient
+@inject InvoiceClient InvoiceClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -29,6 +30,14 @@
 @if (ShellState.AreWritesBlocked)
 {
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (_isFromCopy)
+{
+    @* Copy A3 Phase 2: prefilled from another invoice. The source is
+       untouched; this is a fresh draft the operator can revise. *@
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Review the lines and revise as needed; the original invoice is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -261,6 +270,16 @@
     /// </summary>
     [SupplyParameterFromQuery] public Guid? FromTaskId { get; set; }
 
+    /// <summary>
+    /// Copy A3 Phase 2: source invoice id passed via query string. Set
+    /// by InvoiceDetailPage's More → Copy. The create page hydrates
+    /// the form with the source's customer / currency / lines / memo,
+    /// resets the dates to today (+30), and shows a "This is a copy"
+    /// banner. The new invoice is fully independent of the source —
+    /// no FK back, no JE link.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromInvoiceId { get; set; }
+
     private PageHeaderModel _header = new()
     {
         Eyebrow = "Sales & Get Paid",
@@ -326,6 +345,9 @@
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+    // Copy A3 Phase 2: drives the "This is a copy" banner. Set true
+    // by TryHydrateFromCopySourceAsync when ?copyFrom={id} succeeds.
+    private bool _isFromCopy;
 
     // Item + account caches let the Item picker auto-fill each line's revenue
     // account without a per-pick round-trip. Loaded once on page init; stale
@@ -351,6 +373,96 @@
         {
             await PrefillFromTaskAsync(taskId);
         }
+        else if (CopyFromInvoiceId is { } copyId && copyId != Guid.Empty)
+        {
+            await PrefillFromCopySourceAsync(copyId);
+        }
+    }
+
+    /// <summary>
+    /// Copy A3 Phase 2: pre-fills the form from an existing invoice
+    /// (called via the More → Copy flow on InvoiceDetailPage). The
+    /// new invoice is fully independent of the source — there's no
+    /// FK link and no JE provenance. Defaults that intentionally
+    /// differ from a verbatim copy:
+    ///   - Document date  → today
+    ///   - Due date       → today + 30 days (reset; carrying the
+    ///                      source's due date would yield a date
+    ///                      already in the past for stale invoices)
+    ///   - FX rate        → null (re-resolved for today)
+    ///   - Customer PO #  → blank (PO #s are per-occurrence)
+    ///   - Sales Order    → not carried (we're not refulfilling an SO)
+    ///   - Memo           → copied (describes the deliverable)
+    ///   - Lines          → copied (item/account/qty/unit price/tax)
+    ///   - Task back-link → NOT copied (source task may already be
+    ///                      Billed/Closed; a new bill needs an
+    ///                      explicit operator decision on attribution)
+    /// </summary>
+    private async Task PrefillFromCopySourceAsync(Guid sourceInvoiceId)
+    {
+        InvoiceRecordDto? source;
+        try
+        {
+            source = await InvoiceClient.GetByIdAsync(sourceInvoiceId, ShellState.ActiveCompany.Id);
+        }
+        catch
+        {
+            return;
+        }
+        if (source is null)
+        {
+            _validation = "The invoice you copied from is not visible in this company. The form is blank.";
+            return;
+        }
+
+        var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
+        _isFromCopy = true;
+        _customerId = source.CustomerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = source.TransactionCurrencyCode;
+        _documentDate = DateTime.Today;
+        _dueDate = DateTime.Today.AddDays(30);
+        _fxRate = null;
+        _memo = source.Memo ?? string.Empty;
+        _customerPoNumber = string.Empty;
+        _salesOrderId = null;
+        _salesOrderNumber = null;
+
+        // Note: InvoiceLineDto exposes only the resolved TaxAmount, not
+        // the source tax-code id, so we can't carry per-line tax codes
+        // across a copy without widening the read DTO. For Phase 2 we
+        // accept that tradeoff — operator re-picks tax on the new
+        // invoice (which is anyway sensible: rates may have changed
+        // since the original).
+        _lines.Clear();
+        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+        {
+            var accountDisplay = line.RevenueAccountId is { } rid && _accountsById.TryGetValue(rid, out var acct)
+                ? $"{acct.Code}  {acct.Name}"
+                : string.Empty;
+            var accountCode = line.RevenueAccountId is { } rid2 && _accountsById.TryGetValue(rid2, out var acct2)
+                ? acct2.Code
+                : string.Empty;
+            _lines.Add(new InvoiceLineEditState(
+                ItemId: Guid.Empty,
+                ItemDisplay: string.Empty,
+                Description: line.Description ?? string.Empty,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                AccountId: line.RevenueAccountId,
+                AccountDisplay: accountDisplay,
+                AccountCode: accountCode,
+                TaxCodeId: null,   // see comment above
+                TaxCode: string.Empty,
+                TaskId: null));    // Task back-link NOT copied — see doc
+        }
+        if (_lines.Count == 0) _lines.Add(new InvoiceLineEditState());
+
+        _header = _header with
+        {
+            Title = "New invoice (copy)",
+            Subtitle = $"Pre-filled from {source.DisplayNumber}. The original invoice is unchanged."
+        };
     }
 
     /// <summary>

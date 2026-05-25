@@ -244,7 +244,11 @@ public sealed record BillUpsertPayload(
     // updated_at when GET-loading, then round-trip it on save. The
     // API rejects with HTTP 409 if the row's updated_at has moved
     // since — see BillMutationOutcome.IsConcurrencyConflict.
-    DateTimeOffset? ExpectedUpdatedAt = null);
+    DateTimeOffset? ExpectedUpdatedAt = null,
+    // Copy A3 Phase 2: when set, the form was prefilled from an
+    // existing bill via More → Copy. Server writes a bill_copied
+    // audit_logs row.
+    Guid? CopiedFromBillId = null);
 
 public sealed record BillLinePayload(
     int LineNumber,

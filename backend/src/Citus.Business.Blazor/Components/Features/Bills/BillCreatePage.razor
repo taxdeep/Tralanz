@@ -3,6 +3,7 @@
 
 @using Radzen
 @using Radzen.Blazor
+@using Microsoft.AspNetCore.WebUtilities
 @using Citus.Modules.UnitySearch.Blazor
 @using Citus.Modules.UnitySearch.Domain.Shared
 
@@ -41,6 +42,14 @@
 @if (ShellState.AreWritesBlocked)
 {
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (_copiedFromBillId is not null)
+{
+    @* Copy A3 Phase 2: prefilled from another bill. The source is
+       untouched; this is a fresh draft the operator can revise. *@
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Enter the new supplier invoice number and revise as needed; the original bill is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -320,6 +329,12 @@ else
     // back to the server on the next save so the API can reject
     // stale writes with HTTP 409.
     private DateTimeOffset? _expectedUpdatedAt;
+    // Copy A3 Phase 2: source bill id when this page was reached
+    // via the More → Copy flow from a detail page. Drives the
+    // "This is a copy" banner + is sent to the server on Save so the
+    // bill_copied audit_log row records the provenance. Only set in
+    // the /bills/new route — the /bills/{id}/edit route ignores it.
+    private Guid? _copiedFromBillId;
     private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "New bill", Subtitle = "Record a vendor invoice." };
 
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.LineAmount, 6));
@@ -340,6 +355,85 @@ else
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
         await LoadAsync();
+        // Copy A3 Phase 2: handle ?copyFrom={id} after dropdowns/lookups
+        // are loaded so the hydrated vendor / account ids resolve to
+        // valid options. Only fires when BillId is null (the
+        // /bills/new route); the /bills/{id}/edit route ignores
+        // copyFrom because the edit ID takes precedence.
+        if (BillId is null)
+        {
+            await TryHydrateFromCopySourceAsync();
+        }
+    }
+
+    /// <summary>
+    /// When the URL has ?copyFrom={guid}, fetch that bill and populate
+    /// the form. Sensible defaults that differ from a straight copy:
+    ///   - BillNumber    →  blanked (each supplier bill has a unique
+    ///                      vendor-issued #; reusing it would create
+    ///                      duplicate-bill ambiguity for the AP team)
+    ///   - BillDate      →  today (a copy is a new bill received today)
+    ///   - DueDate       →  recomputed from today + payment term
+    ///                      (carrying forward the source's due date
+    ///                      yields a date already in the past)
+    ///   - FxRate        →  null (FxRateInline re-resolves for today)
+    ///   - SourcePO link →  blanked (the new copy doesn't inherit
+    ///                      provenance — that would corrupt the source
+    ///                      PO's "fulfilled by" trail)
+    ///   - Memo          →  copied (describes the bill itself)
+    ///   - Lines         →  copied (account, description, amount,
+    ///                      tax). Task back-links are NOT copied since
+    ///                      the source task may be closed.
+    /// </summary>
+    private async Task TryHydrateFromCopySourceAsync()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (!query.TryGetValue("copyFrom", out var raw) ||
+            !Guid.TryParse(raw.ToString(), out var sourceId))
+        {
+            return;
+        }
+
+        BillRecordDto? source;
+        try
+        {
+            source = await BillClient.GetByIdAsync(sourceId);
+        }
+        catch
+        {
+            return;
+        }
+        if (source is null)
+        {
+            _validation = "The bill you copied from is not visible in this company. The form is blank.";
+            return;
+        }
+
+        _copiedFromBillId = source.Id;
+        _vendorId = source.VendorId;
+        _paymentTermId = source.PaymentTermId;
+        _sourcePurchaseOrderId = null;       // see XML doc above
+        _sourcePurchaseOrderNumber = null;
+        _billNumber = string.Empty;           // see XML doc above
+        _billDate = DateTime.Today;
+        _dueDate = null;                      // RecomputeDueDate below
+        _currency = source.DocumentCurrencyCode;
+        _fxRate = null;                       // FxRateInline re-resolves
+        _memo = source.Memo ?? string.Empty;
+        _lines = source.Lines.Select(l => new LineDraft
+        {
+            ExpenseAccountId = l.ExpenseAccountId,
+            Description = l.Description,
+            LineAmount = l.LineAmount,
+            TaxCodeId = l.TaxCodeId,
+            TaxAmount = l.TaxAmount,
+            // Task back-link NOT copied — source task may be closed.
+            TaskId = null,
+            TaskDisplay = string.Empty
+        }).ToList();
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+        RecomputeDueDate();
     }
 
     protected override async Task OnParametersSetAsync()
@@ -579,7 +673,11 @@ else
                         TaxAmount: l.TaxAmount,
                         TaskId: l.TaskId))
                     .ToArray(),
-                ExpectedUpdatedAt: _billId is null ? null : _expectedUpdatedAt);
+                ExpectedUpdatedAt: _billId is null ? null : _expectedUpdatedAt,
+                // Copy A3 Phase 2: server writes bill_copied audit_log.
+                // Only sent on CREATE (the field is ignored on UPDATE
+                // path anyway since the bill already exists).
+                CopiedFromBillId: _copiedFromBillId);
 
             BillMutationOutcome outcome = _billId is null
                 ? await BillClient.CreateAsync(payload)

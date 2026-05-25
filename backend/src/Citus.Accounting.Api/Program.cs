@@ -7856,7 +7856,10 @@ static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
                 TaxAmount: l.TaxAmount ?? 0m,
                 TaskId: l.TaskId))
             .ToArray(),
-        ExpectedUpdatedAt: request.ExpectedUpdatedAt);
+        ExpectedUpdatedAt: request.ExpectedUpdatedAt,
+        // Copy A3 Phase 2: thread the source bill id through so the
+        // store writes the bill_copied audit_log row.
+        CopiedFromBillId: request.CopiedFromBillId);
 
 // ===========================================================================
 // Purchase Orders (AP-side, /ap/purchase-orders) — pre-bill commitments.
