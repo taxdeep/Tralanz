@@ -109,13 +109,29 @@
                 <label class="text-xs font-medium block mb-1">Type</label>
                 <select class="citus-account-picker__create-input"
                         value="@_newRootType"
-                        @onchange="@(e => _newRootType = e.Value?.ToString() ?? "expense")">
+                        @onchange="OnNewRootTypeChanged">
                     <option value="asset">Asset</option>
                     <option value="liability">Liability</option>
                     <option value="equity">Equity</option>
                     <option value="revenue">Revenue</option>
                     <option value="cost_of_sales">Cost of Sales</option>
                     <option value="expense">Expense</option>
+                </select>
+            </div>
+            @* Batch B: Detail type — same catalog as ChartOfAccountsPage's
+               full form (AccountDetailTypeCatalog). Filtered by the
+               selected Root type; resets when Root type changes so a
+               stale child-of-different-root doesn't leak through. *@
+            <div class="citus-account-picker__create-row">
+                <label class="text-xs font-medium block mb-1">Detail type (optional)</label>
+                <select class="citus-account-picker__create-input"
+                        value="@_newDetailType"
+                        @onchange="@(e => _newDetailType = e.Value?.ToString() ?? string.Empty)">
+                    <option value="">—</option>
+                    @foreach (var detail in AccountDetailTypeCatalog.OptionsFor(_newRootType))
+                    {
+                        <option value="@detail.Value">@detail.Label</option>
+                    }
                 </select>
             </div>
             <div class="citus-account-picker__create-actions">
@@ -179,7 +195,18 @@
     private string _newCode = string.Empty;
     private string _newName = string.Empty;
     private string _newRootType = "expense";
+    // Batch B: detail type captured from the new field (default empty).
+    private string _newDetailType = string.Empty;
     private string? _createError;
+
+    private void OnNewRootTypeChanged(ChangeEventArgs args)
+    {
+        _newRootType = args.Value?.ToString() ?? "expense";
+        // A stored detail type from a previous root selection no longer
+        // applies (e.g. "asset/cash" doesn't make sense once the user
+        // flips to expense). Same reset logic as ChartOfAccountsPage.
+        _newDetailType = string.Empty;
+    }
 
     private bool CanCreate => !Disabled && !_creating;
 
@@ -472,6 +499,7 @@
             _newName = typed;
         }
         _newRootType = "expense";
+        _newDetailType = string.Empty;
         _createError = null;
         _creating = true;
         _showResults = false;
@@ -499,7 +527,9 @@
                 Code: _newCode.Trim(),
                 Name: _newName.Trim(),
                 RootType: _newRootType,
-                DetailType: null,
+                // Batch B: send the picked Detail type when set;
+                // null still means "operator left it blank".
+                DetailType: string.IsNullOrWhiteSpace(_newDetailType) ? null : _newDetailType,
                 CurrencyCode: DefaultCurrencyCode,
                 AllowManualPosting: true,
                 IsActive: true);
