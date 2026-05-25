@@ -18,6 +18,19 @@ public sealed class BusinessSessionHeaderHandler(CircuitServicesAccessor accesso
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Snapshot any manually-attached session token BEFORE removing the
+        // header. Some callers (BusinessAuthenticationClient.ResumeSessionAsync,
+        // SignOutAsync) attach the token themselves because they run before
+        // ShellState has been hydrated (fresh circuit on page refresh) — the
+        // token came from a cookie / sessionStorage, not from ShellState.
+        // Without this snapshot, the Remove() below would drop it and the
+        // re-add path (which keys off ShellState) leaves the request with
+        // no token at all → server returns 401 → user appears logged out on
+        // every refresh. Discovered post-PR #94, fixed here.
+        var fallbackToken = request.Headers.TryGetValues(BusinessAuthHeaderNames.SessionToken, out var existingTokens)
+            ? existingTokens.FirstOrDefault()
+            : null;
+
         request.Headers.Remove(BusinessSessionHeaderNames.UserId);
         request.Headers.Remove(BusinessSessionHeaderNames.ActiveCompanyId);
         request.Headers.Remove(BusinessSessionHeaderNames.LegacyUserId);
@@ -28,16 +41,21 @@ public sealed class BusinessSessionHeaderHandler(CircuitServicesAccessor accesso
         // Pull ShellState from the circuit's IServiceProvider, not our own.
         // Bootstrap-time calls (before any circuit is active, e.g. during
         // pre-render or before MainLayout's resume completes) fall back to
-        // empty headers; the receiving endpoints already 401/403 on missing
-        // session, and the caller's catch handlers degrade gracefully.
+        // the snapshotted token above when available; the receiving endpoints
+        // already 401/403 on missing session, and the caller's catch handlers
+        // degrade gracefully.
         var shellState = accessor.Services?.GetService<BusinessShellState>();
+        var effectiveToken = !string.IsNullOrWhiteSpace(shellState?.SessionToken)
+            ? shellState!.SessionToken
+            : fallbackToken;
+
+        if (!string.IsNullOrWhiteSpace(effectiveToken))
+        {
+            request.Headers.Add(BusinessAuthHeaderNames.SessionToken, effectiveToken);
+        }
+
         if (shellState is not null)
         {
-            if (!string.IsNullOrWhiteSpace(shellState.SessionToken))
-            {
-                request.Headers.Add(BusinessAuthHeaderNames.SessionToken, shellState.SessionToken);
-            }
-
             request.Headers.Add(BusinessSessionHeaderNames.UserId, shellState.CurrentUserId.ToString());
             request.Headers.Add(BusinessSessionHeaderNames.ActiveCompanyId, shellState.ActiveCompany.Id.ToString());
         }
