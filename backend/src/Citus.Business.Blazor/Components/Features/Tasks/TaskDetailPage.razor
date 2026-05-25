@@ -150,7 +150,8 @@ else
                             <td>@line.LineNo</td>
                             <td>@(line.ItemId.ToString("D")[..8])…</td>
                             <td>@(line.Description ?? "—")</td>
-                            <td class="text-right">@line.Quantity</td>
+                            @* Qty is an integer on Task lines per operator rule. *@
+                            <td class="text-right">@line.Quantity.ToString("0")</td>
                             <td class="text-right">@($"{line.UnitPrice:N2}")</td>
                             <td class="text-right">@($"{line.LineAmount:N2}")</td>
                             <td class="text-right">
