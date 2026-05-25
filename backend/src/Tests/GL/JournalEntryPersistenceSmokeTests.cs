@@ -179,20 +179,35 @@ public sealed class JournalEntryPersistenceSmokeTests
                     new AccountingJournalEntryDraftLine(1, Guid.NewGuid(), "Closed period debit", 100m, 0m, 100m, 0m),
                     new AccountingJournalEntryDraftLine(2, Guid.NewGuid(), "Closed period credit", 0m, 100m, 0m, 100m)
                 ]);
+            // X-5: PostgresJournalEntryWriter now refuses to run without an
+            // ambient DB transaction (H-2 / PR-H3 atomicity guard at lines
+            // 45-51 of PostgresJournalEntryWriter.cs). Every production
+            // entry point routes through IUnitOfWork.ExecuteAsync; this
+            // test was the lone caller still invoking WriteAsync bare,
+            // which trips the transaction-required guard before it can
+            // reach the closed-period guard we are actually trying to
+            // verify. Wrap in PostgresUnitOfWork.ExecuteAsync so the
+            // "locked" InvalidOperationException is reachable again.
+            var executionContextAccessor = new PostgresExecutionContextAccessor();
+            var unitOfWork = new PostgresUnitOfWork(
+                accountingConnectionFactory,
+                executionContextAccessor);
             var writer = new PostgresJournalEntryWriter(
                 accountingConnectionFactory,
-                new PostgresExecutionContextAccessor());
+                executionContextAccessor);
 
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                writer.WriteAsync(
-                    draft,
-                    new PostingContext(
-                        CompanyId.Parse(companyId.ToString()),
-                        UserId.FromOrdinal(1),
-                        usd,
-                        null,
-                        $"closed-period:{sourceId:N}",
-                        new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero)),
+                unitOfWork.ExecuteAsync(
+                    ct => writer.WriteAsync(
+                        draft,
+                        new PostingContext(
+                            CompanyId.Parse(companyId.ToString()),
+                            UserId.FromOrdinal(1),
+                            usd,
+                            null,
+                            $"closed-period:{sourceId:N}",
+                            new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero)),
+                        ct),
                     CancellationToken.None));
 
             Assert.Contains("locked", exception.Message, StringComparison.OrdinalIgnoreCase);
