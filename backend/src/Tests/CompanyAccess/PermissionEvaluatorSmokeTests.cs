@@ -219,12 +219,12 @@ public sealed class PermissionEvaluatorSmokeTests
               (@inactive_id, @inactive_email, 'user.inact.eval','hashed-password', 'active');
 
             insert into company_memberships (
-              id, company_id, user_id, role, permissions, is_active, is_owner, status
+              id, company_id, user_id, role, permissions, is_active, is_owner
             ) values
-              (gen_random_uuid(), @company_id, @owner_id,    'owner', '[]'::jsonb, true,  true,  'active'),
-              (gen_random_uuid(), @company_id, @user_a_id,   'user',  '[]'::jsonb, true,  false, 'active'),
-              (gen_random_uuid(), @company_id, @user_b_id,   'user',  '[]'::jsonb, true,  false, 'active'),
-              (gen_random_uuid(), @company_id, @inactive_id, 'user',  '[]'::jsonb, false, false, 'inactive');
+              (gen_random_uuid(), @company_id, @owner_id,    'owner', '[]'::jsonb, true,  true),
+              (gen_random_uuid(), @company_id, @user_a_id,   'user',  '[]'::jsonb, true,  false),
+              (gen_random_uuid(), @company_id, @user_b_id,   'user',  '[]'::jsonb, true,  false),
+              (gen_random_uuid(), @company_id, @inactive_id, 'user',  '[]'::jsonb, false, false);
 
             -- User A is granted business permission ap.bill.view, AND
             -- grant authority for the same token. Two orthogonal rows

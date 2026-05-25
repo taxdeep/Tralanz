@@ -26,4 +26,10 @@
     <ProjectReference Include="..\..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
   </ItemGroup>
 
+  <!-- X-3: file-linked shared schema sync helper (no module-init
+       auto-fire; dev runs Tools/SyncTestDb manually). See README. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\TestDbSchemaSync.cs" Link="Shared\TestDbSchemaSync.cs" />
+  </ItemGroup>
+
 </Project>

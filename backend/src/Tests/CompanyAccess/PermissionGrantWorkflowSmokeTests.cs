@@ -219,11 +219,11 @@ public sealed class PermissionGrantWorkflowSmokeTests
               (@user_b_id, @user_b_email, 'user.b.grant', 'hashed', 'active');
 
             insert into company_memberships (
-              id, company_id, user_id, role, permissions, is_active, is_owner, status
+              id, company_id, user_id, role, permissions, is_active, is_owner
             ) values
-              (gen_random_uuid(), @company_id, @owner_id,  'owner', '[]'::jsonb, true, true,  'active'),
-              (gen_random_uuid(), @company_id, @user_a_id, 'user',  '[]'::jsonb, true, false, 'active'),
-              (gen_random_uuid(), @company_id, @user_b_id, 'user',  '[]'::jsonb, true, false, 'active');
+              (gen_random_uuid(), @company_id, @owner_id,  'owner', '[]'::jsonb, true, true),
+              (gen_random_uuid(), @company_id, @user_a_id, 'user',  '[]'::jsonb, true, false),
+              (gen_random_uuid(), @company_id, @user_b_id, 'user',  '[]'::jsonb, true, false);
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", BuildEntityNumber());

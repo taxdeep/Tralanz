@@ -24,4 +24,13 @@
     <ProjectReference Include="..\..\SharedKernel\SharedKernel.csproj" />
   </ItemGroup>
 
+  <!-- X-3: file-linked shared schema sync. Drives deploy/migrations
+       against the local citus_accounting DB once per test process so
+       the suite stays current with production migrations.
+       NOTE: ModuleInitializer link temporarily disabled while
+       investigating testhost crash; helper still available. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\TestDbSchemaSync.cs" Link="Shared\TestDbSchemaSync.cs" />
+  </ItemGroup>
+
 </Project>

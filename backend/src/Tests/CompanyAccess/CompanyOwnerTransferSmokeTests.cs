@@ -237,12 +237,12 @@ public sealed class CompanyOwnerTransferSmokeTests
               (@inactive_id, @inactive_email, 'user.x.transfer', 'hashed', 'active');
 
             insert into company_memberships (
-              id, company_id, user_id, role, permissions, is_active, is_owner, status
+              id, company_id, user_id, role, permissions, is_active, is_owner
             ) values
-              (@owner_membership_id,    @company_id, @owner_id,    'owner', '[]'::jsonb, true,  true,  'active'),
-              (@user_a_membership_id,   @company_id, @user_a_id,   'user',  '[]'::jsonb, true,  false, 'active'),
-              (@user_b_membership_id,   @company_id, @user_b_id,   'user',  '[]'::jsonb, true,  false, 'active'),
-              (@inactive_membership_id, @company_id, @inactive_id, 'user',  '[]'::jsonb, false, false, 'inactive');
+              (@owner_membership_id,    @company_id, @owner_id,    'owner', '[]'::jsonb, true,  true),
+              (@user_a_membership_id,   @company_id, @user_a_id,   'user',  '[]'::jsonb, true,  false),
+              (@user_b_membership_id,   @company_id, @user_b_id,   'user',  '[]'::jsonb, true,  false),
+              (@inactive_membership_id, @company_id, @inactive_id, 'user',  '[]'::jsonb, false, false);
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("entity_number", BuildEntityNumber());
