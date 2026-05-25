@@ -62,6 +62,19 @@
                        disabled="@_isSubmitting" />
             </label>
 
+            @* Remember-email opt-in. Defaults checked when an email is
+               already remembered (operator previously opted in); defaults
+               unchecked for a first-time visitor so we don't presume to
+               persist anything. Only the email is stored — never the
+               password. Backed by localStorage on the operator's device. *@
+            <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                       checked="@_rememberEmail"
+                       @onchange="OnRememberEmailChanged"
+                       disabled="@_isSubmitting" />
+                <span>Remember email on this device</span>
+            </label>
+
             <CitusButton Variant="CitusButtonVariant.Primary"
                          Size="CitusButtonSize.Large"
                          Block="true"
@@ -87,12 +100,32 @@
     private string _email = string.Empty;
     private string _password = string.Empty;
     private bool _isSubmitting;
+    // Remember-email checkbox state. Hydrated from localStorage on the
+    // first interactive render: if there's a remembered email we default
+    // the checkbox to ON and prefill the field; otherwise OFF so a
+    // first-time visit doesn't presume to persist anything.
+    private bool _rememberEmail;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var saved = await JS.InvokeAsync<string>("citusBusinessAuth.getRememberedEmail");
+        if (!string.IsNullOrWhiteSpace(saved))
+        {
+            _email = saved;
+            _rememberEmail = true;
+            StateHasChanged();
+        }
+    }
 
     private void OnEmailChanged(ChangeEventArgs args) =>
         _email = args.Value?.ToString() ?? string.Empty;
 
     private void OnPasswordChanged(ChangeEventArgs args) =>
         _password = args.Value?.ToString() ?? string.Empty;
+
+    private void OnRememberEmailChanged(ChangeEventArgs args) =>
+        _rememberEmail = args.Value is bool b && b;
 
     private async Task SignInAsync()
     {
@@ -122,6 +155,13 @@
 
             ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session);
             await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", response.SessionToken);
+
+            // Persist the email if the operator opted in; otherwise clear
+            // any previously-saved value (so unchecking the box on a
+            // shared device actually removes it).
+            await JS.InvokeVoidAsync(
+                "citusBusinessAuth.setRememberedEmail",
+                _rememberEmail ? _email.Trim() : string.Empty);
 
             // Merge any persisted display-name override so the user sees
             // their preferred name on the first dashboard render.
