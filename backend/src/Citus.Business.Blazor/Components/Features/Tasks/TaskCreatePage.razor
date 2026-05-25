@@ -1,0 +1,401 @@
+@page "/tasks/new"
+
+@using Citus.Modules.Tasks.Application.Contracts
+@using Citus.Modules.Tasks.Domain.Shared
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+@using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
+
+@inject BusinessShellState ShellState
+@inject TaskClient TaskClient
+@inject ItemClient ItemClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+@*
+    New Task — full-page form (replaces the narrow drawer on TasksPage).
+
+    The drawer-only flow (header → Create → Detail page to add lines) was
+    awkward for the most common case where the operator already knows
+    which services were delivered. This page captures header + lines in
+    a single round-trip so a task lands in the list complete.
+
+    Lines pick from the Inventory item catalogue (SalesItemServicePicker
+    surfaces both Service-kind items and stock items; the user-facing
+    label is "Item / Service" so either fits naturally). Tax codes are
+    intentionally NOT on Task lines — Task is a "what work was done"
+    record; tax is an invoice-time concern picked at Convert-to-Invoice.
+    The DB column task_lines.tax_code_id stays nullable for that future
+    flow, this form just never writes it.
+*@
+
+<PageTitle>New task | Tralanz Books</PageTitle>
+
+@if (!ShellState.IsModuleEnabled("task"))
+{
+    @* Belt-and-suspenders: nav hides the section already, but a direct
+       URL hit would otherwise show an empty form. *@
+    <CitusPageHeader Model="_disabledHeader" />
+    <CitusEmptyState
+        Icon="IconName.Puzzle"
+        Title="Task module is not enabled"
+        Message="Ask your platform administrator to enable the Task module for this company in SysAdmin → Companies → Features."
+        ActionLabel="Back to dashboard"
+        ActionHref="dashboard" />
+}
+else if (!CanCreate)
+{
+    <CitusPageHeader Model="_header" />
+    <CitusEmptyState
+        Icon="IconName.ShieldLock"
+        Title="Not allowed"
+        Message="You don't have the task.create permission. Ask an administrator to grant it."
+        ActionLabel="Back to tasks"
+        ActionHref="tasks" />
+}
+else
+{
+    <CitusPageHeader Model="_header">
+        <Actions>
+            <a class="citus-button citus-button--ghost" href="tasks">
+                <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+                <span>Back to tasks</span>
+            </a>
+        </Actions>
+    </CitusPageHeader>
+
+    @if (ShellState.AreWritesBlocked)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    }
+
+    @if (_isLoading)
+    {
+        <CitusSkeleton Variant="SkeletonVariant.Form" />
+    }
+    else
+    {
+        <section class="citus-panel mb-6">
+            <h2 class="citus-panel__title">Header</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Title</label>
+                    <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Currency</label>
+                    <CitusInput TValue="string" @bind-Value="_currency" Placeholder="@ShellState.ActiveCompany.BaseCurrencyCode" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Service date</label>
+                    <input type="date" class="citus-form-field__input" @bind="_serviceDate" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Description (optional)</label>
+                    <CitusInput TValue="string" @bind-Value="_description" Placeholder="Optional" />
+                </div>
+            </div>
+        </section>
+
+        <section class="citus-panel mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="citus-panel__title m-0">Items</h2>
+                <span class="text-fg-subtle text-xs">
+                    Pick a Service or Product line. Tax is handled when this task is converted to an invoice.
+                </span>
+            </div>
+
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 3rem">#</th>
+                        <th style="width: 18rem">Item / Service</th>
+                        <th>Description</th>
+                        <th class="text-right" style="width: 6rem">Qty</th>
+                        <th class="text-right" style="width: 9rem">Unit price</th>
+                        <th class="text-right" style="width: 10rem">Amount</th>
+                        <th style="width: 3rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < _lines.Count; i++)
+                    {
+                        var index = i;
+                        var line = _lines[index];
+                        <tr>
+                            <td>@(index + 1)</td>
+                            <td>
+                                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                                   Context="@SearchScopeContext.SalesItemServicePicker"
+                                                   Placeholder="Pick an item or service…"
+                                                   Take="6"
+                                                   SourceRoute="/tasks/new"
+                                                   SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                                   SelectedDisplayText="@line.ItemDisplay"
+                                                   OnItemSelected="@(option => OnItemPicked(index, option))"
+                                                   OnCleared="@(() => OnItemCleared(index))" />
+                            </td>
+                            <td>
+                                <CitusInput TValue="string"
+                                            Value="@line.Description"
+                                            ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
+                            </td>
+                            <td>
+                                <input type="number" step="0.01" min="0"
+                                       class="citus-form-field__input text-right"
+                                       value="@line.Quantity"
+                                       @onchange="@(e => UpdateLine(index, l => l with { Quantity = ParseDecimal(e.Value, l.Quantity) }))" />
+                            </td>
+                            <td>
+                                <input type="number" step="0.01" min="0"
+                                       class="citus-form-field__input text-right"
+                                       value="@(line.UnitPrice?.ToString("0.##") ?? string.Empty)"
+                                       placeholder="Auto"
+                                       @onchange="@(e => UpdateLine(index, l => l with { UnitPrice = ParseNullableDecimal(e.Value) }))" />
+                            </td>
+                            <td class="text-right">@line.LineAmount.ToString("N2") @_currency</td>
+                            <td>
+                                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                             OnClick="@(() => RemoveLine(index))">×</CitusButton>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="5" class="text-right font-medium">Subtotal</td>
+                        <td class="text-right font-medium">@Subtotal.ToString("N2") @_currency</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <div class="flex gap-2 mt-3">
+                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
+                @if (_lines.Count > 1)
+                {
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                }
+            </div>
+        </section>
+
+        <div class="flex justify-end gap-2">
+            <CitusButton Variant="CitusButtonVariant.Default" Disabled="_isSaving" OnClick="OnCancelAsync">Cancel</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="OnCreateAsync">
+                @(_isSaving ? "Creating…" : "Create")
+            </CitusButton>
+        </div>
+    }
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "New task",
+        Subtitle = "Capture billable work with one or more service / item lines."
+    };
+
+    private readonly PageHeaderModel _disabledHeader = new()
+    {
+        Eyebrow = "Operations",
+        Title = "New task",
+        Subtitle = "The Task module is not enabled for this company."
+    };
+
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private string? _validation;
+
+    private string? _title;
+    private string? _description;
+    private string _currency = string.Empty;
+    private DateOnly _serviceDate = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    // Item lookup powers the Item-pick → unit-price / description auto-fill.
+    // Loaded once on init; the picker still hits the search index server-
+    // side, this dict only resolves SourceId → ItemSummary on pick.
+    private Dictionary<Guid, ItemSummary> _itemsById = new();
+
+    private List<LineDraft> _lines = new() { new LineDraft() };
+
+    private bool CanCreate => ShellState.User.Roles.Contains("task.create", StringComparer.Ordinal);
+
+    private decimal Subtotal => _lines.Sum(l => l.LineAmount);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode ?? "USD";
+        await LoadItemsAsync();
+        _isLoading = false;
+    }
+
+    private async Task LoadItemsAsync()
+    {
+        try
+        {
+            var items = await ItemClient.ListAsync(includeInactive: false);
+            _itemsById = items.ToDictionary(i => i.Id);
+        }
+        catch
+        {
+            // Picker can still search; we just lose the auto-fill nicety.
+            _itemsById = new();
+        }
+    }
+
+    private void OnItemPicked(int index, UnitySearchPickerOption option)
+    {
+        // Auto-fill description (if blank) and unit price (from the
+        // item's DefaultSalesPrice). The user can still override either
+        // — the server's IItemPriceResolver runs on the final POST when
+        // UnitPrice is null, so leaving the field blank also works.
+        decimal? unitPrice = null;
+        string defaultDescription = option.PrimaryText;
+        if (_itemsById.TryGetValue(option.SourceId, out var item))
+        {
+            unitPrice = item.DefaultSalesPrice;
+            if (!string.IsNullOrWhiteSpace(item.Description))
+            {
+                defaultDescription = item.Description!;
+            }
+        }
+        UpdateLine(index, l => l with
+        {
+            ItemId = option.SourceId,
+            ItemDisplay = option.DisplayText,
+            UnitPrice = l.UnitPrice ?? unitPrice,
+            Description = string.IsNullOrWhiteSpace(l.Description) ? defaultDescription : l.Description,
+        });
+    }
+
+    private void OnItemCleared(int index)
+    {
+        UpdateLine(index, l => l with
+        {
+            ItemId = Guid.Empty,
+            ItemDisplay = string.Empty,
+        });
+    }
+
+    private void UpdateLine(int index, Func<LineDraft, LineDraft> mutate)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        _lines[index] = mutate(_lines[index]);
+    }
+
+    private void AddLine() => _lines.Add(new LineDraft());
+
+    private void RemoveLine(int index)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        _lines.RemoveAt(index);
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void ClearLines()
+    {
+        _lines.Clear();
+        _lines.Add(new LineDraft());
+    }
+
+    private void OnCancelAsync() => Navigation.NavigateTo("tasks");
+
+    private async Task OnCreateAsync()
+    {
+        if (_isSaving) return;
+        _validation = null;
+
+        if (string.IsNullOrWhiteSpace(_title))
+        {
+            _validation = "Title is required.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_currency))
+        {
+            _validation = "Currency is required.";
+            return;
+        }
+
+        // Lines are optional; the existing API allows creating a header
+        // and adding lines later on the Detail page. But if a row has
+        // an item picked, it must have a positive quantity — silently
+        // dropping a half-filled row would surprise the operator.
+        var seedLines = new List<TaskLineUpsertRequest>(capacity: _lines.Count);
+        for (var i = 0; i < _lines.Count; i++)
+        {
+            var line = _lines[i];
+            if (line.ItemId == Guid.Empty)
+            {
+                continue;
+            }
+            if (line.Quantity <= 0m)
+            {
+                _validation = $"Line {i + 1}: quantity must be greater than zero.";
+                return;
+            }
+            seedLines.Add(new TaskLineUpsertRequest
+            {
+                ItemId = line.ItemId,
+                Description = string.IsNullOrWhiteSpace(line.Description) ? null : line.Description.Trim(),
+                Quantity = line.Quantity,
+                UnitPrice = line.UnitPrice,
+                // TaxCodeId intentionally null — tax is decided at
+                // Convert-to-Invoice, not on the task itself.
+            });
+        }
+
+        _isSaving = true;
+        try
+        {
+            var outcome = await TaskClient.CreateAsync(new TaskCreateRequest
+            {
+                Title = _title!.Trim(),
+                Description = string.IsNullOrWhiteSpace(_description) ? null : _description!.Trim(),
+                CurrencyCode = _currency.Trim().ToUpperInvariant(),
+                ServiceDate = _serviceDate,
+                Lines = seedLines,
+            });
+
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Unable to create the task.";
+                return;
+            }
+
+            await Message.SuccessAsync($"Task {outcome.Saved.TaskNo} created.");
+            Navigation.NavigateTo($"tasks/{outcome.Saved.Id:D}");
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private static decimal ParseDecimal(object? raw, decimal fallback) =>
+        decimal.TryParse(raw?.ToString(), out var v) ? v : fallback;
+
+    private static decimal? ParseNullableDecimal(object? raw)
+    {
+        var s = raw?.ToString();
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        return decimal.TryParse(s, out var v) ? v : null;
+    }
+
+    private sealed record LineDraft
+    {
+        public Guid ItemId { get; init; } = Guid.Empty;
+        public string ItemDisplay { get; init; } = string.Empty;
+        public string Description { get; init; } = string.Empty;
+        public decimal Quantity { get; init; } = 1m;
+        public decimal? UnitPrice { get; init; }
+        public decimal LineAmount =>
+            UnitPrice is { } price ? Math.Round(Quantity * price, 2) : 0m;
+    }
+}

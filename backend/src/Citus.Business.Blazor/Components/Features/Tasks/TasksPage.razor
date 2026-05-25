@@ -1,12 +1,10 @@
 @page "/tasks"
 
-@using Citus.Modules.Tasks.Application.Contracts
 @using Citus.Modules.Tasks.Domain.Shared
 @using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
 
 @inject BusinessShellState ShellState
 @inject TaskClient TaskClient
-@inject CitusToastService Message
 @inject NavigationManager NavigationManager
 
 <PageTitle>Tasks | Tralanz Books</PageTitle>
@@ -40,7 +38,7 @@ else
             {
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              LeadingIcon="IconName.Plus"
-                             OnClick="StartCreate">New task</CitusButton>
+                             OnClick="@(() => NavigationManager.NavigateTo("tasks/new"))">New task</CitusButton>
             }
         </Actions>
     </CitusPageHeader>
@@ -102,37 +100,6 @@ else
             </table>
         </section>
     }
-
-    <CitusDrawer IsOpen="@_isCreating"
-                 Width="CitusDrawerWidth.Medium"
-                 Title="New task"
-                 SaveLabel="Create"
-                 SaveDisabled="@_isSaving"
-                 OnSave="SaveCreateAsync"
-                 OnCancel="CancelCreate">
-        @if (!string.IsNullOrWhiteSpace(_validation))
-        {
-            <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-3" />
-        }
-        <div class="grid grid-cols-1 gap-3">
-            <div>
-                <label class="text-sm font-medium block mb-1">Title</label>
-                <CitusInput TValue="string" @bind-Value="_draft.Title" Placeholder="Q2 audit prep" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Currency</label>
-                <CitusInput TValue="string" @bind-Value="_draft.CurrencyCode" Placeholder="@ShellState.ActiveCompany.BaseCurrencyCode" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Service date</label>
-                <input type="date" class="citus-form-field__input" @bind="_draft.ServiceDate" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Description (optional)</label>
-                <CitusInput TValue="string" @bind-Value="_draft.Description" Placeholder="Optional" />
-            </div>
-        </div>
-    </CitusDrawer>
 }
 
 @code {
@@ -151,12 +118,8 @@ else
     };
 
     private bool _isLoading = true;
-    private bool _isCreating;
-    private bool _isSaving;
     private string? _statusFilter;
-    private string? _validation;
     private IReadOnlyList<TaskSummary> _tasks = Array.Empty<TaskSummary>();
-    private NewTaskDraft _draft = new();
 
     private bool CanCreate => ShellState.User.Roles.Contains("task.create", StringComparer.Ordinal);
 
@@ -180,71 +143,5 @@ else
         }
     }
 
-    private void StartCreate()
-    {
-        _draft = new NewTaskDraft
-        {
-            CurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode,
-            ServiceDate = DateOnly.FromDateTime(DateTime.UtcNow),
-        };
-        _validation = null;
-        _isCreating = true;
-    }
-
-    private void CancelCreate()
-    {
-        _isCreating = false;
-        _validation = null;
-    }
-
-    private async Task SaveCreateAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_draft.Title))
-        {
-            _validation = "Title is required.";
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_draft.CurrencyCode))
-        {
-            _validation = "Currency is required.";
-            return;
-        }
-
-        _isSaving = true;
-        _validation = null;
-        try
-        {
-            var outcome = await TaskClient.CreateAsync(new TaskCreateRequest
-            {
-                Title = _draft.Title!,
-                Description = _draft.Description,
-                CurrencyCode = _draft.CurrencyCode!,
-                ServiceDate = _draft.ServiceDate,
-            });
-
-            if (!outcome.Succeeded || outcome.Saved is null)
-            {
-                _validation = outcome.ErrorMessage ?? "Unable to create the task.";
-                return;
-            }
-
-            await Message.SuccessAsync($"Task {outcome.Saved.TaskNo} created.");
-            _isCreating = false;
-            NavigationManager.NavigateTo($"tasks/{outcome.Saved.Id:D}");
-        }
-        finally
-        {
-            _isSaving = false;
-        }
-    }
-
     private void OpenTask(Guid taskId) => NavigationManager.NavigateTo($"tasks/{taskId:D}");
-
-    private sealed class NewTaskDraft
-    {
-        public string? Title { get; set; }
-        public string? Description { get; set; }
-        public string? CurrencyCode { get; set; }
-        public DateOnly? ServiceDate { get; set; }
-    }
 }
