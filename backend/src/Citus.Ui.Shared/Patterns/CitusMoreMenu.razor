@@ -1,0 +1,75 @@
+@*
+    CitusMoreMenu — right-anchored popover used in detail-page action
+    bars to hold secondary actions (Copy / Void / Delete / Audit
+    history / Transaction journal). Mirrors the QuickBooks
+    Online "More" button on transaction surfaces.
+
+    Built on the shared <details class="citus-popover"> pattern + the
+    citus-user-menu.js outside-click handler that already ships in
+    the business + sysadmin shells. The JS treats any element marked
+    with `data-citus-popover-close` as a close trigger, so each menu
+    item carries that attribute — clicking it fires the item's
+    OnClick callback AND collapses the panel.
+
+    Usage:
+        <CitusMoreMenu Items="@_moreItems" />
+
+        // in @code
+        private IReadOnlyList<CitusMoreMenuItem> _moreItems => new[]
+        {
+            new CitusMoreMenuItem { Label = "Copy",
+                                    Icon = IconName.Copy,
+                                    OnClick = EventCallback.Factory.Create(this, CopyAsync) },
+            new CitusMoreMenuItem { Label = "Void",
+                                    Danger = true,
+                                    Disabled = _expense?.Status != "posted",
+                                    OnClick = EventCallback.Factory.Create(this, VoidAsync) }
+        };
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<details class="citus-popover citus-more-menu">
+    <summary class="citus-more-menu__trigger">
+        <span>@Label</span>
+        <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+    </summary>
+    <div class="citus-more-menu__panel">
+        @foreach (var item in Items)
+        {
+            <button type="button"
+                    class="@ItemCssClass(item)"
+                    data-citus-popover-close
+                    disabled="@item.Disabled"
+                    @onclick="@(() => HandleItemAsync(item))">
+                @if (item.Icon is { } icon)
+                {
+                    <CitusIcon Name="@icon" Size="IconSize.Inline" />
+                }
+                <span>@item.Label</span>
+            </button>
+        }
+    </div>
+</details>
+
+@code {
+    [Parameter] public string Label { get; set; } = "More";
+
+    [Parameter] public IReadOnlyList<CitusMoreMenuItem> Items { get; set; } = Array.Empty<CitusMoreMenuItem>();
+
+    private static string ItemCssClass(CitusMoreMenuItem item)
+    {
+        var classes = new List<string> { "citus-more-menu__item" };
+        if (item.Danger) classes.Add("citus-more-menu__item--danger");
+        return string.Join(' ', classes);
+    }
+
+    private async Task HandleItemAsync(CitusMoreMenuItem item)
+    {
+        if (item.Disabled || !item.OnClick.HasDelegate)
+        {
+            return;
+        }
+        await item.OnClick.InvokeAsync();
+    }
+}

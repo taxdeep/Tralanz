@@ -147,7 +147,13 @@ public sealed record ExpenseUpsertInput(
     decimal? DiscountValue,
     string? Memo,
     string? InternalNote,
-    IReadOnlyList<ExpenseLineInput> Lines);
+    IReadOnlyList<ExpenseLineInput> Lines,
+    // Copy A3 Phase 1: when populated, the store writes an
+    // `expense_copied` row into audit_logs alongside the regular
+    // CREATE. Pure soft-link — no FK on the expenses row itself, so
+    // operators get a provenance trail without coupling the two
+    // expenses for state (the new one is fully independent).
+    Guid? CopiedFromExpenseId = null);
 
 public sealed record ExpenseLineInput(
     int Sequence,

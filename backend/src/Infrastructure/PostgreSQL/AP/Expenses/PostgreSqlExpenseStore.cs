@@ -291,6 +291,41 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             await updateJournalCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        // Copy A3 Phase 1: when the caller marked this expense as a
+        // copy of an existing one, record the provenance in audit_logs
+        // inside the same tx. The new expense is otherwise fully
+        // independent (no FK back to the source), so this audit row is
+        // the only place the link lives — operators querying audit_logs
+        // by entity_id=new_expense_id can see "copied from X by user Y
+        // at time T" without us inflating the expenses schema.
+        if (input.CopiedFromExpenseId is { } sourceExpenseId)
+        {
+            await using var auditCommand = connection.CreateCommand();
+            auditCommand.Transaction = transaction;
+            auditCommand.CommandText = """
+                INSERT INTO audit_logs (
+                    company_id, actor_type, actor_id,
+                    entity_type, entity_id, action, payload
+                )
+                VALUES (
+                    @company_id, 'user', @actor_id,
+                    'expense', @entity_id, 'expense_copied', @payload::jsonb
+                );
+                """;
+            auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            auditCommand.Parameters.AddWithValue("actor_id", createdByUserId.Value);
+            auditCommand.Parameters.AddWithValue("entity_id", expenseId);
+            auditCommand.Parameters.AddWithValue(
+                "payload",
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    source_expense_id = sourceExpenseId,
+                    new_expense_id = expenseId,
+                    new_expense_number = entityNumber
+                }));
+            await auditCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         var saved = await GetByIdAsync(companyId, expenseId, cancellationToken).ConfigureAwait(false);
