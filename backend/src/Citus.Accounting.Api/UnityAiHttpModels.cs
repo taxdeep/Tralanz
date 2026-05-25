@@ -1,5 +1,23 @@
 namespace Citus.Accounting.Api;
 
+/// <summary>
+/// Wire shape for GET /accounting/uom. Mirrors UomRecord field-for-field;
+/// kept as a separate record so the application-layer domain type
+/// (Citus.Accounting.Application.Abstractions.UomRecord) doesn't leak
+/// CompanyId / DateTimeOffset serialization details onto the HTTP
+/// contract.
+/// </summary>
+public sealed record UomHttpSummary(
+    Guid Id,
+    CompanyId CompanyId,
+    string Code,
+    string Name,
+    int DecimalPrecision,
+    string? Category,
+    bool IsActive,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
 public sealed record UnitysearchUsageHttpRequest
 {
     public CompanyId CompanyId { get; init; }

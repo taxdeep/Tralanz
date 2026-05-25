@@ -9,6 +9,7 @@
 @inject BusinessShellState ShellState
 @inject TaskClient TaskClient
 @inject ItemClient ItemClient
+@inject UomClient UomClient
 @inject CustomerClient CustomerClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
@@ -169,14 +170,20 @@ else
                                             ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
                             </td>
                             <td>
-                                @* Qty is an integer on Task lines — operator-rule,
-                                   not a schema constraint. We type=number/step=1
-                                   for browser hint, and floor to int on store so
-                                   the carried-over Invoice line stays scale=0. *@
-                                <input type="number" step="1" min="0"
+                                @* Qty rule follows the picked item's UOM:
+                                   precision=0 (each / case / box) forces integer;
+                                   precision=2 (hour / day / kg) allows 2 decimals;
+                                   precision=3 (kg) allows 3, etc. Step and format
+                                   string are derived from QtyPrecisionFor(line). *@
+                                @{
+                                    var qtyPrecision = QtyPrecisionFor(line);
+                                    var qtyStep = QtyStep(qtyPrecision);
+                                    var qtyFormat = QtyFormat(qtyPrecision);
+                                }
+                                <input type="number" step="@qtyStep" min="0"
                                        class="citus-form-field__input text-right"
-                                       value="@line.Quantity.ToString("0")"
-                                       @onchange="@(e => UpdateLine(index, l => l with { Quantity = ParseInteger(e.Value, l.Quantity) }))" />
+                                       value="@line.Quantity.ToString(qtyFormat)"
+                                       @onchange="@(e => UpdateLine(index, l => l with { Quantity = ParseQty(e.Value, l.Quantity, qtyPrecision) }))" />
                             </td>
                             <td>
                                 @* Unit price is always 2-decimal for CAD/USD style
@@ -253,6 +260,12 @@ else
     // side, this dict only resolves SourceId → ItemSummary on pick.
     private Dictionary<Guid, ItemSummary> _itemsById = new();
 
+    // UOM lookup: code → DecimalPrecision drives the qty input step on
+    // each line. Default precision when an item has no UOM picked is 2
+    // (allow decimals but cap at 2 places).
+    private Dictionary<string, UomSummary> _uomsByCode = new(StringComparer.OrdinalIgnoreCase);
+    private const int DefaultUomPrecision = 2;
+
     // Customer list backs the dropdown + drives the currency auto-update on
     // pick. Keyed by Id so the OnCustomerChanged handler resolves quickly.
     private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
@@ -267,9 +280,43 @@ else
     protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode ?? "USD";
-        await Task.WhenAll(LoadItemsAsync(), LoadCustomersAsync());
+        await Task.WhenAll(LoadItemsAsync(), LoadCustomersAsync(), LoadUomsAsync());
         _isLoading = false;
     }
+
+    private async Task LoadUomsAsync()
+    {
+        try
+        {
+            var rows = await UomClient.ListAsync(includeInactive: false);
+            _uomsByCode = rows.ToDictionary(u => u.Code, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            _uomsByCode = new(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the qty decimal-precision for a line based on the picked
+    /// item's UOM. Falls back to <see cref="DefaultUomPrecision"/> (2) when
+    /// the item has no UOM or the UOM isn't loaded — that lets the operator
+    /// at least enter decimal qty rather than being forced to integer.
+    /// </summary>
+    private int QtyPrecisionFor(LineDraft line)
+    {
+        if (line.ItemId == Guid.Empty) return DefaultUomPrecision;
+        if (!_itemsById.TryGetValue(line.ItemId, out var item)) return DefaultUomPrecision;
+        var code = item.StockUomCode?.Trim();
+        if (string.IsNullOrWhiteSpace(code)) return DefaultUomPrecision;
+        return _uomsByCode.TryGetValue(code, out var uom) ? uom.DecimalPrecision : DefaultUomPrecision;
+    }
+
+    private static string QtyStep(int precision) =>
+        precision <= 0 ? "1" : "0." + new string('0', precision - 1) + "1";
+
+    private static string QtyFormat(int precision) =>
+        precision <= 0 ? "0" : "0." + new string('#', precision);
 
     private async Task LoadItemsAsync()
     {
@@ -453,13 +500,18 @@ else
     }
 
     /// <summary>
-    /// Truncates fractional input to an int (Task qty rule) and returns it as
-    /// a decimal with scale 0 so the wire payload + DB row carry a clean
-    /// integer scale — that's what keeps the carried-over Invoice line from
-    /// rendering "2.0000".
+    /// Rounds the user's qty input to the precision derived from the picked
+    /// item's UOM. precision=0 truncates to int ("each" / "case"); higher
+    /// values round half-up to that many decimals. Returns the previous
+    /// value when the input is blank or unparseable so the row stays stable.
     /// </summary>
-    private static decimal ParseInteger(object? raw, decimal fallback) =>
-        decimal.TryParse(raw?.ToString(), out var v) ? Math.Truncate(v) : fallback;
+    private static decimal ParseQty(object? raw, decimal fallback, int precision)
+    {
+        if (!decimal.TryParse(raw?.ToString(), out var v)) return fallback;
+        return precision <= 0
+            ? Math.Truncate(v)
+            : Math.Round(v, precision, MidpointRounding.AwayFromZero);
+    }
 
     /// <summary>
     /// 2-decimal money parser. Rounds (half-up via MidpointRounding.AwayFromZero

@@ -185,6 +185,16 @@ builder.Services.AddHttpClient<AccountClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// UOM master (read-only V1) — backs the Item edit dropdown + drives the
+// qty input step on Task / Invoice / Bill line grids.
+builder.Services.AddHttpClient<UomClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<BankReconciliationClient>(
         (serviceProvider, client) =>
         {
