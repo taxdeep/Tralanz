@@ -233,7 +233,13 @@ public sealed record ExpenseUpsertPayload(
     decimal? DiscountValue,
     string? Memo,
     string? InternalNote,
-    IReadOnlyList<ExpenseLinePayload> Lines);
+    IReadOnlyList<ExpenseLinePayload> Lines,
+    // Copy A3 Phase 1: when the form was prefilled from an existing
+    // expense (via ExpenseDetailPage → More → Copy → /expenses/new?copyFrom=…),
+    // the create page sets this so the server can audit the provenance.
+    // Nullable + defaulted-null so non-copy flows don't have to know
+    // about it.
+    Guid? CopiedFromExpenseId = null);
 
 public sealed record ExpenseLinePayload(
     int Sequence,

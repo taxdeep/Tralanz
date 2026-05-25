@@ -3463,6 +3463,90 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     cursor: not-allowed;
 }
 
+/* ---------- CitusMoreMenu ----------
+   Right-anchored popover used in detail-page action bars to hold
+   secondary actions (Copy / Void / Delete / Audit history /
+   Transaction journal). Shares the citus-popover machinery (see
+   wwwroot/js/citus-user-menu.js) for outside-click dismiss. */
+
+.citus-more-menu {
+    position: relative;
+    display: inline-block;
+}
+
+.citus-more-menu > summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.citus-more-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.citus-more-menu__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: transparent;
+    color: var(--citus-color-fg);
+    font-weight: 500;
+    font-size: var(--citus-text-sm);
+    user-select: none;
+}
+
+.citus-more-menu__trigger:hover {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-more-menu__panel {
+    position: absolute;
+    top: calc(100% + var(--citus-space-1));
+    right: 0;
+    z-index: 60;
+    min-width: 200px;
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+    padding: var(--citus-space-1) 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.citus-more-menu__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    text-align: left;
+    padding: 0.5rem 0.85rem;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-sm);
+    cursor: pointer;
+}
+
+.citus-more-menu__item:hover:not(:disabled) {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-more-menu__item:disabled {
+    color: var(--citus-color-fg-subtle);
+    cursor: not-allowed;
+}
+
+.citus-more-menu__item--danger {
+    color: var(--citus-color-danger, #b91c1c);
+}
+
+.citus-more-menu__item--danger:hover:not(:disabled) {
+    background: var(--citus-color-danger-bg, rgba(185, 28, 28, 0.08));
+}
+
 /* ---------- Narrow-page wrapper ----------
    Forms / detail pages (Profile, Settings sub-pages) read better when
    they aren't stretched to a 1080p+ viewport. Wrap their content in

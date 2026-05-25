@@ -8402,7 +8402,10 @@ static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => n
             UnitPrice: l.UnitPrice,
             TaxCodeId: l.TaxCodeId,
             TaskId: l.TaskId))
-        .ToArray());
+        .ToArray(),
+    // Copy A3 Phase 1: thread through to the store so it writes the
+    // expense_copied audit_log row alongside the regular CREATE.
+    CopiedFromExpenseId: request.CopiedFromExpenseId);
 
 // ===========================================================================
 // Bank Reconciliation

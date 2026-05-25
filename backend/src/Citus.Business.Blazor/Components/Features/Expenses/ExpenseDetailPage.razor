@@ -50,17 +50,20 @@ else
     <section class="citus-panel mb-6">
         <h2 class="citus-panel__title">Actions</h2>
         <div class="flex flex-wrap gap-2 items-center">
-            @if (_expense.Status == "posted")
-            {
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
-            }
-            else
-            {
-                <span class="text-fg-muted text-sm">This expense is voided. No further actions.</span>
-            }
+            @* Copy A3 Phase 1: secondary actions collapse into the More
+               menu. Copy is always available (even on voided expenses —
+               you may want to revive the spend with corrections); Void
+               only available on posted (server still re-checks). The
+               Void label intentionally NOT promoted to a top-level
+               button so the action bar stays single-row uncluttered. *@
+            <CitusMoreMenu Items="@_moreItems" />
             @if (_expense.SourcePurchaseOrderId is { } poId)
             {
                 <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{poId:D}")">View source PO</a>
+            }
+            @if (_expense.Status != "posted")
+            {
+                <span class="text-fg-muted text-sm">This expense is voided.</span>
             }
         </div>
     </section>
@@ -240,6 +243,37 @@ else
         }
         finally { _isMutating = false; }
     }
+
+    // Copy A3 Phase 1: navigate to the Create page with the source id
+    // as a query param. The Create page hydrates its form fields from
+    // the source's ExpenseRecordDto and resets the payment date to
+    // today. We deliberately don't gate Copy on the status — copying a
+    // voided expense is a valid workflow ("re-issue with corrections")
+    // and the new entity is independent of the source's state.
+    private void CopyAsync()
+    {
+        if (_expense is null) return;
+        Navigation.NavigateTo($"expenses/new?copyFrom={_expense.Id:D}");
+    }
+
+    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _expense is null
+        ? Array.Empty<CitusMoreMenuItem>()
+        : new[]
+        {
+            new CitusMoreMenuItem
+            {
+                Label = "Copy",
+                OnClick = EventCallback.Factory.Create(this, CopyAsync),
+                Disabled = _isMutating
+            },
+            new CitusMoreMenuItem
+            {
+                Label = "Void",
+                Danger = true,
+                Disabled = _expense.Status != "posted" || _isMutating,
+                OnClick = EventCallback.Factory.Create(this, VoidAsync)
+            }
+        };
 
     private static string HumanizeStatus(string status) => status switch
     {

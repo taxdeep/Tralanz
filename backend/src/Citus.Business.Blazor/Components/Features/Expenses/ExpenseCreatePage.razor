@@ -2,6 +2,7 @@
 
 @using Radzen
 @using Radzen.Blazor
+@using Microsoft.AspNetCore.WebUtilities
 
 @inject BusinessShellState ShellState
 @inject VendorClient VendorClient
@@ -41,6 +42,16 @@
 @if (ShellState.AreWritesBlocked)
 {
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (_copiedFromExpenseId is not null)
+{
+    @* Copy A3 Phase 1: visible confirmation that the form was
+       prefilled from an existing expense. The source expense itself
+       is untouched — this banner just tells the operator that what
+       they see was carried forward, mirroring QBO's "This is a copy." *@
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Revise as needed and save to create a new expense; the original is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -356,6 +367,12 @@ else
     private bool _isSaving;
     private string? _validation;
 
+    // Copy A3 Phase 1: source expense id when this page was reached
+    // via the More → Copy flow from a detail page. Drives the
+    // "This is a copy" banner + is sent to the server on Save so the
+    // expense_copied audit_log row records the provenance.
+    private Guid? _copiedFromExpenseId;
+
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Expense & Bills",
@@ -384,6 +401,98 @@ else
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
         await LoadAsync();
+        // Copy A3 Phase 1: if the URL carries ?copyFrom={id}, fetch the
+        // source expense AFTER the dropdowns are loaded so the
+        // hydrated payee/account ids match valid options in the
+        // dropdowns. Failing to find the source is non-fatal — we
+        // surface a friendly validation message and leave the form
+        // blank.
+        await TryHydrateFromCopySourceAsync();
+    }
+
+    /// <summary>
+    /// When the URL has ?copyFrom={guid}, fetch that expense and
+    /// populate the form fields. Sensible defaults that differ from a
+    /// straight copy:
+    ///   - Payment date  →  today (a copy is a new transaction, the
+    ///                      source's date is wrong by definition)
+    ///   - Cheque # / Ref # → blanked (a new payment needs new IDs;
+    ///                      reusing the source's risks duplicate-payment
+    ///                      reconciliation errors)
+    ///   - FX rate       →  null (let FxRateInline re-resolve for today;
+    ///                      copying the source's stale rate would post
+    ///                      the new expense at an outdated valuation)
+    ///   - Internal note →  blanked (per-occurrence private note;
+    ///                      operators don't want their old triage
+    ///                      comments leaking into a new entry)
+    ///   - Memo          →  copied (typically describes the spend
+    ///                      itself, which IS what's being repeated)
+    ///   - Source PO     →  blanked (the new copy doesn't inherit
+    ///                      provenance — that'd corrupt the source PO's
+    ///                      "fulfilled by" trail)
+    /// </summary>
+    private async Task TryHydrateFromCopySourceAsync()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (!query.TryGetValue("copyFrom", out var raw) ||
+            !Guid.TryParse(raw.ToString(), out var sourceId))
+        {
+            return;
+        }
+
+        ExpenseRecordDto? source;
+        try
+        {
+            source = await ExpenseClient.GetByIdAsync(sourceId);
+        }
+        catch
+        {
+            // Network / parse error — treat as no-source-found.
+            return;
+        }
+        if (source is null)
+        {
+            _validation = "The expense you copied from is not visible in this company. The form is blank.";
+            return;
+        }
+
+        _copiedFromExpenseId = source.Id;
+        _payeeKind = source.PayeeKind;
+        _payeeId = source.PayeeId;
+        _payeeNameFreeform = source.PayeeNameFreeform ?? string.Empty;
+        _paymentAccountId = source.PaymentAccountId;
+        _paymentMethod = source.PaymentMethod;
+        _chequeNumber = string.Empty; // see XML doc above
+        _refNo = string.Empty;        // see XML doc above
+        _paymentDate = DateTime.Today; // RESET to today, not source date
+        _currency = source.TransactionCurrencyCode;
+        _fxRate = null;                // let FxRateInline re-resolve
+        _taxMode = source.TaxMode;
+        _discountKind = source.DiscountKind;
+        _discountValue = source.DiscountValue;
+        _memo = source.Memo ?? string.Empty;
+        _internalNote = string.Empty;  // see XML doc above
+        _lines = source.Lines
+            .OrderBy(l => l.Sequence)
+            .Select(l => new LineDraft
+            {
+                ExpenseAccountId = l.ExpenseAccountId,
+                Description = l.Description,
+                Quantity = l.Quantity,
+                UnitPrice = l.UnitPrice,
+                TaxCodeId = l.TaxCodeId,
+                // Task back-link intentionally NOT copied — the source
+                // task may be closed / fulfilled, and a new expense
+                // should make that explicit re-assignment if needed.
+                TaskId = null,
+                TaskDisplay = string.Empty
+            })
+            .ToList();
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new LineDraft());
+        }
     }
 
     private async Task LoadAsync()
@@ -572,7 +681,9 @@ else
                         UnitPrice: l.UnitPrice,
                         TaxCodeId: l.TaxCodeId,
                         TaskId: l.TaskId))
-                    .ToArray());
+                    .ToArray(),
+                // Copy A3 Phase 1: server records this in audit_logs.
+                CopiedFromExpenseId: _copiedFromExpenseId);
 
             var outcome = await ExpenseClient.CreateAsync(payload);
             if (!outcome.Succeeded || outcome.Saved is null)

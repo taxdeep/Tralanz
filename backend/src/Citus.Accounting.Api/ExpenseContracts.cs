@@ -22,7 +22,13 @@ public sealed record ExpenseUpsertHttpRequest(
     decimal? DiscountValue,
     string? Memo,
     string? InternalNote,
-    IReadOnlyList<ExpenseLineHttpRequest>? Lines);
+    IReadOnlyList<ExpenseLineHttpRequest>? Lines,
+    // Copy A3 Phase 1: when set, the client copied the form fields
+    // from an existing expense and wants the server to audit the
+    // provenance. Nullable so the field is optional in the wire format
+    // (existing clients keep working). Not stored on the expense row
+    // itself — recorded only in audit_logs.
+    Guid? CopiedFromExpenseId = null);
 
 public sealed record ExpenseLineHttpRequest(
     int Sequence,
