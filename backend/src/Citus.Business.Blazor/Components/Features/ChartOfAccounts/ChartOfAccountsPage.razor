@@ -305,16 +305,24 @@
             </select>
         </label>
 
-        <label class="citus-form-field">
-            <span class="citus-form-field__label">Currency (optional, ISO 4217)</span>
-            <input type="text"
-                   class="citus-form-field__input"
-                   value="@_formCurrencyCode"
-                   @oninput="@(e => _formCurrencyCode = e.Value?.ToString() ?? string.Empty)"
-                   maxlength="3"
-                   placeholder="@($"Defaults to {ShellState.ActiveCompany.BaseCurrencyCode}")"
-                   disabled="@_isMutating" />
-        </label>
+        @* Batch A: Currency only shows for Balance-Sheet accounts.
+           P&L accounts (revenue / cost_of_sales / expense) net into base
+           currency through the period close so they don't carry their
+           own currency context. Asking for a currency on a P&L account
+           was a UX smell — fixed here. *@
+        @if (IsBalanceSheetRoot(_formRootType))
+        {
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Currency (optional, ISO 4217)</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formCurrencyCode"
+                       @oninput="@(e => _formCurrencyCode = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="3"
+                       placeholder="@($"Defaults to {ShellState.ActiveCompany.BaseCurrencyCode}")"
+                       disabled="@_isMutating" />
+            </label>
+        }
 
         <label class="citus-form-field">
             <span class="inline-flex items-center gap-2 text-sm">
@@ -336,6 +344,35 @@
             </span>
         </label>
     </div>
+
+    @* Batch A: Live preview pane. Renders the active accounts of the
+       chosen root_type, with the new (or being-edited) account inserted
+       at its sorted position. Mirrors QBO's "NEW ACCOUNT PREVIEW"
+       affordance — operators see at a glance where the new row will
+       land relative to existing siblings, reducing the "did I put it in
+       the right category" anxiety. Statement context (P&L vs Balance
+       Sheet) auto-switches with the root type. *@
+    <section class="citus-preview-pane mt-6">
+        <header class="citus-preview-pane__header">
+            <div>
+                <h3 class="citus-preview-pane__title">@StatementContextLabel(_formRootType)</h3>
+                <p class="citus-preview-pane__subtitle">Active @RootTypeLabel(_formRootType).ToLowerInvariant() accounts as of @DateTime.Today:yyyy-MM-dd</p>
+            </div>
+            <span class="citus-preview-pane__badge">@(_editingId is null ? "NEW ACCOUNT PREVIEW" : "EDIT PREVIEW")</span>
+        </header>
+        <ul class="citus-preview-pane__list">
+            @foreach (var row in BuildPreviewRows())
+            {
+                <li class="citus-preview-pane__row @(row.IsNew ? "is-new" : null)">
+                    @if (!string.IsNullOrWhiteSpace(row.Code))
+                    {
+                        <span class="citus-preview-pane__code">@row.Code</span>
+                    }
+                    <span class="citus-preview-pane__name">@row.Name</span>
+                </li>
+            }
+        </ul>
+    </section>
 </CitusDrawer>
 
 @code {
@@ -355,6 +392,51 @@
         ("cost_of_sales", "Cost of sales"),
         ("expense", "Expense"),
     };
+
+    // Batch A: root types that surface on the Balance Sheet (vs P&L).
+    // Drives both the Currency-field conditional and the preview pane's
+    // statement-context label.
+    private static bool IsBalanceSheetRoot(string rootType) =>
+        rootType is "asset" or "liability" or "equity";
+
+    private static string StatementContextLabel(string rootType) =>
+        IsBalanceSheetRoot(rootType) ? "Balance Sheet" : "Profit & Loss";
+
+    private static string RootTypeLabel(string rootType) =>
+        RootTypeOptions.FirstOrDefault(o => o.Value == rootType).Label ?? rootType;
+
+    /// <summary>
+    /// Builds the rows for the preview pane — existing active accounts in
+    /// the chosen root type, with the form's pending row inserted at its
+    /// sorted position. The inserted row is flagged via IsNew so the
+    /// markup can highlight it.
+    /// </summary>
+    private IEnumerable<PreviewRow> BuildPreviewRows()
+    {
+        // Use the same active-filter as the main list to match what
+        // operators see elsewhere. Editing an existing account: exclude
+        // it from the sibling list so it doesn't appear twice (once at
+        // its persisted position, once as the new highlighted row).
+        var siblings = _rows
+            .Where(a => a.IsActive)
+            .Where(a => string.Equals(a.RootType ?? string.Empty, _formRootType, StringComparison.OrdinalIgnoreCase))
+            .Where(a => _editingId is null || a.Id != _editingId.Value)
+            .Select(a => new PreviewRow(a.Code, a.Name, IsNew: false))
+            .ToList();
+
+        var pendingName = string.IsNullOrWhiteSpace(_formName) ? "New account" : _formName.Trim();
+        var pendingCode = _formCode?.Trim() ?? string.Empty;
+        var pending = new PreviewRow(pendingCode, pendingName, IsNew: true);
+
+        // Sort: prefer numeric Code; fall back to Name when Code is blank.
+        // Pending row inserts at the natural position.
+        siblings.Add(pending);
+        return siblings
+            .OrderBy(r => string.IsNullOrEmpty(r.Code) ? "ZZZZZ" : r.Code, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed record PreviewRow(string Code, string Name, bool IsNew);
 
     /// <summary>
     /// System-defined detail-type catalog, grouped by root type. Values
