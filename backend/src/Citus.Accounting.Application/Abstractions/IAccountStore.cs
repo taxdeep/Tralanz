@@ -30,7 +30,14 @@ public sealed record AccountRecord(
     string? SystemKey,
     string? SystemRole,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    // Batch C: nullable self-reference. NULL = top-level account.
+    Guid? ParentAccountId = null,
+    // Batch D: when set, the account is locked — financial-truth
+    // fields (code/name/root_type/detail_type/currency_code/
+    // allow_manual_posting) cannot be modified until unlocked.
+    DateTimeOffset? LockedAt = null,
+    string? LockedByUserId = null);
 
 public static class AccountRootType
 {
@@ -74,7 +81,21 @@ public sealed record AccountUpsertInput(
     string? DetailType,
     string? CurrencyCode,
     bool AllowManualPosting,
-    bool IsActive);
+    bool IsActive,
+    // Batch C: nullable self-reference. Same root_type is recommended
+    // (UI enforces) but not required (store accepts cross-root).
+    Guid? ParentAccountId = null);
+
+/// <summary>
+/// Batch D: Lock / unlock toggle. Separate from AccountUpsertInput
+/// because (a) it's intentionally not part of the routine
+/// edit-the-account flow (operators must consciously choose to
+/// lock/unlock), and (b) the actor user id is required for the
+/// audit_log row.
+/// </summary>
+public sealed record AccountLockInput(
+    bool Lock,
+    UserId? ActorUserId);
 
 /// <summary>
 /// Account-creation payload used by template seeders. Carries the
@@ -128,6 +149,22 @@ public interface IAccountStore
         CompanyId companyId,
         Guid accountId,
         bool isActive,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Batch D: lock or unlock the account. While locked, financial-
+    /// truth fields (code/name/root_type/detail_type/currency_code/
+    /// allow_manual_posting) cannot be modified via UpdateAsync —
+    /// UpdateAsync raises InvalidOperationException until the
+    /// operator un-locks. Both lock and unlock are audited (action
+    /// 'account_locked' / 'account_unlocked'). Re-locking an already-
+    /// locked account or unlocking an already-unlocked one is a no-
+    /// op and returns the row unchanged.
+    /// </summary>
+    Task<AccountRecord?> SetLockAsync(
+        CompanyId companyId,
+        Guid accountId,
+        AccountLockInput input,
         CancellationToken cancellationToken);
 
     /// <summary>

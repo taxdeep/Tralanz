@@ -9030,7 +9030,8 @@ accounting.MapPost(
                     DetailType: request.DetailType?.Trim(),
                     CurrencyCode: requestedCurrency,
                     AllowManualPosting: request.AllowManualPosting ?? true,
-                    IsActive: request.IsActive ?? true),
+                    IsActive: request.IsActive ?? true,
+                    ParentAccountId: request.ParentAccountId), // Batch C
                 cancellationToken);
             // H15: refresh the topbar / account picker projection so the
             // new account shows up immediately.
@@ -9098,7 +9099,8 @@ accounting.MapPut(
                     DetailType: request.DetailType?.Trim(),
                     CurrencyCode: requestedCurrency,
                     AllowManualPosting: request.AllowManualPosting ?? true,
-                    IsActive: request.IsActive ?? true),
+                    IsActive: request.IsActive ?? true,
+                    ParentAccountId: request.ParentAccountId), // Batch C
                 cancellationToken);
             if (updated is not null)
             {
@@ -9112,6 +9114,11 @@ accounting.MapPut(
             return updated is null
                 ? Results.NotFound(new { message = "Account not found, or it is a system control account that cannot be edited from this surface." })
                 : Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Batch D: lock predicate ("Account X is locked. Unlock it ...").
+            return Results.BadRequest(new { message = ex.Message });
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
         {
@@ -9131,6 +9138,30 @@ accounting.MapPut(
                 constraint = constraint
             });
         }
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
+
+// Batch D: lock / unlock toggle. Uses the existing GlAccountEdit
+// permission — no separate "Lock" permission for V1 (consistent
+// with QBO; an operator with edit rights can choose to lock).
+accounting.MapPost(
+    "/accounts/{id:guid}/lock",
+    async (
+        Guid id,
+        AccountLockHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var updated = await store.SetLockAsync(
+            session.ActiveCompanyId,
+            id,
+            new AccountLockInput(request.Lock, session.UserId),
+            cancellationToken);
+        return updated is null
+            ? Results.NotFound(new { message = "Account not found or system-protected." })
+            : Results.Ok(updated);
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
 
 accounting.MapPost(
