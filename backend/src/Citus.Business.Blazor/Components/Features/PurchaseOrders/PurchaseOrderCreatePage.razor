@@ -39,6 +39,12 @@
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
 }
 
+@if (_isFromCopy)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Revise as needed and save to create a new purchase order; the original is unchanged." />
+}
+
 @if (!string.IsNullOrWhiteSpace(_validation))
 {
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
@@ -332,6 +338,11 @@ else
     // pattern — captured on load and on every successful save, sent
     // back on the next save so the API can reject stale writes.
     private DateTimeOffset? _expectedUpdatedAt;
+    // Phase 3.1
+    private bool _isFromCopy;
+
+    [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromPurchaseOrderId { get; set; }
+
     private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "New PO", Subtitle = "Commit to a vendor purchase." };
 
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
@@ -355,6 +366,48 @@ else
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
         await LoadAsync();
+        // Phase 3.1: copy-from hydration. Only valid on the /new route;
+        // /{id}/edit ignores copyFrom because the explicit edit id wins.
+        if (PurchaseOrderId is null && CopyFromPurchaseOrderId is { } id && id != Guid.Empty)
+        {
+            await TryHydrateFromCopySourceAsync(id);
+        }
+    }
+
+    /// <summary>Phase 3.1: hydrate from an existing PO, then reset
+    /// date / status / concurrency token so we save as a new row.</summary>
+    private async Task TryHydrateFromCopySourceAsync(Guid sourceId)
+    {
+        PurchaseOrderRecordDto? source;
+        try
+        {
+            source = await PurchaseOrderClient.GetByIdAsync(sourceId);
+        }
+        catch { return; }
+        if (source is null)
+        {
+            _validation = "The purchase order you copied from is not visible in this company.";
+            return;
+        }
+
+        ApplyExisting(source);   // reuses the existing loader for all fields
+
+        // Override the loader's "edit mode" assumptions so we save as new:
+        _isFromCopy = true;
+        _purchaseOrderId = null;
+        _poNumber = null;
+        _status = "draft";
+        _expectedUpdatedAt = null;
+        _orderDate = DateTime.Today;
+        _expectedDeliveryDate = null;
+        _fxRate = null;             // re-resolved by FxRateInline for today
+        _internalNote = string.Empty;  // private per-occurrence note
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Expense & Bills",
+            Title = "New PO (copy)",
+            Subtitle = $"Pre-filled from {source.PurchaseOrderNumber}. The original PO is unchanged."
+        };
     }
 
     protected override async Task OnParametersSetAsync()

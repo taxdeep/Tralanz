@@ -7,6 +7,8 @@
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
 @inject InvoiceClient InvoiceClient
+@inject CreditMemoClient CreditMemoClient
+@inject AccountClient AccountClient
 @inject TaskClient TaskClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
@@ -43,6 +45,12 @@
 @if (ShellState.AreWritesBlocked)
 {
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (_isFromCopy)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Revise as needed and save to create a new credit memo; the original is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -309,6 +317,10 @@
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+    // Phase 3.1
+    private bool _isFromCopy;
+
+    [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromMemoId { get; set; }
     // Distinct task ids the operator's current lines will roll back on
     // post. Populated by the "From invoice" prefill (or by any future
     // path that attributes per-line task_id); displayed in the
@@ -337,6 +349,56 @@
         {
             await PrefillFromInvoiceAsync(invoiceId);
         }
+        else if (CopyFromMemoId is { } copyId && copyId != Guid.Empty)
+        {
+            await TryHydrateFromCopySourceAsync(copyId);
+        }
+    }
+
+    /// <summary>Phase 3.1: hydrate from an existing credit memo (no invoice link).</summary>
+    private async Task TryHydrateFromCopySourceAsync(Guid sourceId)
+    {
+        CreditMemoRecordDto? source;
+        try
+        {
+            source = await CreditMemoClient.GetByIdAsync(sourceId, ShellState.ActiveCompany.Id);
+        }
+        catch { return; }
+        if (source is null)
+        {
+            _validation = "The credit memo you copied from is not visible in this company.";
+            return;
+        }
+
+        var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
+        var accounts = await AccountClient.ListAsync();
+        var byId = accounts.ToDictionary(a => a.Id);
+
+        _isFromCopy = true;
+        _customerId = source.CustomerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = source.TransactionCurrencyCode;
+        _documentDate = DateTime.Today;
+        _fxRate = null;
+        _memo = source.Memo ?? string.Empty;
+        _customerPoNumber = string.Empty;
+        _appliedToInvoiceNumber = string.Empty; // Don't carry the apply-to link on copy
+        _reason = string.Empty;
+
+        _lines.Clear();
+        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+        {
+            var displ = line.RevenueAccountId is { } rid && byId.TryGetValue(rid, out var a) ? $"{a.Code}  {a.Name}" : string.Empty;
+            var code = line.RevenueAccountId is { } rid2 && byId.TryGetValue(rid2, out var a2) ? a2.Code : string.Empty;
+            _lines.Add(new CreditMemoLineEditState(
+                ItemId: Guid.Empty, ItemDisplay: string.Empty,
+                Description: line.Description ?? string.Empty,
+                Quantity: line.Quantity, UnitPrice: line.UnitPrice,
+                AccountId: line.RevenueAccountId, AccountDisplay: displ, AccountCode: code,
+                TaxCodeId: null, TaxCode: string.Empty,
+                TaskId: null));  // Task back-link not copied
+        }
+        if (_lines.Count == 0) _lines.Add(new CreditMemoLineEditState());
     }
 
     /// <summary>

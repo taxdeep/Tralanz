@@ -6,6 +6,8 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject VendorClient VendorClient
+@inject VendorCreditClient VendorCreditClient
+@inject AccountClient AccountClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -34,6 +36,12 @@
 @if (ShellState.AreWritesBlocked)
 {
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (_isFromCopy)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="This is a copy. Revise as needed and save to create a new vendor credit; the original is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -253,10 +261,66 @@
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+    // Phase 3.1
+    private bool _isFromCopy;
+
+    [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromCreditId { get; set; }
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
-    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        if (CopyFromCreditId is { } id && id != Guid.Empty)
+        {
+            await TryHydrateFromCopySourceAsync(id);
+        }
+    }
+
+    /// <summary>Phase 3.1: hydrate from an existing vendor credit.</summary>
+    private async Task TryHydrateFromCopySourceAsync(Guid sourceId)
+    {
+        VendorCreditRecordDto? source;
+        try
+        {
+            source = await VendorCreditClient.GetByIdAsync(sourceId, ShellState.ActiveCompany.Id);
+        }
+        catch { return; }
+        if (source is null)
+        {
+            _validation = "The vendor credit you copied from is not visible in this company.";
+            return;
+        }
+
+        var vendor = await VendorClient.GetByIdAsync(source.VendorId);
+        var accounts = await AccountClient.ListAsync();
+        var byId = accounts.ToDictionary(a => a.Id);
+
+        _isFromCopy = true;
+        _vendorId = source.VendorId;
+        _vendorDisplay = vendor?.DisplayName ?? string.Empty;
+        _currency = source.TransactionCurrencyCode;
+        _documentDate = DateTime.Today;
+        _fxRate = null;
+        _memo = source.Memo ?? string.Empty;
+        _appliedToBillNumber = string.Empty;  // Don't carry the apply-to link
+        _reason = string.Empty;
+
+        _lines.Clear();
+        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+        {
+            var displ = line.ExpenseAccountId is { } rid && byId.TryGetValue(rid, out var a) ? $"{a.Code}  {a.Name}" : string.Empty;
+            var code = line.ExpenseAccountId is { } rid2 && byId.TryGetValue(rid2, out var a2) ? a2.Code : string.Empty;
+            // VendorCreditLineDto carries only LineAmount (no per-unit
+            // Qty/Price split), so we copy the line total as a 1×price row.
+            _lines.Add(new VendorCreditLineEditState(
+                Description: line.Description ?? string.Empty,
+                Quantity: 1m, UnitPrice: line.LineAmount,
+                AccountId: line.ExpenseAccountId, AccountDisplay: displ, AccountCode: code,
+                TaxCodeId: null, TaxCode: string.Empty));
+        }
+        if (_lines.Count == 0) _lines.Add(new VendorCreditLineEditState());
+    }
 
     private async Task OnVendorSelected(UnitySearchPickerOption option)
     {
