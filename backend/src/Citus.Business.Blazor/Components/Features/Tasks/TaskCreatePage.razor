@@ -169,17 +169,24 @@ else
                                             ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
                             </td>
                             <td>
-                                <input type="number" step="0.01" min="0"
+                                @* Qty is an integer on Task lines — operator-rule,
+                                   not a schema constraint. We type=number/step=1
+                                   for browser hint, and floor to int on store so
+                                   the carried-over Invoice line stays scale=0. *@
+                                <input type="number" step="1" min="0"
                                        class="citus-form-field__input text-right"
-                                       value="@line.Quantity"
-                                       @onchange="@(e => UpdateLine(index, l => l with { Quantity = ParseDecimal(e.Value, l.Quantity) }))" />
+                                       value="@line.Quantity.ToString("0")"
+                                       @onchange="@(e => UpdateLine(index, l => l with { Quantity = ParseInteger(e.Value, l.Quantity) }))" />
                             </td>
                             <td>
+                                @* Unit price is always 2-decimal for CAD/USD style
+                                   currencies — store rounded so downstream invoice
+                                   lines inherit a clean scale. *@
                                 <input type="number" step="0.01" min="0"
                                        class="citus-form-field__input text-right"
-                                       value="@(line.UnitPrice?.ToString("0.##") ?? string.Empty)"
+                                       value="@(line.UnitPrice?.ToString("0.00") ?? string.Empty)"
                                        placeholder="Auto"
-                                       @onchange="@(e => UpdateLine(index, l => l with { UnitPrice = ParseNullableDecimal(e.Value) }))" />
+                                       @onchange="@(e => UpdateLine(index, l => l with { UnitPrice = ParseNullableMoney(e.Value) }))" />
                             </td>
                             <td class="text-right">@line.LineAmount.ToString("N2") @_currency</td>
                             <td>
@@ -322,7 +329,11 @@ else
         string defaultDescription = option.PrimaryText;
         if (_itemsById.TryGetValue(option.SourceId, out var item))
         {
-            unitPrice = item.DefaultSalesPrice;
+            // Round the inventory catalog's stored price (often scale=4) to 2
+            // decimals so the carried-over Invoice line renders cleanly.
+            unitPrice = item.DefaultSalesPrice is { } raw
+                ? Math.Round(raw, 2, MidpointRounding.AwayFromZero)
+                : (decimal?)null;
             if (!string.IsNullOrWhiteSpace(item.Description))
             {
                 defaultDescription = item.Description!;
@@ -441,14 +452,28 @@ else
         }
     }
 
-    private static decimal ParseDecimal(object? raw, decimal fallback) =>
-        decimal.TryParse(raw?.ToString(), out var v) ? v : fallback;
+    /// <summary>
+    /// Truncates fractional input to an int (Task qty rule) and returns it as
+    /// a decimal with scale 0 so the wire payload + DB row carry a clean
+    /// integer scale — that's what keeps the carried-over Invoice line from
+    /// rendering "2.0000".
+    /// </summary>
+    private static decimal ParseInteger(object? raw, decimal fallback) =>
+        decimal.TryParse(raw?.ToString(), out var v) ? Math.Truncate(v) : fallback;
 
-    private static decimal? ParseNullableDecimal(object? raw)
+    /// <summary>
+    /// 2-decimal money parser. Rounds (half-up via MidpointRounding.AwayFromZero
+    /// — the operator-visible price column) so the stored decimal scale is 2.
+    /// Blank input returns null so the server-side IItemPriceResolver gets to
+    /// fill the price on submit.
+    /// </summary>
+    private static decimal? ParseNullableMoney(object? raw)
     {
         var s = raw?.ToString();
         if (string.IsNullOrWhiteSpace(s)) return null;
-        return decimal.TryParse(s, out var v) ? v : null;
+        return decimal.TryParse(s, out var v)
+            ? Math.Round(v, 2, MidpointRounding.AwayFromZero)
+            : null;
     }
 
     private sealed record LineDraft
