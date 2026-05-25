@@ -197,8 +197,14 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                   or (doc.visibility_scope = 'assignee_only' and doc.owner_user_id = @user_id)
                   or (doc.visibility_scope = 'assignee_only'
                       and doc.visibility_override_permission is not null
-                      and doc.visibility_override_permission = any(
-                        (select granted_tokens from caller_info)
+                      -- X-4: wrap in EXISTS so `any(granted_tokens)` parses as
+                      -- the array-operator form (`text = any(text[])`). Without
+                      -- this PostgreSQL reads `any((select granted_tokens from ...))`
+                      -- as the subquery form, comparing `text = text[]` row-by-
+                      -- row and failing with 42883 (no such operator).
+                      and exists (
+                        select 1 from caller_info ci
+                        where doc.visibility_override_permission = any(ci.granted_tokens)
                       ))
                 )
                 and (

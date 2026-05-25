@@ -229,12 +229,16 @@ public sealed class CompanyOwnerTransferSmokeTests
               'USD', false, 'active'
             );
 
+            -- X-4 test-isolation: append the per-run UserId to each
+            -- username so a second test invocation doesn't trip
+            -- users_username_key 23505 against rows left behind by a
+            -- previous run that crashed before its cleanup ran.
             insert into users (id, email, username, password_hash, status)
             values
-              (@owner_id,    @owner_email,    'owner.transfer',  'hashed', 'active'),
-              (@user_a_id,   @user_a_email,   'user.a.transfer', 'hashed', 'active'),
-              (@user_b_id,   @user_b_email,   'user.b.transfer', 'hashed', 'active'),
-              (@inactive_id, @inactive_email, 'user.x.transfer', 'hashed', 'active');
+              (@owner_id,    @owner_email,    'owner.transfer.'  || @owner_id,    'hashed', 'active'),
+              (@user_a_id,   @user_a_email,   'user.a.transfer.' || @user_a_id,   'hashed', 'active'),
+              (@user_b_id,   @user_b_email,   'user.b.transfer.' || @user_b_id,   'hashed', 'active'),
+              (@inactive_id, @inactive_email, 'user.x.transfer.' || @inactive_id, 'hashed', 'active');
 
             insert into company_memberships (
               id, company_id, user_id, role, permissions, is_active, is_owner

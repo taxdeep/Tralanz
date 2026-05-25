@@ -211,12 +211,13 @@ public sealed class PermissionEvaluatorSmokeTests
               'USD', false, 'active'
             );
 
+            -- X-4 test-isolation: append per-run UserId for unique username.
             insert into users (id, email, username, password_hash, status)
             values
-              (@owner_id,    @owner_email,    'owner.eval',    'hashed-password', 'active'),
-              (@user_a_id,   @user_a_email,   'user.a.eval',   'hashed-password', 'active'),
-              (@user_b_id,   @user_b_email,   'user.b.eval',   'hashed-password', 'active'),
-              (@inactive_id, @inactive_email, 'user.inact.eval','hashed-password', 'active');
+              (@owner_id,    @owner_email,    'owner.eval.'     || @owner_id,    'hashed-password', 'active'),
+              (@user_a_id,   @user_a_email,   'user.a.eval.'    || @user_a_id,   'hashed-password', 'active'),
+              (@user_b_id,   @user_b_email,   'user.b.eval.'    || @user_b_id,   'hashed-password', 'active'),
+              (@inactive_id, @inactive_email, 'user.inact.eval.'|| @inactive_id, 'hashed-password', 'active');
 
             insert into company_memberships (
               id, company_id, user_id, role, permissions, is_active, is_owner
