@@ -3145,6 +3145,85 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     margin: 0;
 }
 
+.citus-account-create {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-5);
+}
+
+.citus-account-create__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(11rem, 0.5fr);
+    gap: var(--citus-space-4);
+}
+
+.citus-account-create__checkbox {
+    justify-content: flex-end;
+}
+
+.citus-account-create-preview {
+    border-top: 1px solid var(--citus-color-border);
+    padding-top: var(--citus-space-4);
+}
+
+.citus-account-create-preview__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    border-bottom: 1px solid var(--citus-color-border);
+    padding-bottom: var(--citus-space-3);
+}
+
+.citus-account-create-preview__title {
+    margin: 0;
+    font-size: var(--citus-text-base);
+    font-weight: 600;
+    color: var(--citus-color-fg);
+}
+
+.citus-account-create-preview__badge {
+    flex: 0 0 auto;
+    border-radius: var(--citus-radius-sm);
+    background: var(--citus-color-primary);
+    color: var(--citus-color-fg-on-primary);
+    font-size: var(--citus-text-xs);
+    font-weight: 600;
+    line-height: 1;
+    padding: var(--citus-space-1) var(--citus-space-2);
+}
+
+.citus-account-create-preview__list {
+    max-height: 48vh;
+    overflow-y: auto;
+    padding: var(--citus-space-2) 0;
+}
+
+.citus-account-create-preview__row {
+    display: flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: var(--citus-space-1) var(--citus-space-3);
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-account-create-preview__row.is-new {
+    background: var(--citus-color-primary-bg);
+    box-shadow: inset 0 0 0 1px var(--citus-color-primary);
+}
+
+@media (max-width: 48rem) {
+    .citus-account-create__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .citus-account-create-preview__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
 /* ---------- Inline CustomerPicker ---------- */
 
 .citus-customer-picker {

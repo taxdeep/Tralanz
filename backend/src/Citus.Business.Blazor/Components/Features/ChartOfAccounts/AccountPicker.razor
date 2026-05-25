@@ -8,8 +8,9 @@
     column (code | name - CCY | detail/parent hint).
 
     Includes an inline "+ Add new {query}" affordance that opens a
-    minimal expansion panel: code / name / root type / currency, posts
-    via AccountClient.CreateAsync, then auto-selects the new account.
+    focused New account drawer: name / optional account number / root
+    type / detail type / currency, posts via AccountClient.CreateAsync,
+    then auto-selects the new account.
     The newly-created row also lands in the local cache so subsequent
     keystrokes show it without waiting for the UnitySearch projection
     refresh.
@@ -90,7 +91,7 @@
         </div>
     }
 
-    @if (_creating)
+    @if (false && _creating)
     {
         <div class="citus-account-picker__create-panel">
             <div class="citus-account-picker__create-row">
@@ -134,6 +135,107 @@
         </div>
     }
 </div>
+
+<CitusDrawer @bind-IsOpen="_creating"
+             Title="New account"
+             SaveLabel="@(_creatingBusy ? "Saving..." : "Save")"
+             SaveDisabled="@(_creatingBusy || string.IsNullOrWhiteSpace(_newName))"
+             Width="CitusDrawerWidth.Large"
+             IsDirty="false"
+             OnSave="SaveCreateAsync"
+             OnCancel="CancelCreate">
+    <div class="citus-account-create">
+        @if (!string.IsNullOrEmpty(_createError))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@_createError" Class="mb-4" />
+        }
+
+        <div class="citus-account-create__grid">
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Account name*</span>
+                <input class="citus-form-field__input"
+                       value="@_newName"
+                       @oninput="@(e => _newName = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="200"
+                       disabled="@_creatingBusy" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Account number</span>
+                <input class="citus-form-field__input"
+                       value="@_newCode"
+                       @oninput="@(e => _newCode = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="32"
+                       placeholder="@SuggestedCode"
+                       disabled="@_creatingBusy" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Account type*</span>
+                <select class="citus-form-field__input"
+                        value="@_newRootType"
+                        @onchange="OnCreateRootTypeChanged"
+                        disabled="@_creatingBusy">
+                    @foreach (var type in RootTypeOptionsForCreate())
+                    {
+                        <option value="@type.Value">@type.Label</option>
+                    }
+                </select>
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Detail type*</span>
+                <select class="citus-form-field__input"
+                        value="@_newDetailType"
+                        @onchange="@(e => _newDetailType = e.Value?.ToString() ?? string.Empty)"
+                        disabled="@_creatingBusy">
+                    @foreach (var detail in DetailTypeOptionsFor(_newRootType))
+                    {
+                        <option value="@detail.Value">@detail.Label</option>
+                    }
+                </select>
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Currency</span>
+                <input class="citus-form-field__input"
+                       value="@_newCurrencyCode"
+                       @oninput="@(e => _newCurrencyCode = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="3"
+                       placeholder="@DefaultCurrencyCode"
+                       disabled="@_creatingBusy" />
+            </label>
+
+            <label class="citus-form-field citus-account-create__checkbox">
+                <span class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox"
+                           checked="@_newAllowManualPosting"
+                           @onchange="@(e => _newAllowManualPosting = (bool)(e.Value ?? false))"
+                           disabled="@_creatingBusy" />
+                    Allow manual posting
+                </span>
+            </label>
+        </div>
+
+        <section class="citus-account-create-preview">
+            <header class="citus-account-create-preview__header">
+                <div>
+                    <h3 class="citus-account-create-preview__title">@StatementName</h3>
+                    <p class="text-fg-muted text-sm">Active accounts as of @DateTime.Today.ToString("dd/MM/yyyy")</p>
+                </div>
+                <span class="citus-account-create-preview__badge">NEW ACCOUNT PREVIEW</span>
+            </header>
+            <div class="citus-account-create-preview__list">
+                @foreach (var row in PreviewRows)
+                {
+                    <div class="citus-account-create-preview__row @(row.IsNew ? "is-new" : null)">
+                        <span>@row.Display</span>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</CitusDrawer>
 
 @code {
     [Parameter, EditorRequired] public CompanyId CompanyId { get; set; }
@@ -179,9 +281,49 @@
     private string _newCode = string.Empty;
     private string _newName = string.Empty;
     private string _newRootType = "expense";
+    private string _newDetailType = string.Empty;
+    private string _newCurrencyCode = string.Empty;
+    private bool _newAllowManualPosting = true;
     private string? _createError;
 
     private bool CanCreate => !Disabled && !_creating;
+    private bool IsCreateDirty =>
+        !string.IsNullOrWhiteSpace(_newCode) ||
+        !string.IsNullOrWhiteSpace(_newName) ||
+        !string.IsNullOrWhiteSpace(_newCurrencyCode);
+    private string SuggestedCode => SuggestCodeFor(_newRootType);
+    private string StatementName => _newRootType is "asset" or "liability" or "equity"
+        ? "Balance Sheet"
+        : "Profit & Loss";
+    private IReadOnlyList<PreviewAccountRow> PreviewRows
+    {
+        get
+        {
+            var rows = _allAccounts
+                .Where(a => a.IsActive)
+                .Where(a => string.Equals(a.RootType, _newRootType, StringComparison.OrdinalIgnoreCase))
+                .Select(a => new PreviewAccountRow(
+                    a.Code,
+                    $"{a.Code} {a.Name}".Trim(),
+                    IsNew: false))
+                .ToList();
+
+            if (!string.IsNullOrWhiteSpace(_newName))
+            {
+                var code = EffectiveNewCode();
+                rows.Add(new PreviewAccountRow(
+                    code,
+                    $"{code} {_newName.Trim()}".Trim(),
+                    IsNew: true));
+            }
+
+            return rows
+                .OrderBy(r => NumericCodeOrMax(r.Code))
+                .ThenBy(r => r.Display, StringComparer.OrdinalIgnoreCase)
+                .Take(28)
+                .ToArray();
+        }
+    }
 
     protected override void OnParametersSet()
     {
@@ -471,7 +613,10 @@
             _newCode = string.Empty;
             _newName = typed;
         }
-        _newRootType = "expense";
+        _newRootType = DefaultRootTypeForCreate();
+        _newDetailType = DefaultDetailTypeFor(_newRootType);
+        _newCurrencyCode = DefaultCurrencyCode ?? string.Empty;
+        _newAllowManualPosting = true;
         _createError = null;
         _creating = true;
         _showResults = false;
@@ -487,7 +632,7 @@
 
     private async Task SaveCreateAsync()
     {
-        if (string.IsNullOrWhiteSpace(_newCode) || string.IsNullOrWhiteSpace(_newName))
+        if (string.IsNullOrWhiteSpace(_newName))
         {
             return;
         }
@@ -495,13 +640,16 @@
         _createError = null;
         try
         {
+            var currency = string.IsNullOrWhiteSpace(_newCurrencyCode)
+                ? DefaultCurrencyCode
+                : _newCurrencyCode.Trim().ToUpperInvariant();
             var payload = new AccountUpsertPayload(
-                Code: _newCode.Trim(),
+                Code: EffectiveNewCode(),
                 Name: _newName.Trim(),
                 RootType: _newRootType,
-                DetailType: null,
-                CurrencyCode: DefaultCurrencyCode,
-                AllowManualPosting: true,
+                DetailType: string.IsNullOrWhiteSpace(_newDetailType) ? null : _newDetailType.Trim(),
+                CurrencyCode: string.IsNullOrWhiteSpace(currency) ? null : currency,
+                AllowManualPosting: _newAllowManualPosting,
                 IsActive: true);
 
             var outcome = await AccountClient.CreateAsync(payload);
@@ -522,6 +670,164 @@
             StateHasChanged();
         }
     }
+
+    private void OnCreateRootTypeChanged(ChangeEventArgs args)
+    {
+        _newRootType = args.Value?.ToString() ?? DefaultRootTypeForCreate();
+        _newDetailType = DefaultDetailTypeFor(_newRootType);
+    }
+
+    private string DefaultRootTypeForCreate()
+    {
+        var allowed = ParseAllowedRootTypes(AllowedRootTypes);
+        if (allowed is null || allowed.Count == 0) return "expense";
+        if (allowed.Contains("expense")) return "expense";
+        if (allowed.Contains("asset")) return "asset";
+        var firstAllowed = RootTypeOptions.FirstOrDefault(t => allowed.Contains(t.Value));
+        return string.IsNullOrWhiteSpace(firstAllowed.Value) ? "expense" : firstAllowed.Value;
+    }
+
+    private IEnumerable<(string Value, string Label)> RootTypeOptionsForCreate()
+    {
+        var allowed = ParseAllowedRootTypes(AllowedRootTypes);
+        if (allowed is null) return RootTypeOptions;
+        var filtered = RootTypeOptions.Where(t => allowed.Contains(t.Value)).ToArray();
+        return filtered.Length == 0 ? RootTypeOptions : filtered;
+    }
+
+    private static string DefaultDetailTypeFor(string rootType) =>
+        DetailTypeOptionsFor(rootType).FirstOrDefault().Value ?? string.Empty;
+
+    private string EffectiveNewCode()
+    {
+        var typed = _newCode.Trim();
+        return string.IsNullOrWhiteSpace(typed) ? SuggestedCode : typed;
+    }
+
+    private string SuggestCodeFor(string rootType)
+    {
+        var used = _allAccounts
+            .Where(a => string.Equals(a.RootType, rootType, StringComparison.OrdinalIgnoreCase))
+            .Select(a => a.Code)
+            .Where(c => int.TryParse(c, out _))
+            .Select(int.Parse)
+            .ToHashSet();
+
+        var candidate = used.Count == 0
+            ? BaseCodeFor(rootType)
+            : ((used.Max() / 100) + 1) * 100;
+
+        while (used.Contains(candidate))
+        {
+            candidate += 100;
+        }
+
+        return candidate.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static int BaseCodeFor(string rootType) => rootType switch
+    {
+        "asset" => 10000,
+        "liability" => 20000,
+        "equity" => 30000,
+        "revenue" => 40000,
+        "cost_of_sales" => 50000,
+        _ => 60000,
+    };
+
+    private static int NumericCodeOrMax(string code) =>
+        int.TryParse(code, out var parsed) ? parsed : int.MaxValue;
+
+    private static readonly (string Value, string Label)[] RootTypeOptions =
+    {
+        ("asset", "Asset"),
+        ("liability", "Liability"),
+        ("equity", "Equity"),
+        ("revenue", "Revenue"),
+        ("cost_of_sales", "Cost of Sales"),
+        ("expense", "Expense"),
+    };
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<(string Value, string Label)>> DetailTypeCatalog =
+        new Dictionary<string, IReadOnlyList<(string Value, string Label)>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["asset"] = new (string, string)[]
+            {
+                ("cash", "Cash"),
+                ("bank", "Bank"),
+                ("accounts_receivable", "Accounts receivable"),
+                ("undeposited_funds", "Undeposited funds"),
+                ("short_term_investments", "Short-term investments"),
+                ("employee_advances", "Employee advances"),
+                ("prepaids", "Prepaids"),
+                ("inventory", "Inventory"),
+                ("fixed_asset", "Fixed asset"),
+                ("contra_asset", "Contra asset"),
+                ("other_asset", "Other asset"),
+            },
+            ["liability"] = new (string, string)[]
+            {
+                ("accounts_payable", "Accounts payable"),
+                ("credit_card", "Credit card"),
+                ("shareholder_loan", "Shareholder loan"),
+                ("customer_deposits", "Customer deposits"),
+                ("tax", "Tax"),
+                ("payroll_liability", "Payroll liability"),
+                ("long_term_debt", "Long-term debt"),
+            },
+            ["equity"] = new (string, string)[]
+            {
+                ("opening_balance", "Opening balance"),
+                ("capital_stock", "Capital stock"),
+                ("dividends", "Dividends"),
+                ("owners_draw", "Owner's draw"),
+                ("retained_earnings", "Retained earnings"),
+            },
+            ["revenue"] = new (string, string)[]
+            {
+                ("sales", "Sales"),
+                ("service_revenue", "Service revenue"),
+                ("uncategorized", "Uncategorized"),
+            },
+            ["cost_of_sales"] = new (string, string)[]
+            {
+                ("cogs", "COGS"),
+                ("freight", "Freight"),
+            },
+            ["expense"] = new (string, string)[]
+            {
+                ("advertising", "Advertising"),
+                ("auto", "Auto"),
+                ("bad_debt", "Bad debt"),
+                ("bank_fees", "Bank fees"),
+                ("depreciation", "Depreciation"),
+                ("insurance", "Insurance"),
+                ("interest", "Interest"),
+                ("meals", "Meals & entertainment"),
+                ("office", "Office"),
+                ("payroll", "Payroll"),
+                ("printing", "Printing"),
+                ("professional_fees", "Professional fees"),
+                ("rent", "Rent"),
+                ("repairs", "Repairs"),
+                ("taxes_licenses", "Taxes & licenses"),
+                ("technology", "Technology"),
+                ("telephone", "Telephone"),
+                ("training", "Training"),
+                ("travel", "Travel"),
+                ("utilities", "Utilities"),
+                ("uncategorized", "Uncategorized"),
+                ("asset_disposal", "Asset disposal"),
+                ("other_expense", "Other expense"),
+                ("income_tax", "Income tax"),
+                ("fx", "FX gain / loss"),
+            },
+        };
+
+    private static IReadOnlyList<(string Value, string Label)> DetailTypeOptionsFor(string rootType) =>
+        DetailTypeCatalog.TryGetValue(rootType, out var options)
+            ? options
+            : Array.Empty<(string, string)>();
 
     private string FormatMeta(AccountSummary row)
     {
@@ -556,4 +862,6 @@
         var tail = idx + query.Length;
         if (tail < text.Length) builder.AddContent(5, text.Substring(tail));
     };
+
+    private sealed record PreviewAccountRow(string Code, string Display, bool IsNew);
 }
