@@ -2202,6 +2202,51 @@ textarea.rz-inputtext {
     border-radius: var(--citus-radius-sm);
 }
 
+.citus-document-actionbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: var(--citus-space-3);
+    margin: var(--citus-space-6) calc(var(--citus-space-6) * -1) calc(var(--citus-space-6) * -1);
+    padding: var(--citus-space-3) var(--citus-space-6);
+    background: var(--citus-color-bg-elevated);
+    border-top: 1px solid var(--citus-color-border);
+    box-shadow: 0 -8px 22px -18px oklch(0% 0 0 / 0.35);
+}
+
+.citus-document-actionbar__left,
+.citus-document-actionbar__center,
+.citus-document-actionbar__right {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+}
+
+.citus-document-actionbar__center {
+    justify-content: center;
+}
+
+.citus-document-actionbar__right {
+    justify-content: flex-end;
+}
+
+@media (max-width: 48rem) {
+    .citus-document-actionbar {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .citus-document-actionbar__left,
+    .citus-document-actionbar__center,
+    .citus-document-actionbar__right {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+}
+
 /* ---------- Dark-mode sidebar contrast override ----------
    The plain BEM selectors above pull from --citus-color-* tokens so they
    flip on .dark / [data-theme="dark"] automatically. The only dark-mode

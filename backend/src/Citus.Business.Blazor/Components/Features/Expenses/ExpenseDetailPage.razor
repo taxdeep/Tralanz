@@ -14,6 +14,13 @@
             <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
             <span>Back to expenses</span>
         </a>
+        @if (_expense is not null)
+        {
+            <a class="citus-button citus-button--ghost" href="@($"expenses/new?copyFrom={_expense.Id:D}")">
+                <CitusIcon Name="IconName.FileText" Size="IconSize.Inline" />
+                <span>Copy</span>
+            </a>
+        }
     </Actions>
 </CitusPageHeader>
 
@@ -52,6 +59,10 @@ else
         <div class="flex flex-wrap gap-2 items-center">
             @if (_expense.Status == "posted")
             {
+                <a class="citus-button citus-button--ghost" href="@($"expenses/new?copyFrom={_expense.Id:D}")">
+                    <CitusIcon Name="IconName.FileText" Size="IconSize.Inline" />
+                    <span>Copy</span>
+                </a>
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
             }
             else

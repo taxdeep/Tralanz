@@ -43,6 +43,20 @@
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
 }
 
+@if (!string.IsNullOrWhiteSpace(_copiedFromExpenseNumber))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <strong>This is a copy of @_copiedFromExpenseNumber.</strong>
+            <div class="text-fg-muted text-sm mt-1">
+                Review the payee, payment account, date, category lines, tax settings, and memo before saving. The original expense was not changed.
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+}
+
 @if (!string.IsNullOrWhiteSpace(_validation))
 {
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
@@ -157,7 +171,7 @@ else
 
             <section class="citus-panel">
                 <header class="citus-panel__header">
-                    <h2 class="citus-panel__title">Lines</h2>
+                    <h2 class="citus-panel__title">Category details</h2>
                     <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
                         <option value="exclusive">Tax exclusive</option>
                         <option value="inclusive">Tax inclusive</option>
@@ -169,10 +183,8 @@ else
                             <th style="width: 3rem">#</th>
                             <th style="width: 16rem">Category</th>
                             <th>Description</th>
-                            <th style="width: 6rem" class="text-right">Qty</th>
-                            <th style="width: 8rem" class="text-right">Rate</th>
                             <th style="width: 9rem">Tax</th>
-                            <th style="width: 8rem" class="text-right">Amount</th>
+                            <th style="width: 10rem" class="text-right">Amount</th>
                             <th style="width: 3rem"></th>
                         </tr>
                     </thead>
@@ -200,16 +212,6 @@ else
                                                 ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
                                 </td>
                                 <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.Quantity"
-                                                   Change="@(v => UpdateLine(index, l => l with { Quantity = v }))"
-                                                   Format="0.##" Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.UnitPrice"
-                                                   Change="@(v => UpdateLine(index, l => l with { UnitPrice = v }))"
-                                                   Format="0.0000" Class="citus-control-full" />
-                                </td>
-                                <td>
                                     <RadzenDropDown TValue="Guid?"
                                                     Data="@_taxCodes"
                                                     Value="@line.TaxCodeId"
@@ -219,7 +221,11 @@ else
                                                     AllowClear="true"
                                                     Class="citus-control-full" />
                                 </td>
-                                <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.Amount"
+                                                   Change="@(v => UpdateLine(index, l => l with { Amount = v }))"
+                                                   Format="0.00" Class="citus-control-full" />
+                                </td>
                                 <td>
                                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
                                                  OnClick="@(() => RemoveLine(index))">×</CitusButton>
@@ -300,13 +306,26 @@ else
                 </table>
             </section>
 
-            <div class="flex flex-wrap gap-2">
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
-                    @(_isSaving ? "Saving…" : "Save")
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
-            </div>
         </aside>
+    </div>
+
+    <div class="citus-document-actionbar">
+        <div class="citus-document-actionbar__left">
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="ClearLines">Clear</CitusButton>
+        </div>
+        <div class="citus-document-actionbar__center">
+            <span class="text-fg-muted text-sm">Print</span>
+            <span class="text-fg-muted text-sm">Make recurring</span>
+        </div>
+        <div class="citus-document-actionbar__right">
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(false))">
+                @(_isSaving ? "Saving..." : "Save")
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(true))">
+                @(_isSaving ? "Saving..." : "Save and close")
+            </CitusButton>
+        </div>
     </div>
 }
 
@@ -341,6 +360,10 @@ else
     private bool _isLoading = true;
     private bool _isSaving;
     private string? _validation;
+    private string? _copiedFromExpenseNumber;
+
+    [SupplyParameterFromQuery(Name = "copyFrom")]
+    public Guid? CopyFromExpenseId { get; set; }
 
     private readonly PageHeaderModel _header = new()
     {
@@ -349,7 +372,7 @@ else
         Subtitle = "Record a payment that has already happened."
     };
 
-    private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
+    private decimal Subtotal => _lines.Sum(l => Math.Round(l.Amount, 4));
     private decimal DiscountAmount =>
         _discountKind == "percent" && _discountValue is { } pct ? Math.Round(Subtotal * pct / 100m, 4)
         : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
@@ -401,8 +424,59 @@ else
                 .Select(a => new CategoryOption(a.Id, $"{a.Code}  {a.Name}"))
                 .ToList();
             _taxCodes = taxTask.Result;
+
+            if (CopyFromExpenseId is { } copyFromId && copyFromId != Guid.Empty)
+            {
+                await ApplyCopySourceAsync(copyFromId);
+            }
         }
         finally { _isLoading = false; }
+    }
+
+    private async Task ApplyCopySourceAsync(Guid sourceExpenseId)
+    {
+        var source = await ExpenseClient.GetByIdAsync(sourceExpenseId);
+        if (source is null)
+        {
+            _validation = "The expense to copy could not be loaded.";
+            return;
+        }
+
+        _copiedFromExpenseNumber = source.ExpenseNumber;
+        _payeeKind = source.PayeeKind;
+        _payeeId = source.PayeeKind == "vendor" ? source.PayeeId : null;
+        _payeeNameFreeform = source.PayeeKind == "vendor" ? string.Empty : source.PayeeNameFreeform;
+        _paymentAccountId = source.PaymentAccountId;
+        _paymentMethod = source.PaymentMethod;
+        _chequeNumber = source.ChequeNumber ?? string.Empty;
+        _refNo = source.RefNo ?? string.Empty;
+        _paymentDate = source.PaymentDate.ToDateTime(TimeOnly.MinValue);
+        _currency = source.TransactionCurrencyCode;
+        _fxRate = string.Equals(source.TransactionCurrencyCode, source.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : source.FxRate;
+        _taxMode = string.IsNullOrWhiteSpace(source.TaxMode) ? "exclusive" : source.TaxMode;
+        _discountKind = source.DiscountKind;
+        _discountValue = source.DiscountValue;
+        _memo = source.Memo ?? string.Empty;
+        _internalNote = source.InternalNote ?? string.Empty;
+        _lines = source.Lines
+            .OrderBy(l => l.Sequence)
+            .Select(l => new LineDraft
+            {
+                ExpenseAccountId = l.ExpenseAccountId,
+                Description = l.Description,
+                Amount = l.LineTotal,
+                TaxCodeId = l.TaxCodeId
+            })
+            .ToList();
+
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new LineDraft());
+        }
+
+        EnsureTrailingEmptyLine(_lines.Count - 1);
     }
 
     private static int DetailTypeOrder(string? detailType) => detailType switch
@@ -470,9 +544,9 @@ else
         var updated = mutate(current);
         current.ExpenseAccountId = updated.ExpenseAccountId;
         current.Description = updated.Description;
-        current.Quantity = updated.Quantity;
-        current.UnitPrice = updated.UnitPrice;
+        current.Amount = updated.Amount;
         current.TaxCodeId = updated.TaxCodeId;
+        EnsureTrailingEmptyLine(index);
     }
 
     private void AddLine() => _lines.Add(new LineDraft());
@@ -486,7 +560,20 @@ else
 
     private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
 
-    private async Task SaveAsync()
+    private void EnsureTrailingEmptyLine(int touchedIndex)
+    {
+        if (touchedIndex != _lines.Count - 1) return;
+        if (IsEmpty(_lines[^1])) return;
+        _lines.Add(new LineDraft());
+    }
+
+    private static bool IsEmpty(LineDraft line) =>
+        line.ExpenseAccountId is null &&
+        string.IsNullOrWhiteSpace(line.Description) &&
+        line.Amount == 0m &&
+        line.TaxCodeId is null;
+
+    private async Task SaveAsync(bool closeAfterSave)
     {
         _validation = null;
 
@@ -511,15 +598,20 @@ else
             _validation = "Reference # is required for Wire / Direct Deposit / EFT.";
             return;
         }
-        if (_lines.All(l => l.Quantity == 0 && l.UnitPrice == 0 && string.IsNullOrWhiteSpace(l.Description) && l.ExpenseAccountId is null))
+        if (_lines.All(IsEmpty))
         {
             _validation = "Add at least one line with a category and amount.";
             return;
         }
-        var lineWithoutCategory = _lines.FirstOrDefault(l => (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)) && l.ExpenseAccountId is null);
+        var lineWithoutCategory = _lines.FirstOrDefault(l => !IsEmpty(l) && l.ExpenseAccountId is null);
         if (lineWithoutCategory is not null)
         {
             _validation = "Every active line needs a category.";
+            return;
+        }
+        if (_lines.Any(l => !IsEmpty(l) && l.Amount <= 0m))
+        {
+            _validation = "Every active line needs a positive amount.";
             return;
         }
 
@@ -545,15 +637,15 @@ else
                 Memo: NullIfEmpty(_memo),
                 InternalNote: NullIfEmpty(_internalNote),
                 Lines: _lines
-                    .Where(l => l.ExpenseAccountId is not null && (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)))
+                    .Where(l => !IsEmpty(l))
                     .Select((l, i) => new ExpenseLinePayload(
                         Sequence: i + 1,
                         ServiceDate: null,
                         ItemId: null,
                         ExpenseAccountId: l.ExpenseAccountId!.Value,
                         Description: l.Description ?? string.Empty,
-                        Quantity: l.Quantity,
-                        UnitPrice: l.UnitPrice,
+                        Quantity: 1m,
+                        UnitPrice: l.Amount,
                         TaxCodeId: l.TaxCodeId))
                     .ToArray());
 
@@ -565,7 +657,7 @@ else
             }
 
             await Message.SuccessAsync($"Expense {outcome.Saved.ExpenseNumber} recorded.");
-            Navigation.NavigateTo($"expenses/{outcome.Saved.Id:D}");
+            Navigation.NavigateTo(closeAfterSave ? "expenses" : $"expenses/{outcome.Saved.Id:D}");
         }
         finally { _isSaving = false; }
     }
@@ -582,8 +674,7 @@ else
     {
         public Guid? ExpenseAccountId { get; set; }
         public string Description { get; set; } = string.Empty;
-        public decimal Quantity { get; set; }
-        public decimal UnitPrice { get; set; }
+        public decimal Amount { get; set; }
         public Guid? TaxCodeId { get; set; }
     }
 
