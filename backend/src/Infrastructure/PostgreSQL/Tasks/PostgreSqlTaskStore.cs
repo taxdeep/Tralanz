@@ -503,7 +503,10 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
             auditCommand.Parameters.AddWithValue("from_status", fromToken);
             auditCommand.Parameters.AddWithValue("to_status", toToken);
             auditCommand.Parameters.AddWithValue("reason", reason is null ? DBNull.Value : (object)reason);
-            auditCommand.Parameters.AddWithValue("actor_user_id", actorUserId);
+            // Unwrap UserId to underlying char(7) string — Npgsql can't
+            // auto-serialize the strong-typed value. Same fix pattern as
+            // PR #113 on CreateAsync's created_by bind.
+            auditCommand.Parameters.AddWithValue("actor_user_id", actorUserId.Value);
             await auditCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
