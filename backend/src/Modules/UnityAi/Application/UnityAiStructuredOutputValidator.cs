@@ -40,11 +40,83 @@ public sealed class UnityAiStructuredOutputValidator : IUnityAiStructuredOutputV
         return taskType switch
         {
             UnityAiPromptRegistry.UnitysearchRerankV1 => ValidateRerankV1(doc.RootElement),
+            UnityAiPromptRegistry.UnitysearchQueryIntentV1 => ValidateQueryIntentV1(doc.RootElement),
             _ => null, // Unknown task: accept. Adding a strict allowlist
                        // would force every internal task ever shipped to
                        // be re-registered here on top of the prompt
                        // registry — too much friction for too little gain.
         };
+    }
+
+    /// <summary>
+    /// Expected shape:
+    /// <code>
+    /// {
+    ///   "entity_type_priors": { "&lt;entity_type&gt;": 0..1, ... },
+    ///   "expanded_terms": [ "synonym1", "synonym2", ... ],
+    ///   "confidence": 0..1
+    /// }
+    /// </code>
+    /// Both inner collections may be empty. Caps applied loosely so a
+    /// runaway response doesn't bloat the cache row.
+    /// </summary>
+    private static string? ValidateQueryIntentV1(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return "Root must be a JSON object.";
+        }
+
+        if (!root.TryGetProperty("entity_type_priors", out var priorsEl) ||
+            priorsEl.ValueKind != JsonValueKind.Object)
+        {
+            return "Missing required 'entity_type_priors' object.";
+        }
+
+        const int maxPriors = 32;
+        var priorCount = 0;
+        foreach (var prior in priorsEl.EnumerateObject())
+        {
+            if (priorCount++ >= maxPriors)
+            {
+                return $"Too many entity_type_priors entries (limit {maxPriors}).";
+            }
+            if (prior.Value.ValueKind != JsonValueKind.Number ||
+                !prior.Value.TryGetDecimal(out var weight) ||
+                weight < 0m || weight > 1m)
+            {
+                return $"entity_type_priors['{prior.Name}'] must be a number in [0, 1].";
+            }
+        }
+
+        if (!root.TryGetProperty("expanded_terms", out var termsEl) ||
+            termsEl.ValueKind != JsonValueKind.Array)
+        {
+            return "Missing required 'expanded_terms' array.";
+        }
+        const int maxTerms = 10;
+        var termCount = 0;
+        foreach (var term in termsEl.EnumerateArray())
+        {
+            if (termCount++ >= maxTerms)
+            {
+                return $"Too many expanded_terms entries (limit {maxTerms}).";
+            }
+            if (term.ValueKind != JsonValueKind.String)
+            {
+                return $"expanded_terms[{termCount - 1}] must be a string.";
+            }
+        }
+
+        if (!root.TryGetProperty("confidence", out var confEl) ||
+            confEl.ValueKind != JsonValueKind.Number ||
+            !confEl.TryGetDecimal(out var confidence) ||
+            confidence < 0m || confidence > 1m)
+        {
+            return "confidence must be a number in [0, 1].";
+        }
+
+        return null;
     }
 
     /// <summary>

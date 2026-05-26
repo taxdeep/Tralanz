@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Citus.Modules.UnitySearch.Application.Contracts;
 using Citus.Modules.UnitySearch.Domain.Shared;
 
@@ -7,7 +9,9 @@ public sealed class UnitySearchEngine(
     UnitySearchPolicyRegistry policyRegistry,
     IUnitySearchProjectionStore projectionStore,
     IUnitySearchQueryService queryService,
-    IUnitySearchStatsStore statsStore) : IUnitySearchEngine
+    IUnitySearchStatsStore statsStore,
+    IUnitysearchQueryIntentCacheStore intentCacheStore,
+    IUnitysearchQueryIntentBackfillEnqueuer intentBackfillEnqueuer) : IUnitySearchEngine
 {
     public async Task<UnitySearchResult> SearchAsync(UnitySearchQuery query, CancellationToken cancellationToken)
     {
@@ -66,6 +70,40 @@ public sealed class UnitySearchEngine(
 
         var classification = UnitySearchQueryClassifier.Classify(normalizedQuery);
         var hints = new UnitySearchQueryHints(classification.Tag, classification.NumericValue);
+
+        // Plan B: consult the per-company intent cache. A 'ready' hit
+        // populates UnitySearchQueryHints.Intent and the SQL ranker
+        // applies the per-entity priors and OR-extends the FTS gate
+        // with synonyms. A miss is silent — the SQL ranker still runs
+        // full Plan A behaviour, and we enqueue a fire-and-forget
+        // backfill so the next search for the same (company, query)
+        // pair benefits. AI-disabled is indistinguishable from a miss.
+        var queryHash = ComputeQueryHash(normalizedQuery);
+        UnitysearchQueryIntent? intent = null;
+        try
+        {
+            intent = await intentCacheStore.GetReadyAsync(query.CompanyId, queryHash, cancellationToken);
+        }
+        catch
+        {
+            // Cache lookup failure must never break search. Fall through.
+        }
+
+        if (intent is not null)
+        {
+            hints = hints with { Intent = intent };
+        }
+        else
+        {
+            // Fire-and-forget — never await. The enqueuer takes its own
+            // DI scope, runs the gateway call off-band, writes the cache
+            // row. Errors are swallowed inside the enqueuer.
+            intentBackfillEnqueuer.Enqueue(
+                query.CompanyId,
+                normalizedQuery,
+                queryHash,
+                policy.EntityTypes.ToArray());
+        }
 
         var documents = await queryService.SearchDocumentsAsync(query, policy, normalizedQuery, hints, cancellationToken);
         if (query.UserId.HasValue)
@@ -159,4 +197,18 @@ public sealed class UnitySearchEngine(
             SearchGroupKey.Reports => 4,
             _ => 5
         };
+
+    /// <summary>
+    /// SHA-256 of the normalized query, base16-lowercased. Stable across
+    /// processes / deployments / cache regenerations so the cache row
+    /// keyed by hash matches between writes (backfill) and reads
+    /// (search hot path).
+    /// </summary>
+    private static string ComputeQueryHash(string normalizedQuery)
+    {
+        Span<byte> hash = stackalloc byte[32];
+        var bytes = Encoding.UTF8.GetBytes(normalizedQuery);
+        SHA256.HashData(bytes, hash);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
 }

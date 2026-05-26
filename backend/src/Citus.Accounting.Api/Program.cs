@@ -597,6 +597,15 @@ builder.Services.AddSingleton<IUnityAiPromptRegistry, UnityAiPromptRegistry>();
 // unitysearch_ranking_hints. Manual trigger lives at
 // /internal/ai/distill-unitysearch?companyId=<uuid>.
 builder.Services.AddSingleton<IUnitysearchHintDistillationService, UnitysearchHintDistillationService>();
+// Plan B: per-company query-intent cache. Read path sits on every
+// search call (single index lookup); write path is off-band via the
+// backfill service + Task.Run enqueuer.
+builder.Services.AddSingleton<IUnitysearchQueryIntentCacheStore,
+    Infrastructure.PostgreSQL.UnitySearch.PostgreSqlUnitysearchQueryIntentCacheStore>();
+builder.Services.AddSingleton<IUnitysearchQueryIntentBackfillService,
+    UnitysearchQueryIntentBackfillService>();
+builder.Services.AddSingleton<IUnitysearchQueryIntentBackfillEnqueuer,
+    UnitysearchQueryIntentBackfillEnqueuer>();
 // Real shape validator. Catches malformed provider responses before
 // the gateway tries to deserialize into TOutput, so a runaway LLM
 // can't poison the structured-output deserialization path.
