@@ -24,10 +24,13 @@ public sealed class PostgreSqlUnitysearchQueryIntentCacheStore(PostgreSqlConnect
         await using var command = connection.CreateCommand();
         // Partial index ix_intent_cache_lookup matches the WHERE shape
         // (company_id, query_hash, status='ready') so this is a single
-        // index lookup. expires_at check is a leaf eval.
+        // index lookup. expires_at check is a leaf eval. Cast the
+        // vector column to text so we can shuttle it without depending
+        // on the Npgsql pgvector type plugin — the search SQL re-casts
+        // back to vector via ::vector on the way in.
         command.CommandText =
             """
-            select entity_type_priors::text, expanded_terms, confidence
+            select entity_type_priors::text, expanded_terms, confidence, query_embedding::text
             from unitysearch_query_intent_cache
             where company_id = @company_id
               and query_hash = @query_hash
@@ -49,11 +52,15 @@ public sealed class PostgreSqlUnitysearchQueryIntentCacheStore(PostgreSqlConnect
             ? Array.Empty<string>()
             : (string[])reader.GetValue(1);
         var confidence = reader.GetDecimal(2);
+        var queryEmbedding = reader.IsDBNull(3) ? null : reader.GetString(3);
 
         var priors = JsonSerializer.Deserialize<Dictionary<string, decimal>>(priorsJson, JsonOptions)
                      ?? new Dictionary<string, decimal>();
 
-        return new UnitysearchQueryIntent(priors, expandedTerms, confidence);
+        return new UnitysearchQueryIntent(priors, expandedTerms, confidence)
+        {
+            QueryEmbeddingLiteral = queryEmbedding,
+        };
     }
 
     public async Task<bool> TryReservePendingAsync(
@@ -103,6 +110,11 @@ public sealed class PostgreSqlUnitysearchQueryIntentCacheStore(PostgreSqlConnect
         // runs first; the row is guaranteed to exist when we reach here.
         // If it somehow doesn't (race between cleanup and backfill), the
         // UPDATE affects 0 rows and we silently skip.
+        //
+        // query_embedding is cast from text → vector inside SQL so callers
+        // pass a pgvector text literal (e.g. "[0.01,0.02,...]"). Null
+        // input clears the column to NULL via the COALESCE-friendly
+        // typed parameter binding.
         command.CommandText =
             """
             update unitysearch_query_intent_cache
@@ -111,6 +123,10 @@ public sealed class PostgreSqlUnitysearchQueryIntentCacheStore(PostgreSqlConnect
                 expanded_terms = @terms,
                 confidence = @confidence,
                 source = @source,
+                query_embedding = case when @query_embedding is null
+                    then null
+                    else @query_embedding::vector
+                end,
                 failure_reason = null,
                 updated_at = now(),
                 -- Refresh TTL on every successful fill so frequently-asked
@@ -126,6 +142,10 @@ public sealed class PostgreSqlUnitysearchQueryIntentCacheStore(PostgreSqlConnect
         termsParam.Value = terms;
         command.Parameters.AddWithValue("confidence", intent.Confidence);
         command.Parameters.AddWithValue("source", string.IsNullOrWhiteSpace(source) ? "ai" : source);
+        var embeddingParam = command.Parameters.Add("query_embedding", NpgsqlDbType.Text);
+        embeddingParam.Value = string.IsNullOrWhiteSpace(intent.QueryEmbeddingLiteral)
+            ? DBNull.Value
+            : (object)intent.QueryEmbeddingLiteral!;
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

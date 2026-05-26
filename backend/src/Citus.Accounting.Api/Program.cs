@@ -606,6 +606,19 @@ builder.Services.AddSingleton<IUnitysearchQueryIntentBackfillService,
     UnitysearchQueryIntentBackfillService>();
 builder.Services.AddSingleton<IUnitysearchQueryIntentBackfillEnqueuer,
     UnitysearchQueryIntentBackfillEnqueuer>();
+// Plan C-Population: pgvector embedding provider + per-company
+// doc-embedding back-fill. Embedding provider mirrors the chat-completion
+// adapter (same IPlatformAiProviderRuntimeResolver, same OpenAI-compatible
+// URL pattern, just /v1/embeddings instead of /v1/chat/completions).
+// All three gated independently on UNITYAI_EMBEDDINGS_ENABLED so the
+// operator can opt into vector recall without enabling the rest of the
+// AI gateway, or vice versa.
+builder.Services.AddSingleton<IUnityAiEmbeddingProvider,
+    OpenAiCompatibleEmbeddingProvider>();
+builder.Services.AddSingleton<ISearchDocumentEmbeddingStore,
+    Infrastructure.PostgreSQL.UnitySearch.PostgreSqlSearchDocumentEmbeddingStore>();
+builder.Services.AddSingleton<ISearchDocumentEmbeddingBackfillService,
+    SearchDocumentEmbeddingBackfillService>();
 // Real shape validator. Catches malformed provider responses before
 // the gateway tries to deserialize into TOutput, so a runaway LLM
 // can't poison the structured-output deserialization path.
@@ -13420,6 +13433,79 @@ app.MapPost(
         catch (Exception ex)
         {
             logger.LogError(ex, "Distillation trigger failed for {CompanyId}", companyId);
+            return Results.Problem(detail: ex.Message, statusCode: 500);
+        }
+    });
+
+// ============================================================================
+// Manual trigger for the per-company search-document embedding back-fill
+// (Plan C-Population). Same bootstrap-token gate as the distillation
+// trigger above. Reads up to maxBatches × 64 rows with embedding IS NULL,
+// embeds each batch via the configured provider (text-embedding-3-small
+// by default), writes pgvector data back into search_documents.embedding.
+//
+// Idempotent: repeated calls only pick up rows still NULL — already-
+// embedded rows are skipped by the partial index predicate.
+//
+// Example:
+//   curl -s -X POST -H 'Authorization: Bearer <token>' \
+//     'http://localhost:5088/internal/ai/backfill-search-doc-embeddings?companyId=<uuid>&maxBatches=4'
+// ============================================================================
+app.MapPost(
+    "/internal/ai/backfill-search-doc-embeddings",
+    async (
+        CompanyId companyId,
+        int? maxBatches,
+        ISearchDocumentEmbeddingBackfillService backfill,
+        IConfiguration configuration,
+        HttpContext httpContext,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken) =>
+    {
+        var logger = loggerFactory.CreateLogger("ai.embed.unitysearch.docs");
+
+        var configuredToken = configuration["UnityAi:ManualTriggerBootstrapToken"];
+        if (string.IsNullOrWhiteSpace(configuredToken))
+        {
+            return Results.Problem(
+                detail: "Manual embedding back-fill is disabled because UnityAi:ManualTriggerBootstrapToken is not configured.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        if (!httpContext.Request.Headers.TryGetValue("Authorization", out var authValues)
+            || authValues.Count == 0)
+        {
+            return Results.Unauthorized();
+        }
+        var providedAuth = authValues.ToString();
+        if (!providedAuth.StartsWith("Bearer ", StringComparison.Ordinal))
+        {
+            return Results.Unauthorized();
+        }
+        var providedToken = providedAuth.AsSpan("Bearer ".Length).Trim().ToString();
+        var providedBytes = System.Text.Encoding.UTF8.GetBytes(providedToken);
+        var configuredBytes = System.Text.Encoding.UTF8.GetBytes(configuredToken);
+        if (providedBytes.Length != configuredBytes.Length
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes))
+        {
+            return Results.Unauthorized();
+        }
+
+        if (companyId.Value is null)
+        {
+            return Results.BadRequest(new { message = "companyId query parameter is required." });
+        }
+
+        try
+        {
+            var result = await backfill.BackfillForCompanyAsync(
+                companyId: companyId,
+                maxBatches: maxBatches ?? 4,
+                cancellationToken).ConfigureAwait(false);
+            return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Doc-embedding back-fill trigger failed for {CompanyId}", companyId);
             return Results.Problem(detail: ex.Message, statusCode: 500);
         }
     });

@@ -45,6 +45,11 @@ public interface IUnitysearchQueryIntentCacheStore
     /// <summary>
     /// Promotes the row to <c>'ready'</c> with the AI-distilled intent
     /// payload. Idempotent for the same (companyId, queryHash).
+    ///
+    /// <see cref="UnitysearchQueryIntent.QueryEmbeddingLiteral"/> may
+    /// be null — Plan C-Population writes both intent + embedding in
+    /// one call, but the embedding is independently optional (e.g. when
+    /// the embeddings flag is off but the gateway is on).
     /// </summary>
     Task MarkReadyAsync(
         CompanyId companyId,

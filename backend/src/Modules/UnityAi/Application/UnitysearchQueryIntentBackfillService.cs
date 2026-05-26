@@ -36,6 +36,7 @@ public sealed class UnitysearchQueryIntentBackfillService : IUnitysearchQueryInt
 
     private readonly IUnityAiGateway _gateway;
     private readonly IUnitysearchQueryIntentCacheStore _cache;
+    private readonly IUnityAiEmbeddingProvider? _embeddingProvider;
     private readonly UnityAiFeatureFlagAccessor _flags;
     private readonly ILogger<UnitysearchQueryIntentBackfillService> _logger;
 
@@ -43,10 +44,12 @@ public sealed class UnitysearchQueryIntentBackfillService : IUnitysearchQueryInt
         IUnityAiGateway gateway,
         IUnitysearchQueryIntentCacheStore cache,
         UnityAiFeatureFlagAccessor flags,
-        ILogger<UnitysearchQueryIntentBackfillService> logger)
+        ILogger<UnitysearchQueryIntentBackfillService> logger,
+        IUnityAiEmbeddingProvider? embeddingProvider = null)
     {
         _gateway = gateway;
         _cache = cache;
+        _embeddingProvider = embeddingProvider;
         _flags = flags;
         _logger = logger;
     }
@@ -161,18 +164,65 @@ public sealed class UnitysearchQueryIntentBackfillService : IUnitysearchQueryInt
             .Take(10)
             .ToArray();
 
+        // Optional: also fetch the query embedding so the next search
+        // for the same (company, query) pair can pgvector-recall. The
+        // embedding step is gated independently on
+        // UnityAiFeatureFlagAccessor.EmbeddingsEnabled — if the operator
+        // hasn't opted into embeddings, intent (priors + terms) still
+        // gets written, just without an embedding column value.
+        string? queryEmbeddingLiteral = null;
+        if (_flags.EmbeddingsEnabled && _embeddingProvider is not null)
+        {
+            try
+            {
+                var embedResult = await _embeddingProvider.EmbedAsync(
+                    new UnityAiEmbeddingRequest(
+                        Inputs: new[] { normalizedQuery },
+                        Context: new UnityAiInvocationContext(
+                            CompanyId: companyId,
+                            UserId: null,
+                            JobRunId: null,
+                            ScopeLabel: "unitysearch.query_embedding")),
+                    cancellationToken).ConfigureAwait(false);
+
+                if (embedResult.Outcome == UnityAiEmbeddingOutcome.Succeeded
+                    && embedResult.Embeddings.Count == 1
+                    && embedResult.Embeddings[0] is { Length: > 0 } vec)
+                {
+                    queryEmbeddingLiteral = FormatPgvectorLiteral(vec);
+                }
+                else if (embedResult.Outcome is UnityAiEmbeddingOutcome.Failed
+                         or UnityAiEmbeddingOutcome.Disabled
+                         or UnityAiEmbeddingOutcome.Skipped)
+                {
+                    _logger.LogDebug(
+                        "Embedding skipped for {Company} '{Query}': {Outcome} ({Reason}).",
+                        companyId, normalizedQuery, embedResult.Outcome, embedResult.ErrorMessage);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Embedding provider threw while backfilling query for {Company} '{Query}'.",
+                    companyId, normalizedQuery);
+            }
+        }
+
         var intent = new UnitysearchQueryIntent(
             EntityTypePriors: priors,
             ExpandedTerms: expandedTerms,
-            Confidence: Math.Clamp(result.Output.Confidence ?? 0m, 0m, 1m));
+            Confidence: Math.Clamp(result.Output.Confidence ?? 0m, 0m, 1m))
+        {
+            QueryEmbeddingLiteral = queryEmbeddingLiteral,
+        };
 
         try
         {
             await _cache.MarkReadyAsync(companyId, queryHash, intent, "ai", cancellationToken)
                 .ConfigureAwait(false);
             _logger.LogDebug(
-                "Query-intent backfill persisted for {Company} '{Query}' ({Priors} priors, {Terms} terms).",
-                companyId, normalizedQuery, priors.Count, expandedTerms.Length);
+                "Query-intent backfill persisted for {Company} '{Query}' ({Priors} priors, {Terms} terms, embedding={HasEmbedding}).",
+                companyId, normalizedQuery, priors.Count, expandedTerms.Length, queryEmbeddingLiteral is not null);
         }
         catch (Exception ex)
         {
@@ -198,6 +248,27 @@ public sealed class UnitysearchQueryIntentBackfillService : IUnitysearchQueryInt
             _logger.LogWarning(ex,
                 "Failed to mark query-intent row 'failed' (reason={Reason}).", reason);
         }
+    }
+
+    /// <summary>
+    /// Formats a float[] as a pgvector text literal — e.g.
+    /// "[0.012345,0.034567,...]". Invariant culture so the decimal
+    /// separator is always '.', no thousand separators, R round-trip
+    /// precision so floats deserialize back identically. The size
+    /// budget for 1536 dims × ~9 chars per number ≈ 14 KB per row,
+    /// well under the 8K row limit (toasted).
+    /// </summary>
+    private static string FormatPgvectorLiteral(float[] vector)
+    {
+        var sb = new System.Text.StringBuilder(vector.Length * 10 + 2);
+        sb.Append('[');
+        for (var i = 0; i < vector.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append(vector[i].ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        sb.Append(']');
+        return sb.ToString();
     }
 
     /// <summary>Wire shape sent to the LLM. Keep field names stable — they're in the prompt.</summary>

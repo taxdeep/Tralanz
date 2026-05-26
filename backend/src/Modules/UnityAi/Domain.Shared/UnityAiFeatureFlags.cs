@@ -9,6 +9,14 @@ namespace Citus.Modules.UnityAi.Domain.Shared;
 public static class UnityAiFeatureFlagKeys
 {
     public const string AiGatewayEnabled = "UNITYAI_GATEWAY_ENABLED";
+    /// <summary>
+    /// Plan C-Population: gates the embedding provider + back-fill +
+    /// query-embedding cache. Independent of AiGatewayEnabled so the
+    /// operator can keep chat-completion-driven features (intent
+    /// distillation, ranking hints) running while turning embeddings
+    /// off — or vice versa. Default false: opt-in.
+    /// </summary>
+    public const string EmbeddingsEnabled = "UNITYAI_EMBEDDINGS_ENABLED";
     public const string SmartPickerLearningEnabled = "UNITYSEARCH_LEARNING_ENABLED";
     public const string SmartPickerAiLearningEnabled = "UNITYSEARCH_AI_LEARNING_ENABLED";
     public const string SmartPickerAiHintAutoApply = "UNITYSEARCH_AI_HINT_AUTO_APPLY";
@@ -32,6 +40,7 @@ public static class UnityAiFeatureFlagKeys
 public static class UnityAiFeatureFlagDefaults
 {
     public const bool AiGatewayEnabled = false;
+    public const bool EmbeddingsEnabled = false;
     public const bool SmartPickerLearningEnabled = true;
     public const bool SmartPickerAiLearningEnabled = false;
     public const bool SmartPickerAiHintAutoApply = false;

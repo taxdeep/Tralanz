@@ -69,4 +69,16 @@ public sealed record class UnitysearchQueryIntent(
     /// Currently informational; future iterations may use it to scale
     /// boosts.
     /// </summary>
-    decimal Confidence);
+    decimal Confidence)
+{
+    /// <summary>
+    /// Plan C: pgvector text literal (e.g. <c>[0.012, 0.034, ...]</c>)
+    /// of the normalized query's embedding. Threaded through to the
+    /// SQL ranker via <see cref="UnitySearchQueryHints.QueryEmbeddingLiteral"/>
+    /// to drive vector candidate gate + scoring. Null when the cache
+    /// row was filled before embeddings were enabled, or when the
+    /// embedding provider returned a non-Succeeded outcome — the
+    /// intent (priors + terms) is still usable on its own.
+    /// </summary>
+    public string? QueryEmbeddingLiteral { get; init; }
+}
