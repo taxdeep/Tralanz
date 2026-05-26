@@ -167,23 +167,23 @@ public sealed class BusinessShellState
         },
         new NavSection
         {
+            // Items already surfaced as Live "domain cards" on
+            // /settings (CompanySettingsPage) are intentionally NOT
+            // duplicated here — Profile / Currencies / Fiscal Year /
+            // Tax Rates / Payment Terms / Numbering / Invoice
+            // Templates all live behind the Company Settings entry.
+            // The nav keeps only items that don't have a card OR
+            // (Tax Returns) live outside /settings entirely.
             Title = "Settings",
             Items =
             [
                 new NavMenuItem { Title = "Company Settings", Href = "settings", Icon = IconName.Settings },
                 new NavMenuItem { Title = "Modules", Href = "settings/modules", Icon = IconName.Puzzle },
-                new NavMenuItem { Title = "Profile", Href = "settings/profile", Icon = IconName.BuildingSkyscraper },
-                new NavMenuItem { Title = "Currencies", Href = "settings/currencies", Icon = IconName.Coin },
-                new NavMenuItem { Title = "Fiscal Year", Href = "settings/fiscal-year", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Accounting Periods", Href = "settings/accounting-periods", Icon = IconName.Clock },
                 new NavMenuItem { Title = "Year-end Pre-close", Href = "settings/year-end-pre-close", Icon = IconName.AlertCircle },
                 new NavMenuItem { Title = "Member Permissions", Href = "settings/permissions", Icon = IconName.ShieldLock },
                 new NavMenuItem { Title = "Audit Logs", Href = "settings/audit-logs", Icon = IconName.Eye },
-                new NavMenuItem { Title = "Tax Rates", Href = "settings/tax-rates", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Tax Returns", Href = "tax-returns", Icon = IconName.ReportAnalytics },
-                new NavMenuItem { Title = "Payment Terms", Href = "settings/payment-terms", Icon = IconName.Calendar },
-                new NavMenuItem { Title = "Numbering", Href = "settings/numbering", Icon = IconName.FileInvoice },
-                new NavMenuItem { Title = "Invoice Templates", Href = "settings/invoice-templates", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Session", Href = "session", Icon = IconName.User }
             ]
         }
