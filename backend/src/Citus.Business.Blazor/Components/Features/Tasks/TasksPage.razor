@@ -80,12 +80,14 @@ else
                         <th>Service date</th>
                         <th class="text-right">Billable value</th>
                         <th>Updated</th>
+                        <th style="width: 6rem"></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var task in _tasks)
                     {
-                        <tr class="cursor-pointer" @onclick="@(() => OpenTask(task.Id))">
+                        var taskId = task.Id;
+                        <tr class="cursor-pointer" @onclick="@(() => OpenTask(taskId))">
                             <td>@task.TaskNo</td>
                             <td>@task.Title</td>
                             <td>
@@ -94,6 +96,14 @@ else
                             <td>@(task.ServiceDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                             <td class="text-right">@($"{task.TotalBillableValue:N2} {task.CurrencyCode}")</td>
                             <td>@task.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                            @* Cell-level stopPropagation keeps a Cost click from also
+                               opening the task — pre-fills /expenses/new with this task. *@
+                            <td class="text-right" @onclick:stopPropagation="true">
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             LeadingIcon="IconName.Receipt"
+                                             OnClick="@(() => AddCostFor(taskId))">Cost</CitusButton>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -144,4 +154,11 @@ else
     }
 
     private void OpenTask(Guid taskId) => NavigationManager.NavigateTo($"tasks/{taskId:D}");
+
+    // "Cost" shortcut — opens the standard expense form with the task
+    // pre-attached on line 1. ExpenseCreatePage reads ?taskId and resolves
+    // the display label via TaskClient.LookupDisplayAsync. Backend already
+    // gates expense.create, so we don't second-guess permission here.
+    private void AddCostFor(Guid taskId) =>
+        NavigationManager.NavigateTo($"expenses/new?taskId={taskId:D}");
 }

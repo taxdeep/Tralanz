@@ -9,6 +9,7 @@
 @inject AccountClient AccountClient
 @inject TaxCodeClient TaxCodeClient
 @inject ExpenseClient ExpenseClient
+@inject TaskClient TaskClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
@@ -408,6 +409,44 @@ else
         // surface a friendly validation message and leave the form
         // blank.
         await TryHydrateFromCopySourceAsync();
+        // "Add Cost from task" shortcut: if the URL carries ?taskId={id}
+        // (and we didn't already hydrate from a copy source — that's a
+        // different workflow), pre-attach this task to line 1. Resolved
+        // via the same lookup the Bill page uses so the picker shows
+        // "TSK-000123 - Title" instead of a bare guid.
+        if (_copiedFromExpenseId is null)
+        {
+            await TryPrefillTaskFromQueryAsync();
+        }
+    }
+
+    private async Task TryPrefillTaskFromQueryAsync()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (!query.TryGetValue("taskId", out var raw) ||
+            !Guid.TryParse(raw.ToString(), out var taskId))
+        {
+            return;
+        }
+
+        var labels = await TaskClient.LookupDisplayAsync(new[] { taskId });
+        if (!labels.TryGetValue(taskId, out var label) || string.IsNullOrEmpty(label))
+        {
+            // Task wasn't visible in this company — silently skip the
+            // pre-fill rather than poisoning the form.
+            return;
+        }
+
+        // Ensure there's a first line to attach to. Default ctor of
+        // _lines already includes one, but be defensive in case future
+        // hydration paths empty the list.
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new LineDraft());
+        }
+        _lines[0].TaskId = taskId;
+        _lines[0].TaskDisplay = label;
     }
 
     /// <summary>
