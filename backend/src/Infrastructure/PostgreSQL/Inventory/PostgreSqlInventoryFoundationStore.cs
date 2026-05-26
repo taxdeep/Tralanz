@@ -139,9 +139,19 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         var normalizedDescription = string.IsNullOrWhiteSpace(request.Description)
             ? DBNull.Value
             : (object)request.Description.Trim();
+        // Preserve the operator-picked UOM code as-is (trim only). The
+        // legacy convention here was ToUpperInvariant() (back when
+        // stock_uom_code was free-text "EA" / "PCS" style), but the
+        // 2026-05-25 UOM foundation migration introduced a per-company
+        // units_of_measure master with codes seeded in mixed case —
+        // e.g. 'each' / 'hour' / 'kg' / 'm' / 'L'. Forcing upper-case
+        // here would break the new fk_items_uom (company_id,
+        // stock_uom_code) FK because PostgreSQL text comparison on the
+        // FK is case-sensitive ('EACH' would not match the seeded
+        // 'each' row).
         var normalizedStockUomCode = string.IsNullOrWhiteSpace(request.StockUomCode)
             ? DBNull.Value
-            : (object)request.StockUomCode.Trim().ToUpperInvariant();
+            : (object)request.StockUomCode.Trim();
 
         try
         {
