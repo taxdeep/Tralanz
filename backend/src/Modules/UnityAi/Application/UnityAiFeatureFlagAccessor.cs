@@ -19,6 +19,8 @@ public sealed class UnityAiFeatureFlagAccessor
 
     public bool GatewayEnabled => Bool(UnityAiFeatureFlagKeys.AiGatewayEnabled, UnityAiFeatureFlagDefaults.AiGatewayEnabled);
 
+    public bool EmbeddingsEnabled => Bool(UnityAiFeatureFlagKeys.EmbeddingsEnabled, UnityAiFeatureFlagDefaults.EmbeddingsEnabled);
+
     public bool UnitysearchLearningEnabled =>
         Bool(UnityAiFeatureFlagKeys.SmartPickerLearningEnabled, UnityAiFeatureFlagDefaults.SmartPickerLearningEnabled);
 
