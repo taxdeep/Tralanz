@@ -31,6 +31,16 @@ public sealed record class UnitySearchQueryHints(string QueryClassTag, decimal? 
     public bool IsNumeric => NumericValue.HasValue;
 
     public UnitysearchQueryIntent? Intent { get; init; }
+
+    /// <summary>
+    /// Plan C: pgvector query embedding, serialised as the pgvector
+    /// text literal (e.g. <c>[0.012,0.034,...]</c>). The SQL ranker
+    /// casts it to <c>vector</c> and uses it for the L5 semantic
+    /// candidate + scoring tier. Null until the embedding provider +
+    /// query-embedding cache land — that's the natural no-op state
+    /// for the Plan C foundation batch.
+    /// </summary>
+    public string? QueryEmbeddingLiteral { get; init; }
 }
 
 /// <summary>

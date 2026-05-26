@@ -156,6 +156,24 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                       then least(25, ((@intent_priors::jsonb ->> doc.entity_type)::numeric * 25)::int)
                     else 0
                   end +
+                  -- Plan C: pgvector semantic recall. Capped at 20 —
+                  -- below tsvector FTS (22) so a clean stem match still
+                  -- wins; the vector tier mainly rescues semantically-
+                  -- close docs the lexical tiers miss ("monthly rent" →
+                  -- "rent payment"). Both sides of the operator must be
+                  -- non-null; until the back-fill job populates
+                  -- doc.embedding AND the engine ships query embeddings,
+                  -- this clause contributes 0 and the candidate gate
+                  -- below admits no doc through this path.
+                  -- The <=> operator returns cosine distance in [0, 2];
+                  -- we transform to similarity = 1 - distance/2 capped
+                  -- at [0, 1], then scale to 20.
+                  case
+                    when @query_embedding is not null
+                         and doc.embedding is not null
+                      then least(20, (greatest(0, 1 - (doc.embedding <=> @query_embedding::vector) / 2) * 20)::int)
+                    else 0
+                  end +
                   doc.rank_boost +
                   coalesce(ln(1 + stats.click_count::numeric) * 5, 0) +
                   case
@@ -324,6 +342,17 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                         and doc.search_vector @@ websearch_to_tsquery('simple', t)
                     )
                   )
+                  -- Plan C: pgvector semantic candidate gate. Strict
+                  -- threshold (cosine distance < 0.6 i.e. similarity
+                  -- > 0.7) so vector recall only pulls in docs that are
+                  -- truly close. Both nulls = clause is false = no
+                  -- candidates admitted via this path. HNSW index on
+                  -- doc.embedding makes this index-served when populated.
+                  or (
+                    @query_embedding is not null
+                    and doc.embedding is not null
+                    and (doc.embedding <=> @query_embedding::vector) < 0.6
+                  )
                   or (
                     @has_numeric
                     and doc.amount is not null
@@ -387,6 +416,18 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
             : DBNull.Value;
         var expandedTermsParam = command.Parameters.Add("expanded_terms", NpgsqlDbType.Array | NpgsqlDbType.Text);
         expandedTermsParam.Value = (hints.Intent?.ExpandedTerms ?? Array.Empty<string>()).ToArray();
+        // Plan C: per-call query embedding. Until the embedding provider
+        // + back-fill job land in the follow-up batch, this is always
+        // null on the wire — both the candidate gate and the scoring
+        // tier are gated on @query_embedding IS NOT NULL, so a null
+        // here is a deterministic no-op. The parameter is declared as
+        // text and cast to vector inside the SQL (`::vector`) so the
+        // command can still bind when pgvector isn't loaded in the
+        // Npgsql client's type registry.
+        var queryEmbeddingParam = command.Parameters.Add("query_embedding", NpgsqlDbType.Text);
+        queryEmbeddingParam.Value = string.IsNullOrEmpty(hints.QueryEmbeddingLiteral)
+            ? DBNull.Value
+            : (object)hints.QueryEmbeddingLiteral;
         // Single source of truth for "which module keys are toggleable"
         // — sourced from the FeatureManagement catalog so adding a new
         // toggleable module is purely a C# change.
