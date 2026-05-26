@@ -23,6 +23,15 @@ public sealed class UnityAiPromptRegistry : IUnityAiPromptRegistry
     /// </summary>
     public const string UnitysearchRerankV1 = "unitysearch.rerank.v1";
 
+    /// <summary>
+    /// Plan B query-intent classifier. Given the normalized search text
+    /// + the set of entity types the picker context allows, the AI
+    /// returns per-entity priors and synonym expansions. Persisted in
+    /// <c>unitysearch_query_intent_cache</c> and consulted on the next
+    /// search hot-path lookup.
+    /// </summary>
+    public const string UnitysearchQueryIntentV1 = "unitysearch.query_intent.v1";
+
     private readonly Dictionary<string, PromptTemplate> _byKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _defaultVersionByTask = new(StringComparer.OrdinalIgnoreCase);
 
@@ -48,6 +57,31 @@ public sealed class UnityAiPromptRegistry : IUnityAiPromptRegistry
                 "\"confidence\":<0-1>,\"reason\":\"<short, one sentence>\"}]}",
             UserPromptTemplate: "Input:\n" + UnityAiGateway.InputJsonToken,
             ResponseSchemaName: "unitysearch.rerank.v1.response"));
+
+        RegisterDefault(new PromptTemplate(
+            TaskType: UnitysearchQueryIntentV1,
+            Version: "v1",
+            SystemPrompt:
+                "You are a query-intent classifier for accounting software search " +
+                "(chart of accounts, customers, vendors, items, invoices, bills, " +
+                "expenses, journal entries, tasks). You receive a JSON object with " +
+                "the operator's normalized search text and the list of entity types " +
+                "the active picker allows. Your job has two outputs: " +
+                "(1) entity_type_priors — a weight in [0, 1] per allowed entity type " +
+                "estimating how likely the operator is searching for THAT type. " +
+                "Sum doesn't have to equal 1; omit entity types you're unsure about. " +
+                "(2) expanded_terms — up to 5 synonyms / common alternative phrasings " +
+                "for the query that would help an English-language full-text search " +
+                "find the right document. Skip the original term, skip mere " +
+                "pluralisations the search stemmer already handles, skip vague " +
+                "expansions (\"thing\", \"item\"). Be conservative — empty arrays / " +
+                "dictionaries are valid answers. Respond with strict JSON only, no " +
+                "commentary, matching this shape: " +
+                "{\"entity_type_priors\":{\"<entity_type>\":<0-1>, ...}," +
+                "\"expanded_terms\":[\"<synonym>\", ...]," +
+                "\"confidence\":<0-1>}",
+            UserPromptTemplate: "Input:\n" + UnityAiGateway.InputJsonToken,
+            ResponseSchemaName: "unitysearch.query_intent.v1.response"));
     }
 
     public PromptTemplate? Get(string taskType, string? requestedVersion)

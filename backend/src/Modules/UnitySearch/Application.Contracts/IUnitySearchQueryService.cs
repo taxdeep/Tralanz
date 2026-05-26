@@ -18,10 +18,45 @@ public interface IUnitySearchQueryService
 /// parsed numeric value when applicable, so the SQL ranker can light up
 /// the amount-tier path and the per-user query-class prior join without
 /// re-parsing.
+///
+/// <see cref="Intent"/> is the optional Plan B addition. Populated from
+/// the per-company unitysearch_query_intent_cache when the engine finds
+/// a ready row for (company_id, query_hash). Null when no cache hit —
+/// the SQL ranker still runs full Plan A behavior, no degradation.
 /// </summary>
 public sealed record class UnitySearchQueryHints(string QueryClassTag, decimal? NumericValue)
 {
     public static readonly UnitySearchQueryHints None = new("empty", null);
 
     public bool IsNumeric => NumericValue.HasValue;
+
+    public UnitysearchQueryIntent? Intent { get; init; }
 }
+
+/// <summary>
+/// Plan B cache value. Lives in <c>unitysearch_query_intent_cache</c> per
+/// (company_id, query_hash). All fields are best-effort suggestions —
+/// the deterministic Plan A scoring still runs in full on top, and the
+/// intent boosts are capped strictly below the exact/prefix tiers so a
+/// clean match always wins.
+/// </summary>
+public sealed record class UnitysearchQueryIntent(
+    /// <summary>
+    /// Per-entity-type weight in [0, 1]. Multiplied by 25 (cap) and
+    /// added to the doc's score when doc.entity_type matches one of
+    /// the keys. Empty dictionary = no per-entity bias.
+    /// </summary>
+    IReadOnlyDictionary<string, decimal> EntityTypePriors,
+    /// <summary>
+    /// Operator-coined or LLM-distilled synonyms. Each term is OR-ed
+    /// into the FTS candidate gate via
+    /// <c>doc.search_vector @@ websearch_to_tsquery('simple', term)</c>.
+    /// Empty = no recall expansion.
+    /// </summary>
+    IReadOnlyList<string> ExpandedTerms,
+    /// <summary>
+    /// Overall confidence reported by the source (LLM / operator).
+    /// Currently informational; future iterations may use it to scale
+    /// boosts.
+    /// </summary>
+    decimal Confidence);

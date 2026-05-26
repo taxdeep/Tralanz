@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Citus.Modules.UnitySearch.Application.Contracts;
 using Citus.Modules.UnitySearch.Domain.Shared;
 using Modules.Company.FeatureManagement;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Infrastructure.PostgreSQL.UnitySearch;
 
@@ -142,6 +144,18 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                   -- below joins by (company_id, entity_type, entity_id,
                   -- normalized_alias) so company isolation is preserved.
                   coalesce(alias_hit.alias_boost, 0) +
+                  -- Plan B: AI-distilled entity-type prior. The intent
+                  -- cache stores {"task": 0.7, ...}; if doc.entity_type
+                  -- is a key, the weight (0..1) times 25 is added.
+                  -- Capped at 25 so the prior nudges close ties but
+                  -- never overrides a clean text / code match. Empty
+                  -- jsonb '{}' → no contribution (the ->> lookup is null).
+                  case
+                    when @intent_priors is not null
+                         and @intent_priors::jsonb ? doc.entity_type
+                      then least(25, ((@intent_priors::jsonb ->> doc.entity_type)::numeric * 25)::int)
+                    else 0
+                  end +
                   doc.rank_boost +
                   coalesce(ln(1 + stats.click_count::numeric) * 5, 0) +
                   case
@@ -291,6 +305,25 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                   -- non-null means an Active alias row matched the query
                   -- for the (company, entity_type, entity_id) of this doc.
                   or alias_hit.alias_boost is not null
+                  -- Plan B: AI-distilled synonym hit. @expanded_terms is
+                  -- the operator-coined / LLM-suggested list of
+                  -- alternative phrasings for the original query. We
+                  -- unnest() it and OR each term's FTS match against the
+                  -- doc's search_vector — any one hit qualifies the doc
+                  -- as a candidate. Empty array → EXISTS over empty
+                  -- subquery → false → no contribution. Note the array
+                  -- is per-call, sized <= 10 by the validator, so the
+                  -- inner EXISTS is bounded.
+                  or (
+                    @expanded_terms is not null
+                    and cardinality(@expanded_terms) > 0
+                    and doc.search_vector is not null
+                    and exists (
+                      select 1 from unnest(@expanded_terms) t
+                      where t <> ''
+                        and doc.search_vector @@ websearch_to_tsquery('simple', t)
+                    )
+                  )
                   or (
                     @has_numeric
                     and doc.amount is not null
@@ -342,6 +375,18 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         command.Parameters.AddWithValue("numeric_query", numericValue);
         command.Parameters.AddWithValue("query_class", hints.QueryClassTag);
         command.Parameters.AddWithValue("take", take);
+
+        // Plan B: per-call intent payload from the query-intent cache.
+        // Both parameters are nullable / empty by default so when no
+        // cache hit exists (or AI is disabled / unreachable) the SQL
+        // ranker falls through to Plan A behaviour. Empty / null
+        // contributes zero score and matches zero candidates.
+        var intentPriorsParam = command.Parameters.Add("intent_priors", NpgsqlDbType.Text);
+        intentPriorsParam.Value = hints.Intent is { EntityTypePriors.Count: > 0 }
+            ? (object)JsonSerializer.Serialize(hints.Intent.EntityTypePriors)
+            : DBNull.Value;
+        var expandedTermsParam = command.Parameters.Add("expanded_terms", NpgsqlDbType.Array | NpgsqlDbType.Text);
+        expandedTermsParam.Value = (hints.Intent?.ExpandedTerms ?? Array.Empty<string>()).ToArray();
         // Single source of truth for "which module keys are toggleable"
         // — sourced from the FeatureManagement catalog so adding a new
         // toggleable module is purely a C# change.
