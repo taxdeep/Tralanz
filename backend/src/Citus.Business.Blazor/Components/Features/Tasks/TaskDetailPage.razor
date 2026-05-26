@@ -1,7 +1,11 @@
 @page "/tasks/{TaskIdRaw}"
 
+@using Radzen
+@using Radzen.Blazor
 @using Citus.Modules.Tasks.Application.Contracts
 @using Citus.Modules.Tasks.Domain.Shared
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
 
 @inject BusinessShellState ShellState
@@ -280,11 +284,17 @@ else
         }
         <div class="grid grid-cols-1 gap-3">
             <div>
-                <label class="text-sm font-medium block mb-1">Item id (uuid)</label>
-                <CitusInput TValue="string" @bind-Value="_lineDraft.ItemIdRaw" Placeholder="Paste an item id" />
-                <p class="text-fg-subtle text-xs mt-1">
-                    SmartPicker integration ships in a later batch; for now paste an item id from Products &amp; Services.
-                </p>
+                <label class="text-sm font-medium block mb-1">Item / Service</label>
+                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                   Context="@SearchScopeContext.SalesItemServicePicker"
+                                   Placeholder="Pick an item or service…"
+                                   Take="6"
+                                   SourceRoute="/tasks/detail"
+                                   SelectedId="@(_lineDraft.ItemId == Guid.Empty ? null : _lineDraft.ItemId)"
+                                   SelectedDisplayText="@_lineDraft.ItemDisplay"
+                                   OnItemSelected="OnAddLineItemPicked"
+                                   OnCleared="OnAddLineItemCleared" />
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Description</label>
@@ -293,11 +303,22 @@ else
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Quantity</label>
-                    <CitusInput TValue="string" @bind-Value="_lineDraft.QuantityRaw" Placeholder="1" />
+                    <RadzenNumeric TValue="decimal"
+                                   Value="@_lineDraft.Quantity"
+                                   ValueChanged="@(v => _lineDraft.Quantity = v < 0m ? 0m : v)"
+                                   Min="0"
+                                   Format="0.####"
+                                   Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Unit price (optional)</label>
-                    <CitusInput TValue="string" @bind-Value="_lineDraft.UnitPriceRaw" Placeholder="Auto from price book" />
+                    <RadzenNumeric TValue="decimal?"
+                                   Value="@_lineDraft.UnitPrice"
+                                   ValueChanged="@(v => _lineDraft.UnitPrice = v.HasValue ? Math.Round(v.Value, 2, MidpointRounding.AwayFromZero) : null)"
+                                   Min="0"
+                                   Format="0.00"
+                                   Placeholder="Auto from price book"
+                                   Class="citus-control-full" />
                 </div>
             </div>
         </div>
@@ -487,7 +508,7 @@ else
 
     private void StartAddLine()
     {
-        _lineDraft = new NewLineDraft { QuantityRaw = "1" };
+        _lineDraft = new NewLineDraft();
         _lineValidation = null;
         _isAddingLine = true;
     }
@@ -498,27 +519,53 @@ else
         _lineValidation = null;
     }
 
+    /// <summary>
+    /// On item pick, mirror TaskCreatePage's auto-fill: description
+    /// defaults to the item's name/description (if blank), and unit
+    /// price defaults to the item's DefaultSalesPrice rounded to 2
+    /// decimals. The operator can still override either field before
+    /// clicking Add.
+    /// </summary>
+    private void OnAddLineItemPicked(UnitySearchPickerOption option)
+    {
+        _lineDraft.ItemId = option.SourceId;
+        _lineDraft.ItemDisplay = option.DisplayText;
+        if (_itemsById.TryGetValue(option.SourceId, out var item))
+        {
+            if (string.IsNullOrWhiteSpace(_lineDraft.Description))
+            {
+                _lineDraft.Description = string.IsNullOrWhiteSpace(item.Description)
+                    ? option.PrimaryText
+                    : item.Description!;
+            }
+            if (_lineDraft.UnitPrice is null && item.DefaultSalesPrice is { } raw)
+            {
+                _lineDraft.UnitPrice = Math.Round(raw, 2, MidpointRounding.AwayFromZero);
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(_lineDraft.Description))
+        {
+            _lineDraft.Description = option.PrimaryText;
+        }
+    }
+
+    private void OnAddLineItemCleared()
+    {
+        _lineDraft.ItemId = Guid.Empty;
+        _lineDraft.ItemDisplay = string.Empty;
+    }
+
     private async Task SaveAddLineAsync()
     {
-        if (!Guid.TryParse(_lineDraft.ItemIdRaw, out var itemId))
+        if (_lineDraft.ItemId == Guid.Empty)
         {
-            _lineValidation = "Item id must be a valid UUID.";
+            _lineValidation = "Pick an item or service.";
             return;
         }
-        if (!decimal.TryParse(_lineDraft.QuantityRaw, out var quantity) || quantity <= 0m)
+        if (_lineDraft.Quantity <= 0m)
         {
             _lineValidation = "Quantity must be a positive number.";
             return;
-        }
-        decimal? unitPrice = null;
-        if (!string.IsNullOrWhiteSpace(_lineDraft.UnitPriceRaw))
-        {
-            if (!decimal.TryParse(_lineDraft.UnitPriceRaw, out var parsed) || parsed < 0m)
-            {
-                _lineValidation = "Unit price must be a non-negative number.";
-                return;
-            }
-            unitPrice = parsed;
         }
 
         _isBusy = true;
@@ -527,10 +574,10 @@ else
         {
             var outcome = await TaskClient.AddLineAsync(_taskId, new TaskLineUpsertRequest
             {
-                ItemId = itemId,
-                Description = _lineDraft.Description,
-                Quantity = quantity,
-                UnitPrice = unitPrice,
+                ItemId = _lineDraft.ItemId,
+                Description = string.IsNullOrWhiteSpace(_lineDraft.Description) ? null : _lineDraft.Description.Trim(),
+                Quantity = _lineDraft.Quantity,
+                UnitPrice = _lineDraft.UnitPrice,
             });
 
             if (!outcome.Succeeded)
@@ -621,9 +668,10 @@ else
 
     private sealed class NewLineDraft
     {
-        public string? ItemIdRaw { get; set; }
-        public string? Description { get; set; }
-        public string QuantityRaw { get; set; } = "1";
-        public string? UnitPriceRaw { get; set; }
+        public Guid ItemId { get; set; } = Guid.Empty;
+        public string ItemDisplay { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Quantity { get; set; } = 1m;
+        public decimal? UnitPrice { get; set; }
     }
 }
