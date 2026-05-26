@@ -106,6 +106,42 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                     when lower(doc.search_text) like @text_contains then 12
                     else 0
                   end +
+                  -- Plan A: tsvector full-text. The existing
+                  -- ix_search_documents_search_vector GIN index catches
+                  -- stem / token-order matches the LIKE patterns miss
+                  -- ("invoices" vs "invoice", "ACME ON Tax" vs "Tax ACME ON").
+                  -- websearch_to_tsquery handles raw user input safely. Score
+                  -- 22 — below "primary_text contains" (28) so exact phrase
+                  -- still wins when both fire.
+                  case
+                    when @normalized_query <> ''
+                         and doc.search_vector is not null
+                         and doc.search_vector @@ websearch_to_tsquery('simple', @normalized_query)
+                      then 22
+                    else 0
+                  end +
+                  -- Plan A: pg_trgm fuzzy / typo tolerance. similarity()
+                  -- catches 1-2 char drift ("shippng" → "shipping",
+                  -- "ofice" → "office"). Scored linearly with similarity,
+                  -- capped at 18 — below tsvector (22) so an FTS-clean
+                  -- match always beats a fuzzy match. Guarded on
+                  -- length>=3 because pg_trgm is meaningless on tiny
+                  -- input. The candidate gate below uses the % operator
+                  -- so PG can pick the trigram GIN index.
+                  case
+                    when length(@normalized_query) >= 3
+                         and lower(doc.primary_text) % @normalized_query
+                      then least(18, (similarity(lower(doc.primary_text), @normalized_query) * 25)::int)
+                    else 0
+                  end +
+                  -- Plan A: alias hit. unitysearch_alias_suggestions is
+                  -- populated by the AI distillation job + (future)
+                  -- operator curation. An explicit alias is a stronger
+                  -- signal than generic FTS / fuzzy, so cap 30 (above
+                  -- both). Confidence < 1 scales linearly. Lateral join
+                  -- below joins by (company_id, entity_type, entity_id,
+                  -- normalized_alias) so company isolation is preserved.
+                  coalesce(alias_hit.alias_boost, 0) +
                   doc.rank_boost +
                   coalesce(ln(1 + stats.click_count::numeric) * 5, 0) +
                   case
@@ -145,6 +181,24 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                and prior.user_id = @user_id
                and prior.query_class = @query_class
                and prior.entity_type = doc.entity_type
+              -- Plan A: alias-suggestion lookup. Lateral join keyed by
+              -- (company_id, entity_type, entity_id, normalized_alias)
+              -- so the company filter is structurally enforced — alias
+              -- rows from other tenants cannot leak in. Active +
+              -- non-failed validation only. Top-confidence row wins
+              -- when multiple aliases collide on the same target.
+              left join lateral (
+                select (a.confidence * 30)::int as alias_boost
+                from unitysearch_alias_suggestions a
+                where a.company_id = doc.company_id
+                  and a.entity_type = doc.entity_type
+                  and a.entity_id = doc.source_id
+                  and a.normalized_alias = @normalized_query
+                  and a.status = 'Active'
+                  and (a.validation_status is null or a.validation_status <> 'Invalid')
+                order by a.confidence desc
+                limit 1
+              ) alias_hit on true
               where doc.company_id = @company_id
                 and doc.entity_type = any(@entity_types)
                 -- Voided / reversed documents are noise in every search
@@ -207,12 +261,36 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                         where doc.visibility_override_permission = any(ci.granted_tokens)
                       ))
                 )
+                -- Candidate gate: a doc must trigger at least one of these
+                -- match conditions to be considered. All conditions sit
+                -- inside the same AND-envelope as the company / permission /
+                -- visibility gates above, so widening the candidate set
+                -- here never bypasses isolation — only changes WHAT counts
+                -- as a hit on rows the caller is already allowed to see.
                 and (
                   doc.exact_code_norm = @normalized_query
                   or doc.exact_code_norm like @exact_prefix
                   or lower(doc.primary_text) like @text_contains
                   or lower(doc.secondary_text) like @text_contains
                   or lower(doc.search_text) like @text_contains
+                  -- Plan A: tsvector FTS pulls in stem / token-order matches.
+                  or (
+                    @normalized_query <> ''
+                    and doc.search_vector is not null
+                    and doc.search_vector @@ websearch_to_tsquery('simple', @normalized_query)
+                  )
+                  -- Plan A: fuzzy / typo via pg_trgm. Threshold defaults
+                  -- to ~0.3 (set_limit / pg_trgm.similarity_threshold);
+                  -- the trigram GIN index picks up % at exactly that
+                  -- threshold so this stays index-served.
+                  or (
+                    length(@normalized_query) >= 3
+                    and lower(doc.primary_text) % @normalized_query
+                  )
+                  -- Plan A: alias hit. alias_hit is the lateral join above —
+                  -- non-null means an Active alias row matched the query
+                  -- for the (company, entity_type, entity_id) of this doc.
+                  or alias_hit.alias_boost is not null
                   or (
                     @has_numeric
                     and doc.amount is not null
