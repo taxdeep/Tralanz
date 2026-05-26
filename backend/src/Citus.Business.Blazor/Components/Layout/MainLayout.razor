@@ -9,6 +9,7 @@
 @inject ILogger<MainLayout> Logger
 
 @inherits LayoutComponentBase
+@implements IDisposable
 
 @*
     MainLayout -- Citus/Radzen shell. The unauthenticated branch hosts
@@ -93,6 +94,14 @@ else
     private bool _isContextLoading;
     private bool _isShellReady;
     private bool _collapsed;
+    // Tracks the most recently observed authenticated state so the
+    // OnChanged handler can detect a sign-in transition and trigger a
+    // post-bootstrap context+module-flag refresh. Without this the nav
+    // menu's TASKS section (and any other ModuleKey-gated entry) shows
+    // empty after a fresh sign-in and only appears on a manual page
+    // refresh — BootstrapShellAsync runs once on layout mount and the
+    // user signed in afterwards.
+    private bool _previouslyAuthenticated;
 
     /// <summary>
     /// Display version pulled from the assembly's
@@ -129,6 +138,47 @@ else
         string.IsNullOrEmpty(NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Trim('/'));
 
     protected override Task OnInitializedAsync() => Task.CompletedTask;
+
+    protected override void OnInitialized()
+    {
+        ShellState.OnChanged += HandleShellStateChanged;
+        _previouslyAuthenticated = ShellState.IsAuthenticated;
+    }
+
+    public void Dispose()
+    {
+        ShellState.OnChanged -= HandleShellStateChanged;
+    }
+
+    /// <summary>
+    /// Detects the unauthenticated → authenticated transition that
+    /// happens when the operator signs in on /login (LoginPage calls
+    /// <c>ApplyAuthenticatedSession</c> directly, then navigates to
+    /// /dashboard — MainLayout is the same instance throughout that
+    /// navigation so <c>OnAfterRenderAsync(firstRender: true)</c> does
+    /// NOT fire again, leaving the post-bootstrap context + module
+    /// flags unfetched). On the transition we re-run
+    /// <c>LoadSessionContextAsync</c> so the nav reflects the real
+    /// state on the first render of the authenticated shell.
+    /// </summary>
+    private void HandleShellStateChanged()
+    {
+        var nowAuthenticated = ShellState.IsAuthenticated;
+        var wasAuthenticated = _previouslyAuthenticated;
+        _previouslyAuthenticated = nowAuthenticated;
+
+        if (_isShellReady && !wasAuthenticated && nowAuthenticated)
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await LoadSessionContextAsync();
+                StateHasChanged();
+            });
+            return;
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
