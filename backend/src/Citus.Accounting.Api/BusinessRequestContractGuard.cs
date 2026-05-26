@@ -36,16 +36,29 @@ public sealed class BusinessRequestContractGuard
             var type = argument.GetType();
 
             // CompanyId guard.
+            //
+            // Both the non-nullable strong type AND its Nullable<> wrapper are
+            // accepted — Nullable.GetUnderlyingType unwraps the latter so the
+            // guard still trusts the strongly-typed id. The original strict
+            // check was meant to refuse string / Guid CompanyId properties; it
+            // accidentally rejected legitimate Nullable<CompanyId> contracts.
+            // The value-comparison path below already tolerates null
+            // (pattern-match fall-through), so semantics are preserved:
+            // a contract that doesn't send a CompanyId skips the cross-
+            // company check, and the rest of the request flows through the
+            // session-bound active company.
             var companyIdProperty = type.GetProperty("CompanyId", BindingFlags.Instance | BindingFlags.Public);
             if (companyIdProperty is not null)
             {
-                if (companyIdProperty.PropertyType != typeof(CompanyId))
+                var underlyingCompanyIdType = Nullable.GetUnderlyingType(companyIdProperty.PropertyType)
+                                              ?? companyIdProperty.PropertyType;
+                if (underlyingCompanyIdType != typeof(CompanyId))
                 {
                     return BusinessRequestGuardResult.Reject(
                         $"Contract {type.Name} declares a 'CompanyId' property of type " +
                         $"'{companyIdProperty.PropertyType.Name}', but the cross-company guard only " +
-                        $"trusts the strongly-typed CompanyId. Rename or change the property's type to " +
-                        $"CompanyId so the safety net can verify it.");
+                        $"trusts the strongly-typed CompanyId (or its Nullable<> wrapper). Rename or " +
+                        $"change the property's type so the safety net can verify it.");
                 }
 
                 var rawValue = companyIdProperty.GetValue(argument);
@@ -56,17 +69,19 @@ public sealed class BusinessRequestContractGuard
                 }
             }
 
-            // UserId guard — same shape.
+            // UserId guard — same shape, same Nullable<> tolerance.
             var userIdProperty = type.GetProperty("UserId", BindingFlags.Instance | BindingFlags.Public);
             if (userIdProperty is not null)
             {
-                if (userIdProperty.PropertyType != typeof(UserId))
+                var underlyingUserIdType = Nullable.GetUnderlyingType(userIdProperty.PropertyType)
+                                            ?? userIdProperty.PropertyType;
+                if (underlyingUserIdType != typeof(UserId))
                 {
                     return BusinessRequestGuardResult.Reject(
                         $"Contract {type.Name} declares a 'UserId' property of type " +
                         $"'{userIdProperty.PropertyType.Name}', but the cross-user guard only trusts the " +
-                        $"strongly-typed UserId. Rename or change the property's type to UserId so the " +
-                        $"safety net can verify it.");
+                        $"strongly-typed UserId (or its Nullable<> wrapper). Rename or change the " +
+                        $"property's type so the safety net can verify it.");
                 }
 
                 var rawValue = userIdProperty.GetValue(argument);
