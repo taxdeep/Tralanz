@@ -1,5 +1,6 @@
 using Citus.Modules.Tasks.Application.Contracts;
 using Citus.Modules.Tasks.Domain.Shared;
+using Infrastructure.PostgreSQL.Numbering;
 using Npgsql;
 using NpgsqlTypes;
 using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus;
@@ -189,8 +190,24 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
         await using var connection = await connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        var ordinal = await AllocateTaskOrdinalAsync(connection, transaction, companyId, cancellationToken);
-        var taskNo = $"TSK-{ordinal:D6}";
+        // task_no is now sourced from the shared company_numbering_sequences
+        // table — same path Invoice / Bill / Journal Entry use — so the
+        // operator can configure prefix + padding on Settings → Numbering.
+        // The legacy tasks_company_sequence row was migrated into the
+        // shared table by 2026-05-26-task-numbering-merge.sql so the
+        // counter doesn't restart at 1 and collide with existing tasks.
+        // Seed of 1 is the default for brand-new companies; on companies
+        // that already had legacy tasks the migration pre-seeded the row
+        // and ReserveAsync ignores this seed.
+        var taskNo = await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            scopeKey: "task-display",
+            prefix: "TSK-",
+            padding: 6,
+            seedNumber: 1,
+            cancellationToken);
 
         var newId = Guid.NewGuid();
         await using (var insertCommand = connection.CreateCommand())
@@ -888,37 +905,6 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
         }
 
         return rows;
-    }
-
-    private static async Task<long> AllocateTaskOrdinalAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        CompanyId companyId,
-        CancellationToken cancellationToken)
-    {
-        // Upsert + increment in a single statement. Returns the
-        // ordinal the caller should use. The on-conflict branch
-        // returns the post-increment value, so we subtract 1 to get
-        // the just-allocated ordinal; the insert branch returns the
-        // seed value (1) which is exactly the allocation.
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            """
-            insert into tasks_company_sequence (company_id, next_ordinal)
-            values (@company_id, 2)
-            on conflict (company_id) do update
-              set next_ordinal = tasks_company_sequence.next_ordinal + 1
-            returning case
-              when tasks_company_sequence.next_ordinal = 2
-                then 1
-              else tasks_company_sequence.next_ordinal - 1
-            end as allocated;
-            """;
-        command.Parameters.AddWithValue("company_id", companyId.Value);
-
-        var raw = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt64(raw ?? 1L);
     }
 
     private static async Task RecomputeTotalsAsync(
