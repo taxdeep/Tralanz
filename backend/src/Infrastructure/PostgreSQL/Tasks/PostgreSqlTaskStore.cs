@@ -223,7 +223,12 @@ public sealed class PostgreSqlTaskStore(PostgreSqlConnectionFactory connections)
                 assignedToUserId.HasValue ? (object)assignedToUserId.Value.Value : DBNull.Value);
             insertCommand.Parameters.AddWithValue("service_date", serviceDate.HasValue ? (object)serviceDate.Value : DBNull.Value);
             insertCommand.Parameters.AddWithValue("currency_code", currencyCode);
-            insertCommand.Parameters.AddWithValue("created_by", createdBy);
+            // Unwrap UserId record struct to its underlying char(7)
+            // string — Npgsql can't auto-serialize the strong-typed
+            // value (no NpgsqlDbType registered) so it throws
+            // InvalidCastException at parameter-write time. Matches the
+            // assigned_to bind above which already uses .Value.Value.
+            insertCommand.Parameters.AddWithValue("created_by", createdBy.Value);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
