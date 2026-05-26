@@ -31,7 +31,13 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
         new("sales_order", "Sales Order", "sales-order-display", "SO-", 6, "AR", false),
         new("customer", "Customer", "customer-display", "CUS-", 6, "AR", true),
         new("vendor", "Vendor", "vendor-display", "VEN-", 6, "AP", true),
-        new("expense", "Expense", "expense-display", "EXP-", 6, "AP", false)
+        new("expense", "Expense", "expense-display", "EXP-", 6, "AP", false),
+        // task-display: rewired in 2026-05-26 to read from the shared
+        // company_numbering_sequences table instead of the legacy
+        // tasks_company_sequence counter. The matching migration
+        // (2026-05-26-task-numbering-merge.sql) seeds this row from
+        // the legacy next_ordinal so the counter doesn't restart.
+        new("task", "Task", "task-display", "TSK-", 6, "Operations", true)
     ];
 
     public async Task<BusinessNumberingSummary> GetSummaryAsync(
