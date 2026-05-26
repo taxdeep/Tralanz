@@ -6,6 +6,7 @@
 
 @inject BusinessShellState ShellState
 @inject TaskClient TaskClient
+@inject ItemClient ItemClient
 @inject TaskRelatedDocumentsClient RelatedDocsClient
 @inject CitusToastService Message
 @inject NavigationManager NavigationManager
@@ -148,7 +149,7 @@ else
                     {
                         <tr>
                             <td>@line.LineNo</td>
-                            <td>@(line.ItemId.ToString("D")[..8])…</td>
+                            <td>@ItemLabel(line.ItemId)</td>
                             <td>@(line.Description ?? "—")</td>
                             @* Display qty with trailing zeros trimmed but up to
                                4 fractional digits visible. Honors any UOM
@@ -319,6 +320,33 @@ else
     private bool _isLoadingRelated;
     private IReadOnlyList<TaskRelatedDocument> _relatedDocs = Array.Empty<TaskRelatedDocument>();
 
+    /// <summary>
+    /// Item lookup so the Billable lines table can show a human-readable
+    /// name ("BCAFS — BC Annual Filling") instead of the raw UUID. Loaded
+    /// once on init alongside the task itself; failures fall back to the
+    /// 8-char UUID prefix so the table never blanks out.
+    /// </summary>
+    private Dictionary<Guid, ItemSummary> _itemsById = new();
+
+    /// <summary>
+    /// Renders a line's ITEM cell. Prefers item_code (operator-typed,
+    /// stable), falls back to name when code is empty, and finally
+    /// degrades to the truncated UUID when the item isn't in the cache
+    /// at all (deleted item, projection lag, etc.).
+    /// </summary>
+    private string ItemLabel(Guid itemId)
+    {
+        if (_itemsById.TryGetValue(itemId, out var item))
+        {
+            return string.IsNullOrWhiteSpace(item.ItemCode)
+                ? item.Name
+                : (string.IsNullOrWhiteSpace(item.Name)
+                    ? item.ItemCode
+                    : $"{item.ItemCode} — {item.Name}");
+        }
+        return itemId.ToString("D")[..8] + "…";
+    }
+
     // Revenue = invoices (positive) + credit notes (negative — they
     // reverse revenue). Cost = bills + expenses. Sums use *Base values
     // so the totals are in a single comparable currency (the company
@@ -375,7 +403,23 @@ else
         _isLoading = true;
         try
         {
-            _task = await TaskClient.GetAsync(_taskId);
+            // Fetch task header + line items in parallel with the items
+            // catalog so the ITEM column resolves names instead of UUIDs.
+            // Items lookup includes inactive rows because a task may
+            // legitimately reference an item the operator later
+            // deactivated — we still want to show its name.
+            var taskTask = TaskClient.GetAsync(_taskId);
+            var itemsTask = ItemClient.ListAsync(includeInactive: true);
+            await Task.WhenAll(taskTask, itemsTask);
+            _task = await taskTask;
+            try
+            {
+                _itemsById = (await itemsTask).ToDictionary(i => i.Id);
+            }
+            catch
+            {
+                _itemsById = new();
+            }
         }
         finally
         {
