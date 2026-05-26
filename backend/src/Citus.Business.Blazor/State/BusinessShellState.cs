@@ -183,8 +183,10 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Year-end Pre-close", Href = "settings/year-end-pre-close", Icon = IconName.AlertCircle },
                 new NavMenuItem { Title = "Member Permissions", Href = "settings/permissions", Icon = IconName.ShieldLock },
                 new NavMenuItem { Title = "Audit Logs", Href = "settings/audit-logs", Icon = IconName.Eye },
-                new NavMenuItem { Title = "Tax Returns", Href = "tax-returns", Icon = IconName.ReportAnalytics },
-                new NavMenuItem { Title = "Session", Href = "session", Icon = IconName.User }
+                new NavMenuItem { Title = "Tax Returns", Href = "tax-returns", Icon = IconName.ReportAnalytics }
+                // /session diagnostics page stays reachable by direct
+                // URL but is no longer surfaced in the sidebar — it's a
+                // debug-style identity dump, not a routine action.
             ]
         }
     ];
