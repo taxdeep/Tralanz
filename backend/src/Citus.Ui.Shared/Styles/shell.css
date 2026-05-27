@@ -4312,3 +4312,57 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     justify-content: center;
     padding: var(--citus-space-3);
 }
+
+
+/* Batch 2e.2 — TaxCodePicker data-table frame fix.
+   Mirrors the account-picker / task-picker treatment in 2d.9.2: when
+   .citus-tax-picker lives inside a .citus-data-table row, the
+   __control becomes bare and the __input element takes the visible
+   frame. Outside data-tables the shell-as-frame styling earlier in
+   the file still applies. */
+.citus-data-table .citus-tax-picker__control {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+}
+.citus-data-table .citus-tax-picker__control:focus-within {
+    box-shadow: none;
+    border: 0;
+}
+.citus-data-table .citus-tax-picker__input {
+    width: 100%;
+    height: var(--citus-input-height);
+    box-sizing: border-box;
+    padding: 0 2rem 0 var(--citus-space-2);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
+    outline: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.citus-data-table .citus-tax-picker__input:focus {
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
+}
+.citus-data-table .citus-tax-picker__chevron {
+    position: absolute;
+    right: var(--citus-space-2);
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--citus-color-fg-muted);
+}
+.citus-data-table .citus-tax-picker__clear {
+    position: absolute;
+    right: 1.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.citus-data-table .citus-tax-picker {
+    position: relative;
+}

@@ -13,7 +13,9 @@
                @onfocus="HandleFocusAsync"
                @onblur="HandleBlurAsync"
                @onkeydown="HandleKeyDownAsync" />
-        <i class="ti ti-chevron-down citus-tax-picker__chevron" aria-hidden="true"></i>
+        <span class="citus-tax-picker__chevron" aria-hidden="true">
+            <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+        </span>
         @if (!Disabled && (!string.IsNullOrWhiteSpace(_searchText) || SelectedId.HasValue))
         {
             <button type="button"
@@ -21,7 +23,7 @@
                     @onmousedown:preventDefault
                     @onclick="ClearAsync"
                     aria-label="Clear">
-                <i class="ti ti-x" aria-hidden="true"></i>
+                <CitusIcon Name="IconName.X" Size="IconSize.Inline" />
             </button>
         }
     </div>
