@@ -21,10 +21,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="invoices">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to invoices</span>
-        </a>
+        <CitusLinkButton Href="invoices"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to invoices
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -58,19 +59,15 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Document date</label>
+        <CitusFormSection Title="Header">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Document date">
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Due date</label>
+                </CitusFormField>
+                <CitusFormField Label="Due date">
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Class="citus-control-full" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Customer</label>
+                </CitusFormField>
+                <CitusFormField Label="Customer">
                     <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search customers…"
@@ -80,8 +77,8 @@
                                        SelectedDisplayText="@_customerDisplay"
                                        OnCustomerSelected="OnCustomerSelected"
                                        OnCleared="OnCustomerCleared" />
-                </div>
-                <div>
+                </CitusFormField>
+                <CitusFormField Label="Exchange rate">
                     @* The "Transaction currency" label / display is gone —
                        it was redundant with the FxRateInline rate widget,
                        which already shows the quote currency code + flag.
@@ -89,7 +86,6 @@
                          - no customer picked → muted "Pick a customer first"
                          - customer in base currency → "Base currency — no FX rate needed"
                          - customer in foreign currency → "1 USD = 1.357893 CAD" with flags + override input *@
-                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
                     @if (_customerId == Guid.Empty)
                     {
                         <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
@@ -103,34 +99,30 @@
                                       QuoteCurrencyCode="@_currency"
                                       @bind-Rate="_fxRate" />
                     }
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
+                </CitusFormField>
+                <CitusFormField Label="Customer PO #">
                     <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
-                </div>
-                <div>
+                </CitusFormField>
+                <CitusFormField Label="From sales order">
                     @* Source SO display — filled when invoice is created via
                        "Invoice this SO" (flow lands with M3 iter 3). For
                        direct-create invoices this stays empty and the field
                        remains null. *@
-                    <label class="text-sm font-medium block mb-1">From sales order</label>
                     <div class="text-fg-muted text-sm">
                         @(_salesOrderId is null ? "Direct invoice (no source SO)" : $"From SO {_salesOrderNumber}")
                     </div>
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
-                </div>
-            </div>
-        </section>
+                </CitusFormField>
+            </CitusFormGrid>
+            <CitusFormField Label="Memo" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
+            </CitusFormField>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Lines</h2>
+        <CitusFormSection Title="Lines">
+            <HeaderActions>
                 <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </header>
-
+            </HeaderActions>
+            <ChildContent>
             <table class="citus-data-table">
                 <thead>
                     <tr>
@@ -215,42 +207,43 @@
                     </tr>
                 </tbody>
             </table>
-        </section>
+            </ChildContent>
+        </CitusFormSection>
     </div>
 
     <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
-                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
-                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
-                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                    {
-                        <tr>
-                            <th>FX rate</th>
-                            <td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </section>
+        <CitusFormSection Title="Summary">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
+                @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post invoice</h2>
-            <p class="text-fg-muted text-sm mb-3">
+        <CitusFormSection Title="Post invoice">
+            <p class="text-fg-muted text-sm m-0">
                 Posting reserves the invoice number, opens the AR control account row, and creates the journal entry. All flow through the backend Posting Engine.
             </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post invoice")
-            </CitusButton>
-        </section>
+        </CitusFormSection>
     </div>
 </div>
+
+@* Sticky Post action — single primary button (no Cancel; invoices
+   have no Save Draft pathway, Back navigates away). ErrorHint nudges
+   the operator back up to the top-of-page validation alert. *@
+<CitusFormActions Sticky="true"
+                  PrimaryLabel="Post invoice"
+                  SavingLabel="Posting..."
+                  CancelVisible="false"
+                  IsSaving="@_isSubmitting"
+                  Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
+                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                  OnSave="PostAsync" />
 
 @code {
     /// <summary>
