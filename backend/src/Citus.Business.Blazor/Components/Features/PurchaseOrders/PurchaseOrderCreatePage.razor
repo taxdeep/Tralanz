@@ -27,10 +27,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="purchase-orders">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to POs</span>
-        </a>
+        <CitusLinkButton Href="purchase-orders"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to POs
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -58,11 +59,9 @@ else
 {
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Vendor</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Vendor</label>
+            <CitusFormSection Title="Vendor">
+                <CitusFormGrid Columns="2">
+                    <CitusFormField Label="Vendor">
                         <RadzenDropDown TValue="Guid?"
                                         Data="@_vendors"
                                         @bind-Value="_vendorId"
@@ -72,12 +71,16 @@ else
                                         AllowFiltering="true"
                                         Class="citus-control-full"
                                         Change="@(_ => OnVendorChanged())" />
-                    </div>
-                </div>
-            </section>
+                    </CitusFormField>
+                </CitusFormGrid>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Address</h2>
+            <CitusFormSection Title="Address">
+                @* Address grid kept as raw markup: the layout pairs
+                   billing / shipping fields row-by-row (line / city +
+                   province / postal + country) with nested 2-col sub-
+                   grids, which doesn't fit the CitusFormGrid +
+                   CitusFormField "one field per cell" model. *@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label class="text-sm font-medium block mb-1">Billing address</label>
@@ -109,17 +112,16 @@ else
                         </CitusButton>
                     </div>
                 </div>
-            </section>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <header class="citus-panel__header">
-                    <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
+                <HeaderActions>
                     <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
                         <option value="exclusive">Tax exclusive</option>
                         <option value="inclusive">Tax inclusive</option>
                     </select>
-                </header>
-
+                </HeaderActions>
+                <ChildContent>
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -188,109 +190,98 @@ else
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
                 </div>
-            </section>
+                </ChildContent>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Notes</h2>
-                <div class="grid grid-cols-1 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Memo to supplier</label>
-                        <CitusInput TValue="string" @bind-Value="_memoToSupplier" Placeholder="Visible on the PO." />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Internal note</label>
-                        <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
-                    </div>
-                </div>
-            </section>
+            <CitusFormSection Title="Notes">
+                <CitusFormField Label="Memo to supplier">
+                    <CitusInput TValue="string" @bind-Value="_memoToSupplier" Placeholder="Visible on the PO." />
+                </CitusFormField>
+                <CitusFormField Label="Internal note" Class="mt-4">
+                    <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
+                </CitusFormField>
+            </CitusFormSection>
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
-                <div class="grid grid-cols-1 gap-3">
-                    @if (!string.IsNullOrWhiteSpace(_poNumber))
-                    {
-                        <div>
-                            <label class="text-sm font-medium block mb-1">PO no.</label>
-                            <div class="citus-inline-code">@_poNumber</div>
-                        </div>
-                    }
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Order date</label>
-                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_orderDate" Class="citus-control-full" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Expected delivery</label>
-                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_expectedDeliveryDate" Class="citus-control-full" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                        <CitusInput TValue="string"
-                                    @bind-Value="_currency"
-                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_orderDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
-                    </div>
-                </div>
-            </section>
-
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Discount + shipping</h2>
-                <div class="grid grid-cols-1 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Discount</label>
-                        <div class="flex gap-2">
-                            <select class="citus-form-field__input citus-inline-control--sm"
-                                    value="@(_discountKind ?? "")"
-                                    @onchange="OnDiscountKindChanged">
-                                <option value="">None</option>
-                                <option value="percent">Percent</option>
-                                <option value="amount">Amount</option>
-                            </select>
-                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Shipping amount</label>
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
-                    </div>
-                </div>
-            </section>
-
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@FormatAmount(Subtotal)</td></tr>
-                        <tr><th>Discount</th><td class="text-right">−@FormatAmount(DiscountAmount)</td></tr>
-                        <tr><th>Shipping</th><td class="text-right">@FormatAmount(_shippingAmount ?? 0m)</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@FormatAmount(Total) @_currency</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <div class="flex flex-wrap gap-2">
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(send: false))">
-                    @(_isSaving ? "Saving…" : "Save")
-                </CitusButton>
-                @if (_status == "draft" || _purchaseOrderId is null)
+            <CitusFormSection Title="Document">
+                @if (!string.IsNullOrWhiteSpace(_poNumber))
                 {
-                    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(send: true))">
-                        Save &amp; Send
-                    </CitusButton>
+                    <CitusFormField Label="PO no.">
+                        <div class="citus-inline-code">@_poNumber</div>
+                    </CitusFormField>
                 }
-                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
-            </div>
+                <CitusFormField Label="Order date" Class="@(string.IsNullOrWhiteSpace(_poNumber) ? null : "mt-4")">
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                      @bind-Value="_orderDate" Class="citus-control-full" />
+                </CitusFormField>
+                <CitusFormField Label="Expected delivery" Class="mt-4">
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                      @bind-Value="_expectedDeliveryDate" Class="citus-control-full" />
+                </CitusFormField>
+                <CitusFormField Label="Transaction currency" Class="mt-4">
+                    <CitusInput TValue="string"
+                                @bind-Value="_currency"
+                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                </CitusFormField>
+                <CitusFormField Label="Exchange rate" Class="mt-4">
+                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_orderDate ?? DateTime.Today).Date))"
+                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                  QuoteCurrencyCode="@_currency"
+                                  @bind-Rate="_fxRate" />
+                </CitusFormField>
+            </CitusFormSection>
+
+            <CitusFormSection Title="Discount + shipping">
+                <CitusFormField Label="Discount">
+                    <div class="flex gap-2">
+                        <select class="citus-form-field__input citus-inline-control--sm"
+                                value="@(_discountKind ?? "")"
+                                @onchange="OnDiscountKindChanged">
+                            <option value="">None</option>
+                            <option value="percent">Percent</option>
+                            <option value="amount">Amount</option>
+                        </select>
+                        <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
+                    </div>
+                </CitusFormField>
+                <CitusFormField Label="Shipping amount" Class="mt-4">
+                    <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
+                </CitusFormField>
+            </CitusFormSection>
+
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
+
+    @* Sticky Save / Save & Send / Cancel — Save is the primary, Save & Send
+       is a secondary in ExtraContent (only when the PO is still Draft or
+       brand-new), Cancel routes back. Mirrors QuoteCreatePage's dual-action
+       pattern. *@
+    <CitusFormActions Sticky="true"
+                      PrimaryLabel="Save"
+                      IsSaving="@_isSaving"
+                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                      OnSave="@(() => SaveAsync(send: false))"
+                      OnCancel="Cancel">
+        <ExtraContent>
+            @if (_status == "draft" || _purchaseOrderId is null)
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="@_isSaving"
+                             OnClick="@(() => SaveAsync(send: true))">
+                    Save &amp; Send
+                </CitusButton>
+            }
+        </ExtraContent>
+    </CitusFormActions>
 }
 
 @code {

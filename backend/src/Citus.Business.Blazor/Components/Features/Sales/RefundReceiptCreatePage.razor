@@ -27,10 +27,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="sales-overview">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to sales</span>
-        </a>
+        <CitusLinkButton Href="sales-overview"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to sales
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -54,15 +55,12 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Refund date</label>
+        <CitusFormSection Title="Header">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Refund date">
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Customer</label>
+                </CitusFormField>
+                <CitusFormField Label="Customer">
                     <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search customers…"
@@ -72,9 +70,8 @@
                                        SelectedDisplayText="@_customerDisplay"
                                        OnCustomerSelected="OnCustomerSelected"
                                        OnCleared="OnCustomerCleared" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                </CitusFormField>
+                <CitusFormField Label="Exchange rate">
                     @if (_customerId == Guid.Empty)
                     {
                         <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
@@ -88,33 +85,30 @@
                                       QuoteCurrencyCode="@_currency"
                                       @bind-Rate="_fxRate" />
                     }
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Reason</label>
+                </CitusFormField>
+                <CitusFormField Label="Reason">
                     <CitusInput TValue="string" @bind-Value="_reason" Placeholder="Why refund? (return / pricing / RMA)" />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
-                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
-                </div>
-            </div>
-        </section>
+                </CitusFormField>
+            </CitusFormGrid>
+            <CitusFormField Label="Memo" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
+            </CitusFormField>
+            <CitusFormField Label="Customer PO #" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
+            </CitusFormField>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Refund</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Payment method</label>
+        <CitusFormSection Title="Refund">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Payment method">
                     <PaymentMethodSelect Value="@_paymentMethod" ValueChanged="HandlePaymentMethodChanged" />
-                </div>
+                </CitusFormField>
                 <div>
                     @* Same conditional rules as Sales Receipt /
                        Expense — operators don't relearn channel
-                       semantics per page. *@
+                       semantics per page. Kept as raw div + label
+                       because the label text + required-asterisk
+                       depend on the payment method. *@
                     @if (_paymentMethod == "cheque")
                     {
                         <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
@@ -136,33 +130,31 @@
                         <div class="text-fg-muted text-sm">Cash refunds don't need a reference.</div>
                     }
                 </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Refund from</label>
-                    @* The asset account that the money LEAVES. Same
-                       AllowedRootTypes filter as Sales Receipt's
-                       Deposit-to picker — bank / cash / credit-card /
-                       payment-processor — but on this page the picked
-                       account gets credited (cash flowing out). *@
-                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                   Context="refund_receipt.refund_from"
-                                   AllowedRootTypes="asset"
-                                   SelectedId="@_refundFromAccountId"
-                                   SelectedDisplayText="@_refundFromAccountDisplay"
-                                   Placeholder="Select bank / cash / credit card…"
-                                   DefaultCurrencyCode="@_currency"
-                                   OnAccountSelected="OnRefundAccountSelected"
-                                   OnCleared="OnRefundAccountCleared" />
-                </div>
-            </div>
-        </section>
+            </CitusFormGrid>
+            <CitusFormField Label="Refund from" Class="mt-4">
+                @* The asset account that the money LEAVES. Same
+                   AllowedRootTypes filter as Sales Receipt's
+                   Deposit-to picker — bank / cash / credit-card /
+                   payment-processor — but on this page the picked
+                   account gets credited (cash flowing out). *@
+                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                               Context="refund_receipt.refund_from"
+                               AllowedRootTypes="asset"
+                               SelectedId="@_refundFromAccountId"
+                               SelectedDisplayText="@_refundFromAccountDisplay"
+                               Placeholder="Select bank / cash / credit card…"
+                               DefaultCurrencyCode="@_currency"
+                               OnAccountSelected="OnRefundAccountSelected"
+                               OnCleared="OnRefundAccountCleared" />
+            </CitusFormField>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Lines</h2>
+        <CitusFormSection Title="Lines">
+            <HeaderActions>
                 <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </header>
-
+            </HeaderActions>
+            <ChildContent>
             <table class="citus-data-table">
                 <thead>
                     <tr>
@@ -237,48 +229,48 @@
                     </tr>
                 </tbody>
             </table>
-        </section>
+            </ChildContent>
+        </CitusFormSection>
     </div>
 
     <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
-                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
-                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
-                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                    {
-                        <tr>
-                            <th>FX rate</th>
-                            <td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td>
-                        </tr>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(_refundFromAccountDisplay))
-                    {
-                        <tr><th>Refund from</th><td>@_refundFromAccountDisplay</td></tr>
-                    }
-                </tbody>
-            </table>
-        </section>
+        <CitusFormSection Title="Summary">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
+                @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
+                }
+                @if (!string.IsNullOrWhiteSpace(_refundFromAccountDisplay))
+                {
+                    <CitusKeyValueRow Label="Refund from">@_refundFromAccountDisplay</CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post refund</h2>
-            <p class="text-fg-muted text-sm mb-3">
+        <CitusFormSection Title="Post refund">
+            <p class="text-fg-muted text-sm m-0">
                 Posting credits the refund-from account (money leaves
                 the bank / wallet) and debits revenue + tax-payable.
                 No AR open item is touched.
             </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_lines.Count == 0 || _total <= 0 || _refundFromAccountId is null || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post refund receipt")
-            </CitusButton>
-        </section>
+        </CitusFormSection>
     </div>
 </div>
+
+@* Sticky Post action — single primary button (no Cancel; refund
+   receipts have no Save Draft pathway, Back navigates away). *@
+<CitusFormActions Sticky="true"
+                  PrimaryLabel="Post refund receipt"
+                  SavingLabel="Posting..."
+                  CancelVisible="false"
+                  IsSaving="@_isSubmitting"
+                  Disabled="@(_lines.Count == 0 || _total <= 0 || _refundFromAccountId is null || ShellState.AreWritesBlocked)"
+                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                  OnSave="PostAsync" />
 
 @code {
     private readonly PageHeaderModel _header = new()
