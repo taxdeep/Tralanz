@@ -2896,14 +2896,14 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 .citus-account-picker__control {
+    /* Visual frame (border / radius / background / padding / min-height)
+       is owned by the unified shell rule lower in this file. Keeping
+       both declarations live caused screenshot-confirmed double-frame
+       when CSS specificity / cascade tipped between them. Inline
+       layout properties stay so the flex container still works. */
     display: flex;
     align-items: center;
     gap: var(--citus-space-1);
-    background: var(--citus-color-bg-elevated);
-    border: 1px solid var(--citus-color-border);
-    border-radius: var(--citus-radius-sm);
-    padding: 0 var(--citus-space-1) 0 var(--citus-space-2);
-    min-height: var(--citus-input-height);
     cursor: text;
 }
 
