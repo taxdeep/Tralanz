@@ -35,10 +35,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="invoices">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to invoices</span>
-        </a>
+        <CitusLinkButton Href="invoices"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to invoices
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -79,15 +80,12 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Memo date</label>
+        <CitusFormSection Title="Header">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Memo date">
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Customer</label>
+                </CitusFormField>
+                <CitusFormField Label="Customer">
                     <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search customers…"
@@ -97,9 +95,8 @@
                                        SelectedDisplayText="@_customerDisplay"
                                        OnCustomerSelected="OnCustomerSelected"
                                        OnCleared="OnCustomerCleared" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                </CitusFormField>
+                <CitusFormField Label="Exchange rate">
                     @if (_customerId == Guid.Empty)
                     {
                         <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
@@ -113,8 +110,8 @@
                                       QuoteCurrencyCode="@_currency"
                                       @bind-Rate="_fxRate" />
                     }
-                </div>
-                <div>
+                </CitusFormField>
+                <CitusFormField Label="Apply to invoice (optional)">
                     @* Apply-to-invoice number. Free text for V1 — stored
                        and the backend resolves to invoice id at post-
                        time using a (company_id, display_number) lookup
@@ -123,7 +120,6 @@
                        outstanding invoices ships, this field becomes a
                        proper picker. Leaving blank issues a standalone
                        credit. *@
-                    <label class="text-sm font-medium block mb-1">Apply to invoice (optional)</label>
                     <CitusInput TValue="string" @bind-Value="_appliedToInvoiceNumber" Placeholder="e.g. INV-2026-0042" />
                     @if (!string.IsNullOrWhiteSpace(_appliedToInvoiceNumber) && !LooksLikeDocumentNumber(_appliedToInvoiceNumber))
                     {
@@ -131,28 +127,24 @@
                             Use the invoice's display number (alphanumerics, dashes, underscores). Backend will reject anything it can't resolve in this company.
                         </p>
                     }
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Reason</label>
-                    <CitusInput TValue="string" @bind-Value="_reason" Placeholder="Return / pricing correction / RMA #..." />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
-                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (typically copied from the original invoice)" MaxLength="64" />
-                </div>
-            </div>
-        </section>
+                </CitusFormField>
+            </CitusFormGrid>
+            <CitusFormField Label="Reason" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_reason" Placeholder="Return / pricing correction / RMA #..." />
+            </CitusFormField>
+            <CitusFormField Label="Memo" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
+            </CitusFormField>
+            <CitusFormField Label="Customer PO #" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (typically copied from the original invoice)" MaxLength="64" />
+            </CitusFormField>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Lines</h2>
+        <CitusFormSection Title="Lines">
+            <HeaderActions>
                 <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </header>
-
+            </HeaderActions>
+            <ChildContent>
             <table class="citus-data-table">
                 <thead>
                     <tr>
@@ -227,49 +219,51 @@
                     </tr>
                 </tbody>
             </table>
-        </section>
+            </ChildContent>
+        </CitusFormSection>
     </div>
 
     <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
-                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
-                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
-                    @if (!string.IsNullOrWhiteSpace(_appliedToInvoiceNumber))
-                    {
-                        <tr><th>Applied to</th><td>@_appliedToInvoiceNumber</td></tr>
-                    }
-                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                    {
-                        <tr>
-                            <th>FX rate</th>
-                            <td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </section>
+        <CitusFormSection Title="Summary">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
+                @if (!string.IsNullOrWhiteSpace(_appliedToInvoiceNumber))
+                {
+                    <CitusKeyValueRow Label="Applied to">@_appliedToInvoiceNumber</CitusKeyValueRow>
+                }
+                @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post credit memo</h2>
-            <p class="text-fg-muted text-sm mb-3">
+        <CitusFormSection Title="Post credit memo">
+            <p class="text-fg-muted text-sm m-0">
                 Posting reverses revenue + tax-payable and credits AR
                 @(string.IsNullOrWhiteSpace(_appliedToInvoiceNumber)
                     ? " — issued as a standalone customer credit."
                     : $" — applied directly against {_appliedToInvoiceNumber}.")
             </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post credit memo")
-            </CitusButton>
-        </section>
+        </CitusFormSection>
     </div>
 </div>
+
+@* Sticky Post action — single primary button (no Cancel; credit
+   memos have no Save Draft pathway, Back navigates away). Mirrors
+   InvoiceCreatePage's footer pattern. ErrorHint nudges the operator
+   back up to the top-of-page validation alert. *@
+<CitusFormActions Sticky="true"
+                  PrimaryLabel="Post credit memo"
+                  SavingLabel="Posting..."
+                  CancelVisible="false"
+                  IsSaving="@_isSubmitting"
+                  Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
+                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                  OnSave="PostAsync" />
 
 @code {
     private readonly PageHeaderModel _header = new()
