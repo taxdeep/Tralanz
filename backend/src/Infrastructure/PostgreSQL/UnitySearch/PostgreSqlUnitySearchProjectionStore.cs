@@ -1123,7 +1123,12 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               'task',
               t.id,
               'transactions',
-              t.task_no,
+              -- primary_text shows the operator-facing label: task_no plus
+              -- the title so picker rows read "TBT000003 | Q2 audit prep"
+              -- instead of just the opaque number. CSS ellipsis on the
+              -- picker option's __primary class truncates if too long, so
+              -- no server-side truncation is needed.
+              concat_ws(' | ', t.task_no, nullif(t.title, '')),
               concat_ws(' | ', initcap(t.status), coalesce(c.display_name, ''), t.currency_code),
               concat_ws(' ', t.task_no, t.title, coalesce(t.description, ''), coalesce(c.display_name, '')),
               to_tsvector('simple', concat_ws(' ', t.task_no, t.title, coalesce(t.description, ''), coalesce(c.display_name, ''))),
