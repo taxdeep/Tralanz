@@ -32,10 +32,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="bills">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to bills</span>
-        </a>
+        <CitusLinkButton Href="bills"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to bills
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -65,8 +66,7 @@ else
 {
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Supplier</h2>
+            <CitusFormSection Title="Supplier">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label class="text-sm font-medium block mb-1">Supplier</label>
@@ -101,10 +101,9 @@ else
                         }
                     </div>
                 </div>
-            </section>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -211,17 +210,15 @@ else
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
                 </div>
-            </section>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Memo</h2>
+            <CitusFormSection Title="Memo">
                 <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill" />
-            </section>
+            </CitusFormSection>
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
+            <CitusFormSection Title="Document">
                 <div class="grid grid-cols-1 gap-3">
                     @if (!string.IsNullOrWhiteSpace(_billNumberDisplay))
                     {
@@ -268,27 +265,27 @@ else
                                       @bind-Rate="_fxRate" />
                     </div>
                 </div>
-            </section>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@FormatAmount(Subtotal)</td></tr>
-                        <tr><th>Tax</th><td class="text-right">@FormatAmount(TaxTotal)</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@FormatAmount(Total) @_currency</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <div class="flex flex-wrap gap-2">
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
-                    @(_isSaving ? "Saving…" : "Save")
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
-            </div>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
+
+    @* Sticky Save / Cancel — pinned to viewport bottom while the
+       operator scrolls through a long bill form. The top-of-page
+       _validation Alert still shows the actual error message; the
+       sticky footer just nudges the operator to scroll back up. *@
+    <CitusFormActions Sticky="true"
+                      IsSaving="@_isSaving"
+                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                      OnSave="SaveAsync"
+                      OnCancel="Cancel" />
 }
 
 @code {

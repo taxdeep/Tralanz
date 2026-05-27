@@ -10,16 +10,18 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="bills">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to bills</span>
-        </a>
+        <CitusLinkButton Href="bills"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to bills
+        </CitusLinkButton>
         @if (_bill is not null && IsEditable(_bill.Status))
         {
-            <a class="citus-button" href="@($"bills/{_bill.Id:D}/edit")">
-                <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
-                <span>Edit</span>
-            </a>
+            <CitusLinkButton Href="@($"bills/{_bill.Id:D}/edit")"
+                             Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.Pencil">
+                Edit
+            </CitusLinkButton>
         }
     </Actions>
 </CitusPageHeader>
@@ -39,7 +41,7 @@ else if (_bill is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Bill #" Value="@_bill.BillNumber" Description="@_bill.VendorName"
                        Icon="IconName.Receipt" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_bill.Status)" Description="@StatusHint(_bill.Status)"
@@ -51,33 +53,26 @@ else
                        Value="@_bill.DueDate.ToString("yyyy-MM-dd")"
                        Description="@($"Issued {_bill.BillDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </div>
+    </CitusStatCardGrid>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            @* Copy A3 Phase 2: secondary actions collapse into the
-               More menu. Void only applies to drafts (server still
-               re-checks); Copy is always available — copying a paid
-               bill into a fresh draft is a valid recurring-bill
-               workflow. The "Pay Bills" hint stays as a banner so the
-               operator knows where settlement lives. *@
-            <CitusMoreMenu Items="@_moreItems" />
-            @if (_bill.Status == "posted")
-            {
-                <span class="text-fg-muted text-sm">Use the Pay Bills page to settle this bill.</span>
-            }
-            @if (_bill.SourcePurchaseOrderId is { } poId)
-            {
-                <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{poId:D}")">View source PO</a>
-            }
-        </div>
-    </section>
+    @* Copy A3 Phase 2: secondary actions collapse into the More
+       menu. Void only applies to drafts (server still re-checks);
+       Copy is always available — copying a paid bill into a fresh
+       draft is a valid recurring-bill workflow. *@
+    <CitusActionsPanel MoreMenuItems="@_moreItems"
+                       Hint="@(_bill.Status == "posted" ? "Use the Pay Bills page to settle this bill." : null)">
+        @if (_bill.SourcePurchaseOrderId is { } poId)
+        {
+            <CitusLinkButton Href="@($"purchase-orders/{poId:D}")"
+                             Variant="CitusButtonVariant.Ghost">
+                View source PO
+            </CitusLinkButton>
+        }
+    </CitusActionsPanel>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -101,46 +96,39 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_bill.Memo))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Memo</h2>
+                <CitusFormSection Title="Memo">
                     <p class="text-fg-muted text-sm">@_bill.Memo</p>
-                </section>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Bill no.</th><td><span class="citus-inline-code">@_bill.BillNumber</span></td></tr>
-                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_bill.EntityNumber</span></td></tr>
-                        <tr><th>Bill date</th><td>@_bill.BillDate.ToString("yyyy-MM-dd")</td></tr>
-                        <tr><th>Due date</th><td>@_bill.DueDate.ToString("yyyy-MM-dd")</td></tr>
-                        <tr><th>Currency</th><td>@_bill.DocumentCurrencyCode @(_bill.DocumentCurrencyCode == _bill.BaseCurrencyCode ? "" : $"@ {_bill.FxRate}")</td></tr>
-                        <tr><th>Source PO</th><td>@(string.IsNullOrEmpty(_bill.SourcePurchaseOrderNumber) ? "—" : _bill.SourcePurchaseOrderNumber)</td></tr>
-                        @if (_bill.PostedAt is { } postedAt)
-                        {
-                            <tr><th>Posted</th><td>@postedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Document">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Bill no."><span class="citus-inline-code">@_bill.BillNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_bill.EntityNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Bill date">@_bill.BillDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Due date">@_bill.DueDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Currency">@_bill.DocumentCurrencyCode @(_bill.DocumentCurrencyCode == _bill.BaseCurrencyCode ? "" : $"@ {_bill.FxRate}")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Source PO">@(string.IsNullOrEmpty(_bill.SourcePurchaseOrderNumber) ? "—" : _bill.SourcePurchaseOrderNumber)</CitusKeyValueRow>
+                    @if (_bill.PostedAt is { } postedAt)
+                    {
+                        <CitusKeyValueRow Label="Posted">@postedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@_bill.SubtotalAmount.ToString("N2")</td></tr>
-                        <tr><th>Tax</th><td class="text-right">@_bill.TaxAmount.ToString("N2")</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@_bill.TotalAmount.ToString("N2") @_bill.DocumentCurrencyCode</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_bill.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_bill.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_bill.TotalAmount.ToString("N2") @_bill.DocumentCurrencyCode</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }
