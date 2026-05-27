@@ -3982,7 +3982,12 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
    citus-task-picker. Single border/height/focus-ring rule so the three
    pickers stop looking like three different products on Bill / Expense
    line editors. */
-.unity-picker__control,
+/* Unity-picker is intentionally OFF this shell rule — its .__input
+   element is structurally the visual frame (see razor.css) and
+   stacking an outer shell on top creates a "frame-inside-a-frame"
+   double-border seen in operator screenshots. Account-picker and
+   task-picker keep the shell because their inputs are structurally
+   bare. */
 .citus-account-picker__control,
 .citus-task-picker__control {
   display: flex;
@@ -3996,7 +4001,6 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
   transition: border-color .15s, box-shadow .15s;
   position: relative;
 }
-.unity-picker__control:focus-within,
 .citus-account-picker__control:focus-within,
 .citus-task-picker__control:focus-within {
   border-color: var(--citus-color-primary);
@@ -4005,8 +4009,6 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 /* Inner trigger buttons + icons stay transparent â€” the shell owns the
    border. Removes the vertical divider seam users saw on Item/Service. */
-.unity-picker__control > button,
-.unity-picker__control > .unity-picker__icon,
 .citus-account-picker__control > button,
 .citus-task-picker__control > button {
   background: transparent;
