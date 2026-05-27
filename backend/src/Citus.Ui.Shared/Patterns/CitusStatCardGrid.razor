@@ -1,0 +1,34 @@
+@*
+    CitusStatCardGrid — responsive container for a row of
+    CitusStatCard. Owns the breakpoint behaviour (1 col phone,
+    2 col md, Columns col lg) so callers never have to think
+    about grid-cols-1 md:grid-cols-2 lg:grid-cols-4 again.
+
+    Columns="Auto" picks 4 if there are 4+ children, 3 for 3,
+    2 for 2 — pages can leave it Auto and the grid will keep
+    sensible widths.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<div class="@CssClass">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public int Columns { get; set; } = 4;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-stat-card-grid", $"citus-stat-card-grid--cols-{Math.Clamp(Columns, 1, 6)}" };
+            if (!string.IsNullOrEmpty(Class)) classes.Add(Class);
+            return string.Join(' ', classes);
+        }
+    }
+}

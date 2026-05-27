@@ -1,0 +1,86 @@
+@*
+    CitusFormActions — Save / Cancel row that matches §4 of the UI
+    spec. Cancel on the left, primary on the right, optional extra
+    affordances between them via the ExtraContent slot.
+
+    Sticky=true makes this a fixed bottom action bar for long form
+    pages (BillCreatePage etc.) — picks up extra CSS that pins it
+    to the viewport bottom inside the page main column.
+
+    ErrorHint surfaces "Fix errors above" or similar near the save
+    button so an operator who has scrolled to the bottom of a long
+    form still sees that validation failed without scrolling up.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<div class="@CssClass">
+    @if (CancelVisible)
+    {
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     Disabled="@(IsSaving || CancelDisabled)"
+                     OnClick="HandleCancel">
+            @CancelLabel
+        </CitusButton>
+    }
+
+    @if (ExtraContent is not null)
+    {
+        <div class="citus-form-actions__extra">@ExtraContent</div>
+    }
+
+    <div class="citus-form-actions__primary">
+        @if (!string.IsNullOrWhiteSpace(ErrorHint))
+        {
+            <span class="citus-form-actions__error">@ErrorHint</span>
+        }
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     Disabled="@(Disabled || IsSaving)"
+                     OnClick="HandleSave">
+            @(IsSaving ? SavingLabel : PrimaryLabel)
+        </CitusButton>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string PrimaryLabel { get; set; } = "Save";
+
+    [Parameter] public string SavingLabel { get; set; } = "Saving…";
+
+    [Parameter] public string CancelLabel { get; set; } = "Cancel";
+
+    [Parameter] public bool CancelVisible { get; set; } = true;
+
+    [Parameter] public bool CancelDisabled { get; set; }
+
+    [Parameter] public bool IsSaving { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public bool Sticky { get; set; }
+
+    [Parameter] public string? ErrorHint { get; set; }
+
+    [Parameter] public RenderFragment? ExtraContent { get; set; }
+
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-form-actions" };
+            if (Sticky) classes.Add("citus-form-actions--sticky");
+            if (!string.IsNullOrEmpty(Class)) classes.Add(Class);
+            return string.Join(' ', classes);
+        }
+    }
+
+    private Task HandleSave() => OnSave.HasDelegate ? OnSave.InvokeAsync() : Task.CompletedTask;
+
+    private Task HandleCancel() => OnCancel.HasDelegate ? OnCancel.InvokeAsync() : Task.CompletedTask;
+}

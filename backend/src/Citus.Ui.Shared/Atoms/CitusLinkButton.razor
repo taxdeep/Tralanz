@@ -1,0 +1,96 @@
+@*
+    CitusLinkButton — anchor that looks identical to CitusButton.
+    Use this for *navigation* (Back, Edit, View source) so a single
+    visual surface (.citus-button) covers both <button> and <a>
+    paths. Action / submit buttons that mutate state stay on
+    CitusButton.
+
+    Disabled <a> is not natively supported by the browser; we add
+    aria-disabled and a CSS hook that the .citus-button--disabled
+    rules already render correctly.
+*@
+
+@namespace Citus.Ui.Shared.Atoms
+
+<a href="@(Disabled ? null : Href)"
+   class="@CssClass"
+   target="@Target"
+   rel="@Rel"
+   aria-disabled="@(Disabled ? "true" : null)"
+   tabindex="@(Disabled ? "-1" : null)">
+    @if (LeadingIcon is not null)
+    {
+        <span class="citus-button__icon">
+            <CitusIcon Name="LeadingIcon.Value" Size="IconSize.Action" />
+        </span>
+    }
+    @if (ChildContent is not null)
+    {
+        <span class="citus-button__label">@ChildContent</span>
+    }
+</a>
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = string.Empty;
+
+    [Parameter] public CitusButtonVariant Variant { get; set; } = CitusButtonVariant.Default;
+
+    [Parameter] public CitusButtonSize Size { get; set; } = CitusButtonSize.Medium;
+
+    [Parameter] public IconName? LeadingIcon { get; set; }
+
+    [Parameter] public bool Danger { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public bool Block { get; set; }
+
+    [Parameter] public string? Target { get; set; }
+
+    [Parameter] public string? Rel { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-button" };
+
+            switch (Variant)
+            {
+                case CitusButtonVariant.Primary:
+                    classes.Add("citus-button--primary");
+                    break;
+                case CitusButtonVariant.Ghost:
+                    classes.Add("citus-button--ghost");
+                    break;
+                case CitusButtonVariant.Link:
+                    classes.Add("citus-button--link");
+                    break;
+                case CitusButtonVariant.Text:
+                    classes.Add("citus-button--text");
+                    break;
+            }
+
+            switch (Size)
+            {
+                case CitusButtonSize.Small:
+                    classes.Add("citus-button--sm");
+                    break;
+                case CitusButtonSize.Large:
+                    classes.Add("citus-button--lg");
+                    break;
+            }
+
+            if (Danger) classes.Add("citus-button--danger");
+            if (Block) classes.Add("citus-button--block");
+            if (Disabled) classes.Add("citus-button--disabled");
+            if (!string.IsNullOrEmpty(Class)) classes.Add(Class);
+
+            return string.Join(' ', classes);
+        }
+    }
+}

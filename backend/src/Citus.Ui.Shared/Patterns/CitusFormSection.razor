@@ -1,0 +1,63 @@
+@*
+    CitusFormSection — canonical panel container. Wraps a titled
+    <section class="citus-panel"> with optional subtitle and a
+    right-aligned Actions slot in the header. The section's
+    margin-block-end is owned by the .citus-form-section rule
+    (added in app.css alongside this component) so callers no
+    longer need to sprinkle mb-4 / mb-6 between sections.
+
+    Density="Compact" tightens vertical rhythm for dense forms
+    (e.g. settings list pages) — picks up an extra modifier class
+    that the CSS uses to shrink padding and header gap.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<section class="@CssClass">
+    @if (!string.IsNullOrWhiteSpace(Title) || HeaderActions is not null)
+    {
+        <header class="citus-panel__header">
+            @if (!string.IsNullOrWhiteSpace(Title))
+            {
+                <div class="citus-form-section__heading">
+                    <h2 class="citus-panel__title">@Title</h2>
+                    @if (!string.IsNullOrWhiteSpace(Subtitle))
+                    {
+                        <p class="citus-form-section__subtitle">@Subtitle</p>
+                    }
+                </div>
+            }
+            @if (HeaderActions is not null)
+            {
+                <div class="citus-form-section__actions">@HeaderActions</div>
+            }
+        </header>
+    }
+
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? Subtitle { get; set; }
+
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public CitusFormSectionDensity Density { get; set; } = CitusFormSectionDensity.Default;
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-panel", "citus-form-section" };
+            if (Density == CitusFormSectionDensity.Compact) classes.Add("citus-form-section--compact");
+            if (!string.IsNullOrEmpty(Class)) classes.Add(Class);
+            return string.Join(' ', classes);
+        }
+    }
+}

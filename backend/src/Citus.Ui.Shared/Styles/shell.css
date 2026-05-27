@@ -3862,3 +3862,261 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-stack-list__row:last-child {
     border-bottom: 0;
 }
+
+
+/* ===================================================================
+   Batch 1 (2026-05-26) — UI consistency primitives.
+   Pairs with new components in Citus.Ui.Shared/Atoms + Patterns.
+   ================================================================ */
+
+.citus-form-section { margin-block-end: var(--citus-space-6); }
+.citus-form-section:last-child { margin-block-end: 0; }
+.citus-form-section--compact { padding: var(--citus-space-4); }
+.citus-form-section--compact .citus-panel__header { margin-bottom: var(--citus-space-3); }
+.citus-form-section__heading { display: flex; flex-direction: column; gap: var(--citus-space-1); }
+.citus-form-section__subtitle { color: var(--citus-color-fg-muted); font-size: var(--citus-text-sm); margin: 0; }
+.citus-form-section__actions { display: flex; align-items: center; gap: var(--citus-space-2); margin-left: auto; }
+
+.citus-form-grid { display: grid; gap: var(--citus-space-4); grid-template-columns: 1fr; }
+.citus-form-grid--tight { gap: var(--citus-space-3); }
+@media (min-width: 768px) {
+  .citus-form-grid--cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .citus-form-grid--cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .citus-form-grid--cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .citus-form-grid--cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.citus-form-field__required { color: var(--citus-color-danger); margin-inline-start: 0.15em; }
+.citus-form-field__hint { font-size: var(--citus-text-xs); color: var(--citus-color-fg-subtle); }
+.citus-form-field__error { font-size: var(--citus-text-xs); color: var(--citus-color-danger); }
+.citus-form-field__control { display: flex; flex-direction: column; min-width: 0; }
+.citus-form-field__control > * { width: 100%; }
+.citus-form-field--invalid .citus-form-field__input,
+.citus-form-field--invalid .citus-input,
+.citus-form-field--invalid .rz-dropdown,
+.citus-form-field--invalid .rz-numeric { border-color: var(--citus-color-danger); }
+
+/* Sticky variant of CitusFormActions — pinned bottom for long form pages. */
+.citus-form-actions--sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: var(--citus-color-bg-elevated);
+  padding: var(--citus-space-3) var(--citus-space-4);
+  margin-top: var(--citus-space-6);
+  border-radius: var(--citus-radius-md);
+  border: 1px solid var(--citus-color-border);
+  box-shadow: var(--citus-shadow-2);
+}
+.citus-form-actions__extra { display: flex; align-items: center; gap: var(--citus-space-2); }
+.citus-form-actions__error { color: var(--citus-color-danger); font-size: var(--citus-text-sm); margin-inline-end: var(--citus-space-2); }
+
+.citus-stat-card-grid {
+  display: grid;
+  gap: var(--citus-space-4);
+  grid-template-columns: 1fr;
+  margin-block-end: var(--citus-space-6);
+}
+@media (min-width: 768px) {
+  .citus-stat-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .citus-stat-card-grid--cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .citus-stat-card-grid--cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .citus-stat-card-grid--cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .citus-stat-card-grid--cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1280px) {
+  .citus-stat-card-grid--cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+.citus-inline-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--citus-space-2);
+  padding: var(--citus-space-4) 0;
+  color: var(--citus-color-fg-muted);
+  font-size: var(--citus-text-sm);
+}
+.citus-inline-empty__icon { color: var(--citus-color-fg-subtle); display: inline-flex; }
+
+.citus-actions-panel { margin-block-end: var(--citus-space-6); }
+.citus-actions-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--citus-space-2);
+}
+.citus-actions-panel__hint { color: var(--citus-color-fg-muted); font-size: var(--citus-text-sm); }
+
+.citus-nav-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--citus-space-2);
+  background: var(--citus-color-bg-elevated);
+  border: 1px solid var(--citus-color-border);
+  border-radius: var(--citus-radius-md);
+  padding: var(--citus-space-4);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+.citus-nav-card--linked:hover,
+.citus-nav-card--linked:focus-visible {
+  border-color: var(--citus-color-primary);
+  box-shadow: var(--citus-shadow-2);
+  outline: none;
+}
+.citus-nav-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--citus-space-2);
+}
+.citus-nav-card__title { font-size: var(--citus-text-base); font-weight: 600; margin: 0; color: var(--citus-color-fg); }
+.citus-nav-card__description { font-size: var(--citus-text-sm); color: var(--citus-color-fg-muted); margin: 0; }
+
+/* Unified picker shell — covers unity-picker / citus-account-picker /
+   citus-task-picker. Single border/height/focus-ring rule so the three
+   pickers stop looking like three different products on Bill / Expense
+   line editors. */
+.unity-picker__control,
+.citus-account-picker__control,
+.citus-task-picker__control {
+  display: flex;
+  align-items: center;
+  gap: var(--citus-space-1);
+  min-height: var(--citus-input-height);
+  padding: 0 var(--citus-space-2);
+  background: var(--citus-color-bg-elevated);
+  border: 1px solid var(--citus-color-border);
+  border-radius: var(--citus-radius-md);
+  transition: border-color .15s, box-shadow .15s;
+  position: relative;
+}
+.unity-picker__control:focus-within,
+.citus-account-picker__control:focus-within,
+.citus-task-picker__control:focus-within {
+  border-color: var(--citus-color-primary);
+  box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
+}
+
+/* Inner trigger buttons + icons stay transparent — the shell owns the
+   border. Removes the vertical divider seam users saw on Item/Service. */
+.unity-picker__control > button,
+.unity-picker__control > .unity-picker__icon,
+.citus-account-picker__control > button,
+.citus-task-picker__control > button {
+  background: transparent;
+  border: 0;
+  padding: 0 var(--citus-space-1);
+  color: var(--citus-color-fg-muted);
+}
+
+/* Inside data tables the search icon is noise — hide it so the input
+   feels like a single seamless field. */
+.citus-data-table .unity-picker__icon { display: none; }
+.citus-data-table .unity-picker__input { padding-left: var(--citus-space-2); }
+
+/* Drop the right:0 clamp so dropdown panels can grow wider than their
+   host table cell when option rows need more room. */
+.unity-picker__panel,
+.citus-account-picker__panel,
+.citus-task-picker__panel {
+  min-width: 22rem;
+  width: max-content;
+  max-width: min(40rem, calc(100vw - 2rem));
+  right: auto;
+  box-shadow: var(--citus-shadow-2);
+}
+
+/* AccountPicker option — grid layout with ellipsis on Name so labels
+   like "Cash on Hand - CAD" stop wrapping into three lines. */
+.citus-account-picker__option {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  gap: var(--citus-space-2);
+  align-items: baseline;
+  padding: var(--citus-space-2) var(--citus-space-3);
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.citus-account-picker__option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.citus-account-picker__option-meta { white-space: nowrap; }
+
+/* TaskPicker — give it the same shell + option layout as the other
+   pickers so the Task column stops looking like a browser-native
+   datalist. */
+.citus-task-picker { position: relative; width: 100%; }
+.citus-task-picker--disabled { opacity: .6; pointer-events: none; }
+.citus-task-picker__input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--citus-color-fg);
+  font: inherit;
+  padding: 0;
+}
+.citus-task-picker__input::placeholder { color: var(--citus-color-fg-subtle); }
+.citus-task-picker__chevron { color: var(--citus-color-fg-muted); font-size: .75rem; pointer-events: none; }
+.citus-task-picker__clear { color: var(--citus-color-fg-muted); cursor: pointer; }
+.citus-task-picker__panel {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 90;
+  background: var(--citus-color-bg-elevated);
+  border: 1px solid var(--citus-color-border);
+  border-radius: var(--citus-radius-md);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.citus-task-picker__empty {
+  color: var(--citus-color-fg-muted);
+  font-size: var(--citus-text-sm);
+  padding: var(--citus-space-2) var(--citus-space-3);
+}
+.citus-task-picker__option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--citus-space-2);
+  align-items: center;
+  padding: var(--citus-space-2) var(--citus-space-3);
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.citus-task-picker__option:hover,
+.citus-task-picker__option.is-active { background: var(--citus-color-bg-muted); }
+.citus-task-picker__option-copy { display: flex; flex-direction: column; min-width: 0; }
+.citus-task-picker__option-primary {
+  font-weight: 500;
+  color: var(--citus-color-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.citus-task-picker__option-secondary {
+  font-size: var(--citus-text-xs);
+  color: var(--citus-color-fg-muted);
+}
+.citus-task-picker__option-kind {
+  color: var(--citus-color-fg-muted);
+  font-size: var(--citus-text-xs);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}

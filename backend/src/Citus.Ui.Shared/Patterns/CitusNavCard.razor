@@ -1,0 +1,76 @@
+@*
+    CitusNavCard — clickable Settings-domain entry card. Replaces
+    the inline .citus-domain-card markup that was duplicated on
+    CompanySettingsPage. Renders as <a> when Href is set, falling
+    back to <article> so a "Later" / disabled domain still gets
+    the same shape but isn't a dead link.
+
+    Stage is the right-aligned badge ("Live" / "Later" / "Beta").
+    Tone maps to the existing StatTone palette for badge colour.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+@if (!string.IsNullOrWhiteSpace(Href))
+{
+    <a class="citus-nav-card citus-nav-card--linked" href="@Href">
+        @RenderBody
+    </a>
+}
+else
+{
+    <article class="citus-nav-card">
+        @RenderBody
+    </article>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Description { get; set; }
+
+    [Parameter] public string? Href { get; set; }
+
+    [Parameter] public string? Stage { get; set; }
+
+    [Parameter] public StatTone Tone { get; set; } = StatTone.Neutral;
+
+    private RenderFragment RenderBody => builder =>
+    {
+        builder.OpenElement(0, "header");
+        builder.AddAttribute(1, "class", "citus-nav-card__header");
+
+        builder.OpenElement(2, "h3");
+        builder.AddAttribute(3, "class", "citus-nav-card__title");
+        builder.AddContent(4, Title);
+        builder.CloseElement();
+
+        if (!string.IsNullOrWhiteSpace(Stage))
+        {
+            builder.OpenComponent<CitusBadge>(5);
+            builder.AddAttribute(6, "Color", BadgeColor(Tone));
+            builder.AddAttribute(7, "ChildContent", (RenderFragment)(b => b.AddContent(0, Stage)));
+            builder.CloseComponent();
+        }
+
+        builder.CloseElement(); // header
+
+        if (!string.IsNullOrWhiteSpace(Description))
+        {
+            builder.OpenElement(8, "p");
+            builder.AddAttribute(9, "class", "citus-nav-card__description");
+            builder.AddContent(10, Description);
+            builder.CloseElement();
+        }
+    };
+
+    private static string BadgeColor(StatTone tone) => tone switch
+    {
+        StatTone.Success => "green",
+        StatTone.Warning => "orange",
+        StatTone.Danger => "red",
+        StatTone.Info => "blue",
+        StatTone.Primary => "geekblue",
+        _ => "default"
+    };
+}

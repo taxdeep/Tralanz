@@ -1,0 +1,65 @@
+@*
+    CitusFormField — label + (input slot) + hint + error stack
+    matching the .citus-form-field CSS class set already living
+    in app.css. Use this *every time* you put a labelled input on
+    a form; the older
+        <div><label class="text-sm font-medium block mb-1">…</label><Input/></div>
+    pattern is deprecated and produces drifting label sizes.
+
+    The input itself is the caller's responsibility (Radzen,
+    CitusInput, <select>, etc.) — this component owns only the
+    surrounding label / hint / error chrome.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<div class="@CssClass">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <span class="citus-form-field__label">
+            @Label
+            @if (Required)
+            {
+                <span class="citus-form-field__required" aria-hidden="true">*</span>
+            }
+        </span>
+    }
+
+    <div class="citus-form-field__control">
+        @ChildContent
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <span class="citus-form-field__error">@Error</span>
+    }
+    else if (!string.IsNullOrWhiteSpace(Hint))
+    {
+        <span class="citus-form-field__hint">@Hint</span>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+
+    [Parameter] public bool Required { get; set; }
+
+    [Parameter] public string? Hint { get; set; }
+
+    [Parameter] public string? Error { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-form-field" };
+            if (!string.IsNullOrWhiteSpace(Error)) classes.Add("citus-form-field--invalid");
+            if (!string.IsNullOrEmpty(Class)) classes.Add(Class);
+            return string.Join(' ', classes);
+        }
+    }
+}

@@ -1,0 +1,33 @@
+@*
+    CitusFormGrid — standard responsive grid for form fields. One
+    column on phones, Columns columns from md / lg up. Gap is
+    keyed to a tight (form row) or default (section block) token
+    via Gap.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<div class="@CssClass">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public int Columns { get; set; } = 2;
+
+    [Parameter] public CitusFormGridGap Gap { get; set; } = CitusFormGridGap.Default;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-form-grid", $"citus-form-grid--cols-{Math.Clamp(Columns, 1, 4)}" };
+            if (Gap == CitusFormGridGap.Tight) classes.Add("citus-form-grid--tight");
+            if (!string.IsNullOrEmpty(Class)) classes.Add(Class);
+            return string.Join(' ', classes);
+        }
+    }
+}

@@ -32,7 +32,7 @@
                @onfocus="HandleFocus"
                @onblur="HandleBlurAsync"
                @onkeydown="HandleKeyDownAsync" />
-        <i class="citus-account-picker__chevron" aria-hidden="true">▾</i>
+        <i class="citus-account-picker__chevron ti ti-chevron-down" aria-hidden="true"></i>
         @if (!Disabled && (!string.IsNullOrWhiteSpace(_searchText) || SelectedId.HasValue))
         {
             <button type="button"

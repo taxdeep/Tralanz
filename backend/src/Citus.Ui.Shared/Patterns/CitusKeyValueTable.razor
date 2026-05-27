@@ -1,0 +1,25 @@
+@*
+    CitusKeyValueTable — wraps the .citus-keyvalue <table> markup
+    used on detail pages for the "Document" / "Totals" key/value
+    summaries. The caller fills ChildContent with
+    <CitusKeyValueRow Label="…">value</CitusKeyValueRow> entries.
+
+    A thin wrapper exists (rather than a parameter-driven
+    IEnumerable) so callers can mix label semantics: plain text,
+    <strong>, links, badges — all without the wrapper component
+    needing to know.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<table class="citus-keyvalue @Class">
+    <tbody>
+        @ChildContent
+    </tbody>
+</table>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+}

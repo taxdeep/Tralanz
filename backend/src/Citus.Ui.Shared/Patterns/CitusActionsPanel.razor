@@ -1,0 +1,48 @@
+@*
+    CitusActionsPanel — Detail-page secondary action surface. Holds
+    the More menu, contextual ghost-link buttons (e.g. "View source
+    PO"), and a hint string ("This expense is voided.").
+
+    Renders nothing when there's no More menu AND no extra content
+    AND no hint, so detail pages can include it unconditionally
+    and not worry about an empty panel showing up.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+@if (HasContent)
+{
+    <section class="citus-panel citus-actions-panel">
+        <h2 class="citus-panel__title">@Title</h2>
+        <div class="citus-actions-panel__row">
+            @if (MoreMenuItems is not null && MoreMenuItems.Count > 0)
+            {
+                <CitusMoreMenu Items="@MoreMenuItems" Label="@MoreMenuLabel" />
+            }
+
+            @ChildContent
+
+            @if (!string.IsNullOrWhiteSpace(Hint))
+            {
+                <span class="citus-actions-panel__hint">@Hint</span>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Actions";
+
+    [Parameter] public string MoreMenuLabel { get; set; } = "More";
+
+    [Parameter] public IReadOnlyList<CitusMoreMenuItem>? MoreMenuItems { get; set; }
+
+    [Parameter] public string? Hint { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool HasContent =>
+        (MoreMenuItems is not null && MoreMenuItems.Count > 0)
+        || ChildContent is not null
+        || !string.IsNullOrWhiteSpace(Hint);
+}

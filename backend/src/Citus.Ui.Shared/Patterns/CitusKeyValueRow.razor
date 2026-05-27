@@ -1,0 +1,22 @@
+@*
+    CitusKeyValueRow — single row inside a CitusKeyValueTable.
+    The label cell is a <th> for semantic key/value structure
+    (assistive tech announces it as a header); ValueAlignRight
+    flips the value cell to text-align: right for monetary
+    columns.
+*@
+
+@namespace Citus.Ui.Shared.Patterns
+
+<tr>
+    <th>@Label</th>
+    <td class="@(ValueAlignRight ? "text-right" : null)">@ChildContent</td>
+</tr>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public bool ValueAlignRight { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

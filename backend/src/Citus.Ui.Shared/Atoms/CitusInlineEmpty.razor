@@ -1,0 +1,26 @@
+@*
+    CitusInlineEmpty — single-line empty state for use inside a
+    CitusFormSection or table-section panel. Different from
+    CitusEmptyState (full-page) and the CitusAsyncBoundary empty
+    slot (drives an entire data region). Use this when the parent
+    panel still has a title / actions row and you just want a
+    polite "nothing here yet" line inside it.
+*@
+
+@namespace Citus.Ui.Shared.Atoms
+
+<div class="citus-inline-empty">
+    @if (Icon is { } iconValue)
+    {
+        <span class="citus-inline-empty__icon" aria-hidden="true">
+            <CitusIcon Name="iconValue" Size="IconSize.Inline" />
+        </span>
+    }
+    <span class="citus-inline-empty__message">@Message</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Message { get; set; } = string.Empty;
+
+    [Parameter] public IconName? Icon { get; set; }
+}
