@@ -33,10 +33,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="expenses">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to expenses</span>
-        </a>
+        <CitusLinkButton Href="expenses"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to expenses
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -68,19 +69,16 @@ else
 {
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Payee + payment</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Payee kind</label>
+            <CitusFormSection Title="Payee + payment">
+                <CitusFormGrid Columns="2">
+                    <CitusFormField Label="Payee kind">
                         <select class="citus-form-field__input" value="@_payeeKind" @onchange="OnPayeeKindChanged">
                             <option value="vendor">Vendor</option>
                             <option value="employee">Employee</option>
                             <option value="other">Other</option>
                         </select>
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Payee</label>
+                    </CitusFormField>
+                    <CitusFormField Label="Payee">
                         @if (_payeeKind == "vendor")
                         {
                             <RadzenDropDown TValue="Guid?"
@@ -98,10 +96,9 @@ else
                         {
                             <CitusInput TValue="string" @bind-Value="_payeeNameFreeform" Placeholder="Payee name" />
                         }
-                    </div>
+                    </CitusFormField>
 
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Paid from (account)</label>
+                    <CitusFormField Label="Paid from (account)">
                         <RadzenDropDown TValue="Guid?"
                                         Data="@_paymentAccountOptions"
                                         @bind-Value="_paymentAccountId"
@@ -121,16 +118,14 @@ else
                                 </p>
                             }
                         }
-                    </div>
+                    </CitusFormField>
 
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Payment date</label>
+                    <CitusFormField Label="Payment date">
                         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
                                           @bind-Value="_paymentDate" Class="citus-control-full" />
-                    </div>
+                    </CitusFormField>
 
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Payment method</label>
+                    <CitusFormField Label="Payment method">
                         <select class="citus-form-field__input" value="@_paymentMethod" @onchange="OnPaymentMethodChanged">
                             <option value="cash">Cash</option>
                             <option value="cheque">Cheque</option>
@@ -140,9 +135,12 @@ else
                             <option value="eft">EFT</option>
                             <option value="other">Other</option>
                         </select>
-                    </div>
+                    </CitusFormField>
 
                     <div>
+                        @* Conditional reference-number block — label text +
+                           required-asterisk vary per payment method, so kept
+                           as raw markup (same pattern as RefundReceipt). *@
                         @if (_paymentMethod == "cheque")
                         {
                             <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
@@ -164,17 +162,17 @@ else
                             <div class="text-fg-muted text-sm">Cash payments don't need a reference.</div>
                         }
                     </div>
-                </div>
-            </section>
+                </CitusFormGrid>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <header class="citus-panel__header">
-                    <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
+                <HeaderActions>
                     <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
                         <option value="exclusive">Tax exclusive</option>
                         <option value="inclusive">Tax inclusive</option>
                     </select>
-                </header>
+                </HeaderActions>
+                <ChildContent>
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -258,45 +256,35 @@ else
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
                 </div>
-            </section>
+                </ChildContent>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Notes</h2>
-                <div class="grid grid-cols-1 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Memo</label>
-                        <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the expense record." />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Internal note</label>
-                        <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
-                    </div>
-                </div>
-            </section>
+            <CitusFormSection Title="Notes">
+                <CitusFormField Label="Memo">
+                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the expense record." />
+                </CitusFormField>
+                <CitusFormField Label="Internal note" Class="mt-4">
+                    <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
+                </CitusFormField>
+            </CitusFormSection>
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Currency</h2>
-                <div class="grid grid-cols-1 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                        <CitusInput TValue="string"
-                                    @bind-Value="_currency"
-                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
-                    </div>
-                </div>
-            </section>
+            <CitusFormSection Title="Currency">
+                <CitusFormField Label="Transaction currency">
+                    <CitusInput TValue="string"
+                                @bind-Value="_currency"
+                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                </CitusFormField>
+                <CitusFormField Label="Exchange rate" Class="mt-4">
+                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date))"
+                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                  QuoteCurrencyCode="@_currency"
+                                  @bind-Rate="_fxRate" />
+                </CitusFormField>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Discount</h2>
+            <CitusFormSection Title="Discount">
                 <div class="flex gap-2">
                     <select class="citus-form-field__input citus-inline-control--sm"
                             value="@(_discountKind ?? "")"
@@ -307,33 +295,31 @@ else
                     </select>
                     <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
                 </div>
-            </section>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@FormatAmount(Subtotal) @_currency</td></tr>
-                        <tr><th>Discount</th><td class="text-right">−@FormatAmount(DiscountAmount)</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@FormatAmount(Total) @_currency</strong></td></tr>
-                        @if (!string.IsNullOrEmpty(_currency)
-                             && !string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
-                             && _fxRate is { } fx && fx > 0m)
-                        {
-                            <tr><th>Total (@ShellState.ActiveCompany.BaseCurrencyCode)</th><td class="text-right">@FormatAmount(Total * fx)</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
-
-            <div class="flex flex-wrap gap-2">
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
-                    @(_isSaving ? "Saving…" : "Save")
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
-            </div>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal) @_currency</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                    @if (!string.IsNullOrEmpty(_currency)
+                         && !string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
+                         && _fxRate is { } fx && fx > 0m)
+                    {
+                        <CitusKeyValueRow Label="@($"Total ({ShellState.ActiveCompany.BaseCurrencyCode})")" ValueAlignRight="true">@FormatAmount(Total * fx)</CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
+
+    @* Sticky Save / Cancel — pinned to viewport bottom while the
+       operator scrolls a long expense form. *@
+    <CitusFormActions Sticky="true"
+                      IsSaving="@_isSaving"
+                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                      OnSave="SaveAsync"
+                      OnCancel="Cancel" />
 }
 
 @code {

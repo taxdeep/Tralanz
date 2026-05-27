@@ -26,10 +26,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="bills">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to bills</span>
-        </a>
+        <CitusLinkButton Href="bills"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to bills
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -53,15 +54,12 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Credit date</label>
+        <CitusFormSection Title="Header">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Credit date">
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Vendor</label>
+                </CitusFormField>
+                <CitusFormField Label="Vendor">
                     <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search vendors…"
@@ -71,9 +69,8 @@
                                        SelectedDisplayText="@_vendorDisplay"
                                        OnVendorSelected="OnVendorSelected"
                                        OnCleared="OnVendorCleared" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                </CitusFormField>
+                <CitusFormField Label="Exchange rate">
                     @if (_vendorId == Guid.Empty)
                     {
                         <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
@@ -87,13 +84,12 @@
                                       QuoteCurrencyCode="@_currency"
                                       @bind-Rate="_fxRate" />
                     }
-                </div>
-                <div>
-                    @* Same lookup contract as CreditMemo's apply-to-
-                       invoice: backend resolves (company_id, bill
-                       display_number) at post-time. Leaving blank
-                       issues a standalone vendor credit. *@
-                    <label class="text-sm font-medium block mb-1">Apply to bill (optional)</label>
+                </CitusFormField>
+                @* Same lookup contract as CreditMemo's apply-to-
+                   invoice: backend resolves (company_id, bill
+                   display_number) at post-time. Leaving blank
+                   issues a standalone vendor credit. *@
+                <CitusFormField Label="Apply to bill (optional)">
                     <CitusInput TValue="string" @bind-Value="_appliedToBillNumber" Placeholder="e.g. BILL-2026-0042" />
                     @if (!string.IsNullOrWhiteSpace(_appliedToBillNumber) && !LooksLikeDocumentNumber(_appliedToBillNumber))
                     {
@@ -101,24 +97,21 @@
                             Use the bill's display number (alphanumerics, dashes, underscores). Backend will reject anything it can't resolve in this company.
                         </p>
                     }
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Reason</label>
-                    <CitusInput TValue="string" @bind-Value="_reason" Placeholder="Return / quality issue / volume rebate / dispute..." />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
-                </div>
-            </div>
-        </section>
+                </CitusFormField>
+            </CitusFormGrid>
+            <CitusFormField Label="Reason" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_reason" Placeholder="Return / quality issue / volume rebate / dispute..." />
+            </CitusFormField>
+            <CitusFormField Label="Memo" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
+            </CitusFormField>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Lines</h2>
+        <CitusFormSection Title="Lines">
+            <HeaderActions>
                 <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </header>
-
+            </HeaderActions>
+            <ChildContent>
             <table class="citus-data-table">
                 <thead>
                     <tr>
@@ -182,46 +175,49 @@
                     </tr>
                 </tbody>
             </table>
-        </section>
+            </ChildContent>
+        </CitusFormSection>
     </div>
 
     <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
-                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
-                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
-                    @if (!string.IsNullOrWhiteSpace(_appliedToBillNumber))
-                    {
-                        <tr><th>Applied to</th><td>@_appliedToBillNumber</td></tr>
-                    }
-                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                    {
-                        <tr><th>FX rate</th><td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td></tr>
-                    }
-                </tbody>
-            </table>
-        </section>
+        <CitusFormSection Title="Summary">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
+                @if (!string.IsNullOrWhiteSpace(_appliedToBillNumber))
+                {
+                    <CitusKeyValueRow Label="Applied to">@_appliedToBillNumber</CitusKeyValueRow>
+                }
+                @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post vendor credit</h2>
-            <p class="text-fg-muted text-sm mb-3">
+        <CitusFormSection Title="Post vendor credit">
+            <p class="text-fg-muted text-sm m-0">
                 Posting reverses the line expense / asset entries, reverses the input-tax (ITC) row, and debits AP
                 @(string.IsNullOrWhiteSpace(_appliedToBillNumber)
                     ? " — issued as a standalone vendor credit."
                     : $" — applied directly against {_appliedToBillNumber}.")
             </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post vendor credit")
-            </CitusButton>
-        </section>
+        </CitusFormSection>
     </div>
 </div>
+
+@* Sticky Post action — single primary button (no Cancel; vendor
+   credits have no Save Draft pathway, Back navigates away). *@
+<CitusFormActions Sticky="true"
+                  PrimaryLabel="Post vendor credit"
+                  SavingLabel="Posting..."
+                  CancelVisible="false"
+                  IsSaving="@_isSubmitting"
+                  Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
+                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                  OnSave="PostAsync" />
 
 @code {
     private readonly PageHeaderModel _header = new()

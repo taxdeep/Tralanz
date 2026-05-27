@@ -22,10 +22,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="reconciliation">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to banking</span>
-        </a>
+        <CitusLinkButton Href="reconciliation"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to banking
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -43,22 +44,18 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Transfer</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Transfer date</label>
+        <CitusFormSection Title="Transfer">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Transfer date">
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Reference #</label>
+                </CitusFormField>
+                <CitusFormField Label="Reference #">
                     <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="Bank transfer ID, wire ref, etc." />
-                </div>
+                </CitusFormField>
 
-                <div>
-                    <label class="text-sm font-medium block mb-1">From account</label>
-                    @* Source account — credited (money leaves). Asset
-                       only: bank / cash / credit-card / wallet. *@
+                @* Source account — credited (money leaves). Asset
+                   only: bank / cash / credit-card / wallet. *@
+                <CitusFormField Label="From account">
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="bank_transfer.from"
@@ -68,12 +65,11 @@
                                    Placeholder="Source bank / cash / wallet…"
                                    OnAccountSelected="OnFromAccountSelected"
                                    OnCleared="OnFromAccountCleared" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">To account</label>
-                    @* Destination — debited. Same asset filter; UI
-                       blocks picking the same account on both sides
-                       (clientside validation only — backend re-checks). *@
+                </CitusFormField>
+                @* Destination — debited. Same asset filter; UI
+                   blocks picking the same account on both sides
+                   (clientside validation only — backend re-checks). *@
+                <CitusFormField Label="To account">
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="bank_transfer.to"
@@ -83,88 +79,88 @@
                                    Placeholder="Destination bank / cash / wallet…"
                                    OnAccountSelected="OnToAccountSelected"
                                    OnCleared="OnToAccountCleared" />
-                </div>
+                </CitusFormField>
 
-                <div>
-                    <label class="text-sm font-medium block mb-1">Amount @(string.IsNullOrEmpty(_fromCurrency) ? string.Empty : $"({_fromCurrency})")</label>
+                <CitusFormField Label="@($"Amount{(string.IsNullOrEmpty(_fromCurrency) ? string.Empty : $" ({_fromCurrency})")}")">
                     <input type="text"
                            inputmode="decimal"
                            class="citus-form-field__input"
                            value="@FormatDecimal(_amount)"
                            @oninput="OnAmountInput" />
-                </div>
-                <div>
-                    @* FX shows only when the two currencies differ —
-                       same convention as Invoice / Bill. *@
-                    @if (NeedsFx)
-                    {
-                        <label class="text-sm font-medium block mb-1">FX rate (@_fromCurrency → @_toCurrency)</label>
+                </CitusFormField>
+                @* FX shows only when the two currencies differ —
+                   same convention as Invoice / Bill. *@
+                @if (NeedsFx)
+                {
+                    <CitusFormField Label="@($"FX rate ({_fromCurrency} → {_toCurrency})")">
                         <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
                                       BaseCurrencyCode="@_fromCurrency"
                                       QuoteCurrencyCode="@_toCurrency"
                                       @bind-Rate="_fxRate" />
-                    }
-                    else if (string.IsNullOrEmpty(_fromCurrency) || string.IsNullOrEmpty(_toCurrency))
-                    {
-                        <label class="text-sm font-medium block mb-1">FX rate</label>
+                    </CitusFormField>
+                }
+                else if (string.IsNullOrEmpty(_fromCurrency) || string.IsNullOrEmpty(_toCurrency))
+                {
+                    <CitusFormField Label="FX rate">
                         <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
                             <span class="text-fg-subtle">Pick both accounts first</span>
                         </div>
-                    }
-                    else
-                    {
-                        <label class="text-sm font-medium block mb-1">FX rate</label>
+                    </CitusFormField>
+                }
+                else
+                {
+                    <CitusFormField Label="FX rate">
                         <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
                             <span class="text-fg-subtle">Same currency — no FX needed</span>
                         </div>
-                    }
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
-                </div>
-            </div>
-        </section>
+                    </CitusFormField>
+                }
+            </CitusFormGrid>
+            <CitusFormField Label="Memo" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
+            </CitusFormField>
+        </CitusFormSection>
     </div>
 
     <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-                    <tr><th>From</th><td>@(string.IsNullOrEmpty(_fromAccountDisplay) ? "—" : _fromAccountDisplay)</td></tr>
-                    <tr><th>To</th><td>@(string.IsNullOrEmpty(_toAccountDisplay) ? "—" : _toAccountDisplay)</td></tr>
-                    <tr><th>Amount out</th><td>@FormatAmount(_amount) @_fromCurrency</td></tr>
-                    @if (NeedsFx && _fxRate.HasValue)
-                    {
-                        var converted = Math.Round(_amount * _fxRate.Value, 2);
-                        <tr><th>Amount in</th><td>@FormatAmount(converted) @_toCurrency</td></tr>
-                    }
-                    else if (!NeedsFx && !string.IsNullOrEmpty(_toCurrency))
-                    {
-                        <tr><th>Amount in</th><td>@FormatAmount(_amount) @_toCurrency</td></tr>
-                    }
-                </tbody>
-            </table>
-        </section>
+        <CitusFormSection Title="Summary">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
+                <CitusKeyValueRow Label="From">@(string.IsNullOrEmpty(_fromAccountDisplay) ? "—" : _fromAccountDisplay)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="To">@(string.IsNullOrEmpty(_toAccountDisplay) ? "—" : _toAccountDisplay)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Amount out">@FormatAmount(_amount) @_fromCurrency</CitusKeyValueRow>
+                @if (NeedsFx && _fxRate.HasValue)
+                {
+                    var converted = Math.Round(_amount * _fxRate.Value, 2);
+                    <CitusKeyValueRow Label="Amount in">@FormatAmount(converted) @_toCurrency</CitusKeyValueRow>
+                }
+                else if (!NeedsFx && !string.IsNullOrEmpty(_toCurrency))
+                {
+                    <CitusKeyValueRow Label="Amount in">@FormatAmount(_amount) @_toCurrency</CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post transfer</h2>
-            <p class="text-fg-muted text-sm mb-3">
+        <CitusFormSection Title="Post transfer">
+            <p class="text-fg-muted text-sm m-0">
                 Posting credits the source account and debits the
                 destination. No counterparty, no AR / AP — purely
                 internal cash movement.
             </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_amount <= 0 || _fromAccountId is null || _toAccountId is null || _fromAccountId == _toAccountId || (NeedsFx && !_fxRate.HasValue) || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post transfer")
-            </CitusButton>
-        </section>
+        </CitusFormSection>
     </div>
 </div>
+
+@* Sticky Post action — single primary button (no Cancel; bank
+   transfers have no Save Draft pathway, Back navigates away). *@
+<CitusFormActions Sticky="true"
+                  PrimaryLabel="Post transfer"
+                  SavingLabel="Posting..."
+                  CancelVisible="false"
+                  IsSaving="@_isSubmitting"
+                  Disabled="@(_amount <= 0 || _fromAccountId is null || _toAccountId is null || _fromAccountId == _toAccountId || (NeedsFx && !_fxRate.HasValue) || ShellState.AreWritesBlocked)"
+                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                  OnSave="PostAsync" />
 
 @code {
     private readonly PageHeaderModel _header = new()
