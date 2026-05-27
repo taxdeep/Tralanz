@@ -41,8 +41,13 @@ else if (!ShellState.IsAuthenticated)
 }
 else
 {
-    <div class="citus-shell @(_collapsed ? "citus-shell--collapsed" : null)">
-        <aside class="citus-shell__sider">
+    @* T-shape shell: header spans the full width (brand + topbar on one
+       row); sider + content sit underneath in a horizontal split.
+       Collapsing the sider also shrinks the brand cell so the vertical
+       separator between brand and topbar stays aligned with the sider's
+       right edge. *@
+    <div class="citus-shell citus-shell--t @(_collapsed ? "citus-shell--collapsed" : null)">
+        <header class="citus-shell__header">
             <div class="citus-shell__brand">
                 <CitusIcon Name="IconName.BuildingBank" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
                 @if (!_collapsed)
@@ -53,19 +58,21 @@ else
                     </div>
                 }
             </div>
-            @if (!_collapsed)
-            {
-                <div class="citus-shell__create">
-                    <CreateNewButton />
-                </div>
-            }
-            <BusinessNavMenu Collapsed="@_collapsed" />
-        </aside>
-
-        <div class="citus-shell__main">
-            <header class="citus-shell__header">
+            <div class="citus-shell__header-bar">
                 <BusinessTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
-            </header>
+            </div>
+        </header>
+
+        <div class="citus-shell__body">
+            <aside class="citus-shell__sider">
+                @if (!_collapsed)
+                {
+                    <div class="citus-shell__create">
+                        <CreateNewButton />
+                    </div>
+                }
+                <BusinessNavMenu Collapsed="@_collapsed" />
+            </aside>
 
             <main class="citus-shell__content">
                 <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
