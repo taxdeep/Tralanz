@@ -157,7 +157,7 @@ else
                     <thead>
                         <tr>
                             <th style="width: 3rem">#</th>
-                            <th style="width: 14rem">Item / Service</th>
+                            <th style="width: 14rem">Item (stock)</th>
                             <th style="width: 14rem">Category</th>
                             <th>Description</th>
                             @if (ShellState.IsModuleEnabled("task"))
@@ -186,10 +186,14 @@ else
                                        Picking an item locks the Category column so the
                                        item stays the single source of truth. Clearing the
                                        item re-opens Category for manual entry. *@
+                                    @* BillItemPicker policy filters to stock items only;
+                                       service-kind items don't appear here. For service
+                                       purchases (consulting, software subscription, etc.),
+                                       leave Item blank and pick Category directly. *@
                                     <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
                                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                        Context="@SearchScopeContext.BillItemPicker"
-                                                       Placeholder="Optional…"
+                                                       Placeholder="Stock items only"
                                                        Take="6"
                                                        SourceRoute="/bills/new"
                                                        SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
