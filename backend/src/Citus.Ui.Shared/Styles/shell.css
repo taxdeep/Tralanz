@@ -4122,3 +4122,64 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
   text-transform: uppercase;
   letter-spacing: .04em;
 }
+
+
+/* Batch 2d.9 — picker frame fix for data-table cells.
+   Mirrors the unity-picker arrangement (Batch 2d.6) for account-picker
+   and task-picker when they live inside a .citus-data-table row: the
+   __control container is bare and the __input element is the visible
+   frame. Outside data-tables (standalone usage) the shell-as-frame
+   styling lower in this file still applies. */
+.citus-data-table .citus-account-picker__control,
+.citus-data-table .citus-task-picker__control {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+}
+.citus-data-table .citus-account-picker__control:focus-within,
+.citus-data-table .citus-task-picker__control:focus-within {
+    box-shadow: none;
+    border: 0;
+}
+.citus-data-table .citus-account-picker__input,
+.citus-data-table .citus-task-picker__input {
+    width: 100%;
+    height: var(--citus-input-height);
+    box-sizing: border-box;
+    padding: 0 2rem 0 var(--citus-space-2);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
+    outline: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.citus-data-table .citus-account-picker__input:focus,
+.citus-data-table .citus-task-picker__input:focus {
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
+}
+.citus-data-table .citus-account-picker__chevron,
+.citus-data-table .citus-task-picker__chevron {
+    position: absolute;
+    right: var(--citus-space-2);
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--citus-color-fg-muted);
+}
+.citus-data-table .citus-account-picker__clear,
+.citus-data-table .citus-task-picker__clear {
+    position: absolute;
+    right: 1.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.citus-data-table .citus-account-picker,
+.citus-data-table .citus-task-picker {
+    position: relative;
+}
