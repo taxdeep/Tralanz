@@ -1,0 +1,114 @@
+@using Aiseworks.ApiClient
+@using Citus.Ui.Shared.DesktopHybrid
+@inject IDesktopFilePicker FilePicker
+@inject IDesktopPrintService PrintService
+@inject IDesktopNotificationService NotificationService
+@inject IDesktopLocalCache LocalCache
+@inject IDesktopUpdateService UpdateService
+@inject IDesktopHostBridge HostBridge
+@inject IAiseworksSystemHealthClient HealthClient
+
+<main class="desktop-hybrid">
+    <section class="desktop-hybrid__hero">
+        <div>
+            <p class="desktop-hybrid__eyebrow">Aiseworks Desktop Hybrid</p>
+            <h1>WPF shell, shared Razor UI, server-owned accounting truth.</h1>
+            <p>
+                This local surface is intentionally a high-trust input terminal:
+                it can pick files, print, notify, cache operator preferences, and
+                call APIs, but posting, tax, reconciliation, reporting, permissions,
+                audit, invoices, statements, and email delivery remain server-side.
+            </p>
+        </div>
+        <div class="desktop-hybrid__status">
+            <span>Host</span>
+            <strong>@_hostSummary</strong>
+        </div>
+    </section>
+
+    <section class="desktop-hybrid__grid" aria-label="Hybrid migration validation">
+        <article class="desktop-hybrid__panel">
+            <h2>Shared UI boundary</h2>
+            <ul>
+                <li>Root component runs from <code>Citus.Ui.Shared</code>.</li>
+                <li>Desktop services are accessed through interfaces.</li>
+                <li>No accounting engine or database implementation is referenced.</li>
+            </ul>
+        </article>
+
+        <article class="desktop-hybrid__panel">
+            <h2>API boundary</h2>
+            <button class="desktop-hybrid__button" @onclick="CheckHealthAsync">Check server health</button>
+            <p>@_healthSummary</p>
+        </article>
+
+        <article class="desktop-hybrid__panel">
+            <h2>Desktop capabilities</h2>
+            <div class="desktop-hybrid__actions">
+                <button class="desktop-hybrid__button" @onclick="PickFileAsync">Pick file</button>
+                <button class="desktop-hybrid__button" @onclick="PrintAsync">Print</button>
+                <button class="desktop-hybrid__button" @onclick="NotifyAsync">Notify</button>
+                <button class="desktop-hybrid__button" @onclick="CheckUpdateAsync">Update check</button>
+            </div>
+            <p>@_desktopResult</p>
+        </article>
+
+        <article class="desktop-hybrid__panel">
+            <h2>Local cache</h2>
+            <button class="desktop-hybrid__button" @onclick="RoundTripCacheAsync">Round-trip cache</button>
+            <p>@_cacheResult</p>
+        </article>
+    </section>
+</main>
+
+@code {
+    private string _hostSummary = "Starting";
+    private string _healthSummary = "Server health has not been checked.";
+    private string _desktopResult = "Desktop capability bridge is ready.";
+    private string _cacheResult = "No local cache operation has been run.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var context = await HostBridge.GetContextAsync();
+        _hostSummary = $"{context.HostName} / {context.ProfileName}";
+    }
+
+    private async Task CheckHealthAsync()
+    {
+        var snapshot = await HealthClient.CheckAsync();
+        _healthSummary = $"{snapshot.OverallStatus}: {string.Join(", ", snapshot.Probes.Select(probe => $"{probe.Name}={probe.Status}"))}";
+    }
+
+    private async Task PickFileAsync()
+    {
+        var file = await FilePicker.PickFileAsync();
+        _desktopResult = file is null
+            ? "File picking was cancelled."
+            : $"Selected {file.FileName} ({file.SizeBytes:N0} bytes).";
+    }
+
+    private async Task PrintAsync()
+    {
+        var result = await PrintService.PrintCurrentViewAsync("Aiseworks Hybrid validation");
+        _desktopResult = result.Message;
+    }
+
+    private async Task NotifyAsync()
+    {
+        await NotificationService.ShowAsync("Aiseworks Hybrid", "Desktop notification bridge is available.");
+        _desktopResult = "Notification request sent.";
+    }
+
+    private async Task CheckUpdateAsync()
+    {
+        var result = await UpdateService.CheckForUpdatesAsync();
+        _desktopResult = result.Message;
+    }
+
+    private async Task RoundTripCacheAsync()
+    {
+        var value = $"Hybrid cache verified at {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}";
+        await LocalCache.SetStringAsync("desktop-hybrid.lastValidation", value);
+        _cacheResult = await LocalCache.GetStringAsync("desktop-hybrid.lastValidation") ?? "Cache read returned no value.";
+    }
+}

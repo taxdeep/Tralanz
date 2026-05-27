@@ -54,6 +54,7 @@ public partial class MainWindow : Window
         ApplyProfileCapabilities();
         LoadBackupState();
         Loaded += MainWindow_Loaded;
+        KeyDown += MainWindow_KeyDown;
     }
 
     private static ShellOptions LoadOptions()
@@ -1884,6 +1885,51 @@ public partial class MainWindow : Window
         }
 
         Navigate(NormalizeUrl(AddressTextBox.Text.Trim()));
+    }
+
+    private void HybridHostMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        OpenHybridHostWindow();
+    }
+
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+        {
+            return;
+        }
+
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift
+            && e.Key == Key.H)
+        {
+            OpenHybridHostWindow();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.R)
+        {
+            Browser.Reload();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.L)
+        {
+            AddressTextBox.Focus();
+            AddressTextBox.SelectAll();
+            e.Handled = true;
+        }
+    }
+
+    private void OpenHybridHostWindow()
+    {
+        var window = new HybridHostWindow
+        {
+            Owner = this
+        };
+
+        window.Show();
     }
 }
 

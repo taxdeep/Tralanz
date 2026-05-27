@@ -15,6 +15,9 @@
                   BorderBrush="#D6DAE0"
                   BorderThickness="0,0,0,1">
                 <MenuItem Header="_System">
+                    <MenuItem Header="_Hybrid host"
+                              InputGestureText="Ctrl+Shift+H"
+                              Click="HybridHostMenuItem_Click" />
                     <MenuItem Header="_Status"
                               Click="SystemStatusMenuItem_Click" />
                     <MenuItem Header="_Session"
