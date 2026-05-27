@@ -4201,3 +4201,15 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-line-table {
     min-width: 74rem;
 }
+
+
+/* Batch 2d.11 — Totals summary card.
+   Light-tinted background distinguishes the running Totals (Subtotal /
+   Tax / Total) from the bill metadata grid sitting next to it inside
+   the same "Bill" panel. Uses the design system's muted background
+   token so it tracks light / dark mode automatically. */
+.citus-totals-card {
+    background: var(--citus-color-bg-muted);
+    border-radius: var(--citus-radius-md);
+    padding: var(--citus-space-3) var(--citus-space-4);
+}

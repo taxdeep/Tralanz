@@ -184,11 +184,13 @@ else
             </div>
 
             <div class="lg:col-span-4">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                </CitusKeyValueTable>
+                <div class="citus-totals-card">
+                    <CitusKeyValueTable>
+                        <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                    </CitusKeyValueTable>
+                </div>
             </div>
         </div>
     </CitusFormSection>
