@@ -4278,3 +4278,37 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     min-width: 0;
     overflow-y: auto;
 }
+
+
+/* Batch 2e.1 — Sider bottom collapse toggle.
+   Pinned to the bottom of the sider via margin-top:auto so it sticks
+   to the floor regardless of how many nav rows render above it. The
+   topbar hamburger still toggles, but having a visible chevron at the
+   sider's foot matches the pattern operators see in Notion / Linear /
+   VS Code. */
+.citus-shell__sider-toggle {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    width: 100%;
+    padding: var(--citus-space-3) var(--citus-space-5);
+    border: 0;
+    border-top: 1px solid var(--citus-color-border);
+    background: transparent;
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+.citus-shell__sider-toggle:hover,
+.citus-shell__sider-toggle:focus-visible {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
+    outline: 0;
+}
+.citus-shell--collapsed .citus-shell__sider-toggle {
+    justify-content: center;
+    padding: var(--citus-space-3);
+}

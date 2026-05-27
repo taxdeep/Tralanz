@@ -72,6 +72,20 @@ else
                     </div>
                 }
                 <BusinessNavMenu Collapsed="@_collapsed" />
+                @* Bottom-anchored collapse toggle — clearer affordance than
+                   the topbar's hamburger when the operator is looking at
+                   the sider. margin-top:auto on the button pins it to the
+                   sider's bottom regardless of how tall the nav menu is. *@
+                <button type="button"
+                        class="citus-shell__sider-toggle"
+                        title="@(_collapsed ? "Expand sidebar" : "Collapse sidebar")"
+                        @onclick="ToggleCollapsed">
+                    <CitusIcon Name="@(_collapsed ? IconName.ChevronRight : IconName.ChevronLeft)" Size="IconSize.Inline" />
+                    @if (!_collapsed)
+                    {
+                        <span>Collapse</span>
+                    }
+                </button>
             </aside>
 
             <main class="citus-shell__content">
