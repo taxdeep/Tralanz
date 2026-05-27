@@ -4183,3 +4183,21 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-data-table .citus-task-picker {
     position: relative;
 }
+
+
+/* Batch 2d.10 — line-editor table responsive scroll.
+   Bill / Expense / Invoice line tables sum to ~74rem of fixed-width
+   columns. On viewports narrower than that (sidebar + Bill section
+   take ~600px on a 900px window) cells were getting squeezed so the
+   picker placeholder text disappeared. Wrapping the table in a
+   horizontal-scroll container preserves column widths and lets the
+   operator swipe / drag to see the right-edge columns. */
+.citus-line-table-scroll {
+    overflow-x: auto;
+    overflow-y: visible;
+    margin-inline: calc(var(--citus-space-3) * -1);
+    padding-inline: var(--citus-space-3);
+}
+.citus-line-table {
+    min-width: 74rem;
+}

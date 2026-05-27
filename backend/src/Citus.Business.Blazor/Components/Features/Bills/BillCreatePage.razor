@@ -196,9 +196,13 @@ else
     @* === Lines — purchase line editor. Item column is gated to stock
          items only (see BillItemPicker policy); service-kind purchases
          leave Item blank and pick Category directly. Task column is
-         only rendered when the company has the Task module enabled. ===*@
+         only rendered when the company has the Task module enabled.
+         The table sums to ~74rem of fixed-width columns plus a
+         flexible Description column; on narrow viewports the wrapper
+         scrolls horizontally rather than squeezing picker cells. ===*@
     <CitusFormSection Title="Lines">
-        <table class="citus-data-table">
+        <div class="citus-line-table-scroll">
+        <table class="citus-data-table citus-line-table">
             <thead>
                 <tr>
                     <th style="width: 3rem">#</th>
@@ -294,6 +298,7 @@ else
                 }
             </tbody>
         </table>
+        </div>
         <div class="flex gap-2 mt-3">
             <CitusButton Variant="CitusButtonVariant.Ghost"
                          Size="CitusButtonSize.Small"
