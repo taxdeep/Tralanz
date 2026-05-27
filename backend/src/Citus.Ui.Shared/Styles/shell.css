@@ -4185,19 +4185,14 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 
-/* Batch 2d.10 — line-editor table responsive scroll.
+/* Batch 2d.10 / 2d.12 — line-editor table sizing.
    Bill / Expense / Invoice line tables sum to ~74rem of fixed-width
-   columns. On viewports narrower than that (sidebar + Bill section
-   take ~600px on a 900px window) cells were getting squeezed so the
-   picker placeholder text disappeared. Wrapping the table in a
-   horizontal-scroll container preserves column widths and lets the
-   operator swipe / drag to see the right-edge columns. */
-.citus-line-table-scroll {
-    overflow-x: auto;
-    overflow-y: visible;
-    margin-inline: calc(var(--citus-space-3) * -1);
-    padding-inline: var(--citus-space-3);
-}
+   columns. min-width pins the column rhythm so picker placeholder
+   text stays readable on narrow viewports. The wrapper that 2d.10
+   originally added (overflow-x: auto for contained scroll) was
+   clipping picker dropdowns when they opened below the table — see
+   2d.12 commit. Solution: no clip wrapper. Below ~74rem the page
+   itself scrolls horizontally; picker dropdowns stay un-clipped. */
 .citus-line-table {
     min-width: 74rem;
 }

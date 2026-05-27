@@ -199,11 +199,12 @@ else
          items only (see BillItemPicker policy); service-kind purchases
          leave Item blank and pick Category directly. Task column is
          only rendered when the company has the Task module enabled.
-         The table sums to ~74rem of fixed-width columns plus a
-         flexible Description column; on narrow viewports the wrapper
-         scrolls horizontally rather than squeezing picker cells. ===*@
+         The table sums to ~74rem of fixed-width columns; min-width
+         pins the column rhythm on narrow viewports (the page itself
+         scrolls horizontally below ~74rem available width). No
+         overflow wrapper here — picker dropdowns need to escape the
+         table bounds when they open. ===*@
     <CitusFormSection Title="Lines">
-        <div class="citus-line-table-scroll">
         <table class="citus-data-table citus-line-table">
             <thead>
                 <tr>
@@ -300,7 +301,6 @@ else
                 }
             </tbody>
         </table>
-        </div>
         <div class="flex gap-2 mt-3">
             <CitusButton Variant="CitusButtonVariant.Ghost"
                          Size="CitusButtonSize.Small"
