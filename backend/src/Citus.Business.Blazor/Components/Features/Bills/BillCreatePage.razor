@@ -66,10 +66,14 @@ else
 {
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8 flex flex-col gap-6">
-            <CitusFormSection Title="Supplier">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Supplier</label>
+            @* Merged Supplier + Document panel: identity + bill metadata in
+               one 4-row × 2-col grid. Aside no longer holds Document — only
+               Totals remains, so the page reads top-down (Bill → Lines →
+               Memo → Totals) without the operator's eye jumping between
+               main and aside while filling the header. *@
+            <CitusFormSection Title="Bill">
+                <CitusFormGrid Columns="2">
+                    <CitusFormField Label="Supplier" Required="true">
                         <RadzenDropDown TValue="Guid?"
                                         Data="@_vendors"
                                         @bind-Value="_vendorId"
@@ -79,9 +83,8 @@ else
                                         AllowFiltering="true"
                                         Class="citus-control-full"
                                         Change="@(_ => OnVendorChanged())" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Source PO</label>
+                    </CitusFormField>
+                    <CitusFormField Label="Source PO">
                         @if (!string.IsNullOrWhiteSpace(_sourcePurchaseOrderNumber))
                         {
                             @if (_sourcePurchaseOrderId is { } poId)
@@ -99,8 +102,54 @@ else
                         {
                             <div class="text-fg-muted text-sm">Created directly (no source PO)</div>
                         }
-                    </div>
-                </div>
+                    </CitusFormField>
+
+                    <CitusFormField Label="Bill no. (supplier's invoice #)" Required="true">
+                        <CitusInput TValue="string" @bind-Value="_billNumber" Placeholder="e.g. INV-12345" />
+                    </CitusFormField>
+                    <CitusFormField Label="Internal entity number"
+                                    Hint="@(string.IsNullOrWhiteSpace(_billNumberDisplay) ? "Auto-assigned on save" : null)">
+                        @if (!string.IsNullOrWhiteSpace(_billNumberDisplay))
+                        {
+                            <div class="citus-inline-code">@_billNumberDisplay</div>
+                        }
+                        else
+                        {
+                            <div class="text-fg-subtle text-sm">—</div>
+                        }
+                    </CitusFormField>
+
+                    <CitusFormField Label="Bill date" Required="true">
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_billDate"
+                                          Change="@(_ => RecomputeDueDate())"
+                                          Class="citus-control-full" />
+                    </CitusFormField>
+                    <CitusFormField Label="Due date" Required="true">
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_dueDate" Class="citus-control-full" />
+                        @if (_paymentTermId is { } termId)
+                        {
+                            var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);
+                            if (term is not null)
+                            {
+                                <p class="text-fg-subtle text-xs mt-1">Defaulted from payment term <strong>@term.Name</strong> (Net @term.NetDays).</p>
+                            }
+                        }
+                    </CitusFormField>
+
+                    <CitusFormField Label="Transaction currency">
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </CitusFormField>
+                    <CitusFormField Label="Exchange rate">
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </CitusFormField>
+                </CitusFormGrid>
             </CitusFormSection>
 
             <CitusFormSection Title="Lines">
@@ -218,55 +267,6 @@ else
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Document">
-                <div class="grid grid-cols-1 gap-3">
-                    @if (!string.IsNullOrWhiteSpace(_billNumberDisplay))
-                    {
-                        <div>
-                            <label class="text-sm font-medium block mb-1">Internal entity number</label>
-                            <div class="citus-inline-code">@_billNumberDisplay</div>
-                        </div>
-                    }
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Bill no. (supplier's invoice #)</label>
-                        <CitusInput TValue="string" @bind-Value="_billNumber" Placeholder="e.g. INV-12345" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Bill date</label>
-                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_billDate"
-                                          Change="@(_ => RecomputeDueDate())"
-                                          Class="citus-control-full" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Due date</label>
-                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_dueDate" Class="citus-control-full" />
-                        @if (_paymentTermId is { } termId)
-                        {
-                            var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);
-                            if (term is not null)
-                            {
-                                <p class="text-fg-subtle text-xs mt-1">Defaulted from payment term <strong>@term.Name</strong> (Net @term.NetDays).</p>
-                            }
-                        }
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                        <CitusInput TValue="string"
-                                    @bind-Value="_currency"
-                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
-                    </div>
-                </div>
-            </CitusFormSection>
-
             <CitusFormSection Title="Totals">
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
