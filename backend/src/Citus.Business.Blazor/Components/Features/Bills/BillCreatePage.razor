@@ -64,14 +64,13 @@
 }
 else
 {
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-8 flex flex-col gap-6">
-            @* Merged Supplier + Document panel: identity + bill metadata in
-               one 4-row × 2-col grid. Aside no longer holds Document — only
-               Totals remains, so the page reads top-down (Bill → Lines →
-               Memo → Totals) without the operator's eye jumping between
-               main and aside while filling the header. *@
-            <CitusFormSection Title="Bill">
+    @* Merged Bill + Totals: single card at the top of the page. Inside
+       the card a 12-col grid splits bill metadata (col-8) from the
+       running Totals summary (col-4). Lines and Memo below are
+       full-width, the aside is gone. *@
+    <CitusFormSection Title="Bill">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-8">
                 <CitusFormGrid Columns="2">
                     <CitusFormField Label="Supplier" Required="true">
                         <RadzenDropDown TValue="Guid?"
@@ -150,9 +149,22 @@ else
                                       @bind-Rate="_fxRate" />
                     </CitusFormField>
                 </CitusFormGrid>
-            </CitusFormSection>
+            </div>
 
-            <CitusFormSection Title="Lines">
+            <div class="lg:col-span-4">
+                @* Running Totals — updates live as line amounts change.
+                   Lives in the same Bill card so the operator never has
+                   to look elsewhere for the running subtotal. *@
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </div>
+        </div>
+    </CitusFormSection>
+
+    <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -265,21 +277,9 @@ else
                 </div>
             </CitusFormSection>
 
-            <CitusFormSection Title="Memo">
-                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill" />
-            </CitusFormSection>
-        </div>
-
-        <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Totals">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                </CitusKeyValueTable>
-            </CitusFormSection>
-        </aside>
-    </div>
+    <CitusFormSection Title="Memo">
+        <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill" />
+    </CitusFormSection>
 
     @* Sticky Save / Cancel — pinned to viewport bottom while the
        operator scrolls through a long bill form. The top-of-page
