@@ -61,10 +61,11 @@ else
 {
     <CitusPageHeader Model="_header">
         <Actions>
-            <a class="citus-button citus-button--ghost" href="tasks">
-                <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-                <span>Back to tasks</span>
-            </a>
+            <CitusLinkButton Href="tasks"
+                             Variant="CitusButtonVariant.Ghost"
+                             LeadingIcon="IconName.ArrowLeft">
+                Back to tasks
+            </CitusLinkButton>
         </Actions>
     </CitusPageHeader>
 
@@ -84,20 +85,17 @@ else
     }
     else
     {
-        <section class="citus-panel mb-6">
-            <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Title</label>
+        <CitusFormSection Title="Header">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Title">
                     <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" />
-                </div>
-                <div>
+                </CitusFormField>
+                <CitusFormField Label="Customer (optional)">
                     @* Customer is optional in the schema, but required if the
                        operator wants to bill this task later — the "Create
                        invoice" button on TaskDetailPage only appears when
                        customer_id is set. Capturing it here avoids the
                        round-trip back through PUT /tasks/{id}. *@
-                    <label class="text-sm font-medium block mb-1">Customer (optional)</label>
                     <select class="citus-form-field__input"
                             value="@(_customerId?.ToString("D") ?? string.Empty)"
                             @onchange="OnCustomerChanged">
@@ -111,30 +109,26 @@ else
                             </option>
                         }
                     </select>
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Currency</label>
+                </CitusFormField>
+                <CitusFormField Label="Currency">
                     <CitusInput TValue="string" @bind-Value="_currency" Placeholder="@ShellState.ActiveCompany.BaseCurrencyCode" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Service date</label>
+                </CitusFormField>
+                <CitusFormField Label="Service date">
                     <input type="date" class="citus-form-field__input" @bind="_serviceDate" />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Description (optional)</label>
-                    <CitusInput TValue="string" @bind-Value="_description" Placeholder="Optional" />
-                </div>
-            </div>
-        </section>
+                </CitusFormField>
+            </CitusFormGrid>
+            <CitusFormField Label="Description (optional)" Class="mt-4">
+                <CitusInput TValue="string" @bind-Value="_description" Placeholder="Optional" />
+            </CitusFormField>
+        </CitusFormSection>
 
-        <section class="citus-panel mb-6">
-            <div class="flex items-center justify-between mb-3">
-                <h2 class="citus-panel__title m-0">Items</h2>
+        <CitusFormSection Title="Items">
+            <HeaderActions>
                 <span class="text-fg-subtle text-xs">
                     Pick a Service or Product line. Tax is handled when this task is converted to an invoice.
                 </span>
-            </div>
-
+            </HeaderActions>
+            <ChildContent>
             <table class="citus-data-table">
                 <thead>
                     <tr>
@@ -230,14 +224,16 @@ else
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
                 }
             </div>
-        </section>
+            </ChildContent>
+        </CitusFormSection>
 
-        <div class="flex justify-end gap-2">
-            <CitusButton Variant="CitusButtonVariant.Default" Disabled="_isSaving" OnClick="OnCancelAsync">Cancel</CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="OnCreateAsync">
-                @(_isSaving ? "Creating…" : "Create")
-            </CitusButton>
-        </div>
+        <CitusFormActions Sticky="true"
+                          PrimaryLabel="Create"
+                          SavingLabel="Creating…"
+                          IsSaving="@_isSaving"
+                          ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                          OnSave="OnCreateAsync"
+                          OnCancel="OnCancelAsync" />
     }
 }
 

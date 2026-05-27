@@ -1,59 +1,46 @@
 @*
     Shared form for customer / vendor master data. The Customer and
     Vendor pages render this with the right title and submit handler.
+    Save / Cancel are owned by the parent page (this is a child
+    component, no sticky footer here).
 *@
 
 @inject CompanyCurrencyClient CompanyCurrencyClient
 
-<section class="citus-panel">
-    <h2 class="citus-panel__title">Identity</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-            <label class="text-sm font-medium block mb-1">Display name</label>
+<CitusFormSection Title="Identity">
+    <CitusFormGrid Columns="2">
+        <CitusFormField Label="Display name">
             <CitusInput TValue="string" Value="@Draft.DisplayName" ValueChanged="@(v => Mutate(d => d with { DisplayName = v ?? string.Empty }))" Placeholder="Name shown on invoices and bills" />
-        </div>
-        <div>
+        </CitusFormField>
+        <CitusFormField Label="@EntityNumberLabel">
             @* Operators see this as "Customer #" or "Vendor #" depending
                on which page renders the form; the Customer/Vendor pages
                pass the contextual label. The underlying Draft.EntityNumber
                binding is unchanged. *@
-            <label class="text-sm font-medium block mb-1">@EntityNumberLabel</label>
             <CitusInput TValue="string" Value="@Draft.EntityNumber" ValueChanged="@(v => Mutate(d => d with { EntityNumber = v ?? string.Empty }))" Placeholder="@(EntityNumberPlaceholder)" />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">Email</label>
+        </CitusFormField>
+        <CitusFormField Label="Email">
             <CitusInput TValue="string" Value="@Draft.Email" ValueChanged="@(v => Mutate(d => d with { Email = v ?? string.Empty }))" Placeholder="contact@example.com" />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">Phone</label>
+        </CitusFormField>
+        <CitusFormField Label="Phone">
             <CitusInput TValue="string" Value="@Draft.Phone" ValueChanged="@(v => Mutate(d => d with { Phone = v ?? string.Empty }))" Placeholder="+1 555 0100" />
-        </div>
-        <div class="md:col-span-2">
-            <label class="text-sm font-medium block mb-1">Address line</label>
-            <CitusInput TValue="string" Value="@Draft.AddressLine" ValueChanged="@(v => Mutate(d => d with { AddressLine = v ?? string.Empty }))" Placeholder="Street + suite" />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">City</label>
+        </CitusFormField>
+        <CitusFormField Label="City">
             <CitusInput TValue="string" Value="@Draft.City" ValueChanged="@(v => Mutate(d => d with { City = v ?? string.Empty }))" />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">Province / State</label>
+        </CitusFormField>
+        <CitusFormField Label="Province / State">
             <CitusInput TValue="string" Value="@Draft.ProvinceState" ValueChanged="@(v => Mutate(d => d with { ProvinceState = v ?? string.Empty }))" />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">Postal code</label>
+        </CitusFormField>
+        <CitusFormField Label="Postal code">
             <CitusInput TValue="string" Value="@Draft.PostalCode" ValueChanged="@(v => Mutate(d => d with { PostalCode = v ?? string.Empty }))" />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">Country</label>
+        </CitusFormField>
+        <CitusFormField Label="Country">
             <CitusInput TValue="string" Value="@Draft.Country" ValueChanged="@(v => Mutate(d => d with { Country = v ?? string.Empty }))" Placeholder="Canada" />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">Tax id</label>
+        </CitusFormField>
+        <CitusFormField Label="Tax id">
             <CitusInput TValue="string" Value="@Draft.TaxId" ValueChanged="@(v => Mutate(d => d with { TaxId = v ?? string.Empty }))" Placeholder="GST/HST number, EIN, ..." />
-        </div>
-        <div>
-            <label class="text-sm font-medium block mb-1">Preferred currency</label>
+        </CitusFormField>
+        <CitusFormField Label="Preferred currency">
             @* Per the per-customer / per-vendor single-currency rule, the
                picker only offers currencies the company has enabled in
                Settings → Multi-currency. The base currency is always in
@@ -79,11 +66,10 @@
                     </option>
                 }
             </select>
-        </div>
+        </CitusFormField>
         @if (PaymentTerms is { Count: > 0 })
         {
-            <div>
-                <label class="text-sm font-medium block mb-1">Payment term</label>
+            <CitusFormField Label="Payment term">
                 <select class="citus-form-field__input"
                         value="@(Draft.PaymentTermId?.ToString() ?? string.Empty)"
                         @onchange="OnPaymentTermChanged">
@@ -93,14 +79,19 @@
                         <option value="@term.Id">@term.Name (Net @term.NetDays)</option>
                     }
                 </select>
-            </div>
+            </CitusFormField>
         }
-        <div class="md:col-span-2">
-            <label class="text-sm font-medium block mb-1">Notes</label>
-            <CitusInput TValue="string" Value="@Draft.Notes" ValueChanged="@(v => Mutate(d => d with { Notes = v ?? string.Empty }))" Placeholder="Internal notes" />
-        </div>
-    </div>
-</section>
+    </CitusFormGrid>
+
+    @* Wide fields (Address line, Notes) — pulled out of the 2-col grid
+       so they span full width. *@
+    <CitusFormField Label="Address line" Class="mt-4">
+        <CitusInput TValue="string" Value="@Draft.AddressLine" ValueChanged="@(v => Mutate(d => d with { AddressLine = v ?? string.Empty }))" Placeholder="Street + suite" />
+    </CitusFormField>
+    <CitusFormField Label="Notes" Class="mt-4">
+        <CitusInput TValue="string" Value="@Draft.Notes" ValueChanged="@(v => Mutate(d => d with { Notes = v ?? string.Empty }))" Placeholder="Internal notes" />
+    </CitusFormField>
+</CitusFormSection>
 
 @code {
     [Parameter, EditorRequired] public CounterpartyDraft Draft { get; set; } = new();

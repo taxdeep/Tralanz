@@ -14,10 +14,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="journal-entry">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to journal entries</span>
-        </a>
+        <CitusLinkButton Href="journal-entry"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to journal entries
+        </CitusLinkButton>
         <CitusBadge Color="@(_isBalanced ? "green" : "orange")">
             @(_isBalanced ? "Balanced" : "Out of balance")
         </CitusBadge>
@@ -79,9 +80,13 @@
 }
 
 <div class="flex flex-col gap-6">
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+    <CitusFormSection Title="Header">
+            @* JE header keeps the existing <label class="citus-form-field">
+               BEM markup — it already uses the design-system class hierarchy
+               and re-wrapping in <CitusFormField> would lose label-click
+               focus and the inline "(optional)" hint span. CitusFormGrid
+               still owns the responsive 1/2/4-col layout. *@
+            <CitusFormGrid Columns="4">
                 @* Journal No. — pre-filled with the next system-assigned
                    number on form load, but the operator can override inline.
                    Backend honors the override if it doesn't collide; if the
@@ -155,15 +160,14 @@
                            value="@_description"
                            @oninput="@(e => _description = e.Value?.ToString() ?? string.Empty)" />
                 </label>
-            </div>
-        </section>
+            </CitusFormGrid>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Lines</h2>
+        <CitusFormSection Title="Lines">
+            <HeaderActions>
                 <span class="text-fg-muted text-sm">Press Tab through cells; a new row appears as you fill the last one.</span>
-            </header>
-
+            </HeaderActions>
+            <ChildContent>
             <table class="citus-data-table citus-journal-lines">
                 <thead>
                     <tr>
@@ -268,41 +272,46 @@
                 </span>
             }
         </div>
-    </section>
+            </ChildContent>
+        </CitusFormSection>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-        <section class="citus-panel h-full">
-            <h2 class="citus-panel__title">Posting summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-                    <tr><th>Base currency</th><td>@ShellState.ActiveCompany.BaseCurrencyCode</td></tr>
-                    <tr><th>Transaction currency</th><td>@(_currency.ToUpperInvariant())</td></tr>
-                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
-                    <tr><th>Debit total</th><td>@FormatAmount(_totalDebit)</td></tr>
-                    <tr><th>Credit total</th><td>@FormatAmount(_totalCredit)</td></tr>
-                    <tr><th>Balance</th><td>@(_isBalanced ? "✓" : "△")</td></tr>
-                </tbody>
-            </table>
-        </section>
+        <CitusFormSection Title="Posting summary" Class="h-full">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Base currency">@ShellState.ActiveCompany.BaseCurrencyCode</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Transaction currency">@(_currency.ToUpperInvariant())</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Debit total">@FormatAmount(_totalDebit)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Credit total">@FormatAmount(_totalCredit)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Balance">@(_isBalanced ? "✓" : "△")</CitusKeyValueRow>
+            </CitusKeyValueTable>
+        </CitusFormSection>
 
-        <section class="citus-panel h-full">
-            <h2 class="citus-panel__title">Post</h2>
-            <p class="text-fg-muted text-sm mb-3">
+        @* Post-rationale panel keeps the irreversibility hint here; the
+           actual Post + Reset buttons live in the sticky footer below
+           so a long-form operator scrolling through lines never loses
+           the commit affordance. *@
+        <CitusFormSection Title="Post" Class="h-full">
+            <p class="text-fg-muted text-sm m-0">
                 Posting is irreversible from this surface. Backend reserves the journal entry number and the FX snapshot at the moment of the call.
             </p>
-
-            <div class="flex items-center gap-3">
-                <CitusButton Variant="CitusButtonVariant.Primary"
-                             Disabled="@(!_isBalanced || _lines.Count == 0 || ShellState.AreWritesBlocked || _isSubmitting)"
-                             OnClick="PostAsync">
-                    @(_isSubmitting ? "Posting..." : "Post journal entry")
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isSubmitting" OnClick="ResetAsync">Reset draft</CitusButton>
-            </div>
-        </section>
+        </CitusFormSection>
     </div>
 </div>
+
+<CitusFormActions Sticky="true"
+                  PrimaryLabel="Post journal entry"
+                  SavingLabel="Posting..."
+                  CancelVisible="false"
+                  IsSaving="@_isSubmitting"
+                  Disabled="@(!_isBalanced || _lines.Count == 0 || ShellState.AreWritesBlocked)"
+                  ErrorHint="@(string.IsNullOrWhiteSpace(_validationMessage) ? null : "Fix errors above")"
+                  OnSave="PostAsync">
+    <ExtraContent>
+        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isSubmitting" OnClick="ResetAsync">Reset draft</CitusButton>
+    </ExtraContent>
+</CitusFormActions>
 
 @code {
     private readonly PageHeaderModel _header = new()
