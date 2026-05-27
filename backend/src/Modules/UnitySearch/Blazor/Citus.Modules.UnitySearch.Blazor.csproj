@@ -10,6 +10,13 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Application.Contracts\Citus.Modules.UnitySearch.Application.Contracts.csproj" />
+    <!-- Needed for CitusIcon (sprite-based icon component). The picker's
+         chevron / clear / search / plus glyphs used to be raw <i class="ti ti-*">
+         font references but the project never loaded the Tabler webfont,
+         so those <i> elements rendered as empty layout space. Routing the
+         glyphs through CitusIcon picks them up from the inline sprite that
+         IconSpriteHost already places on every shell layout. -->
+    <ProjectReference Include="..\..\..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
   </ItemGroup>
 
 </Project>

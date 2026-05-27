@@ -5,7 +5,9 @@
 
 <div class="unity-picker @(Disabled ? "unity-picker--disabled" : null)">
     <div class="unity-picker__control">
-        <i class="ti ti-search unity-picker__icon" aria-hidden="true"></i>
+        <span class="unity-picker__icon" aria-hidden="true">
+            <CitusIcon Name="IconName.Search" Size="IconSize.Inline" />
+        </span>
         @* type="text" instead of type="search": same Chromium quirk that
            hid the JE Debit/Credit cells under -webkit-text-fill-color was
            biting type="search" too. Plain text inputs paint via our token
@@ -30,7 +32,7 @@
                     @onmousedown:preventDefault
                     @onclick="ClearAsync"
                     aria-label="Clear selection">
-                <i class="ti ti-x" aria-hidden="true"></i>
+                <CitusIcon Name="IconName.X" Size="IconSize.Inline" />
             </button>
         }
 
@@ -41,7 +43,7 @@
                     @onmousedown:preventDefault
                     @onclick="ToggleDropdownAsync"
                     aria-label="Show options">
-                <i class="ti ti-chevron-down" aria-hidden="true"></i>
+                <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
             </button>
         }
     </div>
@@ -101,7 +103,9 @@
                         class="unity-picker__create"
                         @onmousedown:preventDefault
                         @onclick="HandleCreateRequestedAsync">
-                    <i class="ti ti-plus unity-picker__create-icon" aria-hidden="true"></i>
+                    <span class="unity-picker__create-icon" aria-hidden="true">
+                        <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                    </span>
                     <span>Create "@_searchText.Trim()" as a new @CreateEntityLabel</span>
                 </button>
             }
@@ -117,7 +121,9 @@
                         class="unity-picker__create"
                         @onmousedown:preventDefault
                         @onclick="HandleCreateRequestedAsync">
-                    <i class="ti ti-plus unity-picker__create-icon" aria-hidden="true"></i>
+                    <span class="unity-picker__create-icon" aria-hidden="true">
+                        <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                    </span>
                     <span>Create "@_searchText.Trim()" as a new @CreateEntityLabel</span>
                 </button>
             }
