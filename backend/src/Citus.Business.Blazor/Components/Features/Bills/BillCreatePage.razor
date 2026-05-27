@@ -20,12 +20,24 @@
 
 @*
     Bill create / edit. Same component handles both routes:
-      • /bills/new — fresh draft
-      • /bills/{id}/edit — loads an existing Draft (only Draft is editable)
+      • /bills/new            → fresh draft
+      • /bills/{id}/edit      → loads an existing Draft (only Draft is editable)
 
-    This legacy page saves Draft bills only. Posting is blocked here
-    until the canonical workflow can create the journal entry and AP
-    open item atomically.
+    Layout (Batch 2d — clean rewrite):
+        [CitusPageHeader] Back-to-bills only.
+        [Top alerts] write-block / copy-banner / validation
+        [Skeleton OR main body]
+            <Bill>      — single card, 12-col internal split:
+                          col-8 metadata (Supplier + bill # + dates + currency)
+                          col-4 running Totals key-value
+            <Lines>     — full-width table; Item (stock) / Category / Task /
+                          Tax / Amount columns. Add / clear at the bottom.
+            <Memo>      — full-width single input.
+        [Sticky CitusFormActions]  Cancel left, Save right; "Fix errors above"
+                                    hint appears when _validation is set.
+
+    Save semantics live in @code (SaveAsync). Posting is blocked here until
+    the canonical workflow can create the JE + AP open item atomically.
 *@
 
 <PageTitle>@(_billId is null ? "New bill" : $"Edit {_billNumberDisplay}") | Tralanz Books</PageTitle>
@@ -42,20 +54,28 @@
 
 @if (ShellState.AreWritesBlocked)
 {
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                ShowIcon="true"
+                Message="@ShellState.WriteBlockMessage"
+                Class="mb-4" />
 }
 
 @if (_copiedFromBillId is not null)
 {
-    @* Copy A3 Phase 2: prefilled from another bill. The source is
-       untouched; this is a fresh draft the operator can revise. *@
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+    @* Copy A3 Phase 2: form prefilled from another bill via ?copyFrom=
+       The source bill is untouched; this is a fresh draft. *@
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4"
                 Message="This is a copy. Enter the new supplier invoice number and revise as needed; the original bill is unchanged." />
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
 {
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    <CitusAlert Severity="CitusAlertSeverity.Error"
+                Message="@_validation"
+                ShowIcon="true"
+                Class="mb-4" />
 }
 
 @if (_isLoading)
@@ -64,10 +84,9 @@
 }
 else
 {
-    @* Merged Bill + Totals: single card at the top of the page. Inside
-       the card a 12-col grid splits bill metadata (col-8) from the
-       running Totals summary (col-4). Lines and Memo below are
-       full-width, the aside is gone. *@
+    @* === Bill — single card containing supplier + bill metadata on the
+         left (col-8) and the running Totals summary on the right (col-4).
+         Operator never has to look elsewhere for the live subtotal. ===*@
     <CitusFormSection Title="Bill">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div class="lg:col-span-8">
@@ -83,6 +102,7 @@ else
                                         Class="citus-control-full"
                                         Change="@(_ => OnVendorChanged())" />
                     </CitusFormField>
+
                     <CitusFormField Label="Source PO">
                         @if (!string.IsNullOrWhiteSpace(_sourcePurchaseOrderNumber))
                         {
@@ -104,8 +124,11 @@ else
                     </CitusFormField>
 
                     <CitusFormField Label="Bill no. (supplier's invoice #)" Required="true">
-                        <CitusInput TValue="string" @bind-Value="_billNumber" Placeholder="e.g. INV-12345" />
+                        <CitusInput TValue="string"
+                                    @bind-Value="_billNumber"
+                                    Placeholder="e.g. INV-12345" />
                     </CitusFormField>
+
                     <CitusFormField Label="Internal entity number"
                                     Hint="@(string.IsNullOrWhiteSpace(_billNumberDisplay) ? "Auto-assigned on save" : null)">
                         @if (!string.IsNullOrWhiteSpace(_billNumberDisplay))
@@ -119,20 +142,28 @@ else
                     </CitusFormField>
 
                     <CitusFormField Label="Bill date" Required="true">
-                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                        <RadzenDatePicker TValue="DateTime?"
+                                          DateFormat="yyyy-MM-dd"
+                                          ShowTime="false"
                                           @bind-Value="_billDate"
                                           Change="@(_ => RecomputeDueDate())"
                                           Class="citus-control-full" />
                     </CitusFormField>
+
                     <CitusFormField Label="Due date" Required="true">
-                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_dueDate" Class="citus-control-full" />
+                        <RadzenDatePicker TValue="DateTime?"
+                                          DateFormat="yyyy-MM-dd"
+                                          ShowTime="false"
+                                          @bind-Value="_dueDate"
+                                          Class="citus-control-full" />
                         @if (_paymentTermId is { } termId)
                         {
                             var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);
                             if (term is not null)
                             {
-                                <p class="text-fg-subtle text-xs mt-1">Defaulted from payment term <strong>@term.Name</strong> (Net @term.NetDays).</p>
+                                <p class="text-fg-subtle text-xs mt-1">
+                                    Defaulted from payment term <strong>@term.Name</strong> (Net @term.NetDays).
+                                </p>
                             }
                         }
                     </CitusFormField>
@@ -142,6 +173,7 @@ else
                                     @bind-Value="_currency"
                                     Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
                     </CitusFormField>
+
                     <CitusFormField Label="Exchange rate">
                         <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date))"
                                       BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
@@ -152,9 +184,6 @@ else
             </div>
 
             <div class="lg:col-span-4">
-                @* Running Totals — updates live as line amounts change.
-                   Lives in the same Bill card so the operator never has
-                   to look elsewhere for the running subtotal. *@
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
@@ -164,127 +193,123 @@ else
         </div>
     </CitusFormSection>
 
+    @* === Lines — purchase line editor. Item column is gated to stock
+         items only (see BillItemPicker policy); service-kind purchases
+         leave Item blank and pick Category directly. Task column is
+         only rendered when the company has the Task module enabled. ===*@
     <CitusFormSection Title="Lines">
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 3rem">#</th>
-                            <th style="width: 14rem">Item (stock)</th>
-                            <th style="width: 14rem">Category</th>
-                            <th>Description</th>
-                            @if (ShellState.IsModuleEnabled("task"))
-                            {
-                                <th style="width: 14rem">Task</th>
-                            }
-                            <th style="width: 8rem">Tax</th>
-                            <th class="text-right" style="width: 8rem">Tax amt</th>
-                            <th class="text-right" style="width: 10rem">Amount</th>
-                            <th style="width: 3rem"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @for (var i = 0; i < _lines.Count; i++)
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th style="width: 3rem">#</th>
+                    <th style="width: 14rem">Item (stock)</th>
+                    <th style="width: 14rem">Category</th>
+                    <th>Description</th>
+                    @if (ShellState.IsModuleEnabled("task"))
+                    {
+                        <th style="width: 14rem">Task</th>
+                    }
+                    <th style="width: 8rem">Tax</th>
+                    <th class="text-right" style="width: 8rem">Tax amt</th>
+                    <th class="text-right" style="width: 10rem">Amount</th>
+                    <th style="width: 3rem"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < _lines.Count; i++)
+                {
+                    var index = i;
+                    var line = _lines[index];
+                    var hasItem = line.ItemId != Guid.Empty;
+                    <tr>
+                        <td>@(index + 1)</td>
+                        <td>
+                            <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                               Context="@SearchScopeContext.BillItemPicker"
+                                               Placeholder="Stock items only"
+                                               Take="6"
+                                               SourceRoute="/bills/new"
+                                               SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                               SelectedDisplayText="@line.ItemDisplay"
+                                               OnItemSelected="@(option => OnItemPicked(index, option))"
+                                               OnCleared="@(() => OnItemCleared(index))" />
+                        </td>
+                        <td>
+                            <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                           UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                           Context="bill.line.category"
+                                           Disabled="@hasItem"
+                                           SelectedId="@line.ExpenseAccountId"
+                                           SelectedDisplayText="@GetAccountLabel(line.ExpenseAccountId)"
+                                           Placeholder="@(hasItem ? "From item" : "Pick a category…")"
+                                           OnAccountSelected="@(acct => UpdateLine(index, l => l with { ExpenseAccountId = acct.Id }))"
+                                           OnCleared="@(() => UpdateLine(index, l => l with { ExpenseAccountId = null }))" />
+                        </td>
+                        <td>
+                            <CitusInput TValue="string"
+                                        Value="@line.Description"
+                                        ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
+                        </td>
+                        @if (ShellState.IsModuleEnabled("task"))
                         {
-                            var index = i;
-                            var line = _lines[index];
-                            var hasItem = line.ItemId != Guid.Empty;
-                            <tr>
-                                <td>@(index + 1)</td>
-                                <td>
-                                    @* Item / Service picker (optional). On pick we look up
-                                       the item and dispatch its purchase account: stock
-                                       items → DefaultInventoryAssetAccountId; non-stock /
-                                       service → DefaultCogsAccountId (used as expense).
-                                       Picking an item locks the Category column so the
-                                       item stays the single source of truth. Clearing the
-                                       item re-opens Category for manual entry. *@
-                                    @* BillItemPicker policy filters to stock items only;
-                                       service-kind items don't appear here. For service
-                                       purchases (consulting, software subscription, etc.),
-                                       leave Item blank and pick Category directly. *@
-                                    <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                       UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                       Context="@SearchScopeContext.BillItemPicker"
-                                                       Placeholder="Stock items only"
-                                                       Take="6"
-                                                       SourceRoute="/bills/new"
-                                                       SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
-                                                       SelectedDisplayText="@line.ItemDisplay"
-                                                       OnItemSelected="@(option => OnItemPicked(index, option))"
-                                                       OnCleared="@(() => OnItemCleared(index))" />
-                                </td>
-                                <td>
-                                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                   Context="bill.line.category"
-                                                   Disabled="@hasItem"
-                                                   SelectedId="@line.ExpenseAccountId"
-                                                   SelectedDisplayText="@GetAccountLabel(line.ExpenseAccountId)"
-                                                   Placeholder="@(hasItem ? "From item" : "Pick a category…")"
-                                                   OnAccountSelected="@(acct => UpdateLine(index, l => l with { ExpenseAccountId = acct.Id }))"
-                                                   OnCleared="@(() => UpdateLine(index, l => l with { ExpenseAccountId = null }))" />
-                                </td>
-                                <td>
-                                    <CitusInput TValue="string"
-                                                Value="@line.Description"
-                                                ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
-                                </td>
-                                @if (ShellState.IsModuleEnabled("task"))
-                                {
-                                    <td>
-                                        @* Per-line Task attribution. TaskPicker
-                                           hides itself when the module is off,
-                                           but the column is also gated above
-                                           so the table stays compact. *@
-                                        <TaskPicker SelectedId="@line.TaskId"
-                                                    SelectedDisplayText="@line.TaskDisplay"
-                                                    Placeholder="Optional…"
-                                                    OnTaskSelected="@(option => UpdateLine(index, l => l with { TaskId = option.SourceId, TaskDisplay = option.DisplayText }))"
-                                                    OnCleared="@(() => UpdateLine(index, l => l with { TaskId = null, TaskDisplay = string.Empty }))" />
-                                    </td>
-                                }
-                                <td>
-                                    <RadzenDropDown TValue="Guid?"
-                                                    Data="@_taxCodes"
-                                                    Value="@line.TaxCodeId"
-                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
-                                                    TextProperty="Code"
-                                                    ValueProperty="Id"
-                                                    AllowClear="true"
-                                                    Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.TaxAmount"
-                                                   Change="@(v => UpdateLine(index, l => l with { TaxAmount = v }))"
-                                                   Format="0.00" Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.LineAmount"
-                                                   Change="@(v => UpdateLine(index, l => l with { LineAmount = v }))"
-                                                   Format="0.00" Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
-                                                 OnClick="@(() => RemoveLine(index))">×</CitusButton>
-                                </td>
-                            </tr>
+                            <td>
+                                <TaskPicker SelectedId="@line.TaskId"
+                                            SelectedDisplayText="@line.TaskDisplay"
+                                            Placeholder="Optional…"
+                                            OnTaskSelected="@(option => UpdateLine(index, l => l with { TaskId = option.SourceId, TaskDisplay = option.DisplayText }))"
+                                            OnCleared="@(() => UpdateLine(index, l => l with { TaskId = null, TaskDisplay = string.Empty }))" />
+                            </td>
                         }
-                    </tbody>
-                </table>
-                <div class="flex gap-2 mt-3">
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
-                </div>
-            </CitusFormSection>
-
-    <CitusFormSection Title="Memo">
-        <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill" />
+                        <td>
+                            <RadzenDropDown TValue="Guid?"
+                                            Data="@_taxCodes"
+                                            Value="@line.TaxCodeId"
+                                            Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
+                                            TextProperty="Code"
+                                            ValueProperty="Id"
+                                            AllowClear="true"
+                                            Class="citus-control-full" />
+                        </td>
+                        <td>
+                            <RadzenNumeric TValue="decimal"
+                                           Value="@line.TaxAmount"
+                                           Change="@(v => UpdateLine(index, l => l with { TaxAmount = v }))"
+                                           Format="0.00"
+                                           Class="citus-control-full" />
+                        </td>
+                        <td>
+                            <RadzenNumeric TValue="decimal"
+                                           Value="@line.LineAmount"
+                                           Change="@(v => UpdateLine(index, l => l with { LineAmount = v }))"
+                                           Format="0.00"
+                                           Class="citus-control-full" />
+                        </td>
+                        <td>
+                            <CitusButton Variant="CitusButtonVariant.Ghost"
+                                         Size="CitusButtonSize.Small"
+                                         OnClick="@(() => RemoveLine(index))">×</CitusButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="flex gap-2 mt-3">
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Size="CitusButtonSize.Small"
+                         OnClick="AddLine">+ Add line</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Size="CitusButtonSize.Small"
+                         OnClick="ClearLines">Clear all lines</CitusButton>
+        </div>
     </CitusFormSection>
 
-    @* Sticky Save / Cancel — pinned to viewport bottom while the
-       operator scrolls through a long bill form. The top-of-page
-       _validation Alert still shows the actual error message; the
-       sticky footer just nudges the operator to scroll back up. *@
+    <CitusFormSection Title="Memo">
+        <CitusInput TValue="string"
+                    @bind-Value="_memo"
+                    Placeholder="Internal note about this bill" />
+    </CitusFormSection>
+
     <CitusFormActions Sticky="true"
                       IsSaving="@_isSaving"
                       ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
