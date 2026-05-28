@@ -14,10 +14,11 @@
 <div class="citus-page-narrow">
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="settings/invoice-templates">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to templates</span>
-        </a>
+        <CitusLinkButton Href="settings/invoice-templates"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to templates
+        </CitusLinkButton>
         @if (_isExisting && !_template.IsDefault)
         {
             <CitusButton Variant="CitusButtonVariant.Ghost"
@@ -45,8 +46,7 @@ else
     }
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Brand</h2>
+        <CitusFormSection Title="Brand">
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label class="citus-form-field md:col-span-2">
@@ -138,10 +138,9 @@ else
                     <span>Show tax row in invoice totals</span>
                 </label>
             </div>
-        </section>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Email</h2>
+        <CitusFormSection Title="Email">
             <p class="text-fg-muted text-sm mb-3">
                 Used by Send invoice. Use <span class="citus-inline-code">{invoiceNumber}</span>
                 and <span class="citus-inline-code">{companyName}</span> as placeholders.
@@ -180,7 +179,7 @@ else
                     class="citus-template-preview__iframe"
                     title="Invoice template PDF preview"
                     src="about:blank"></iframe>
-        </section>
+        </CitusFormSection>
     </div>
 
     <div class="flex items-center gap-3 mt-6">
@@ -189,7 +188,8 @@ else
                      OnClick="SaveAsync">
             @(_isBusy ? "Saving…" : (_isExisting ? "Save changes" : "Create template"))
         </CitusButton>
-        <a class="citus-button citus-button--ghost" href="settings/invoice-templates">Cancel</a>
+        <CitusLinkButton Href="settings/invoice-templates"
+                         Variant="CitusButtonVariant.Ghost">Cancel</CitusLinkButton>
     </div>
 }
 </div>

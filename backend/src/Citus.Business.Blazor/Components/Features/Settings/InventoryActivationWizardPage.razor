@@ -10,10 +10,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="dashboard">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back</span>
-        </a>
+        <CitusLinkButton Href="dashboard"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -49,7 +50,12 @@
     }
 </ol>
 
-<section class="citus-panel mb-4">
+@* Wizard step body — title is dynamic per step and rendered inside the
+   @switch below, so the CitusFormSection here is untitled (no <header>
+   rendered when Title is null). The step-specific <h2> keeps the
+   .citus-panel__title class because that class is panel-agnostic in
+   the design system. *@
+<CitusFormSection>
     @switch (_stepIndex)
     {
         case 0:
@@ -160,7 +166,7 @@
             </div>
             break;
     }
-</section>
+</CitusFormSection>
 
 <div class="flex items-center justify-between gap-3">
     <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="OnBack" Disabled="@(_stepIndex == 0 || _isSubmitting)">
