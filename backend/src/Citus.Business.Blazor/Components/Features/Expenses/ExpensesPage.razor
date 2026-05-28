@@ -10,18 +10,15 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button" href="expenses/new">
-            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-            <span>New expense</span>
-        </a>
+        <CitusLinkButton Href="expenses/new"
+                         Variant="CitusButtonVariant.Primary"
+                         LeadingIcon="IconName.Plus">
+            New expense
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Expenses</h2>
-    </header>
-
+<CitusFormSection Title="Expenses">
     <CitusAsyncBoundary IsLoading="@_isLoading"
                         IsEmpty="@(_rows.Count == 0)"
                         EmptyIcon="IconName.Wallet"
@@ -70,7 +67,7 @@
             </Columns>
         </RadzenDataGrid>
     </CitusAsyncBoundary>
-</section>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()
