@@ -7,7 +7,7 @@
 
 <CitusPageHeader Model="_header" />
 
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+<CitusStatCardGrid Columns="3">
     <CitusStatCard
         Label="Company"
         Value="@ShellState.ActiveCompany.CompanyName"
@@ -44,62 +44,39 @@
         Description="@ShellState.WriteBlockMessage"
         Icon="IconName.Eye"
         Tone="@(ShellState.AreWritesBlocked ? StatTone.Warning : StatTone.Info)" />
-</div>
+</CitusStatCardGrid>
 
-<section class="citus-panel mb-6">
-    <h2 class="citus-panel__title">Company settings domains</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+<CitusFormSection Title="Company settings domains">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         @foreach (var domain in _domains)
         {
-            @if (domain.Href is not null)
-            {
-                <a href="@domain.Href" class="citus-domain-card citus-domain-card--linked">
-                    <header class="citus-domain-card__header">
-                        <h3 class="citus-domain-card__title">@domain.Title</h3>
-                        <CitusBadge Color="@TagColor(domain.Tone)">@domain.Stage</CitusBadge>
-                    </header>
-                    <p class="citus-domain-card__description">@domain.Description</p>
-                </a>
-            }
-            else
-            {
-                <article class="citus-domain-card">
-                    <header class="citus-domain-card__header">
-                        <h3 class="citus-domain-card__title">@domain.Title</h3>
-                        <CitusBadge Color="@TagColor(domain.Tone)">@domain.Stage</CitusBadge>
-                    </header>
-                    <p class="citus-domain-card__description">@domain.Description</p>
-                </article>
-            }
+            <CitusNavCard Title="@domain.Title"
+                          Description="@domain.Description"
+                          Href="@domain.Href"
+                          Stage="@domain.Stage"
+                          Tone="@domain.Tone" />
         }
     </div>
-</section>
+</CitusFormSection>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Current company snapshot</h2>
-        <table class="citus-keyvalue">
-            <tbody>
-                @foreach (var row in _snapshotRows)
-                {
-                    <tr>
-                        <th>@row.Field</th>
-                        <td>@row.Value</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </section>
+    <CitusFormSection Title="Current company snapshot">
+        <CitusKeyValueTable>
+            @foreach (var row in _snapshotRows)
+            {
+                <CitusKeyValueRow Label="@row.Field">@row.Value</CitusKeyValueRow>
+            }
+        </CitusKeyValueTable>
+    </CitusFormSection>
 
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Guardrails for settings</h2>
+    <CitusFormSection Title="Guardrails for settings">
         <ul class="citus-bullet-list">
             <li>Settings remain structured domains, not a miscellaneous dumping ground.</li>
             <li>Currency and numbering behavior stay company-scoped.</li>
             <li>Sensitive changes should remain audit-visible and backend-authoritative.</li>
             <li>Security and notification readiness should not be inferred only from the UI.</li>
         </ul>
-    </section>
+    </CitusFormSection>
 </div>
 
 @code {
