@@ -7,69 +7,57 @@
 <CitusPageHeader Model="_header" />
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Business identity</h2>
-        <table class="citus-keyvalue">
-            <tbody>
-                @foreach (var fact in _userFacts)
-                {
-                    <tr>
-                        <th>@fact.Label</th>
-                        <td>@fact.Value</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </section>
+    <CitusFormSection Title="Business identity">
+        <CitusKeyValueTable>
+            @foreach (var fact in _userFacts)
+            {
+                <CitusKeyValueRow Label="@fact.Label">@fact.Value</CitusKeyValueRow>
+            }
+        </CitusKeyValueTable>
+    </CitusFormSection>
 
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Company context</h2>
-        <table class="citus-keyvalue">
-            <tbody>
-                @foreach (var fact in _companyFacts)
-                {
-                    <tr>
-                        <th>@fact.Label</th>
-                        <td>@fact.Value</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </section>
+    <CitusFormSection Title="Company context">
+        <CitusKeyValueTable>
+            @foreach (var fact in _companyFacts)
+            {
+                <CitusKeyValueRow Label="@fact.Label">@fact.Value</CitusKeyValueRow>
+            }
+        </CitusKeyValueTable>
+    </CitusFormSection>
 </div>
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Accessible companies</h2>
+<CitusFormSection Title="Accessible companies">
+    <HeaderActions>
         <CitusBadge Color="@("blue")">
             @ShellState.AvailableCompanies.Count memberships
         </CitusBadge>
-    </header>
-
-    <table class="citus-data-table">
-        <thead>
-            <tr>
-                <th>Company</th>
-                <th>Id</th>
-                <th>Base currency</th>
-                <th>Multi-currency</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var company in ShellState.AvailableCompanies)
-            {
+    </HeaderActions>
+    <ChildContent>
+        <table class="citus-data-table">
+            <thead>
                 <tr>
-                    <td>
-                        @company.CompanyName <span class="text-fg-muted">(@company.CompanyCode)</span>
-                    </td>
-                    <td><span class="citus-inline-code">@FormatGuid(company.Id)</span></td>
-                    <td>@company.BaseCurrencyCode</td>
-                    <td>@(company.MultiCurrencyEnabled ? "Enabled" : "Disabled")</td>
+                    <th>Company</th>
+                    <th>Id</th>
+                    <th>Base currency</th>
+                    <th>Multi-currency</th>
                 </tr>
-            }
-        </tbody>
-    </table>
-</section>
+            </thead>
+            <tbody>
+                @foreach (var company in ShellState.AvailableCompanies)
+                {
+                    <tr>
+                        <td>
+                            @company.CompanyName <span class="text-fg-muted">(@company.CompanyCode)</span>
+                        </td>
+                        <td><span class="citus-inline-code">@FormatGuid(company.Id)</span></td>
+                        <td>@company.BaseCurrencyCode</td>
+                        <td>@(company.MultiCurrencyEnabled ? "Enabled" : "Disabled")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </ChildContent>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()

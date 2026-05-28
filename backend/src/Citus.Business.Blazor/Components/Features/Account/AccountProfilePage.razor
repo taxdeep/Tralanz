@@ -22,39 +22,35 @@
 <CitusPageHeader Model="_header" />
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
-    <section class="citus-panel h-full">
-        <h2 class="citus-panel__title">Your details</h2>
+    <CitusFormSection Title="Your details" Class="h-full">
         <p class="text-fg-muted text-sm mb-4">
             Update your display name. Your sign-in email and assigned roles are managed
             elsewhere and shown read-only.
         </p>
 
         <form class="flex flex-col gap-3" @onsubmit="OnSaveDetailsAsync" @onsubmit:preventDefault>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Display name</span>
+            <CitusFormField Label="Display name">
                 <input type="text"
                        class="citus-form-field__input"
                        value="@_displayName"
                        @oninput="@(e => _displayName = e.Value?.ToString() ?? string.Empty)"
                        disabled="@_isSavingDetails"
                        maxlength="120" />
-            </label>
+            </CitusFormField>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Email</span>
+            <CitusFormField Label="Email">
                 <input type="email"
                        class="citus-form-field__input"
                        value="@ShellState.User.Email"
                        readonly />
-            </label>
+            </CitusFormField>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Username</span>
+            <CitusFormField Label="Username">
                 <input type="text"
                        class="citus-form-field__input"
                        value="@ShellState.User.Username"
                        readonly />
-            </label>
+            </CitusFormField>
 
             <div class="flex items-center gap-3">
                 <CitusButton Variant="CitusButtonVariant.Primary"
@@ -74,45 +70,41 @@
                 }
             </div>
         </form>
-    </section>
+    </CitusFormSection>
 
-    <section class="citus-panel h-full">
-        <h2 class="citus-panel__title">Change password</h2>
+    <CitusFormSection Title="Change password" Class="h-full">
         <p class="text-fg-muted text-sm mb-4">
             Choose a new password. You will be signed out from any device that has not
             seen the new credential.
         </p>
 
         <form class="flex flex-col gap-3" @onsubmit="OnChangePasswordAsync" @onsubmit:preventDefault>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Current password</span>
+            <CitusFormField Label="Current password">
                 <input type="password"
                        class="citus-form-field__input"
                        value="@_currentPassword"
                        @oninput="@(e => _currentPassword = e.Value?.ToString() ?? string.Empty)"
                        disabled="@_isSavingPassword"
                        autocomplete="current-password" />
-            </label>
+            </CitusFormField>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">New password</span>
+            <CitusFormField Label="New password">
                 <input type="password"
                        class="citus-form-field__input"
                        value="@_newPassword"
                        @oninput="@(e => _newPassword = e.Value?.ToString() ?? string.Empty)"
                        disabled="@_isSavingPassword"
                        autocomplete="new-password" />
-            </label>
+            </CitusFormField>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Confirm new password</span>
+            <CitusFormField Label="Confirm new password">
                 <input type="password"
                        class="citus-form-field__input"
                        value="@_confirmPassword"
                        @oninput="@(e => _confirmPassword = e.Value?.ToString() ?? string.Empty)"
                        disabled="@_isSavingPassword"
                        autocomplete="new-password" />
-            </label>
+            </CitusFormField>
 
             <div class="flex items-center gap-3">
                 <CitusButton Variant="CitusButtonVariant.Primary"
@@ -124,11 +116,10 @@
                 </CitusButton>
             </div>
         </form>
-    </section>
+    </CitusFormSection>
 </div>
 
-<section class="citus-panel">
-    <h2 class="citus-panel__title">Roles and access</h2>
+<CitusFormSection Title="Roles and access">
     <p class="text-fg-muted text-sm mb-4">
         Roles are controlled by an account owner. Contact your administrator to request a change.
     </p>
@@ -145,7 +136,7 @@
             }
         }
     </div>
-</section>
+</CitusFormSection>
 </div>
 
 @code {
