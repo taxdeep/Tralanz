@@ -10,22 +10,22 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button" href="invoices/new">
-            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-            <span>New invoice</span>
-        </a>
+        <CitusLinkButton Href="invoices/new"
+                         Variant="CitusButtonVariant.Primary"
+                         LeadingIcon="IconName.Plus">
+            New invoice
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Recent invoices</h2>
+<CitusFormSection Title="Recent invoices">
+    <HeaderActions>
         <label class="inline-flex items-center gap-2 text-sm">
             <input type="checkbox" checked="@_includeDrafts" @onchange="OnIncludeDraftsChanged" />
             <span>Include drafts</span>
         </label>
-    </header>
-
+    </HeaderActions>
+    <ChildContent>
     <CitusAsyncBoundary IsLoading="@_isLoading"
                         IsEmpty="@(_invoices.Count == 0)"
                         EmptyIcon="IconName.FileInvoice"
@@ -76,7 +76,8 @@
             </Columns>
         </RadzenDataGrid>
     </CitusAsyncBoundary>
-</section>
+    </ChildContent>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()

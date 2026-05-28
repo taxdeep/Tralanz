@@ -7,22 +7,22 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button" href="refund-receipts/new">
-            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-            <span>New refund receipt</span>
-        </a>
+        <CitusLinkButton Href="refund-receipts/new"
+                         Variant="CitusButtonVariant.Primary"
+                         LeadingIcon="IconName.Plus">
+            New refund receipt
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Refund receipts</h2>
+<CitusFormSection Title="Refund receipts">
+    <HeaderActions>
         <label class="inline-flex items-center gap-2 text-sm">
             <input type="checkbox" checked="@_includeDrafts" @onchange="OnIncludeDraftsChanged" />
             <span>Include drafts</span>
         </label>
-    </header>
-
+    </HeaderActions>
+    <ChildContent>
     @if (_isLoading)
     {
         <CitusSkeleton Variant="SkeletonVariant.List" />
@@ -72,7 +72,8 @@
             </tbody>
         </table>
     }
-</section>
+    </ChildContent>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()
