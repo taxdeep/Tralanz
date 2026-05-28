@@ -10,16 +10,17 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="purchase-orders">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to POs</span>
-        </a>
+        <CitusLinkButton Href="purchase-orders"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to POs
+        </CitusLinkButton>
         @if (_po is not null && IsEditable(_po.Status))
         {
-            <a class="citus-button" href="@($"purchase-orders/{_po.Id:D}/edit")">
-                <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
-                <span>Edit</span>
-            </a>
+            <CitusLinkButton Href="@($"purchase-orders/{_po.Id:D}/edit")"
+                             LeadingIcon="IconName.Pencil">
+                Edit
+            </CitusLinkButton>
         }
     </Actions>
 </CitusPageHeader>
@@ -39,7 +40,7 @@ else if (_po is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="PO #" Value="@_po.PurchaseOrderNumber" Description="@_po.VendorName"
                        Icon="IconName.FileText" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_po.Status)" Description="@StatusHint(_po.Status)"
@@ -51,46 +52,41 @@ else
                        Value="@(_po.ExpectedDeliveryDate?.ToString("yyyy-MM-dd") ?? "—")"
                        Description="@($"Ordered {_po.OrderDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </div>
+    </CitusStatCardGrid>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            @* Copy A3 Phase 3: More menu hosts Copy. Lifecycle actions
-               (Send / Convert / Cancel / Void) stay as inline buttons
-               because they're context-specific to PO status. *@
-            <CitusMoreMenu Items="@_moreItems" />
-            @if (_po.Status == "draft")
-            {
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("open", "PO sent (Open)."))">Send</CitusButton>
-            }
-            @if (_po.Status is "open" or "closed")
-            {
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertToBillAsync">
-                    Convert to Bill
-                </CitusButton>
-                <a class="citus-button" href="@($"purchase-orders/{_po.Id:D}/convert-to-expense")">
-                    Convert to Expense
-                </a>
-            }
-            @if (_po.Status is "draft" or "open")
-            {
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("cancelled", "PO cancelled."))">Cancel PO</CitusButton>
-            }
-            @if (_po.Status != "void" && _po.Status != "cancelled")
-            {
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("void", "PO voided."))">Void</CitusButton>
-            }
-        </div>
-    </section>
+    @* Copy A3 Phase 3: More menu hosts Copy. Lifecycle actions
+       (Send / Convert / Cancel / Void) stay as inline buttons
+       because they're context-specific to PO status. *@
+    <CitusActionsPanel MoreMenuItems="@_moreItems">
+        @if (_po.Status == "draft")
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("open", "PO sent (Open)."))">Send</CitusButton>
+        }
+        @if (_po.Status is "open" or "closed")
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertToBillAsync">
+                Convert to Bill
+            </CitusButton>
+            <CitusLinkButton Href="@($"purchase-orders/{_po.Id:D}/convert-to-expense")">
+                Convert to Expense
+            </CitusLinkButton>
+        }
+        @if (_po.Status is "draft" or "open")
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("cancelled", "PO cancelled."))">Cancel PO</CitusButton>
+        }
+        @if (_po.Status != "void" && _po.Status != "cancelled")
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("void", "PO voided."))">Void</CitusButton>
+        }
+    </CitusActionsPanel>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -116,58 +112,49 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_po.MemoToSupplier) || !string.IsNullOrWhiteSpace(_po.InternalNote))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Notes</h2>
-                    <table class="citus-keyvalue">
-                        <tbody>
-                            @if (!string.IsNullOrWhiteSpace(_po.MemoToSupplier))
-                            {
-                                <tr><th>Memo to supplier</th><td>@_po.MemoToSupplier</td></tr>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(_po.InternalNote))
-                            {
-                                <tr><th>Internal note</th><td>@_po.InternalNote</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                </section>
+                <CitusFormSection Title="Notes">
+                    <CitusKeyValueTable>
+                        @if (!string.IsNullOrWhiteSpace(_po.MemoToSupplier))
+                        {
+                            <CitusKeyValueRow Label="Memo to supplier">@_po.MemoToSupplier</CitusKeyValueRow>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_po.InternalNote))
+                        {
+                            <CitusKeyValueRow Label="Internal note">@_po.InternalNote</CitusKeyValueRow>
+                        }
+                    </CitusKeyValueTable>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Vendor</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Name</th><td>@_po.VendorName</td></tr>
-                        @if (HasAddress(_po))
+            <CitusFormSection Title="Vendor">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Name">@_po.VendorName</CitusKeyValueRow>
+                    @if (HasAddress(_po))
+                    {
+                        <CitusKeyValueRow Label="Billing address">@FormatAddress(_po.BillingAddressLine, _po.BillingCity, _po.BillingProvinceState, _po.BillingPostalCode, _po.BillingCountry)</CitusKeyValueRow>
+                        @if (!string.IsNullOrWhiteSpace(_po.ShippingAddressLine))
                         {
-                            <tr><th>Billing address</th><td>@FormatAddress(_po.BillingAddressLine, _po.BillingCity, _po.BillingProvinceState, _po.BillingPostalCode, _po.BillingCountry)</td></tr>
-                            @if (!string.IsNullOrWhiteSpace(_po.ShippingAddressLine))
-                            {
-                                <tr><th>Ship to</th><td>@FormatAddress(_po.ShippingAddressLine, _po.ShippingCity, _po.ShippingProvinceState, _po.ShippingPostalCode, _po.ShippingCountry)</td></tr>
-                            }
+                            <CitusKeyValueRow Label="Ship to">@FormatAddress(_po.ShippingAddressLine, _po.ShippingCity, _po.ShippingProvinceState, _po.ShippingPostalCode, _po.ShippingCountry)</CitusKeyValueRow>
                         }
-                    </tbody>
-                </table>
-            </section>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@_po.SubtotalAmount.ToString("N2")</td></tr>
-                        <tr><th>Discount</th><td class="text-right">−@_po.DiscountAmount.ToString("N2")</td></tr>
-                        <tr><th>Shipping</th><td class="text-right">@((_po.ShippingAmount ?? 0m).ToString("N2"))</td></tr>
-                        <tr><th>Tax</th><td class="text-right">@_po.TaxAmount.ToString("N2")</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@_po.TotalAmount.ToString("N2") @_po.TransactionCurrencyCode</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_po.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@_po.DiscountAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@((_po.ShippingAmount ?? 0m).ToString("N2"))</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_po.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_po.TotalAmount.ToString("N2") @_po.TransactionCurrencyCode</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }
