@@ -10,10 +10,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="@_backHref">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>@_backLabel</span>
-        </a>
+        <CitusLinkButton Href="@_backHref"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            @_backLabel
+        </CitusLinkButton>
         @if (IsInvoice)
         {
             <CitusButton Variant="CitusButtonVariant.Ghost"
@@ -52,73 +53,69 @@
 
 @if (_isSendDialogOpen && _document is not null)
 {
-    <section class="citus-panel mb-4">
-        <header class="citus-panel__header">
-            <h2 class="citus-panel__title">Send invoice @_document.DisplayNumber</h2>
+    <CitusFormSection Title="@($"Send invoice {_document.DisplayNumber}")" Class="mb-4">
+        <HeaderActions>
             <button type="button" class="citus-icon-button" title="Close" @onclick="CloseSendDialog">
                 <CitusIcon Name="IconName.X" Size="IconSize.Inline" />
             </button>
-        </header>
+        </HeaderActions>
+        <ChildContent>
+            @if (!string.IsNullOrWhiteSpace(_sendError))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_sendError" ShowIcon="true" Class="mb-3" />
+            }
 
-        @if (!string.IsNullOrWhiteSpace(_sendError))
-        {
-            <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_sendError" ShowIcon="true" Class="mb-3" />
-        }
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="To">
+                    <input type="email"
+                           class="citus-form-field__input"
+                           placeholder="customer@example.com"
+                           value="@_sendTo"
+                           @oninput="@(e => _sendTo = e.Value?.ToString() ?? string.Empty)"
+                           disabled="@_isSendingEmail" />
+                </CitusFormField>
+                <CitusFormField Label="CC (optional, comma-separated)">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="cfo@example.com, ops@example.com"
+                           value="@_sendCc"
+                           @oninput="@(e => _sendCc = e.Value?.ToString() ?? string.Empty)"
+                           disabled="@_isSendingEmail" />
+                </CitusFormField>
+                <CitusFormField Label="BCC (optional)">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="archive@yourcompany.com"
+                           value="@_sendBcc"
+                           @oninput="@(e => _sendBcc = e.Value?.ToString() ?? string.Empty)"
+                           disabled="@_isSendingEmail" />
+                </CitusFormField>
+                <CitusFormField Label="Personal message (optional)" Class="md:col-span-2">
+                    <textarea class="citus-form-field__input"
+                              rows="4"
+                              placeholder="Anything you want the customer to read in the email body. The PDF total + due date + payment instructions are already included automatically."
+                              @oninput="@(e => _sendMessage = e.Value?.ToString() ?? string.Empty)"
+                              disabled="@_isSendingEmail">@_sendMessage</textarea>
+                </CitusFormField>
+            </CitusFormGrid>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">To</span>
-                <input type="email"
-                       class="citus-form-field__input"
-                       placeholder="customer@example.com"
-                       value="@_sendTo"
-                       @oninput="@(e => _sendTo = e.Value?.ToString() ?? string.Empty)"
-                       disabled="@_isSendingEmail" />
-            </label>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">CC (optional, comma-separated)</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       placeholder="cfo@example.com, ops@example.com"
-                       value="@_sendCc"
-                       @oninput="@(e => _sendCc = e.Value?.ToString() ?? string.Empty)"
-                       disabled="@_isSendingEmail" />
-            </label>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">BCC (optional)</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       placeholder="archive@yourcompany.com"
-                       value="@_sendBcc"
-                       @oninput="@(e => _sendBcc = e.Value?.ToString() ?? string.Empty)"
-                       disabled="@_isSendingEmail" />
-            </label>
-            <label class="citus-form-field md:col-span-2">
-                <span class="citus-form-field__label">Personal message (optional)</span>
-                <textarea class="citus-form-field__input"
-                          rows="4"
-                          placeholder="Anything you want the customer to read in the email body. The PDF total + due date + payment instructions are already included automatically."
-                          @oninput="@(e => _sendMessage = e.Value?.ToString() ?? string.Empty)"
-                          disabled="@_isSendingEmail">@_sendMessage</textarea>
-            </label>
-        </div>
-
-        <div class="flex items-center gap-3 mt-4">
-            <CitusButton Variant="CitusButtonVariant.Primary"
-                         Disabled="_isSendingEmail || string.IsNullOrWhiteSpace(_sendTo)"
-                         OnClick="SubmitSendAsync">
-                @(_isSendingEmail ? "Sending…" : "Send email")
-            </CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost"
-                         Disabled="_isSendingEmail"
-                         OnClick="CloseSendDialog">
-                Cancel
-            </CitusButton>
-            <span class="text-fg-subtle text-xs ml-auto">
-                Subject + body are composed from the invoice. The PDF is attached automatically.
-            </span>
-        </div>
-    </section>
+            <div class="flex items-center gap-3 mt-4">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="_isSendingEmail || string.IsNullOrWhiteSpace(_sendTo)"
+                             OnClick="SubmitSendAsync">
+                    @(_isSendingEmail ? "Sending…" : "Send email")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             Disabled="_isSendingEmail"
+                             OnClick="CloseSendDialog">
+                    Cancel
+                </CitusButton>
+                <span class="text-fg-subtle text-xs ml-auto">
+                    Subject + body are composed from the invoice. The PDF is attached automatically.
+                </span>
+            </div>
+        </ChildContent>
+    </CitusFormSection>
 }
 
 @if (_isLoading)
@@ -162,23 +159,20 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-7 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document review</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        @foreach (var fact in _factRows)
-                        {
-                            <tr><th>@fact.Label</th><td>@fact.Value</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Document review">
+                <CitusKeyValueTable>
+                    @foreach (var fact in _factRows)
+                    {
+                        <CitusKeyValueRow Label="@fact.Label">@fact.Value</CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <header class="citus-panel__header">
-                    <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
+                <HeaderActions>
                     <CitusBadge Color="@("default")">@($"{_document.Lines.Count} lines")</CitusBadge>
-                </header>
+                </HeaderActions>
+                <ChildContent>
 
                 @if (_document.Lines.Count == 0)
                 {
@@ -313,12 +307,12 @@
                         </tbody>
                     </table>
                 }
-            </section>
+                </ChildContent>
+            </CitusFormSection>
         </div>
 
         <div class="lg:col-span-5 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Why this page exists</h2>
+            <CitusFormSection Title="Why this page exists">
                 <ul class="citus-bullet-list">
                     <li>Report drill-down stays read-only so review never turns into an accidental edit path.</li>
                     <li>Company scope remains fixed to the active business session.</li>
@@ -327,24 +321,23 @@
 
                 @if (_relatedJournalEntryHref is not null)
                 {
-                    <a class="citus-button citus-button--ghost mt-4" href="@_relatedJournalEntryHref">
-                        <CitusIcon Name="IconName.Eye" Size="IconSize.Inline" />
-                        <span>Open related journal entry</span>
-                    </a>
+                    <CitusLinkButton Href="@_relatedJournalEntryHref"
+                                     Variant="CitusButtonVariant.Ghost"
+                                     LeadingIcon="IconName.Eye"
+                                     Class="mt-4">
+                        Open related journal entry
+                    </CitusLinkButton>
                 }
-            </section>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Amounts</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        @foreach (var amount in _amountRows)
-                        {
-                            <tr><th>@amount.Label</th><td>@amount.Value</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Amounts">
+                <CitusKeyValueTable>
+                    @foreach (var amount in _amountRows)
+                    {
+                        <CitusKeyValueRow Label="@amount.Label">@amount.Value</CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </div>
     </div>
 }
