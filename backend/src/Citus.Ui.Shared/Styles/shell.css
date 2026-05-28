@@ -4389,3 +4389,16 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-journal-lines__row:hover .citus-account-picker__input {
     border-color: var(--citus-color-border);
 }
+
+
+/* Batch 2e.4 — Topbar width fix in T-shape header.
+   .citus-shell__header-bar has flex: 1 so it stretches to fill the
+   header row after the brand cell, but the .citus-topbar inside it
+   is just display:flex with no width directive — its width tracks
+   content only. Result: ThemeToggle + user menu cluster sits left
+   of where they should, with empty space to the right. Pinning the
+   topbar to width: 100% inside the header-bar lets the search and
+   actions claim the full width and the user menu lands flush right. */
+.citus-shell__header-bar > .citus-topbar {
+    width: 100%;
+}
