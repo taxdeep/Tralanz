@@ -53,22 +53,15 @@
             <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
         }
 
-        <section class="citus-panel mb-6">
-            <h2 class="citus-panel__title">New company</h2>
-            <p class="text-fg-muted text-sm mb-4">
-                Seeds the canonical chart of accounts and books for a new company you'll own.
-                You'll be switched to it automatically when it's ready.
-            </p>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="citus-form-field__label">Company legal name</label>
+        <CitusFormSection Title="New company"
+                          Subtitle="Seeds the canonical chart of accounts and books for a new company you'll own. You'll be switched to it automatically when it's ready.">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Company legal name">
                     <input class="citus-form-field__input"
                            value="@_draft.CompanyName"
                            @oninput="@(e => _draft.CompanyName = e.Value?.ToString() ?? string.Empty)" />
-                </div>
-                <div>
-                    <label class="citus-form-field__label">Entity type</label>
+                </CitusFormField>
+                <CitusFormField Label="Entity type">
                     <select class="citus-form-field__input"
                             value="@_draft.EntityType"
                             @onchange="@(e => _draft.EntityType = e.Value?.ToString() ?? "corporation")">
@@ -76,9 +69,8 @@
                         <option value="partnership">Partnership</option>
                         <option value="sole_proprietorship">Sole proprietorship</option>
                     </select>
-                </div>
-                <div>
-                    <label class="citus-form-field__label">Industry</label>
+                </CitusFormField>
+                <CitusFormField Label="Industry">
                     <select class="citus-form-field__input"
                             value="@_draft.Industry"
                             @onchange="@(e => _draft.Industry = e.Value?.ToString() ?? "general")">
@@ -86,9 +78,8 @@
                         <option value="trading">Trading</option>
                         <option value="property_rental">Property rental</option>
                     </select>
-                </div>
-                <div>
-                    <label class="citus-form-field__label">Country</label>
+                </CitusFormField>
+                <CitusFormField Label="Country">
                     <select class="citus-form-field__input"
                             value="@_draft.Country"
                             @onchange="@(e => _draft.Country = e.Value?.ToString() ?? "Canada")">
@@ -98,9 +89,8 @@
                         <option value="Australia">Australia</option>
                         <option value="Other">Other</option>
                     </select>
-                </div>
-                <div>
-                    <label class="citus-form-field__label">Base currency</label>
+                </CitusFormField>
+                <CitusFormField Label="Base currency">
                     <select class="citus-form-field__input"
                             value="@_draft.BaseCurrencyCode"
                             @onchange="@(e => _draft.BaseCurrencyCode = e.Value?.ToString() ?? "USD")">
@@ -113,23 +103,20 @@
                         <option value="JPY">JPY — Japanese Yen</option>
                         <option value="HKD">HKD — Hong Kong Dollar</option>
                     </select>
-                </div>
-                <div>
-                    <label class="citus-form-field__label">Incorporated on</label>
+                </CitusFormField>
+                <CitusFormField Label="Incorporated on">
                     <input type="date"
                            class="citus-form-field__input"
                            value="@_draft.IncorporatedOn.ToString("yyyy-MM-dd")"
                            @onchange="@(e => _draft.IncorporatedOn = DateTime.TryParse(e.Value?.ToString(), out var d) ? d : _draft.IncorporatedOn)" />
-                </div>
-                <div>
-                    <label class="citus-form-field__label">Fiscal year end (MM-DD)</label>
+                </CitusFormField>
+                <CitusFormField Label="Fiscal year end (MM-DD)">
                     <input class="citus-form-field__input"
                            placeholder="12-31"
                            value="@_draft.FiscalYearEnd"
                            @oninput="@(e => _draft.FiscalYearEnd = e.Value?.ToString() ?? string.Empty)" />
-                </div>
-                <div>
-                    <label class="citus-form-field__label">Account code length</label>
+                </CitusFormField>
+                <CitusFormField Label="Account code length">
                     <select class="citus-form-field__input"
                             value="@_draft.AccountCodeLength"
                             @onchange="@(e => _draft.AccountCodeLength = int.TryParse(e.Value?.ToString(), out var n) ? n : 5)">
@@ -138,21 +125,19 @@
                         <option value="6">6 digits</option>
                         <option value="7">7 digits</option>
                     </select>
-                </div>
-            </div>
+                </CitusFormField>
+            </CitusFormGrid>
 
-            <div class="flex justify-end gap-2 mt-6">
-                <CitusButton OnClick="CancelCreate" Disabled="_isSubmitting">Cancel</CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
-                    @(_isSubmitting ? "Creating…" : "Create company")
-                </CitusButton>
-            </div>
-        </section>
+            <CitusFormActions PrimaryLabel="Create company"
+                              SavingLabel="Creating…"
+                              IsSaving="_isSubmitting"
+                              OnSave="SaveAsync"
+                              OnCancel="CancelCreate" />
+        </CitusFormSection>
     }
     else
     {
-        <section class="citus-panel mb-6">
-            <h2 class="citus-panel__title">Search</h2>
+        <CitusFormSection Title="Search">
             <div class="flex gap-2">
                 <input type="search"
                        class="citus-form-field__input flex-1"
@@ -165,7 +150,7 @@
                    beyond what fits client-side. *@
                 <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OnSearchSubmitted">Search</CitusButton>
             </div>
-        </section>
+        </CitusFormSection>
 
         @if (Filtered.Count == 0)
         {
