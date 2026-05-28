@@ -72,8 +72,7 @@
     CreateNewButton entries; lives here as a convenience because the
     dashboard is the first stop.
 *@
-<section class="citus-panel mb-6">
-    <h2 class="citus-panel__title">Quick actions</h2>
+<CitusFormSection Title="Quick actions">
     <div class="flex flex-wrap gap-2">
         <CitusButton Variant="CitusButtonVariant.Primary"
                      LeadingIcon="IconName.Plus"
@@ -88,7 +87,7 @@
                      LeadingIcon="IconName.Plus"
                      OnClick="@(() => NavigationManager.NavigateTo("manual-journals/new"))">New journal entry</CitusButton>
     </div>
-</section>
+</CitusFormSection>
 
 @*
     Row 3 — AR / AP top-N tables side by side. Each table sorts the
@@ -97,93 +96,95 @@
     drops the operator into the full aging report.
 *@
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-    <section class="citus-panel">
-        <div class="flex justify-between items-center mb-2">
-            <h2 class="citus-panel__title">Top customers by outstanding</h2>
+    <CitusFormSection Title="Top customers by outstanding">
+        <HeaderActions>
             <a href="reports/ar-aging" class="text-sm text-fg-muted hover:text-fg-default">View full aging →</a>
-        </div>
-        @if (_topArCustomers.Count == 0)
-        {
-            <p class="text-fg-subtle text-sm">No open A/R balances.</p>
-        }
-        else
-        {
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Customer</th>
-                        <th class="text-right">Outstanding</th>
-                        <th class="text-right">Overdue</th>
-                        <th>Oldest due</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in _topArCustomers)
-                    {
+        </HeaderActions>
+        <ChildContent>
+            @if (_topArCustomers.Count == 0)
+            {
+                <p class="text-fg-subtle text-sm">No open A/R balances.</p>
+            }
+            else
+            {
+                <table class="citus-data-table">
+                    <thead>
                         <tr>
-                            <td>@row.CustomerDisplayName</td>
-                            <td class="text-right">@FormatMoney(row.TotalOutstandingAmountBase, _arAging?.BaseCurrencyCode)</td>
-                            <td class="text-right">
-                                @if (row.TotalOverdueAmountBase > 0)
-                                {
-                                    <span class="text-fg-warning">@FormatMoney(row.TotalOverdueAmountBase, _arAging?.BaseCurrencyCode)</span>
-                                }
-                                else
-                                {
-                                    <span class="text-fg-subtle">—</span>
-                                }
-                            </td>
-                            <td>@(row.OldestDueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            <th>Customer</th>
+                            <th class="text-right">Outstanding</th>
+                            <th class="text-right">Overdue</th>
+                            <th>Oldest due</th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </section>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _topArCustomers)
+                        {
+                            <tr>
+                                <td>@row.CustomerDisplayName</td>
+                                <td class="text-right">@FormatMoney(row.TotalOutstandingAmountBase, _arAging?.BaseCurrencyCode)</td>
+                                <td class="text-right">
+                                    @if (row.TotalOverdueAmountBase > 0)
+                                    {
+                                        <span class="text-fg-warning">@FormatMoney(row.TotalOverdueAmountBase, _arAging?.BaseCurrencyCode)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-fg-subtle">—</span>
+                                    }
+                                </td>
+                                <td>@(row.OldestDueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </ChildContent>
+    </CitusFormSection>
 
-    <section class="citus-panel">
-        <div class="flex justify-between items-center mb-2">
-            <h2 class="citus-panel__title">Top vendors by outstanding</h2>
+    <CitusFormSection Title="Top vendors by outstanding">
+        <HeaderActions>
             <a href="reports/ap-aging" class="text-sm text-fg-muted hover:text-fg-default">View full aging →</a>
-        </div>
-        @if (_topApVendors.Count == 0)
-        {
-            <p class="text-fg-subtle text-sm">No open A/P balances.</p>
-        }
-        else
-        {
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Vendor</th>
-                        <th class="text-right">Outstanding</th>
-                        <th class="text-right">Overdue</th>
-                        <th>Oldest due</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in _topApVendors)
-                    {
+        </HeaderActions>
+        <ChildContent>
+            @if (_topApVendors.Count == 0)
+            {
+                <p class="text-fg-subtle text-sm">No open A/P balances.</p>
+            }
+            else
+            {
+                <table class="citus-data-table">
+                    <thead>
                         <tr>
-                            <td>@row.VendorDisplayName</td>
-                            <td class="text-right">@FormatMoney(row.TotalOutstandingAmountBase, _apAging?.BaseCurrencyCode)</td>
-                            <td class="text-right">
-                                @if (row.TotalOverdueAmountBase > 0)
-                                {
-                                    <span class="text-fg-warning">@FormatMoney(row.TotalOverdueAmountBase, _apAging?.BaseCurrencyCode)</span>
-                                }
-                                else
-                                {
-                                    <span class="text-fg-subtle">—</span>
-                                }
-                            </td>
-                            <td>@(row.OldestDueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            <th>Vendor</th>
+                            <th class="text-right">Outstanding</th>
+                            <th class="text-right">Overdue</th>
+                            <th>Oldest due</th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </section>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _topApVendors)
+                        {
+                            <tr>
+                                <td>@row.VendorDisplayName</td>
+                                <td class="text-right">@FormatMoney(row.TotalOutstandingAmountBase, _apAging?.BaseCurrencyCode)</td>
+                                <td class="text-right">
+                                    @if (row.TotalOverdueAmountBase > 0)
+                                    {
+                                        <span class="text-fg-warning">@FormatMoney(row.TotalOverdueAmountBase, _apAging?.BaseCurrencyCode)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-fg-subtle">—</span>
+                                    }
+                                </td>
+                                <td>@(row.OldestDueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </ChildContent>
+    </CitusFormSection>
 </div>
 
 @*
@@ -192,39 +193,40 @@
     glanceable summary; the link drops into the full statement for
     drill-down.
 *@
-<section class="citus-panel mb-6">
-    <div class="flex justify-between items-center mb-2">
-        <h2 class="citus-panel__title">@($"P&L — {DateTime.UtcNow:MMMM yyyy}")</h2>
+<CitusFormSection Title="@($"P&L — {DateTime.UtcNow:MMMM yyyy}")">
+    <HeaderActions>
         <a href="reports/income-statement" class="text-sm text-fg-muted hover:text-fg-default">View income statement →</a>
-    </div>
-    @if (_incomeStatement is null)
-    {
-        <p class="text-fg-subtle text-sm">Income statement data unavailable for the active company.</p>
-    }
-    else
-    {
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-                <div class="text-xs text-fg-subtle">Revenue</div>
-                <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalRevenue, _incomeStatement.BaseCurrencyCode)</div>
-            </div>
-            <div>
-                <div class="text-xs text-fg-subtle">Cost of sales</div>
-                <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalCostOfSales, _incomeStatement.BaseCurrencyCode)</div>
-            </div>
-            <div>
-                <div class="text-xs text-fg-subtle">Expenses</div>
-                <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalExpenses, _incomeStatement.BaseCurrencyCode)</div>
-            </div>
-            <div>
-                <div class="text-xs text-fg-subtle">Net income</div>
-                <div class="text-lg font-semibold @(_incomeStatement.NetIncome >= 0 ? "text-fg-success" : "text-fg-warning")">
-                    @FormatMoney(_incomeStatement.NetIncome, _incomeStatement.BaseCurrencyCode)
+    </HeaderActions>
+    <ChildContent>
+        @if (_incomeStatement is null)
+        {
+            <p class="text-fg-subtle text-sm">Income statement data unavailable for the active company.</p>
+        }
+        else
+        {
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                    <div class="text-xs text-fg-subtle">Revenue</div>
+                    <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalRevenue, _incomeStatement.BaseCurrencyCode)</div>
+                </div>
+                <div>
+                    <div class="text-xs text-fg-subtle">Cost of sales</div>
+                    <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalCostOfSales, _incomeStatement.BaseCurrencyCode)</div>
+                </div>
+                <div>
+                    <div class="text-xs text-fg-subtle">Expenses</div>
+                    <div class="text-lg font-semibold">@FormatMoney(_incomeStatement.TotalExpenses, _incomeStatement.BaseCurrencyCode)</div>
+                </div>
+                <div>
+                    <div class="text-xs text-fg-subtle">Net income</div>
+                    <div class="text-lg font-semibold @(_incomeStatement.NetIncome >= 0 ? "text-fg-success" : "text-fg-warning")">
+                        @FormatMoney(_incomeStatement.NetIncome, _incomeStatement.BaseCurrencyCode)
+                    </div>
                 </div>
             </div>
-        </div>
-    }
-</section>
+        }
+    </ChildContent>
+</CitusFormSection>
 
 @*
     Row 5 — AI-generated suggestions. Read-only list for v1; Accept /
@@ -233,24 +235,25 @@
 *@
 @if (_suggestions.Count > 0)
 {
-    <section class="citus-panel mb-6">
-        <div class="flex justify-between items-center mb-2">
-            <h2 class="citus-panel__title">AI suggestions</h2>
+    <CitusFormSection Title="AI suggestions">
+        <HeaderActions>
             <CitusBadge Color="@("blue")">@_suggestions.Count</CitusBadge>
-        </div>
-        <div class="flex flex-col gap-3">
-            @foreach (var suggestion in _suggestions.Take(5))
-            {
-                <div class="border border-border-default rounded-md p-3">
-                    <div class="flex justify-between items-start">
-                        <div class="font-medium">@suggestion.Title</div>
-                        <CitusBadge Color="@("default")">@($"{(int)(suggestion.Confidence * 100)}% confident")</CitusBadge>
+        </HeaderActions>
+        <ChildContent>
+            <div class="flex flex-col gap-3">
+                @foreach (var suggestion in _suggestions.Take(5))
+                {
+                    <div class="border border-border-default rounded-md p-3">
+                        <div class="flex justify-between items-start">
+                            <div class="font-medium">@suggestion.Title</div>
+                            <CitusBadge Color="@("default")">@($"{(int)(suggestion.Confidence * 100)}% confident")</CitusBadge>
+                        </div>
+                        <p class="text-fg-subtle text-sm mt-1">@suggestion.Reason</p>
                     </div>
-                    <p class="text-fg-subtle text-sm mt-1">@suggestion.Reason</p>
-                </div>
-            }
-        </div>
-    </section>
+                }
+            </div>
+        </ChildContent>
+    </CitusFormSection>
 }
 
 @*
@@ -259,42 +262,43 @@
     lives at /journal-entries; this panel is the quick "what just
     happened" peek.
 *@
-<section class="citus-panel">
-    <div class="flex justify-between items-center mb-2">
-        <h2 class="citus-panel__title">Recent activity</h2>
+<CitusFormSection Title="Recent activity">
+    <HeaderActions>
         <a href="journal-entries" class="text-sm text-fg-muted hover:text-fg-default">View all journal entries →</a>
-    </div>
-    @if (_recentJournals.Count == 0)
-    {
-        <p class="text-fg-subtle text-sm">No recent journal entries.</p>
-    }
-    else
-    {
-        <table class="citus-data-table">
-            <thead>
-                <tr>
-                    <th>Entry #</th>
-                    <th>Source</th>
-                    <th>Status</th>
-                    <th class="text-right">Amount</th>
-                    <th>Posted</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var je in _recentJournals)
-                {
-                    <tr class="cursor-pointer" @onclick="@(() => NavigationManager.NavigateTo($"journal-entries/{je.Id:D}"))">
-                        <td>@je.DisplayNumber</td>
-                        <td>@(string.IsNullOrEmpty(je.SourceTypeLabel) ? je.SourceType : je.SourceTypeLabel)</td>
-                        <td><CitusDocumentStatusBadge Status="@je.Status" /></td>
-                        <td class="text-right">@FormatMoney(je.TotalDebit, je.BaseCurrencyCode)</td>
-                        <td>@(je.PostedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+    </HeaderActions>
+    <ChildContent>
+        @if (_recentJournals.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm">No recent journal entries.</p>
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Entry #</th>
+                        <th>Source</th>
+                        <th>Status</th>
+                        <th class="text-right">Amount</th>
+                        <th>Posted</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    }
-</section>
+                </thead>
+                <tbody>
+                    @foreach (var je in _recentJournals)
+                    {
+                        <tr class="cursor-pointer" @onclick="@(() => NavigationManager.NavigateTo($"journal-entries/{je.Id:D}"))">
+                            <td>@je.DisplayNumber</td>
+                            <td>@(string.IsNullOrEmpty(je.SourceTypeLabel) ? je.SourceType : je.SourceTypeLabel)</td>
+                            <td><CitusDocumentStatusBadge Status="@je.Status" /></td>
+                            <td class="text-right">@FormatMoney(je.TotalDebit, je.BaseCurrencyCode)</td>
+                            <td>@(je.PostedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </ChildContent>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()
