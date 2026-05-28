@@ -49,7 +49,7 @@
 }
 else
 {
-    <section class="citus-panel">
+    <CitusFormSection Title="Vendors">
         <CitusAsyncBoundary IsLoading="@_isLoading"
                             IsEmpty="@(_vendors.Count == 0)"
                             EmptyIcon="IconName.BuildingStore"
@@ -96,7 +96,7 @@ else
                 </Columns>
             </RadzenDataGrid>
         </CitusAsyncBoundary>
-    </section>
+    </CitusFormSection>
 }
 
 @code {

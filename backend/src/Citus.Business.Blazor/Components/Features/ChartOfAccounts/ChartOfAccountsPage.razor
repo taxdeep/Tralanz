@@ -47,17 +47,16 @@
 
 @if (_isSeedPanelOpen)
 {
-    <section class="citus-panel mb-6">
-        <header class="citus-panel__header">
-            <h2 class="citus-panel__title">Apply a starter template</h2>
+    <CitusFormSection Title="Apply a starter template" Class="mb-6">
+        <HeaderActions>
             <CitusButton Variant="CitusButtonVariant.Ghost"
                          Size="CitusButtonSize.Small"
                          Disabled="@_isMutating"
                          OnClick="CloseSeedPanel">
                 Close
             </CitusButton>
-        </header>
-
+        </HeaderActions>
+        <ChildContent>
         <p class="text-fg-muted text-sm mb-4">
             Templates are applied <strong>additively</strong> — accounts whose code already exists in this
             company are skipped, never overwritten. Re-applying the same template is safe.
@@ -132,48 +131,42 @@
                 }
             </div>
         }
-    </section>
+        </ChildContent>
+    </CitusFormSection>
 }
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Accounts</h2>
-        <div class="flex items-center gap-3">
-            <select class="citus-form-field__input"
-                    style="width: 12rem"
-                    value="@_filterRootType"
-                    @onchange="@OnFilterRootTypeChanged">
-                <option value="">All root types</option>
-                @foreach (var type in RootTypeOptions)
-                {
-                    <option value="@type.Value">@type.Label</option>
-                }
-            </select>
-            <label class="inline-flex items-center gap-2 text-sm">
-                <input type="checkbox"
-                       checked="@_includeInactive"
-                       @onchange="@OnToggleInactive" />
-                Show inactive
-            </label>
-            <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
-                @ShellState.ActiveCompany.CompanyName
-            </CitusBadge>
-        </div>
-    </header>
-
+<CitusFormSection Title="Accounts">
+    <HeaderActions>
+        <select class="citus-form-field__input"
+                style="width: 12rem"
+                value="@_filterRootType"
+                @onchange="@OnFilterRootTypeChanged">
+            <option value="">All root types</option>
+            @foreach (var type in RootTypeOptions)
+            {
+                <option value="@type.Value">@type.Label</option>
+            }
+        </select>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox"
+                   checked="@_includeInactive"
+                   @onchange="@OnToggleInactive" />
+            Show inactive
+        </label>
+        <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
+            @ShellState.ActiveCompany.CompanyName
+        </CitusBadge>
+    </HeaderActions>
+    <ChildContent>
     @if (_isLoading)
     {
         <CitusLoadingBar />
     }
     else if (FilteredRows.Count == 0)
     {
-        <div class="citus-empty">
-            <p class="text-fg-muted text-sm">
-                @(_rows.Count == 0
-                    ? "No accounts yet. Click \"New account\" to start your chart of accounts."
-                    : "No accounts match the current filters.")
-            </p>
-        </div>
+        <CitusInlineEmpty Message="@(_rows.Count == 0
+            ? "No accounts yet. Click \"New account\" to start your chart of accounts."
+            : "No accounts match the current filters.")" />
     }
     else
     {
@@ -237,7 +230,8 @@
             </tbody>
         </table>
     }
-</section>
+    </ChildContent>
+</CitusFormSection>
 
 <CitusDrawer @bind-IsOpen="_isFormOpen"
              Title="@(_editingId is null ? "New account" : "Edit account")"
