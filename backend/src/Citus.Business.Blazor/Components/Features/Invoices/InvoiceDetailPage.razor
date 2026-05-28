@@ -26,10 +26,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="invoices">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to invoices</span>
-        </a>
+        <CitusLinkButton Href="invoices"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to invoices
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -48,7 +49,7 @@ else if (_invoice is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Invoice #" Value="@_invoice.DisplayNumber" Description="@_customerName"
                        Icon="IconName.FileInvoice" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_invoice.Status)" Description="@StatusHint(_invoice.Status)"
@@ -60,46 +61,40 @@ else
                        Value="@(_invoice.DueDate?.ToString("yyyy-MM-dd") ?? "On receipt")"
                        Description="@($"Issued {_invoice.DocumentDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </div>
+    </CitusStatCardGrid>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            @* Copy A3 Phase 2: More menu hosts secondary actions
-               (Copy today; Print / Audit history come later). The
-               state-specific primary actions (Receive payment, Issue
-               credit memo) stay as inline buttons because they're
-               the operator's main jobs on a posted invoice. *@
-            <CitusMoreMenu Items="@_moreItems" />
-            @if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
-            {
-                <a class="citus-button citus-button--primary" href="receive-payment">
-                    <CitusIcon Name="IconName.Cash" Size="IconSize.Inline" />
-                    <span>Receive payment</span>
-                </a>
-                @* "Credit invoice" pre-fills the credit-memo create page
-                   with the invoice's customer, currency, and reverse
-                   lines. When any source line carried a task_id, the
-                   credit-note post handler rolls those tasks back to
-                   Completed. *@
-                <a class="citus-button citus-button--ghost" href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")">Issue credit memo</a>
-                <span class="text-fg-muted text-sm">Settlement happens in Receive Payment.</span>
-            }
-            else if (_invoice.Status == "draft")
-            {
-                <span class="text-fg-muted text-sm">Open the editor to finish this draft and post it.</span>
-            }
-            else if (_invoice.Status == "voided" || _invoice.Status == "reversed")
-            {
-                <span class="text-fg-muted text-sm">This invoice has no outstanding balance.</span>
-            }
-        </div>
-    </section>
+    @* Copy A3 Phase 2: More menu hosts secondary actions (Copy today;
+       Print / Audit history come later). State-specific primary
+       actions (Receive payment / Issue credit memo) sit alongside as
+       inline ghost / primary buttons because they're the operator's
+       main jobs on a posted invoice. *@
+    <CitusActionsPanel MoreMenuItems="@_moreItems">
+        @if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
+        {
+            <CitusLinkButton Href="receive-payment"
+                             Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.Cash">
+                Receive payment
+            </CitusLinkButton>
+            <CitusLinkButton Href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")"
+                             Variant="CitusButtonVariant.Ghost">
+                Issue credit memo
+            </CitusLinkButton>
+            <span class="text-fg-muted text-sm">Settlement happens in Receive Payment.</span>
+        }
+        else if (_invoice.Status == "draft")
+        {
+            <span class="text-fg-muted text-sm">Open the editor to finish this draft and post it.</span>
+        }
+        else if (_invoice.Status == "voided" || _invoice.Status == "reversed")
+        {
+            <span class="text-fg-muted text-sm">This invoice has no outstanding balance.</span>
+        }
+    </CitusActionsPanel>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -127,57 +122,50 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_invoice.Memo))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Memo</h2>
-                    <p class="text-fg-muted text-sm">@_invoice.Memo</p>
-                </section>
+                <CitusFormSection Title="Memo">
+                    <p class="text-fg-muted text-sm m-0">@_invoice.Memo</p>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Invoice no.</th><td><span class="citus-inline-code">@_invoice.DisplayNumber</span></td></tr>
-                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_invoice.EntityNumber</span></td></tr>
-                        <tr><th>Document date</th><td>@_invoice.DocumentDate.ToString("yyyy-MM-dd")</td></tr>
-                        @if (_invoice.DueDate is { } due)
-                        {
-                            <tr><th>Due date</th><td>@due.ToString("yyyy-MM-dd")</td></tr>
-                        }
-                        <tr><th>Currency</th><td>@_invoice.TransactionCurrencyCode</td></tr>
-                        @if (!string.Equals(_invoice.TransactionCurrencyCode, _invoice.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                        {
-                            <tr><th>Base currency</th><td>@_invoice.BaseCurrencyCode</td></tr>
-                        }
-                        <tr><th>Customer</th><td>@_customerName</td></tr>
-                        @if (!string.IsNullOrWhiteSpace(_invoice.CustomerPoNumber))
-                        {
-                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_invoice.CustomerPoNumber</span></td></tr>
-                        }
-                        @if (_invoice.SalesOrderId is { } soId)
-                        {
-                            <tr><th>From SO</th><td><a class="citus-link" href="@($"sales-orders/{soId:D}")">View source SO</a></td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Document">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Invoice no."><span class="citus-inline-code">@_invoice.DisplayNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_invoice.EntityNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Document date">@_invoice.DocumentDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    @if (_invoice.DueDate is { } due)
+                    {
+                        <CitusKeyValueRow Label="Due date">@due.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    }
+                    <CitusKeyValueRow Label="Currency">@_invoice.TransactionCurrencyCode</CitusKeyValueRow>
+                    @if (!string.Equals(_invoice.TransactionCurrencyCode, _invoice.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        <CitusKeyValueRow Label="Base currency">@_invoice.BaseCurrencyCode</CitusKeyValueRow>
+                    }
+                    <CitusKeyValueRow Label="Customer">@_customerName</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_invoice.CustomerPoNumber))
+                    {
+                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_invoice.CustomerPoNumber</span></CitusKeyValueRow>
+                    }
+                    @if (_invoice.SalesOrderId is { } soId)
+                    {
+                        <CitusKeyValueRow Label="From SO"><a class="citus-link" href="@($"sales-orders/{soId:D}")">View source SO</a></CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@_invoice.SubtotalAmount.ToString("N2")</td></tr>
-                        <tr><th>Tax</th><td class="text-right">@_invoice.TaxAmount.ToString("N2")</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@_invoice.TotalAmount.ToString("N2") @_invoice.TransactionCurrencyCode</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_invoice.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_invoice.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_invoice.TotalAmount.ToString("N2") @_invoice.TransactionCurrencyCode</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }
