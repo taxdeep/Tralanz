@@ -20,7 +20,7 @@
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
 }
 
-<section class="citus-panel">
+<CitusFormSection>
     <CitusAsyncBoundary IsLoading="@_isLoading"
                         IsEmpty="@(_periods.Count == 0)"
                         EmptyIcon="IconName.Calendar"
@@ -88,7 +88,7 @@
             </tbody>
         </table>
     </CitusAsyncBoundary>
-</section>
+</CitusFormSection>
 
 <p class="text-fg-subtle text-xs mt-3">
     Periods seed monthly from the company's fiscal-year-end setting on first load.

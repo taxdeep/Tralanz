@@ -25,184 +25,182 @@ else if (_isLoading)
 }
 else
 {
-    <section class="citus-panel mb-4">
-        <header class="citus-panel__header">
-            <h2 class="citus-panel__title">Members</h2>
+    <CitusFormSection Title="Members">
+        <HeaderActions>
             <span class="text-fg-subtle text-sm">@_members.Count member(s)</span>
-        </header>
-
-        @if (_members.Count == 0)
-        {
-            <CitusEmpty Title="No members yet"
-                        Description="Once you invite teammates they'll appear here."
-                        Icon="IconName.Users" />
-        }
-        else
-        {
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Member</th>
-                        <th>Email</th>
-                        <th>Status</th>
-                        <th class="text-right">Active grants</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var member in _members)
-                    {
-                        var isSelected = _selectedMember?.UserId == member.UserId;
-                        <tr class="@(isSelected ? "citus-data-table__row--selected" : null) cursor-pointer"
-                            @onclick="@(() => SelectMemberAsync(member))">
-                            <td>
-                                <div style="display: flex; flex-direction: column;">
-                                    <span>@(string.IsNullOrWhiteSpace(member.DisplayName) ? member.Username : member.DisplayName)</span>
-                                    <span class="text-fg-subtle text-xs"><span class="citus-inline-code">@member.UserId</span></span>
-                                </div>
-                            </td>
-                            <td>@member.Email</td>
-                            <td>
-                                @if (member.IsOwner)
-                                {
-                                    <CitusBadge Color="gold">Owner</CitusBadge>
-                                }
-                                else if (!member.IsActive)
-                                {
-                                    <CitusBadge Color="default">Inactive</CitusBadge>
-                                }
-                                else
-                                {
-                                    <CitusBadge Color="blue">Member</CitusBadge>
-                                }
-                            </td>
-                            <td class="text-right">
-                                @if (_grantCounts.TryGetValue(member.UserId, out var count))
-                                {
-                                    @count
-                                }
-                                else
-                                {
-                                    <span class="text-fg-subtle">—</span>
-                                }
-                            </td>
-                            <td class="text-right">
-                                <CitusButton Size="CitusButtonSize.Small"
-                                             Variant="@(isSelected ? CitusButtonVariant.Primary : CitusButtonVariant.Ghost)"
-                                             OnClick="@(() => SelectMemberAsync(member))">
-                                    @(isSelected ? "Selected" : "Manage")
-                                </CitusButton>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </section>
-
-    @if (_selectedMember is not null)
-    {
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">
-                    Permissions for @(string.IsNullOrWhiteSpace(_selectedMember.DisplayName) ? _selectedMember.Email : _selectedMember.DisplayName)
-                </h2>
-                <span class="citus-inline-code">@_selectedMember.UserId</span>
-            </header>
-
-            @if (_selectedMember.IsOwner)
+        </HeaderActions>
+        <ChildContent>
+            @if (_members.Count == 0)
             {
-                <CitusAlert Severity="CitusAlertSeverity.Info"
-                            Message="Owner has all permissions (implied-all). To change this, transfer ownership to another active member."
-                            ShowIcon="true" />
-            }
-            else if (_selectedSnapshot is null && _selectedMember is not null)
-            {
-                <div class="text-fg-subtle">Loading permissions…</div>
-            }
-            else if (_registry.Count == 0)
-            {
-                <div class="text-fg-subtle">Permission registry is empty. Check the deploy migration.</div>
+                <CitusEmpty Title="No members yet"
+                            Description="Once you invite teammates they'll appear here."
+                            Icon="IconName.Users" />
             }
             else
             {
-                @if (!string.IsNullOrWhiteSpace(_mutationMessage))
-                {
-                    <CitusAlert Severity="@(_mutationSucceeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
-                                Message="@_mutationMessage"
-                                ShowIcon="true"
-                                Class="mb-3" />
-                }
-
-                @foreach (var moduleGroup in _registry
-                    .GroupBy(t => t.ModuleKey)
-                    .OrderBy(g => g.Key, StringComparer.Ordinal))
-                {
-                    <div class="mb-4">
-                        <h3 class="text-sm font-semibold mb-2" style="text-transform: uppercase; letter-spacing: 0.05em; color: var(--citus-color-fg-subtle);">
-                            @FormatModuleLabel(moduleGroup.Key)
-                        </h3>
-                        <table class="citus-data-table">
-                            <thead>
-                                <tr>
-                                    <th>Token</th>
-                                    <th>Description</th>
-                                    <th class="text-center">Granted</th>
-                                    <th class="text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var entry in moduleGroup.OrderBy(e => e.PermissionToken, StringComparer.Ordinal))
-                                {
-                                    var isActive = _activeGrants.Contains(entry.PermissionToken);
-                                    var busy = _busyToken == entry.PermissionToken;
-                                    <tr>
-                                        <td>
-                                            <span class="citus-inline-code">@entry.PermissionToken</span>
-                                            @if (entry.IsHighRisk)
-                                            {
-                                                <span class="ml-2"><CitusBadge Color="orange">high-risk</CitusBadge></span>
-                                            }
-                                        </td>
-                                        <td>@(string.IsNullOrWhiteSpace(entry.Description) ? "—" : entry.Description)</td>
-                                        <td class="text-center">
-                                            @if (isActive)
-                                            {
-                                                <CitusBadge Color="green">Granted</CitusBadge>
-                                            }
-                                            else
-                                            {
-                                                <span class="text-fg-subtle">—</span>
-                                            }
-                                        </td>
-                                        <td class="text-right">
-                                            @if (isActive)
-                                            {
-                                                <CitusButton Size="CitusButtonSize.Small"
-                                                             Variant="CitusButtonVariant.Ghost"
-                                                             Disabled="@busy"
-                                                             OnClick="@(() => RevokeAsync(entry.PermissionToken))">
-                                                    Revoke
-                                                </CitusButton>
-                                            }
-                                            else
-                                            {
-                                                <CitusButton Size="CitusButtonSize.Small"
-                                                             Variant="CitusButtonVariant.Primary"
-                                                             Disabled="@busy"
-                                                             OnClick="@(() => GrantAsync(entry.PermissionToken))">
-                                                    Grant
-                                                </CitusButton>
-                                            }
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Member</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th class="text-right">Active grants</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var member in _members)
+                        {
+                            var isSelected = _selectedMember?.UserId == member.UserId;
+                            <tr class="@(isSelected ? "citus-data-table__row--selected" : null) cursor-pointer"
+                                @onclick="@(() => SelectMemberAsync(member))">
+                                <td>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span>@(string.IsNullOrWhiteSpace(member.DisplayName) ? member.Username : member.DisplayName)</span>
+                                        <span class="text-fg-subtle text-xs"><span class="citus-inline-code">@member.UserId</span></span>
+                                    </div>
+                                </td>
+                                <td>@member.Email</td>
+                                <td>
+                                    @if (member.IsOwner)
+                                    {
+                                        <CitusBadge Color="gold">Owner</CitusBadge>
+                                    }
+                                    else if (!member.IsActive)
+                                    {
+                                        <CitusBadge Color="default">Inactive</CitusBadge>
+                                    }
+                                    else
+                                    {
+                                        <CitusBadge Color="blue">Member</CitusBadge>
+                                    }
+                                </td>
+                                <td class="text-right">
+                                    @if (_grantCounts.TryGetValue(member.UserId, out var count))
+                                    {
+                                        @count
+                                    }
+                                    else
+                                    {
+                                        <span class="text-fg-subtle">—</span>
+                                    }
+                                </td>
+                                <td class="text-right">
+                                    <CitusButton Size="CitusButtonSize.Small"
+                                                 Variant="@(isSelected ? CitusButtonVariant.Primary : CitusButtonVariant.Ghost)"
+                                                 OnClick="@(() => SelectMemberAsync(member))">
+                                        @(isSelected ? "Selected" : "Manage")
+                                    </CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             }
-        </section>
+        </ChildContent>
+    </CitusFormSection>
+
+    @if (_selectedMember is not null)
+    {
+        <CitusFormSection Title="@($"Permissions for {(string.IsNullOrWhiteSpace(_selectedMember.DisplayName) ? _selectedMember.Email : _selectedMember.DisplayName)}")">
+            <HeaderActions>
+                <span class="citus-inline-code">@_selectedMember.UserId</span>
+            </HeaderActions>
+            <ChildContent>
+                @if (_selectedMember.IsOwner)
+                {
+                    <CitusAlert Severity="CitusAlertSeverity.Info"
+                                Message="Owner has all permissions (implied-all). To change this, transfer ownership to another active member."
+                                ShowIcon="true" />
+                }
+                else if (_selectedSnapshot is null && _selectedMember is not null)
+                {
+                    <div class="text-fg-subtle">Loading permissions…</div>
+                }
+                else if (_registry.Count == 0)
+                {
+                    <div class="text-fg-subtle">Permission registry is empty. Check the deploy migration.</div>
+                }
+                else
+                {
+                    @if (!string.IsNullOrWhiteSpace(_mutationMessage))
+                    {
+                        <CitusAlert Severity="@(_mutationSucceeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
+                                    Message="@_mutationMessage"
+                                    ShowIcon="true"
+                                    Class="mb-3" />
+                    }
+
+                    @foreach (var moduleGroup in _registry
+                        .GroupBy(t => t.ModuleKey)
+                        .OrderBy(g => g.Key, StringComparer.Ordinal))
+                    {
+                        <div class="mb-4">
+                            <h3 class="text-sm font-semibold mb-2" style="text-transform: uppercase; letter-spacing: 0.05em; color: var(--citus-color-fg-subtle);">
+                                @FormatModuleLabel(moduleGroup.Key)
+                            </h3>
+                            <table class="citus-data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Token</th>
+                                        <th>Description</th>
+                                        <th class="text-center">Granted</th>
+                                        <th class="text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var entry in moduleGroup.OrderBy(e => e.PermissionToken, StringComparer.Ordinal))
+                                    {
+                                        var isActive = _activeGrants.Contains(entry.PermissionToken);
+                                        var busy = _busyToken == entry.PermissionToken;
+                                        <tr>
+                                            <td>
+                                                <span class="citus-inline-code">@entry.PermissionToken</span>
+                                                @if (entry.IsHighRisk)
+                                                {
+                                                    <span class="ml-2"><CitusBadge Color="orange">high-risk</CitusBadge></span>
+                                                }
+                                            </td>
+                                            <td>@(string.IsNullOrWhiteSpace(entry.Description) ? "—" : entry.Description)</td>
+                                            <td class="text-center">
+                                                @if (isActive)
+                                                {
+                                                    <CitusBadge Color="green">Granted</CitusBadge>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-fg-subtle">—</span>
+                                                }
+                                            </td>
+                                            <td class="text-right">
+                                                @if (isActive)
+                                                {
+                                                    <CitusButton Size="CitusButtonSize.Small"
+                                                                 Variant="CitusButtonVariant.Ghost"
+                                                                 Disabled="@busy"
+                                                                 OnClick="@(() => RevokeAsync(entry.PermissionToken))">
+                                                        Revoke
+                                                    </CitusButton>
+                                                }
+                                                else
+                                                {
+                                                    <CitusButton Size="CitusButtonSize.Small"
+                                                                 Variant="CitusButtonVariant.Primary"
+                                                                 Disabled="@busy"
+                                                                 OnClick="@(() => GrantAsync(entry.PermissionToken))">
+                                                        Grant
+                                                    </CitusButton>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </ChildContent>
+        </CitusFormSection>
     }
 }
 

@@ -15,40 +15,35 @@
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel mb-4">
-    <h2 class="citus-panel__title">Filters</h2>
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <label class="citus-form-field">
-            <span class="citus-form-field__label">Since</span>
+<CitusFormSection Title="Filters">
+    <CitusFormGrid Columns="4">
+        <CitusFormField Label="Since">
             <input type="date"
                    class="citus-form-field__input"
                    value="@_sinceDate.ToString("yyyy-MM-dd")"
                    @onchange="OnSinceChanged" />
-        </label>
-        <label class="citus-form-field">
-            <span class="citus-form-field__label">Action</span>
+        </CitusFormField>
+        <CitusFormField Label="Action">
             <input type="text"
                    class="citus-form-field__input"
                    placeholder="e.g. accounting_period_state_changed"
                    @bind="_actionFilter"
                    @bind:event="oninput" />
-        </label>
-        <label class="citus-form-field">
-            <span class="citus-form-field__label">Entity type</span>
+        </CitusFormField>
+        <CitusFormField Label="Entity type">
             <input type="text"
                    class="citus-form-field__input"
                    placeholder="e.g. accounting_period · membership"
                    @bind="_entityTypeFilter"
                    @bind:event="oninput" />
-        </label>
-        <label class="citus-form-field">
-            <span class="citus-form-field__label">Limit</span>
+        </CitusFormField>
+        <CitusFormField Label="Limit">
             <input type="number"
                    class="citus-form-field__input"
                    min="1" max="1000" step="50"
                    @bind="_limit" />
-        </label>
-    </div>
+        </CitusFormField>
+    </CitusFormGrid>
     <div class="flex items-center gap-2 mt-3">
         <CitusButton Variant="CitusButtonVariant.Primary"
                      Size="CitusButtonSize.Small"
@@ -65,9 +60,9 @@
             }
         </span>
     </div>
-</section>
+</CitusFormSection>
 
-<section class="citus-panel">
+<CitusFormSection>
     <CitusAsyncBoundary IsLoading="@_isLoading"
                         IsEmpty="@(_rows.Count == 0)"
                         EmptyIcon="IconName.Search"
@@ -126,7 +121,7 @@
             </tbody>
         </table>
     </CitusAsyncBoundary>
-</section>
+</CitusFormSection>
 
 <p class="text-fg-subtle text-xs mt-3">
     Audit log is append-only and shared across the platform.

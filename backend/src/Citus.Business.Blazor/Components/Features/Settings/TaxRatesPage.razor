@@ -30,156 +30,142 @@
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Tax codes</h2>
-        <div class="flex items-center gap-3">
-            <label class="inline-flex items-center gap-2 text-sm">
-                <input type="checkbox"
-                       checked="@_includeInactive"
-                       @onchange="@OnToggleInactive" />
-                Show inactive
-            </label>
-            <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
-                @ShellState.ActiveCompany.CompanyName
-            </CitusBadge>
-        </div>
-    </header>
-
-    @if (_isLoading)
-    {
-        <CitusLoadingBar />
-    }
-    else if (_rows.Count == 0)
-    {
-        <div class="citus-empty">
-            <p class="text-fg-muted text-sm">
-                No tax codes yet. Click <strong>New tax code</strong> to create your first one.
-            </p>
-        </div>
-    }
-    else
-    {
-        <table class="citus-data-table">
-            <thead>
-                <tr>
-                    <th style="width: 8rem">Code</th>
-                    <th>Name</th>
-                    <th class="text-right" style="width: 6rem">Rate</th>
-                    <th style="width: 8rem">Applies to</th>
-                    <th style="width: 12rem">Registration #</th>
-                    <th style="width: 6rem">Status</th>
-                    <th style="width: 9rem"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _rows)
-                {
-                    <tr class="@(row.IsActive ? null : "citus-data-table__row--muted")">
-                        <td><span class="citus-inline-code">@row.Code</span></td>
-                        <td>@row.Name</td>
-                        <td class="text-right">@FormatRate(row.RatePercent)</td>
-                        <td>@HumanizeAppliesTo(row.AppliesTo)</td>
-                        <td>
-                            @if (!string.IsNullOrWhiteSpace(row.RegistrationNumber))
-                            {
-                                <span class="citus-inline-code">@row.RegistrationNumber</span>
-                            }
-                            else
-                            {
-                                <span class="text-fg-subtle text-xs">—</span>
-                            }
-                        </td>
-                        <td>
-                            <CitusBadge Color="@(row.IsActive ? "green" : "default")">
-                                @(row.IsActive ? "Active" : "Inactive")
-                            </CitusBadge>
-                        </td>
-                        <td>
-                            <div class="flex items-center gap-2">
-                                <CitusButton Variant="CitusButtonVariant.Ghost"
-                                             Size="CitusButtonSize.Small"
-                                             Disabled="@_isMutating"
-                                             OnClick="@(() => StartEditing(row))">
-                                    Edit
-                                </CitusButton>
-                                <CitusButton Variant="CitusButtonVariant.Ghost"
-                                             Size="CitusButtonSize.Small"
-                                             Disabled="@_isMutating"
-                                             OnClick="@(() => ToggleActiveAsync(row))">
-                                    @(row.IsActive ? "Deactivate" : "Activate")
-                                </CitusButton>
-                            </div>
-                        </td>
+<CitusFormSection Title="Tax codes">
+    <HeaderActions>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox"
+                   checked="@_includeInactive"
+                   @onchange="@OnToggleInactive" />
+            Show inactive
+        </label>
+        <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
+            @ShellState.ActiveCompany.CompanyName
+        </CitusBadge>
+    </HeaderActions>
+    <ChildContent>
+        @if (_isLoading)
+        {
+            <CitusLoadingBar />
+        }
+        else if (_rows.Count == 0)
+        {
+            <CitusInlineEmpty Message="No tax codes yet. Click New tax code to create your first one." />
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 8rem">Code</th>
+                        <th>Name</th>
+                        <th class="text-right" style="width: 6rem">Rate</th>
+                        <th style="width: 8rem">Applies to</th>
+                        <th style="width: 12rem">Registration #</th>
+                        <th style="width: 6rem">Status</th>
+                        <th style="width: 9rem"></th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    }
-</section>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr class="@(row.IsActive ? null : "citus-data-table__row--muted")">
+                            <td><span class="citus-inline-code">@row.Code</span></td>
+                            <td>@row.Name</td>
+                            <td class="text-right">@FormatRate(row.RatePercent)</td>
+                            <td>@HumanizeAppliesTo(row.AppliesTo)</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(row.RegistrationNumber))
+                                {
+                                    <span class="citus-inline-code">@row.RegistrationNumber</span>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-subtle text-xs">—</span>
+                                }
+                            </td>
+                            <td>
+                                <CitusBadge Color="@(row.IsActive ? "green" : "default")">
+                                    @(row.IsActive ? "Active" : "Inactive")
+                                </CitusBadge>
+                            </td>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => StartEditing(row))">
+                                        Edit
+                                    </CitusButton>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => ToggleActiveAsync(row))">
+                                        @(row.IsActive ? "Deactivate" : "Activate")
+                                    </CitusButton>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </ChildContent>
+</CitusFormSection>
 
 @if (_isFormOpen)
 {
-    <section class="citus-panel mt-6">
-        <header class="citus-panel__header">
-            <h2 class="citus-panel__title">@(_editingId is null ? "New tax code" : "Edit tax code")</h2>
-        </header>
+    <CitusFormSection Title="@(_editingId is null ? "New tax code" : "Edit tax code")">
+        <form @onsubmit="OnSaveAsync" @onsubmit:preventDefault>
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Code">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_formCode"
+                           @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="32"
+                           placeholder="HST_ON, GST, PST_BC, …"
+                           disabled="@_isMutating" />
+                </CitusFormField>
 
-        <form class="grid grid-cols-1 md:grid-cols-2 gap-4"
-              @onsubmit="OnSaveAsync"
-              @onsubmit:preventDefault>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Code</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formCode"
-                       @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="32"
-                       placeholder="HST_ON, GST, PST_BC, …"
-                       disabled="@_isMutating" />
-            </label>
+                <CitusFormField Label="Name">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_formName"
+                           @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="120"
+                           placeholder="Ontario HST 13%"
+                           disabled="@_isMutating" />
+                </CitusFormField>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Name</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formName"
-                       @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="120"
-                       placeholder="Ontario HST 13%"
-                       disabled="@_isMutating" />
-            </label>
+                <CitusFormField Label="Rate (%)">
+                    @* RadzenNumeric with two-way @bind-Value works reliably across
+                       browsers; the previous raw <input type="number"> with a manual
+                       oninput handler intermittently rejected keystrokes when the
+                       initial value attribute was set. *@
+                    <RadzenNumeric TValue="decimal?"
+                                   @bind-Value="_formRate"
+                                   Min="0"
+                                   Max="100"
+                                   Step="0.01m"
+                                   Format="0.######"
+                                   ShowUpDown="false"
+                                   Class="citus-control-full"
+                                   Disabled="@_isMutating" />
+                </CitusFormField>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Rate (%)</span>
-                @* RadzenNumeric with two-way @bind-Value works reliably across
-                   browsers; the previous raw <input type="number"> with a manual
-                   oninput handler intermittently rejected keystrokes when the
-                   initial value attribute was set. *@
-                <RadzenNumeric TValue="decimal?"
-                               @bind-Value="_formRate"
-                               Min="0"
-                               Max="100"
-                               Step="0.01m"
-                               Format="0.######"
-                               ShowUpDown="false"
-                               Class="citus-control-full"
-                               Disabled="@_isMutating" />
-            </label>
+                <CitusFormField Label="Applies to">
+                    <select class="citus-form-field__input"
+                            value="@_formAppliesTo"
+                            @onchange="@(e => _formAppliesTo = e.Value?.ToString() ?? "both")"
+                            disabled="@_isMutating">
+                        <option value="sales">Sales only</option>
+                        <option value="purchase">Purchases only</option>
+                        <option value="both">Sales and purchases</option>
+                    </select>
+                </CitusFormField>
+            </CitusFormGrid>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Applies to</span>
-                <select class="citus-form-field__input"
-                        value="@_formAppliesTo"
-                        @onchange="@(e => _formAppliesTo = e.Value?.ToString() ?? "both")"
-                        disabled="@_isMutating">
-                    <option value="sales">Sales only</option>
-                    <option value="purchase">Purchases only</option>
-                    <option value="both">Sales and purchases</option>
-                </select>
-            </label>
-
-            <label class="citus-form-field md:col-span-2">
+            <label class="citus-form-field mt-4">
                 <span class="citus-form-field__label">
                     Tax registration number <span class="text-error">*</span>
                 </span>
@@ -196,31 +182,21 @@
                 </span>
             </label>
 
-            <label class="citus-form-field md:col-span-2">
-                <span class="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox"
-                           checked="@_formIsActive"
-                           @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
-                           disabled="@_isMutating" />
-                    Active (available for selection on new documents)
-                </span>
+            <label class="inline-flex items-center gap-2 text-sm mt-4">
+                <input type="checkbox"
+                       checked="@_formIsActive"
+                       @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
+                       disabled="@_isMutating" />
+                Active (available for selection on new documents)
             </label>
 
-            <div class="md:col-span-2 flex items-center gap-3">
-                <CitusButton Variant="CitusButtonVariant.Primary"
-                             HtmlType="@("submit")"
-                             Disabled="@_isMutating"
-                             OnClick="OnSaveAsync">
-                    @(_isMutating ? "Saving…" : "Save")
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost"
-                             Disabled="@_isMutating"
-                             OnClick="CancelForm">
-                    Cancel
-                </CitusButton>
-            </div>
+            <CitusFormActions PrimaryLabel="Save"
+                              CancelLabel="Cancel"
+                              IsSaving="@_isMutating"
+                              OnSave="OnSaveAsync"
+                              OnCancel="CancelForm" />
         </form>
-    </section>
+    </CitusFormSection>
 }
 
 @code {
