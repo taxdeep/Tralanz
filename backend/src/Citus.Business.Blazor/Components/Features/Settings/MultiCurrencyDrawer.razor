@@ -22,7 +22,7 @@
              Width="CitusDrawerWidth.Medium"
              HideFooter="true"
              OnCancel="HandleCancel">
-    <p class="text-fg-muted text-sm" style="margin: 0 0 var(--citus-space-4);">
+    <p class="text-fg-muted text-sm mb-4">
         Adding a currency seeds AR/AP control accounts for that currency.
     </p>
 
@@ -39,7 +39,7 @@
     else
     {
         <section class="flex flex-col gap-2 mb-4">
-            <h3 class="text-fg-muted text-xs font-semibold uppercase" style="letter-spacing: 0.04em; margin: 0;">
+            <h3 class="text-fg-muted text-xs font-semibold uppercase m-0" style="letter-spacing: 0.04em;">
                 Base currency
             </h3>
             <div class="citus-currency-row">
@@ -52,12 +52,12 @@
         </section>
 
         <section class="flex flex-col gap-2 mb-4">
-            <h3 class="text-fg-muted text-xs font-semibold uppercase" style="letter-spacing: 0.04em; margin: 0;">
+            <h3 class="text-fg-muted text-xs font-semibold uppercase m-0" style="letter-spacing: 0.04em;">
                 Enabled foreign currencies
             </h3>
             @if (EnabledForeign(_profile).Count == 0)
             {
-                <p class="text-fg-muted text-sm" style="margin: 0;">
+                <p class="text-fg-muted text-sm m-0">
                     No additional currencies yet. Pick one below to enable AR/AP per currency.
                 </p>
             }
@@ -82,7 +82,7 @@
         </section>
 
         <section class="flex flex-col gap-2">
-            <h3 class="text-fg-muted text-xs font-semibold uppercase" style="letter-spacing: 0.04em; margin: 0;">
+            <h3 class="text-fg-muted text-xs font-semibold uppercase m-0" style="letter-spacing: 0.04em;">
                 Add a currency
             </h3>
             @{
@@ -90,7 +90,7 @@
             }
             @if (available.Count == 0)
             {
-                <p class="text-fg-muted text-sm" style="margin: 0;">
+                <p class="text-fg-muted text-sm m-0">
                     All catalog currencies are already enabled.
                 </p>
             }
@@ -110,7 +110,7 @@
                 </div>
                 @if (!string.IsNullOrEmpty(_lastError))
                 {
-                    <p class="text-danger text-sm" style="margin: 0;">@_lastError</p>
+                    <p class="text-danger text-sm m-0">@_lastError</p>
                 }
             }
         </section>
