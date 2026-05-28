@@ -4366,3 +4366,26 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-data-table .citus-tax-picker {
     position: relative;
 }
+
+
+/* Batch 2e.3 — Journal Entry AccountPicker matches cell-input rhythm.
+   .citus-journal-lines uses a deliberately tighter "Excel cell" feel
+   (1.75rem tall, transparent border until hover/focus). The general
+   .citus-data-table picker fix from 2d.9.2 set 2rem tall + permanent
+   border, which made the AccountPicker visually 4px taller than the
+   bare Debit/Credit/Description inputs on the same row. Override
+   here so the picker inherits the same rhythm. */
+.citus-data-table.citus-journal-lines .citus-account-picker__input {
+    height: 1.75rem;
+    border-radius: var(--citus-radius-sm);
+    border-color: transparent;
+    padding: 0.25rem 1.85rem 0.25rem 0.5rem;
+}
+.citus-data-table.citus-journal-lines .citus-account-picker__input:focus {
+    background: var(--citus-color-bg-elevated);
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
+}
+.citus-journal-lines__row:hover .citus-account-picker__input {
+    border-color: var(--citus-color-border);
+}
