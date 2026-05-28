@@ -52,10 +52,11 @@ else
 {
     <CitusPageHeader Model="@GetHeader(_task)">
         <Actions>
-            <a class="citus-button citus-button--ghost" href="tasks">
-                <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-                <span>Back to tasks</span>
-            </a>
+            <CitusLinkButton Href="tasks"
+                             Variant="CitusButtonVariant.Ghost"
+                             LeadingIcon="IconName.ArrowLeft">
+                Back to tasks
+            </CitusLinkButton>
 
             @if (_task.Status == TaskStatus.Open && CanComplete && _task.Lines.Count > 0)
             {
@@ -106,22 +107,20 @@ else
         }
         @if (_task.BilledInvoiceId.HasValue)
         {
-            <a href="@($"invoices/{_task.BilledInvoiceId.Value:D}")"
-               class="citus-badge citus-badge--gold"
-               style="text-decoration: none;">
-                Billed via invoice @(_task.BilledInvoiceId.Value.ToString("D")[..8])…
+            <a href="@($"invoices/{_task.BilledInvoiceId.Value:D}")" class="citus-link">
+                <CitusBadge Color="gold">
+                    Billed via invoice @(_task.BilledInvoiceId.Value.ToString("D")[..8])…
+                </CitusBadge>
             </a>
         }
     </div>
 
-    <section class="citus-panel mb-4">
-        <h2 class="citus-panel__title">Description</h2>
-        <p class="text-fg-subtle">@(_task.Description ?? "—")</p>
-    </section>
+    <CitusFormSection Title="Description">
+        <p class="text-fg-subtle m-0">@(_task.Description ?? "—")</p>
+    </CitusFormSection>
 
-    <section class="citus-panel mb-4">
-        <div class="flex justify-between items-center mb-2">
-            <h2 class="citus-panel__title">Billable lines</h2>
+    <CitusFormSection Title="Billable lines">
+        <HeaderActions>
             @if (_task.Status == TaskStatus.Open && CanEdit)
             {
                 <CitusButton Size="CitusButtonSize.Small"
@@ -129,10 +128,11 @@ else
                              Disabled="@_isBusy"
                              OnClick="StartAddLine">Add line</CitusButton>
             }
-        </div>
+        </HeaderActions>
+        <ChildContent>
         @if (_task.Lines.Count == 0)
         {
-            <p class="text-fg-subtle">No lines yet.</p>
+            <CitusInlineEmpty Message="No lines yet." />
         }
         else
         {
@@ -182,55 +182,45 @@ else
                 </tbody>
             </table>
         }
-    </section>
+        </ChildContent>
+    </CitusFormSection>
 
     @* Related documents — every AR / AP doc that has at least one line
        attributing itself to this task. Read-only rollup; click a row to
        open that document. Sorted server-side by document_date desc. *@
-    <section class="citus-panel mb-4">
-        <h2 class="citus-panel__title">Related documents</h2>
+    <CitusFormSection Title="Related documents">
         @if (_isLoadingRelated)
         {
             <div class="mb-2"><CitusLoadingBar /></div>
         }
         else if (_relatedDocs.Count == 0)
         {
-            <p class="text-fg-subtle mb-0">
-                No invoices, credit notes, bills, or expenses have been
-                attributed to this task yet. Use the per-line TaskPicker
-                on the bill / expense / invoice forms to attribute work.
-            </p>
+            <CitusInlineEmpty Message="No invoices, credit notes, bills, or expenses have been attributed to this task yet. Use the per-line TaskPicker on the bill / expense / invoice forms to attribute work." />
         }
         else
         {
-            @* Summary tiles denominated in company base currency: each
-               row's TaskAmountBase is the parent doc's TaskAmount ×
-               the doc's own posted fx_rate — the same value the GL
-               booked. Reconciles against Revenue / Expense ledger
-               balances regardless of source-currency mix. *@
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-3">
-                <div>
-                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Revenue (incl. credits, @SummaryBaseCurrency)</div>
-                    <div style="font-size: 1.15rem; font-weight: 600;">
-                        @FormatAmount(RevenueTotalBase)
-                    </div>
-                </div>
-                <div>
-                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Direct cost (@SummaryBaseCurrency)</div>
-                    <div style="font-size: 1.15rem; font-weight: 600;">
-                        @FormatAmount(CostTotalBase)
-                    </div>
-                </div>
-                <div>
-                    <div style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">Gross margin (@SummaryBaseCurrency)</div>
-                    <div style="@MarginStyle(RevenueTotalBase - CostTotalBase)">
-                        @FormatAmount(RevenueTotalBase - CostTotalBase)
-                    </div>
-                </div>
-            </div>
+            @* Summary stats denominated in company base currency: each
+               row's TaskAmountBase is the parent doc's TaskAmount × the
+               doc's own posted fx_rate — the same value the GL booked.
+               Reconciles against Revenue / Expense ledger balances
+               regardless of source-currency mix. *@
+            <CitusStatCardGrid Columns="3">
+                <CitusStatCard Label="@($"Revenue (incl. credits, {SummaryBaseCurrency})")"
+                               Value="@FormatAmount(RevenueTotalBase)"
+                               Icon="IconName.Coin"
+                               Tone="StatTone.Success" />
+                <CitusStatCard Label="@($"Direct cost ({SummaryBaseCurrency})")"
+                               Value="@FormatAmount(CostTotalBase)"
+                               Icon="IconName.Wallet"
+                               Tone="StatTone.Warning" />
+                <CitusStatCard Label="@($"Gross margin ({SummaryBaseCurrency})")"
+                               Value="@FormatAmount(RevenueTotalBase - CostTotalBase)"
+                               Icon="IconName.LayoutDashboard"
+                               Tone="@((RevenueTotalBase - CostTotalBase) > 0m ? StatTone.Success : (RevenueTotalBase - CostTotalBase) < 0m ? StatTone.Danger : StatTone.Neutral)" />
+            </CitusStatCardGrid>
             @if (HasMixedCurrencies)
             {
-                <p class="mb-3" style="font-size: 0.75rem; color: var(--citus-color-fg-subtle);">
+                <p class="text-fg-subtle text-xs mb-3">
                     Linked documents span multiple currencies. Totals
                     above are translated to @SummaryBaseCurrency at each doc's
                     own posted fx_rate (GL-locked), so the margin
@@ -269,7 +259,7 @@ else
                 </tbody>
             </table>
         }
-    </section>
+    </CitusFormSection>
 
     <CitusDrawer IsOpen="@_isAddingLine"
                  Width="CitusDrawerWidth.Medium"
@@ -282,46 +272,39 @@ else
         {
             <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_lineValidation" ShowIcon="true" Class="mb-3" />
         }
-        <div class="grid grid-cols-1 gap-3">
-            <div>
-                <label class="text-sm font-medium block mb-1">Item / Service</label>
-                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
-                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                   Context="@SearchScopeContext.SalesItemServicePicker"
-                                   Placeholder="Pick an item or service…"
-                                   Take="6"
-                                   SourceRoute="/tasks/detail"
-                                   SelectedId="@(_lineDraft.ItemId == Guid.Empty ? null : _lineDraft.ItemId)"
-                                   SelectedDisplayText="@_lineDraft.ItemDisplay"
-                                   OnItemSelected="OnAddLineItemPicked"
-                                   OnCleared="OnAddLineItemCleared" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Description</label>
-                <CitusInput TValue="string" @bind-Value="_lineDraft.Description" Placeholder="Optional" />
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Quantity</label>
-                    <RadzenNumeric TValue="decimal"
-                                   Value="@_lineDraft.Quantity"
-                                   ValueChanged="@(v => _lineDraft.Quantity = v < 0m ? 0m : v)"
-                                   Min="0"
-                                   Format="0.####"
-                                   Class="citus-control-full" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Unit price (optional)</label>
-                    <RadzenNumeric TValue="decimal?"
-                                   Value="@_lineDraft.UnitPrice"
-                                   ValueChanged="@(v => _lineDraft.UnitPrice = v.HasValue ? Math.Round(v.Value, 2, MidpointRounding.AwayFromZero) : null)"
-                                   Min="0"
-                                   Format="0.00"
-                                   Placeholder="Auto from price book"
-                                   Class="citus-control-full" />
-                </div>
-            </div>
-        </div>
+        <CitusFormField Label="Item / Service" Required="true">
+            <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                               Context="@SearchScopeContext.SalesItemServicePicker"
+                               Placeholder="Pick an item or service…"
+                               Take="6"
+                               SourceRoute="/tasks/detail"
+                               SelectedId="@(_lineDraft.ItemId == Guid.Empty ? null : _lineDraft.ItemId)"
+                               SelectedDisplayText="@_lineDraft.ItemDisplay"
+                               OnItemSelected="OnAddLineItemPicked"
+                               OnCleared="OnAddLineItemCleared" />
+        </CitusFormField>
+        <CitusFormField Label="Description" Class="mt-3">
+            <CitusInput TValue="string" @bind-Value="_lineDraft.Description" Placeholder="Optional" />
+        </CitusFormField>
+        <CitusFormGrid Columns="2" Class="mt-3">
+            <CitusFormField Label="Quantity" Required="true">
+                <RadzenNumeric TValue="decimal"
+                               Value="@_lineDraft.Quantity"
+                               ValueChanged="@(v => _lineDraft.Quantity = v < 0m ? 0m : v)"
+                               Min="0"
+                               Format="0.####"
+                               Class="citus-control-full" />
+            </CitusFormField>
+            <CitusFormField Label="Unit price (optional)" Hint="Auto from price book if blank">
+                <RadzenNumeric TValue="decimal?"
+                               Value="@_lineDraft.UnitPrice"
+                               ValueChanged="@(v => _lineDraft.UnitPrice = v.HasValue ? Math.Round(v.Value, 2, MidpointRounding.AwayFromZero) : null)"
+                               Min="0"
+                               Format="0.00"
+                               Class="citus-control-full" />
+            </CitusFormField>
+        </CitusFormGrid>
     </CitusDrawer>
 }
 
