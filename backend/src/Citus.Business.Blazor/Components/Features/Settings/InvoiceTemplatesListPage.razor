@@ -10,14 +10,15 @@
 <div class="citus-page-narrow">
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="settings">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to Settings</span>
-        </a>
-        <a class="citus-button" href="settings/invoice-templates/new">
-            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-            <span>New template</span>
-        </a>
+        <CitusLinkButton Href="settings"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to Settings
+        </CitusLinkButton>
+        <CitusLinkButton Href="settings/invoice-templates/new"
+                         LeadingIcon="IconName.Plus">
+            New template
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -41,48 +42,49 @@ else
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         @foreach (var template in _templates)
         {
-            <section class="citus-panel h-full">
-                <header class="citus-panel__header">
-                    <h2 class="citus-panel__title">@template.Name</h2>
+            <CitusFormSection Title="@template.Name" Class="h-full">
+                <HeaderActions>
                     @if (template.IsDefault)
                     {
                         <CitusBadge Color="@("green")">Default</CitusBadge>
                     }
-                </header>
+                </HeaderActions>
+                <ChildContent>
+                    <div class="flex items-center gap-3 mb-3">
+                        <span class="citus-color-swatch" style="background:@template.PrimaryColorHex" title="Primary color"></span>
+                        <span class="citus-color-swatch" style="background:@template.AccentColorHex" title="Accent color"></span>
+                        <span class="text-fg-subtle text-xs">
+                            @template.PrimaryColorHex / @template.AccentColorHex
+                        </span>
+                    </div>
 
-                <div class="flex items-center gap-3 mb-3">
-                    <span class="citus-color-swatch" style="background:@template.PrimaryColorHex" title="Primary color"></span>
-                    <span class="citus-color-swatch" style="background:@template.AccentColorHex" title="Accent color"></span>
-                    <span class="text-fg-subtle text-xs">
-                        @template.PrimaryColorHex / @template.AccentColorHex
-                    </span>
-                </div>
-
-                @if (!string.IsNullOrWhiteSpace(template.Tagline))
-                {
-                    <p class="text-fg-muted text-sm mb-2">@template.Tagline</p>
-                }
-
-                <p class="text-fg-subtle text-xs mb-4">
-                    Updated @template.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
-                </p>
-
-                <div class="flex items-center gap-2">
-                    <a class="citus-button citus-button--ghost" href="@($"settings/invoice-templates/{template.Id:D}")">
-                        <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
-                        <span>Edit</span>
-                    </a>
-                    @if (!template.IsDefault)
+                    @if (!string.IsNullOrWhiteSpace(template.Tagline))
                     {
-                        <CitusButton Variant="CitusButtonVariant.Primary"
-                                     Size="CitusButtonSize.Small"
-                                     Disabled="_isSettingDefault"
-                                     OnClick="@(() => SetDefaultAsync(template.Id))">
-                            Set as default
-                        </CitusButton>
+                        <p class="text-fg-muted text-sm mb-2">@template.Tagline</p>
                     }
-                </div>
-            </section>
+
+                    <p class="text-fg-subtle text-xs mb-4">
+                        Updated @template.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                    </p>
+
+                    <div class="flex items-center gap-2">
+                        <CitusLinkButton Href="@($"settings/invoice-templates/{template.Id:D}")"
+                                         Variant="CitusButtonVariant.Ghost"
+                                         LeadingIcon="IconName.Pencil">
+                            Edit
+                        </CitusLinkButton>
+                        @if (!template.IsDefault)
+                        {
+                            <CitusButton Variant="CitusButtonVariant.Primary"
+                                         Size="CitusButtonSize.Small"
+                                         Disabled="_isSettingDefault"
+                                         OnClick="@(() => SetDefaultAsync(template.Id))">
+                                Set as default
+                            </CitusButton>
+                        }
+                    </div>
+                </ChildContent>
+            </CitusFormSection>
         }
     </div>
 }

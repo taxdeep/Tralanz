@@ -20,27 +20,18 @@
 </CitusPageHeader>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <article class="citus-domain-card">
-        <header class="citus-domain-card__header">
-            <h3 class="citus-domain-card__title">Internal entity number</h3>
-            <CitusBadge Color="@("default")">ENYYYY########</CitusBadge>
-        </header>
-        <p class="citus-domain-card__description">Global, immutable, audit-only. Users do not edit it.</p>
-    </article>
-    <article class="citus-domain-card">
-        <header class="citus-domain-card__header">
-            <h3 class="citus-domain-card__title">Business display number</h3>
-            <CitusBadge Color="@("blue")">Company + module scoped</CitusBadge>
-        </header>
-        <p class="citus-domain-card__description">Shown on invoices, bills, payments, purchase orders, and journals.</p>
-    </article>
-    <article class="citus-domain-card">
-        <header class="citus-domain-card__header">
-            <h3 class="citus-domain-card__title">Backend authority</h3>
-            <CitusBadge Color="@("green")">Final number on save</CitusBadge>
-        </header>
-        <p class="citus-domain-card__description">Preview is advisory; the backend reserves the final number inside the save flow.</p>
-    </article>
+    <CitusNavCard Title="Internal entity number"
+                  Description="Global, immutable, audit-only. Users do not edit it."
+                  Stage="ENYYYY########"
+                  Tone="StatTone.Neutral" />
+    <CitusNavCard Title="Business display number"
+                  Description="Shown on invoices, bills, payments, purchase orders, and journals."
+                  Stage="Company + module scoped"
+                  Tone="StatTone.Info" />
+    <CitusNavCard Title="Backend authority"
+                  Description="Preview is advisory; the backend reserves the final number inside the save flow."
+                  Stage="Final number on save"
+                  Tone="StatTone.Success" />
 </div>
 
 @if (_isUnavailable)
@@ -70,8 +61,8 @@ else
                          Class="mb-4" />
     }
 
-    <section class="citus-panel">
-        <header class="citus-panel__header">
+    <CitusFormSection>
+        <HeaderActions>
             <div class="flex items-center gap-2 flex-1 max-w-md">
                 <CitusIcon Name="IconName.Search" Size="IconSize.Inline" />
                 <CitusInput TValue="string" @bind-Value="_searchText" Placeholder="Search module, scope, prefix..." Class="flex-1" />
@@ -80,70 +71,71 @@ else
                 <span class="text-fg-muted text-sm">@FilteredRows.Count rule(s)</span>
                 <CitusButton LeadingIcon="IconName.Refresh" Disabled="@_isSaving" OnClick="LoadAsync">Refresh</CitusButton>
             </div>
-        </header>
-
-        @if (_isLoading)
-        {
-            <div class="mb-4"><CitusLoadingBar /></div>
-        }
-        else if (FilteredRows.Count == 0)
-        {
-            <CitusAlert Severity="CitusAlertSeverity.Info" Message="No numbering rule matched the current search." ShowIcon="true" />
-        }
-        else
-        {
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Module</th>
-                        <th>Scope</th>
-                        <th>Prefix</th>
-                        <th class="text-right">Padding</th>
-                        <th class="text-right">Next number</th>
-                        <th>Preview</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in FilteredRows)
-                    {
+        </HeaderActions>
+        <ChildContent>
+            @if (_isLoading)
+            {
+                <div class="mb-4"><CitusLoadingBar /></div>
+            }
+            else if (FilteredRows.Count == 0)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" Message="No numbering rule matched the current search." ShowIcon="true" />
+            }
+            else
+            {
+                <table class="citus-data-table">
+                    <thead>
                         <tr>
-                            <td>
-                                <div>@row.Label</div>
-                                <div class="text-fg-subtle text-xs">@row.Family</div>
-                            </td>
-                            <td><span class="citus-inline-code">@row.ScopeKey</span></td>
-                            <td>
-                                <CitusInput TValue="string" @bind-Value="row.Prefix" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Size="CitusButtonSize.Small" />
-                            </td>
-                            <td class="text-right">
-                                <RadzenNumeric TValue="short" @bind-Value="row.Padding" Min="1" Max="12" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Class="citus-inline-control--xs" />
-                            </td>
-                            <td class="text-right">
-                                <RadzenNumeric TValue="long" @bind-Value="row.NextNumber" Min="1" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Class="citus-inline-control--sm" />
-                            </td>
-                            <td><span class="citus-inline-code">@BuildPreview(row)</span></td>
-                            <td>
-                                <div class="flex items-center gap-2">
-                                    <RadzenSwitch @bind-Value="row.Enabled" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" />
-                                    <span class="text-xs">@(row.Enabled ? "Enabled" : "Disabled")</span>
-                                </div>
-                                <CitusBadge Color="@(row.IsRuntimeConnected ? "green" : "default")" Class="mt-1">@row.RuntimeStatus</CitusBadge>
-                            </td>
-                            <td>
-                                <CitusButton Variant="CitusButtonVariant.Primary" Size="CitusButtonSize.Small"
-                                             Disabled="@(_isSaving || ShellState.AreWritesBlocked)"
-                                             OnClick="@(() => SaveAsync(row))">
-                                    Save
-                                </CitusButton>
-                            </td>
+                            <th>Module</th>
+                            <th>Scope</th>
+                            <th>Prefix</th>
+                            <th class="text-right">Padding</th>
+                            <th class="text-right">Next number</th>
+                            <th>Preview</th>
+                            <th>Status</th>
+                            <th>Action</th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </section>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in FilteredRows)
+                        {
+                            <tr>
+                                <td>
+                                    <div>@row.Label</div>
+                                    <div class="text-fg-subtle text-xs">@row.Family</div>
+                                </td>
+                                <td><span class="citus-inline-code">@row.ScopeKey</span></td>
+                                <td>
+                                    <CitusInput TValue="string" @bind-Value="row.Prefix" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Size="CitusButtonSize.Small" />
+                                </td>
+                                <td class="text-right">
+                                    <RadzenNumeric TValue="short" @bind-Value="row.Padding" Min="1" Max="12" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Class="citus-inline-control--xs" />
+                                </td>
+                                <td class="text-right">
+                                    <RadzenNumeric TValue="long" @bind-Value="row.NextNumber" Min="1" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Class="citus-inline-control--sm" />
+                                </td>
+                                <td><span class="citus-inline-code">@BuildPreview(row)</span></td>
+                                <td>
+                                    <div class="flex items-center gap-2">
+                                        <RadzenSwitch @bind-Value="row.Enabled" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" />
+                                        <span class="text-xs">@(row.Enabled ? "Enabled" : "Disabled")</span>
+                                    </div>
+                                    <CitusBadge Color="@(row.IsRuntimeConnected ? "green" : "default")" Class="mt-1">@row.RuntimeStatus</CitusBadge>
+                                </td>
+                                <td>
+                                    <CitusButton Variant="CitusButtonVariant.Primary" Size="CitusButtonSize.Small"
+                                                 Disabled="@(_isSaving || ShellState.AreWritesBlocked)"
+                                                 OnClick="@(() => SaveAsync(row))">
+                                        Save
+                                    </CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </ChildContent>
+    </CitusFormSection>
 }
 
 @code {

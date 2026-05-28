@@ -15,26 +15,22 @@
                  Message="Fiscal year configuration is captured during first-company setup. Changing it requires a governed migration so this surface stays read-only for now."
                  Class="mb-6" />
 
-<section class="citus-panel max-w-3xl">
-    <h2 class="citus-panel__title">Fiscal year</h2>
-    <table class="citus-keyvalue">
-        <tbody>
-            <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName (<span class="citus-inline-code">@ShellState.ActiveCompany.CompanyCode</span>)</td></tr>
-            <tr><th>Fiscal year end</th><td>Captured at first-company setup (see SysAdmin Setup Wizard)</td></tr>
-            <tr><th>Period frequency</th><td>Monthly (governed by Posting Engine)</td></tr>
-            <tr><th>Year-end policies</th><td>Backend-owned. Closing entries flow through the FX revaluation and posting engines.</td></tr>
-        </tbody>
-    </table>
-</section>
+<CitusFormSection Title="Fiscal year">
+    <CitusKeyValueTable>
+        <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName (<span class="citus-inline-code">@ShellState.ActiveCompany.CompanyCode</span>)</CitusKeyValueRow>
+        <CitusKeyValueRow Label="Fiscal year end">Captured at first-company setup (see SysAdmin Setup Wizard)</CitusKeyValueRow>
+        <CitusKeyValueRow Label="Period frequency">Monthly (governed by Posting Engine)</CitusKeyValueRow>
+        <CitusKeyValueRow Label="Year-end policies">Backend-owned. Closing entries flow through the FX revaluation and posting engines.</CitusKeyValueRow>
+    </CitusKeyValueTable>
+</CitusFormSection>
 
-<section class="citus-panel mt-6">
-    <h2 class="citus-panel__title">Why fiscal year stays read-only</h2>
+<CitusFormSection Title="Why fiscal year stays read-only">
     <ul class="citus-bullet-list">
         <li>Period boundaries are referenced by every posted journal entry and aging report; UI-driven changes risk silently invalidating prior reports.</li>
         <li>Fiscal year migrations require a backend script, not a settings toggle, and must be audited.</li>
         <li>The first-company wizard is the canonical place where this value is set.</li>
     </ul>
-</section>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()

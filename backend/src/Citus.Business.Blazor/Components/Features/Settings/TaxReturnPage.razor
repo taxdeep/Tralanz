@@ -22,14 +22,15 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="settings/tax-rates">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to tax rates</span>
-        </a>
+        <CitusLinkButton Href="settings/tax-rates"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to tax rates
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel">
+<CitusFormSection>
     <div class="text-center py-8">
         <CitusIcon Name="IconName.Report" Size="IconSize.Display" />
         <h2 class="text-lg font-semibold mt-3">Tax return filing is in development.</h2>
@@ -45,11 +46,12 @@
             on their portal. Record the net result as a manual journal entry against your tax-
             payable / tax-receivable accounts.
         </p>
-        <a class="citus-button citus-button--primary" href="journal-entry/new">
+        <CitusLinkButton Href="journal-entry/new"
+                         Variant="CitusButtonVariant.Primary">
             Open Journal Entry →
-        </a>
+        </CitusLinkButton>
     </div>
-</section>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()

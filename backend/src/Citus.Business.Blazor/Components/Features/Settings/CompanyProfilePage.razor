@@ -15,17 +15,14 @@
                  Message="Company identity is captured during first-time setup and is currently shown read-only here. Direct editing will be added once the underlying API endpoint is in place."
                  Class="mb-6" />
 
-<section class="citus-panel max-w-3xl">
-    <h2 class="citus-panel__title">Identity</h2>
-    <table class="citus-keyvalue">
-        <tbody>
-            <tr><th>Company name</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-            <tr><th>Company code</th><td><span class="citus-inline-code">@ShellState.ActiveCompany.CompanyCode</span></td></tr>
-            <tr><th>Status</th><td>@FormatStatus(ShellState.ActiveCompany.Status)</td></tr>
-            <tr><th>Read-only</th><td>@(ShellState.ActiveCompany.IsReadOnly ? "Yes" : "No")</td></tr>
-        </tbody>
-    </table>
-</section>
+<CitusFormSection Title="Identity">
+    <CitusKeyValueTable>
+        <CitusKeyValueRow Label="Company name">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
+        <CitusKeyValueRow Label="Company code"><span class="citus-inline-code">@ShellState.ActiveCompany.CompanyCode</span></CitusKeyValueRow>
+        <CitusKeyValueRow Label="Status">@FormatStatus(ShellState.ActiveCompany.Status)</CitusKeyValueRow>
+        <CitusKeyValueRow Label="Read-only">@(ShellState.ActiveCompany.IsReadOnly ? "Yes" : "No")</CitusKeyValueRow>
+    </CitusKeyValueTable>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()
