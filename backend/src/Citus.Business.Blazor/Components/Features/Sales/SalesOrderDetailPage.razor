@@ -13,16 +13,17 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="sales-orders">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to sales orders</span>
-        </a>
+        <CitusLinkButton Href="sales-orders"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to sales orders
+        </CitusLinkButton>
         @if (_so is not null && IsEditable(_so.Status))
         {
-            <a class="citus-button" href="@($"sales-orders/{_so.Id:D}/edit")">
-                <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
-                <span>Edit</span>
-            </a>
+            <CitusLinkButton Href="@($"sales-orders/{_so.Id:D}/edit")"
+                             LeadingIcon="IconName.Pencil">
+                Edit
+            </CitusLinkButton>
         }
     </Actions>
 </CitusPageHeader>
@@ -42,7 +43,7 @@ else if (_so is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Sales Order" Value="@_so.SalesOrderNumber" Description="@_so.CustomerName"
                        Icon="IconName.Receipt" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_so.Status)" Description="@StatusHint(_so.Status)"
@@ -54,70 +55,72 @@ else
                        Value="@(_so.SourceQuoteNumber ?? "Direct")"
                        Description="@(_so.SourceQuoteId is null ? "Created directly." : "Converted from quote.")"
                        Icon="IconName.FileText" Tone="StatTone.Neutral" />
-    </div>
+    </CitusStatCardGrid>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            @if (_so.Status == "open")
-            {
-                @* M5 iter 1: confirming reserves on-hand stock per line and
-                   flips status to 'confirmed'. Items with backorder_mode=
-                   'disallow' fail with a precise shortage message. *@
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConfirmAsync">
-                    <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
-                    <span>Confirm</span>
-                </CitusButton>
+    <CitusActionsPanel>
+        @if (_so.Status == "open")
+        {
+            @* M5 iter 1: confirming reserves on-hand stock per line and
+               flips status to 'confirmed'. Items with backorder_mode=
+               'disallow' fail with a precise shortage message. *@
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConfirmAsync">
+                <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
+                <span>Confirm</span>
+            </CitusButton>
 
-                @* Direct-invoice path stays available for SOs that don't
-                   need reservation tracking (services, single-shot). The new
-                   invoice carries this SO's id as a back-link, which drives
-                   the M3 iter 3 auto-COGS bridge on post. *@
-                <a class="citus-button citus-button--ghost" href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")">
-                    <CitusIcon Name="IconName.FileInvoice" Size="IconSize.Inline" />
-                    <span>Create Invoice</span>
-                </a>
+            @* Direct-invoice path stays available for SOs that don't
+               need reservation tracking (services, single-shot). The new
+               invoice carries this SO's id as a back-link, which drives
+               the M3 iter 3 auto-COGS bridge on post. *@
+            <CitusLinkButton Href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")"
+                             Variant="CitusButtonVariant.Ghost"
+                             LeadingIcon="IconName.FileInvoice">
+                Create Invoice
+            </CitusLinkButton>
 
-                @* Manual mark — for "I billed this in another system". *@
-                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
-                    Mark Invoiced
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
-                    Cancel
-                </CitusButton>
-            }
-            else if (_so.Status == "confirmed")
+            @* Manual mark — for "I billed this in another system". *@
+            <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
+                Mark Invoiced
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
+                Cancel
+            </CitusButton>
+        }
+        else if (_so.Status == "confirmed")
+        {
+            @* Confirmed: reservations are in place. Operator goes
+               straight to invoicing, or can still mark / cancel. M5
+               iter 5 will wire reservation release on cancel. *@
+            <CitusLinkButton Href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")"
+                             Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.FileInvoice">
+                Create Invoice
+            </CitusLinkButton>
+            <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
+                Mark Invoiced
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
+                Cancel
+            </CitusButton>
+            @if (_so.ConfirmedAt is { } confirmedAt)
             {
-                @* Confirmed: reservations are in place. Operator goes
-                   straight to invoicing, or can still mark / cancel. M5
-                   iter 5 will wire reservation release on cancel. *@
-                <a class="citus-button citus-button--primary" href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")">
-                    <CitusIcon Name="IconName.FileInvoice" Size="IconSize.Inline" />
-                    <span>Create Invoice</span>
-                </a>
-                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
-                    Mark Invoiced
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
-                    Cancel
-                </CitusButton>
-                @if (_so.ConfirmedAt is { } confirmedAt)
-                {
-                    <span class="text-fg-subtle text-xs">Confirmed @confirmedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm").</span>
-                }
+                <span class="text-fg-subtle text-xs">Confirmed @confirmedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm").</span>
             }
-            else if (_so.Status == "invoiced")
-            {
-                <span class="text-fg-muted text-sm">Invoiced as <strong>@_so.InvoiceNumber</strong>.</span>
-            }
-            @if (_so.SourceQuoteId is { } quoteId)
-            {
-                <a class="citus-button citus-button--ghost" href="@($"quotes/{quoteId:D}")">View source quote</a>
-            }
-        </div>
-    </section>
+        }
+        else if (_so.Status == "invoiced")
+        {
+            <span class="text-fg-muted text-sm">Invoiced as <strong>@_so.InvoiceNumber</strong>.</span>
+        }
+        @if (_so.SourceQuoteId is { } quoteId)
+        {
+            <CitusLinkButton Href="@($"quotes/{quoteId:D}")"
+                             Variant="CitusButtonVariant.Ghost">
+                View source quote
+            </CitusLinkButton>
+        }
+    </CitusActionsPanel>
 
     @* M5 iter 3: standalone customer deposit. Available while the SO is
        not yet billed — captures a prepayment that lands as a Customer
@@ -125,8 +128,7 @@ else
        pro-rata clear these against shipments / invoices. *@
     @if (_so.Status is "open" or "confirmed")
     {
-        <section class="citus-panel mb-6">
-            <h2 class="citus-panel__title">Receive Customer Deposit</h2>
+        <CitusFormSection Title="Receive Customer Deposit">
             <p class="text-fg-muted text-sm mb-3">
                 Capture a prepayment from @_so.CustomerName for this Sales Order.
                 The cash lands on the Customer Deposit liability (account 24700);
@@ -173,13 +175,12 @@ else
                     <span class="text-fg-subtle text-sm">Pick a bank / cash account first.</span>
                 }
             </div>
-        </section>
+        </CitusFormSection>
     }
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -218,7 +219,7 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </CitusFormSection>
 
             @* M5 wrap-up: Customer Deposits balance panel. Shown only when
                at least one deposit has been received against this SO; the
@@ -226,83 +227,78 @@ else
                per-deposit table for full visibility. *@
             @if (_depositSummary is { Deposits.Count: > 0 } depSummary)
             {
-                <section class="citus-panel mt-6">
-                    <header class="citus-panel__header">
-                        <h2 class="citus-panel__title">Customer Deposits</h2>
+                <CitusFormSection Title="Customer Deposits">
+                    <HeaderActions>
                         <span class="text-fg-subtle text-xs">@_so.TransactionCurrencyCode</span>
-                    </header>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                        <CitusStatCard Label="Collected" Value="@FormatMoney(depSummary.TotalOriginalBase)"
-                                       Description="Total received against this SO"
-                                       Icon="IconName.Cash" Tone="StatTone.Primary" />
-                        <CitusStatCard Label="Applied" Value="@FormatMoney(depSummary.TotalAppliedBase)"
-                                       Description="Cleared against invoices"
-                                       Icon="IconName.CircleCheck" Tone="StatTone.Success" />
-                        <CitusStatCard Label="Remaining" Value="@FormatMoney(depSummary.TotalOpenBase)"
-                                       Description="Open liability — apply or refund"
-                                       Icon="IconName.Coin"
-                                       Tone="@(depSummary.TotalOpenBase > 0m ? StatTone.Info : StatTone.Neutral)" />
-                    </div>
-                    <table class="citus-data-table">
-                        <thead>
-                            <tr>
-                                <th>Deposit #</th>
-                                <th style="width: 8rem">Date</th>
-                                <th class="text-right" style="width: 8rem">Original</th>
-                                <th class="text-right" style="width: 8rem">Applied</th>
-                                <th class="text-right" style="width: 8rem">Remaining</th>
-                                <th style="width: 8rem">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var dep in depSummary.Deposits)
-                            {
+                    </HeaderActions>
+                    <ChildContent>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                            <CitusStatCard Label="Collected" Value="@FormatMoney(depSummary.TotalOriginalBase)"
+                                           Description="Total received against this SO"
+                                           Icon="IconName.Cash" Tone="StatTone.Primary" />
+                            <CitusStatCard Label="Applied" Value="@FormatMoney(depSummary.TotalAppliedBase)"
+                                           Description="Cleared against invoices"
+                                           Icon="IconName.CircleCheck" Tone="StatTone.Success" />
+                            <CitusStatCard Label="Remaining" Value="@FormatMoney(depSummary.TotalOpenBase)"
+                                           Description="Open liability — apply or refund"
+                                           Icon="IconName.Coin"
+                                           Tone="@(depSummary.TotalOpenBase > 0m ? StatTone.Info : StatTone.Neutral)" />
+                        </div>
+                        <table class="citus-data-table">
+                            <thead>
                                 <tr>
-                                    <td><span class="citus-inline-code">@dep.DisplayNumber</span></td>
-                                    <td>@dep.DepositDate.ToString("yyyy-MM-dd")</td>
-                                    <td class="text-right tabular-nums">@FormatMoney(dep.OriginalAmountBase)</td>
-                                    <td class="text-right tabular-nums">@FormatMoney(dep.AppliedAmountBase)</td>
-                                    <td class="text-right tabular-nums">@FormatMoney(dep.OpenAmountBase)</td>
-                                    <td>
-                                        <CitusBadge Color="@DepositStatusColor(dep.Status)">@HumanizeDepositStatus(dep.Status)</CitusBadge>
-                                    </td>
+                                    <th>Deposit #</th>
+                                    <th style="width: 8rem">Date</th>
+                                    <th class="text-right" style="width: 8rem">Original</th>
+                                    <th class="text-right" style="width: 8rem">Applied</th>
+                                    <th class="text-right" style="width: 8rem">Remaining</th>
+                                    <th style="width: 8rem">Status</th>
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
-                </section>
+                            </thead>
+                            <tbody>
+                                @foreach (var dep in depSummary.Deposits)
+                                {
+                                    <tr>
+                                        <td><span class="citus-inline-code">@dep.DisplayNumber</span></td>
+                                        <td>@dep.DepositDate.ToString("yyyy-MM-dd")</td>
+                                        <td class="text-right tabular-nums">@FormatMoney(dep.OriginalAmountBase)</td>
+                                        <td class="text-right tabular-nums">@FormatMoney(dep.AppliedAmountBase)</td>
+                                        <td class="text-right tabular-nums">@FormatMoney(dep.OpenAmountBase)</td>
+                                        <td>
+                                            <CitusBadge Color="@DepositStatusColor(dep.Status)">@HumanizeDepositStatus(dep.Status)</CitusBadge>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </ChildContent>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Customer</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Name</th><td>@_so.CustomerName</td></tr>
-                        @if (!string.IsNullOrWhiteSpace(_so.CustomerPoNumber))
-                        {
-                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_so.CustomerPoNumber</span></td></tr>
-                        }
-                        @if (HasAddress(_so))
-                        {
-                            <tr><th>Billing address</th><td>@FormatAddress(_so.BillingAddressLine, _so.BillingCity, _so.BillingProvinceState, _so.BillingPostalCode, _so.BillingCountry)</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Customer">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Name">@_so.CustomerName</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_so.CustomerPoNumber))
+                    {
+                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_so.CustomerPoNumber</span></CitusKeyValueRow>
+                    }
+                    @if (HasAddress(_so))
+                    {
+                        <CitusKeyValueRow Label="Billing address">@FormatAddress(_so.BillingAddressLine, _so.BillingCity, _so.BillingProvinceState, _so.BillingPostalCode, _so.BillingCountry)</CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@_so.SubtotalAmount.ToString("N2")</td></tr>
-                        <tr><th>Discount</th><td class="text-right">−@_so.DiscountAmount.ToString("N2")</td></tr>
-                        <tr><th>Shipping</th><td class="text-right">@((_so.ShippingAmount ?? 0m).ToString("N2"))</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@_so.TotalAmount.ToString("N2") @_so.TransactionCurrencyCode</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_so.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@_so.DiscountAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@((_so.ShippingAmount ?? 0m).ToString("N2"))</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_so.TotalAmount.ToString("N2") @_so.TransactionCurrencyCode</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }

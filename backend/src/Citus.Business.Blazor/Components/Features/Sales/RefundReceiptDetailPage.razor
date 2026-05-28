@@ -10,10 +10,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="refund-receipts/new">
-            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-            <span>New refund receipt</span>
-        </a>
+        <CitusLinkButton Href="refund-receipts/new"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.Plus">
+            New refund receipt
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -32,7 +33,7 @@ else if (_doc is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Refund #" Value="@_doc.DisplayNumber" Description="@_customerName"
                        Icon="IconName.ArrowLeft" Tone="StatTone.Warning" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
@@ -43,20 +44,14 @@ else
         <CitusStatCard Label="Refund date" Value="@_doc.RefundDate.ToString("yyyy-MM-dd")"
                        Description="@_doc.PaymentMethod"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </div>
+    </CitusStatCardGrid>
 
     @* Copy A3 Phase 3: actions bar with the standard More menu. *@
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            <CitusMoreMenu Items="@_moreItems" />
-        </div>
-    </section>
+    <CitusActionsPanel MoreMenuItems="@_moreItems" />
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines reversed</h2>
+            <CitusFormSection Title="Lines reversed">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -84,14 +79,13 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_doc.Memo) || !string.IsNullOrWhiteSpace(_doc.Reason))
             {
-                <section class="citus-panel mt-6">
+                <CitusFormSection Title="@(string.IsNullOrWhiteSpace(_doc.Reason) ? null : "Reason")">
                     @if (!string.IsNullOrWhiteSpace(_doc.Reason))
                     {
-                        <h2 class="citus-panel__title">Reason</h2>
                         <p class="text-fg-muted text-sm mb-3">@_doc.Reason</p>
                     }
                     @if (!string.IsNullOrWhiteSpace(_doc.Memo))
@@ -99,44 +93,38 @@ else
                         <h3 class="text-sm font-semibold mt-3">Memo</h3>
                         <p class="text-fg-muted text-sm">@_doc.Memo</p>
                     }
-                </section>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Refund no.</th><td><span class="citus-inline-code">@_doc.DisplayNumber</span></td></tr>
-                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_doc.EntityNumber</span></td></tr>
-                        <tr><th>Customer</th><td>@_customerName</td></tr>
-                        <tr><th>Refund date</th><td>@_doc.RefundDate.ToString("yyyy-MM-dd")</td></tr>
-                        <tr><th>Currency</th><td>@_doc.TransactionCurrencyCode</td></tr>
-                        <tr><th>Method</th><td>@_doc.PaymentMethod</td></tr>
-                        @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
-                        {
-                            <tr><th>Reference</th><td>@_doc.ReferenceNo</td></tr>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
-                        {
-                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_doc.CustomerPoNumber</span></td></tr>
-                        }
-                        <tr><th>Refunded from</th><td>@ResolveAccountLabel(_doc.RefundFromAccountId)</td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Document">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Refund no."><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_doc.EntityNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Customer">@_customerName</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Refund date">@_doc.RefundDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Currency">@_doc.TransactionCurrencyCode</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Method">@_doc.PaymentMethod</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
+                    {
+                        <CitusKeyValueRow Label="Reference">@_doc.ReferenceNo</CitusKeyValueRow>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
+                    {
+                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_doc.CustomerPoNumber</span></CitusKeyValueRow>
+                    }
+                    <CitusKeyValueRow Label="Refunded from">@ResolveAccountLabel(_doc.RefundFromAccountId)</CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@_doc.SubtotalAmount.ToString("N2")</td></tr>
-                        <tr><th>Tax</th><td class="text-right">@_doc.TaxAmount.ToString("N2")</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@_doc.TotalAmount.ToString("N2") @_doc.TransactionCurrencyCode</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_doc.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_doc.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_doc.TotalAmount.ToString("N2") @_doc.TransactionCurrencyCode</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }
