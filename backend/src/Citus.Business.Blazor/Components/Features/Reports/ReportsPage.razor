@@ -687,13 +687,10 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         @foreach (var report in _reports)
         {
-            <article class="citus-domain-card">
-                <header class="citus-domain-card__header">
-                    <h4 class="citus-domain-card__title">@report.Title</h4>
-                    <CitusBadge Color="@TagColor(report.Tone)">@report.Status</CitusBadge>
-                </header>
-                <p class="citus-domain-card__description">@report.Description</p>
-            </article>
+            <CitusNavCard Title="@report.Title"
+                          Description="@report.Description"
+                          Stage="@report.Status"
+                          Tone="@report.Tone" />
         }
     </div>
 </section>

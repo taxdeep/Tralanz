@@ -1136,7 +1136,7 @@
     box-shadow: var(--citus-shadow-1);
 }
 
-:where(.grid) > :where(.citus-panel, .citus-domain-card),
+:where(.grid) > :where(.citus-panel, .citus-nav-card),
 :where(.grid) > :where(section, article).citus-panel {
     height: 100%;
     align-self: stretch;
@@ -1212,57 +1212,12 @@
     margin-top: var(--citus-space-1);
 }
 
-.citus-domain-card {
-    background: var(--citus-color-bg);
-    border: 1px solid var(--citus-color-border);
-    border-radius: var(--citus-radius-md);
-    padding: var(--citus-space-3) var(--citus-space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--citus-space-2);
-    min-height: 100%;
-}
-
-.citus-domain-card__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--citus-space-2);
-}
-
-.citus-domain-card__title {
-    margin: 0;
-    color: var(--citus-color-fg);
-    font-size: var(--citus-text-base);
-    font-weight: 600;
-}
-
-.citus-domain-card__description {
-    margin: 0;
-    color: var(--citus-color-fg-muted);
-    font-size: var(--citus-text-sm);
-}
-
-/* Linked variant â€” entire card is an <a> so the operator can click
-   anywhere on the tile to navigate to the corresponding settings page.
-   Hover / focus get a primary-color border and a subtle elevation so
-   the affordance is visible. Non-linked stub cards stay plain. */
-a.citus-domain-card--linked {
-    text-decoration: none;
-    color: inherit;
-    transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
-}
-
-a.citus-domain-card--linked:hover,
-a.citus-domain-card--linked:focus-visible {
-    border-color: var(--citus-color-primary);
-    box-shadow: 0 0 0 3px var(--citus-color-primary-bg);
-    outline: none;
-}
-
-a.citus-domain-card--linked:active {
-    transform: translateY(1px);
-}
+/* .citus-domain-card and .citus-domain-card--linked rules removed in
+   Batch 5: the CitusNavCard component (Patterns/CitusNavCard.razor)
+   superseded inline citus-domain-card markup on every page that used
+   it (CompanySettingsPage, CompanyNumberingPage, ReportsPage).
+   CitusNavCard renders its own .citus-nav-card / .citus-nav-card--linked
+   classes — see the "CitusNavCard" rule block elsewhere in this file. */
 
 .citus-definition-list {
     margin: 0;
