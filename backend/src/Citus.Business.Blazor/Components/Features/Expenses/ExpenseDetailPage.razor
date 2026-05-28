@@ -10,10 +10,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="expenses">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to expenses</span>
-        </a>
+        <CitusLinkButton Href="expenses"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to expenses
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -32,7 +33,7 @@ else if (_expense is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Expense #" Value="@_expense.ExpenseNumber" Description="@_expense.PayeeNameFreeform"
                        Icon="IconName.Wallet" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_expense.Status)"
@@ -45,33 +46,31 @@ else
                        Value="@_expense.PaymentDate.ToString("yyyy-MM-dd")"
                        Description="@_expense.PaymentAccountLabel"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </div>
+    </CitusStatCardGrid>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            @* Copy A3 Phase 1: secondary actions collapse into the More
-               menu. Copy is always available (even on voided expenses —
-               you may want to revive the spend with corrections); Void
-               only available on posted (server still re-checks). The
-               Void label intentionally NOT promoted to a top-level
-               button so the action bar stays single-row uncluttered. *@
-            <CitusMoreMenu Items="@_moreItems" />
-            @if (_expense.SourcePurchaseOrderId is { } poId)
-            {
-                <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{poId:D}")">View source PO</a>
-            }
-            @if (_expense.Status != "posted")
-            {
-                <span class="text-fg-muted text-sm">This expense is voided.</span>
-            }
-        </div>
-    </section>
+    @* Copy A3 Phase 1: secondary actions collapse into the More
+       menu. Copy is always available (even on voided expenses —
+       you may want to revive the spend with corrections); Void
+       only available on posted (server still re-checks). The
+       Void label intentionally NOT promoted to a top-level
+       button so the action bar stays single-row uncluttered. *@
+    <CitusActionsPanel MoreMenuItems="@_moreItems">
+        @if (_expense.SourcePurchaseOrderId is { } poId)
+        {
+            <CitusLinkButton Href="@($"purchase-orders/{poId:D}")"
+                             Variant="CitusButtonVariant.Ghost">
+                View source PO
+            </CitusLinkButton>
+        }
+        @if (_expense.Status != "posted")
+        {
+            <span class="text-fg-muted text-sm">This expense is voided.</span>
+        }
+    </CitusActionsPanel>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -97,68 +96,59 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_expense.Memo) || !string.IsNullOrWhiteSpace(_expense.InternalNote))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Notes</h2>
-                    <table class="citus-keyvalue">
-                        <tbody>
-                            @if (!string.IsNullOrWhiteSpace(_expense.Memo))
-                            {
-                                <tr><th>Memo</th><td>@_expense.Memo</td></tr>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(_expense.InternalNote))
-                            {
-                                <tr><th>Internal note</th><td>@_expense.InternalNote</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                </section>
+                <CitusFormSection Title="Notes">
+                    <CitusKeyValueTable>
+                        @if (!string.IsNullOrWhiteSpace(_expense.Memo))
+                        {
+                            <CitusKeyValueRow Label="Memo">@_expense.Memo</CitusKeyValueRow>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_expense.InternalNote))
+                        {
+                            <CitusKeyValueRow Label="Internal note">@_expense.InternalNote</CitusKeyValueRow>
+                        }
+                    </CitusKeyValueTable>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Payment</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Payee</th><td>@(string.IsNullOrEmpty(_expense.PayeeNameFreeform) ? "—" : _expense.PayeeNameFreeform)</td></tr>
-                        <tr><th>Paid from</th><td>@_expense.PaymentAccountLabel</td></tr>
-                        <tr><th>Method</th><td>@HumanizeMethod(_expense.PaymentMethod)</td></tr>
-                        @if (!string.IsNullOrEmpty(_expense.ChequeNumber))
-                        {
-                            <tr><th>Cheque #</th><td><span class="citus-inline-code">@_expense.ChequeNumber</span></td></tr>
-                        }
-                        @if (!string.IsNullOrEmpty(_expense.RefNo))
-                        {
-                            <tr><th>Reference #</th><td><span class="citus-inline-code">@_expense.RefNo</span></td></tr>
-                        }
-                        <tr><th>Currency</th><td>
-                            @_expense.TransactionCurrencyCode
-                            @(_expense.TransactionCurrencyCode == _expense.BaseCurrencyCode ? "" : $"@ {_expense.FxRate}")
-                        </td></tr>
-                        <tr><th>Source PO</th><td>@(string.IsNullOrEmpty(_expense.SourcePurchaseOrderNumber) ? "—" : _expense.SourcePurchaseOrderNumber)</td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Payment">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Payee">@(string.IsNullOrEmpty(_expense.PayeeNameFreeform) ? "—" : _expense.PayeeNameFreeform)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Paid from">@_expense.PaymentAccountLabel</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Method">@HumanizeMethod(_expense.PaymentMethod)</CitusKeyValueRow>
+                    @if (!string.IsNullOrEmpty(_expense.ChequeNumber))
+                    {
+                        <CitusKeyValueRow Label="Cheque #"><span class="citus-inline-code">@_expense.ChequeNumber</span></CitusKeyValueRow>
+                    }
+                    @if (!string.IsNullOrEmpty(_expense.RefNo))
+                    {
+                        <CitusKeyValueRow Label="Reference #"><span class="citus-inline-code">@_expense.RefNo</span></CitusKeyValueRow>
+                    }
+                    <CitusKeyValueRow Label="Currency">
+                        @_expense.TransactionCurrencyCode
+                        @(_expense.TransactionCurrencyCode == _expense.BaseCurrencyCode ? "" : $"@ {_expense.FxRate}")
+                    </CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Source PO">@(string.IsNullOrEmpty(_expense.SourcePurchaseOrderNumber) ? "—" : _expense.SourcePurchaseOrderNumber)</CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@_expense.SubtotalAmount.ToString("N2")</td></tr>
-                        <tr><th>Discount</th><td class="text-right">−@_expense.DiscountAmount.ToString("N2")</td></tr>
-                        <tr><th>Tax</th><td class="text-right">@_expense.TaxAmount.ToString("N2")</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@_expense.TotalAmount.ToString("N2") @_expense.TransactionCurrencyCode</strong></td></tr>
-                        @if (_expense.TransactionCurrencyCode != _expense.BaseCurrencyCode)
-                        {
-                            <tr><th>Total (@_expense.BaseCurrencyCode)</th><td class="text-right">@((_expense.TotalAmount * _expense.FxRate).ToString("N2"))</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_expense.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@_expense.DiscountAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_expense.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_expense.TotalAmount.ToString("N2") @_expense.TransactionCurrencyCode</strong></CitusKeyValueRow>
+                    @if (_expense.TransactionCurrencyCode != _expense.BaseCurrencyCode)
+                    {
+                        <CitusKeyValueRow Label="@($"Total ({_expense.BaseCurrencyCode})")" ValueAlignRight="true">@((_expense.TotalAmount * _expense.FxRate).ToString("N2"))</CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }

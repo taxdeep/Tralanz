@@ -8,10 +8,11 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="bank-transfers/new">
-            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-            <span>New transfer</span>
-        </a>
+        <CitusLinkButton Href="bank-transfers/new"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.Plus">
+            New transfer
+        </CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -30,7 +31,7 @@ else if (_doc is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Transfer #" Value="@_doc.DisplayNumber" Description="@_doc.TransferDate.ToString("yyyy-MM-dd")"
                        Icon="IconName.ArrowRight" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
@@ -41,12 +42,11 @@ else
         <CitusStatCard Label="To" Value="@FormatToAmount()"
                        Description="@ResolveAccountLabel(_doc.ToAccountId)"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
-    </div>
+    </CitusStatCardGrid>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Movement</h2>
+            <CitusFormSection Title="Movement">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -77,33 +77,29 @@ else
                         Cross-currency transfer at <strong>@rate.ToString("0.000000")</strong> (operator-supplied rate).
                     </p>
                 }
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_doc.Memo))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Memo</h2>
-                    <p class="text-fg-muted text-sm">@_doc.Memo</p>
-                </section>
+                <CitusFormSection Title="Memo">
+                    <p class="text-fg-muted text-sm m-0">@_doc.Memo</p>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Transfer no.</th><td><span class="citus-inline-code">@_doc.DisplayNumber</span></td></tr>
-                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_doc.EntityNumber</span></td></tr>
-                        <tr><th>Date</th><td>@_doc.TransferDate.ToString("yyyy-MM-dd")</td></tr>
-                        <tr><th>Status</th><td>@HumanizeStatus(_doc.Status)</td></tr>
-                        @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
-                        {
-                            <tr><th>Reference</th><td>@_doc.ReferenceNo</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Document">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Transfer no."><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_doc.EntityNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Date">@_doc.TransferDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Status">@HumanizeStatus(_doc.Status)</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
+                    {
+                        <CitusKeyValueRow Label="Reference">@_doc.ReferenceNo</CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }

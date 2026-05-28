@@ -9,16 +9,17 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="quotes">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to quotes</span>
-        </a>
+        <CitusLinkButton Href="quotes"
+                         Variant="CitusButtonVariant.Ghost"
+                         LeadingIcon="IconName.ArrowLeft">
+            Back to quotes
+        </CitusLinkButton>
         @if (_quote is not null && IsEditable(_quote.Status))
         {
-            <a class="citus-button" href="@($"quotes/{_quote.Id:D}/edit")">
-                <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
-                <span>Edit</span>
-            </a>
+            <CitusLinkButton Href="@($"quotes/{_quote.Id:D}/edit")"
+                             LeadingIcon="IconName.Pencil">
+                Edit
+            </CitusLinkButton>
         }
     </Actions>
 </CitusPageHeader>
@@ -40,7 +41,7 @@ else if (_quote is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Quote ID" Value="@_quote.QuoteNumber" Description="@_quote.CustomerName"
                        Icon="IconName.FileText" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_quote.Status)"
@@ -53,47 +54,43 @@ else
                        Value="@(_quote.ExpirationDate?.ToString("yyyy-MM-dd") ?? "—")"
                        Description="@($"Issued {_quote.DocumentDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </div>
+    </CitusStatCardGrid>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2">
-            @if (_quote.Status == "draft")
-            {
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("pending", "Quote sent."))">Send</CitusButton>
-            }
-            @if (_quote.Status == "pending")
-            {
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("accepted", "Marked as accepted."))">Mark Accepted</CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("rejected", "Marked as rejected."))">Mark Rejected</CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("expired", "Marked as expired."))">Mark Expired</CitusButton>
-            }
-            @if (_quote.Status == "accepted")
-            {
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertAsync">
-                    Convert to Sales Order
-                </CitusButton>
-            }
-            @if (_quote.Status == "converted" && _quote.ConvertedSalesOrderId is { } soId)
-            {
-                <a class="citus-button" href="@($"sales-orders/{soId:D}")">Open Sales Order</a>
-            }
-            @if (!IsTerminal(_quote.Status))
-            {
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("void", "Quote voided."))">Void</CitusButton>
-            }
-        </div>
-    </section>
+    <CitusActionsPanel>
+        @if (_quote.Status == "draft")
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("pending", "Quote sent."))">Send</CitusButton>
+        }
+        @if (_quote.Status == "pending")
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("accepted", "Marked as accepted."))">Mark Accepted</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("rejected", "Marked as rejected."))">Mark Rejected</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("expired", "Marked as expired."))">Mark Expired</CitusButton>
+        }
+        @if (_quote.Status == "accepted")
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertAsync">
+                Convert to Sales Order
+            </CitusButton>
+        }
+        @if (_quote.Status == "converted" && _quote.ConvertedSalesOrderId is { } soId)
+        {
+            <CitusLinkButton Href="@($"sales-orders/{soId:D}")">Open Sales Order</CitusLinkButton>
+        }
+        @if (!IsTerminal(_quote.Status))
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                         OnClick="@(() => SetStatusAsync("void", "Quote voided."))">Void</CitusButton>
+        }
+    </CitusActionsPanel>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <CitusFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -119,62 +116,53 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_quote.MemoToCustomer) || !string.IsNullOrWhiteSpace(_quote.InternalNote))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Notes</h2>
-                    <table class="citus-keyvalue">
-                        <tbody>
-                            @if (!string.IsNullOrWhiteSpace(_quote.MemoToCustomer))
-                            {
-                                <tr><th>Customer message</th><td>@_quote.MemoToCustomer</td></tr>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(_quote.InternalNote))
-                            {
-                                <tr><th>Internal note</th><td>@_quote.InternalNote</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                </section>
+                <CitusFormSection Title="Notes">
+                    <CitusKeyValueTable>
+                        @if (!string.IsNullOrWhiteSpace(_quote.MemoToCustomer))
+                        {
+                            <CitusKeyValueRow Label="Customer message">@_quote.MemoToCustomer</CitusKeyValueRow>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_quote.InternalNote))
+                        {
+                            <CitusKeyValueRow Label="Internal note">@_quote.InternalNote</CitusKeyValueRow>
+                        }
+                    </CitusKeyValueTable>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Customer</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Name</th><td>@_quote.CustomerName</td></tr>
-                        @if (!string.IsNullOrWhiteSpace(_quote.CustomerPoNumber))
+            <CitusFormSection Title="Customer">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Name">@_quote.CustomerName</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_quote.CustomerPoNumber))
+                    {
+                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_quote.CustomerPoNumber</span></CitusKeyValueRow>
+                    }
+                    @if (HasAddress(_quote))
+                    {
+                        <CitusKeyValueRow Label="Billing address">@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</CitusKeyValueRow>
+                        @if (!string.IsNullOrWhiteSpace(_quote.ShippingAddressLine))
                         {
-                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_quote.CustomerPoNumber</span></td></tr>
+                            <CitusKeyValueRow Label="Shipping address">@FormatAddress(_quote.ShippingAddressLine, _quote.ShippingCity, _quote.ShippingProvinceState, _quote.ShippingPostalCode, _quote.ShippingCountry)</CitusKeyValueRow>
                         }
-                        @if (HasAddress(_quote))
-                        {
-                            <tr><th>Billing address</th><td>@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</td></tr>
-                            @if (!string.IsNullOrWhiteSpace(_quote.ShippingAddressLine))
-                            {
-                                <tr><th>Shipping address</th><td>@FormatAddress(_quote.ShippingAddressLine, _quote.ShippingCity, _quote.ShippingProvinceState, _quote.ShippingPostalCode, _quote.ShippingCountry)</td></tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            </section>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Subtotal</th><td class="text-right">@_quote.SubtotalAmount.ToString("N2")</td></tr>
-                        <tr><th>Discount</th><td class="text-right">−@_quote.DiscountAmount.ToString("N2")</td></tr>
-                        <tr><th>Shipping</th><td class="text-right">@((_quote.ShippingAmount ?? 0m).ToString("N2"))</td></tr>
-                        <tr><th>Tax</th><td class="text-right">@_quote.TaxAmount.ToString("N2")</td></tr>
-                        <tr><th>Total</th><td class="text-right"><strong>@_quote.TotalAmount.ToString("N2") @_quote.TransactionCurrencyCode</strong></td></tr>
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Totals">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_quote.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@_quote.DiscountAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@((_quote.ShippingAmount ?? 0m).ToString("N2"))</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_quote.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_quote.TotalAmount.ToString("N2") @_quote.TransactionCurrencyCode</strong></CitusKeyValueRow>
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }
