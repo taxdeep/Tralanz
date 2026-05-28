@@ -15,10 +15,11 @@
     <Actions>
         @if (ShellState.ActiveCompany.InventoryModuleEnabled)
         {
-            <a class="citus-button citus-button--ghost" href="company/inventory/activate">
-                <CitusIcon Name="IconName.Settings" Size="IconSize.Inline" />
-                <span>Inventory Setup</span>
-            </a>
+            <CitusLinkButton Href="company/inventory/activate"
+                             Variant="CitusButtonVariant.Ghost"
+                             LeadingIcon="IconName.Settings">
+                Inventory Setup
+            </CitusLinkButton>
         }
     </Actions>
 </CitusPageHeader>
@@ -43,9 +44,10 @@
                     Activation also adds the standard inventory accounts (GR/IR Clearing, COGS,
                     PPV, Adjustment) and the costing engine (Moving Average or FIFO).
                 </p>
-                <a class="citus-button citus-button--primary" href="company/inventory/activate">
+                <CitusLinkButton Href="company/inventory/activate"
+                                 Variant="CitusButtonVariant.Primary">
                     Enable Tralanz Inventory →
-                </a>
+                </CitusLinkButton>
             }
             else
             {
@@ -133,81 +135,83 @@ else
 
     @* ─── Queues — Waiting to Receive | Waiting to Ship ──────────── *@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
-        <section class="citus-panel">
-            <header class="flex items-baseline justify-between mb-3">
-                <h2 class="text-base font-semibold">Waiting to Receive</h2>
+        <CitusFormSection Title="Waiting to Receive">
+            <HeaderActions>
                 <a class="citus-link text-sm" href="purchase-orders">See all POs →</a>
-            </header>
-            <CitusAsyncBoundary IsLoading="@_isLoading"
-                                IsEmpty="@(_waitingToReceive.Count == 0)"
-                                EmptyIcon="IconName.Download"
-                                EmptyTitle="No open POs"
-                                EmptyMessage="Confirmed purchase orders queue here until they're received and converted to a bill.">
-                <ul class="citus-stack-list">
-                    @foreach (var po in _waitingToReceive)
-                    {
-                        <li class="citus-stack-list__row">
-                            <div>
-                                <a class="citus-link font-medium" href="@($"purchase-orders/{po.Id:D}")">@po.PurchaseOrderNumber</a>
-                                <div class="text-fg-muted text-xs mt-0.5">@po.VendorName</div>
-                                <div class="mt-1"><CitusBadge Color="@StatusBadgeColor(po.Status)">@FormatStatus(po.Status)</CitusBadge></div>
-                            </div>
-                            <div class="text-right">
-                                <div class="font-medium">@FormatMoney(po.TransactionCurrencyCode, po.TotalAmount)</div>
-                                <div class="text-fg-muted text-xs mt-0.5">
-                                    @(po.ExpectedDeliveryDate.HasValue ? po.ExpectedDeliveryDate.Value.ToString("yyyy-MM-dd") : "No date")
+            </HeaderActions>
+            <ChildContent>
+                <CitusAsyncBoundary IsLoading="@_isLoading"
+                                    IsEmpty="@(_waitingToReceive.Count == 0)"
+                                    EmptyIcon="IconName.Download"
+                                    EmptyTitle="No open POs"
+                                    EmptyMessage="Confirmed purchase orders queue here until they're received and converted to a bill.">
+                    <ul class="citus-stack-list">
+                        @foreach (var po in _waitingToReceive)
+                        {
+                            <li class="citus-stack-list__row">
+                                <div>
+                                    <a class="citus-link font-medium" href="@($"purchase-orders/{po.Id:D}")">@po.PurchaseOrderNumber</a>
+                                    <div class="text-fg-muted text-xs mt-0.5">@po.VendorName</div>
+                                    <div class="mt-1"><CitusBadge Color="@StatusBadgeColor(po.Status)">@FormatStatus(po.Status)</CitusBadge></div>
                                 </div>
-                            </div>
-                        </li>
-                    }
-                </ul>
-            </CitusAsyncBoundary>
-        </section>
+                                <div class="text-right">
+                                    <div class="font-medium">@FormatMoney(po.TransactionCurrencyCode, po.TotalAmount)</div>
+                                    <div class="text-fg-muted text-xs mt-0.5">
+                                        @(po.ExpectedDeliveryDate.HasValue ? po.ExpectedDeliveryDate.Value.ToString("yyyy-MM-dd") : "No date")
+                                    </div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                </CitusAsyncBoundary>
+            </ChildContent>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <header class="flex items-baseline justify-between mb-3">
-                <h2 class="text-base font-semibold">Waiting to Ship</h2>
+        <CitusFormSection Title="Waiting to Ship">
+            <HeaderActions>
                 <a class="citus-link text-sm" href="sales-orders">See all SOs →</a>
-            </header>
-            <CitusAsyncBoundary IsLoading="@_isLoading"
-                                IsEmpty="@(_waitingToShip.Count == 0)"
-                                EmptyIcon="IconName.Truck"
-                                EmptyTitle="No open SOs"
-                                EmptyMessage="Confirmed sales orders queue here until they're invoiced and shipped.">
-                <ul class="citus-stack-list">
-                    @foreach (var so in _waitingToShip)
-                    {
-                        <li class="citus-stack-list__row">
-                            <div>
-                                <a class="citus-link font-medium" href="@($"sales-orders/{so.Id:D}")">@so.SalesOrderNumber</a>
-                                <div class="text-fg-muted text-xs mt-0.5">@so.CustomerName</div>
-                                <div class="mt-1"><CitusBadge Color="@StatusBadgeColor(so.Status)">@FormatStatus(so.Status)</CitusBadge></div>
-                            </div>
-                            <div class="text-right">
-                                <div class="font-medium">@FormatMoney(so.TransactionCurrencyCode, so.TotalAmount)</div>
-                                <div class="text-fg-muted text-xs mt-0.5">@so.DocumentDate.ToString("yyyy-MM-dd")</div>
-                            </div>
-                        </li>
-                    }
-                </ul>
-            </CitusAsyncBoundary>
-        </section>
+            </HeaderActions>
+            <ChildContent>
+                <CitusAsyncBoundary IsLoading="@_isLoading"
+                                    IsEmpty="@(_waitingToShip.Count == 0)"
+                                    EmptyIcon="IconName.Truck"
+                                    EmptyTitle="No open SOs"
+                                    EmptyMessage="Confirmed sales orders queue here until they're invoiced and shipped.">
+                    <ul class="citus-stack-list">
+                        @foreach (var so in _waitingToShip)
+                        {
+                            <li class="citus-stack-list__row">
+                                <div>
+                                    <a class="citus-link font-medium" href="@($"sales-orders/{so.Id:D}")">@so.SalesOrderNumber</a>
+                                    <div class="text-fg-muted text-xs mt-0.5">@so.CustomerName</div>
+                                    <div class="mt-1"><CitusBadge Color="@StatusBadgeColor(so.Status)">@FormatStatus(so.Status)</CitusBadge></div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-medium">@FormatMoney(so.TransactionCurrencyCode, so.TotalAmount)</div>
+                                    <div class="text-fg-muted text-xs mt-0.5">@so.DocumentDate.ToString("yyyy-MM-dd")</div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                </CitusAsyncBoundary>
+            </ChildContent>
+        </CitusFormSection>
     </div>
 
     @* ─── Warehouse list (demoted from page hero) ──────────────────
        V1 single-warehouse keeps this short. The activation wizard
        seeded MAIN; rename it inline. The ERP tier extends this to
        multi-warehouse with bin / lot tracking. *@
-    <section class="citus-panel">
-        <header class="flex items-baseline justify-between mb-3">
-            <h2 class="text-base font-semibold">All Warehouses</h2>
+    <CitusFormSection Title="All Warehouses">
+        <HeaderActions>
             <span class="text-fg-subtle text-xs">V1 inventory tier supports a single warehouse per company.</span>
-        </header>
-        <CitusAsyncBoundary IsLoading="@_isLoading"
-                            IsEmpty="@(_warehouses.Count == 0)"
-                            EmptyIcon="IconName.BuildingStore"
-                            EmptyTitle="No warehouses yet"
-                            EmptyMessage="The activation wizard creates Main Warehouse for you. If you don't see it, re-run the wizard.">
+        </HeaderActions>
+        <ChildContent>
+            <CitusAsyncBoundary IsLoading="@_isLoading"
+                                IsEmpty="@(_warehouses.Count == 0)"
+                                EmptyIcon="IconName.BuildingStore"
+                                EmptyTitle="No warehouses yet"
+                                EmptyMessage="The activation wizard creates Main Warehouse for you. If you don't see it, re-run the wizard.">
             <table class="citus-data-table">
                 <thead>
                     <tr>
@@ -282,7 +286,8 @@ else
                 </tbody>
             </table>
         </CitusAsyncBoundary>
-    </section>
+        </ChildContent>
+    </CitusFormSection>
 }
 
 @code {

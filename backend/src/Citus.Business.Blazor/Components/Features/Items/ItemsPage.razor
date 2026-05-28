@@ -35,23 +35,15 @@
         <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
     }
 
-    <section class="citus-panel mb-4">
-        <h2 class="citus-panel__title">Identity</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-                <label class="text-sm font-medium block mb-1">Item code</label>
+    <CitusFormSection Title="Identity">
+        <CitusFormGrid Columns="2">
+            <CitusFormField Label="Item code">
                 <CitusInput TValue="string" @bind-Value="_draft.ItemCode" Placeholder="WIDGET-001" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Name</label>
+            </CitusFormField>
+            <CitusFormField Label="Name">
                 <CitusInput TValue="string" @bind-Value="_draft.Name" Placeholder="Widget A" />
-            </div>
-            <div class="md:col-span-2">
-                <label class="text-sm font-medium block mb-1">Description</label>
-                <CitusInput TValue="string" @bind-Value="_draft.Description" Placeholder="Optional" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Kind</label>
+            </CitusFormField>
+            <CitusFormField Label="Kind">
                 @* Stock kind is gated on the Inventory paid module. Without
                    it the option is greyed and a single-line upsell hint
                    replaces the kind hint. Existing stock items stay
@@ -89,13 +81,12 @@
                 {
                     <p class="text-fg-subtle text-xs mt-1">@KindHint(_draft.ItemKind)</p>
                 }
-            </div>
+            </CitusFormField>
             @* UOM applies to every item kind, not just stock: service items
                also need a UOM (hour / day / each) so Task line grids can
                pick the right qty step. Dropdown sources from /accounting/uom
                (per-company; seeded by the 2026-05-25 UOM foundation migration). *@
-            <div>
-                <label class="text-sm font-medium block mb-1">Unit of measure</label>
+            <CitusFormField Label="Unit of measure">
                 <select class="citus-form-field__input"
                         value="@_draft.StockUomCode"
                         @onchange="@(e => _draft.StockUomCode = e.Value?.ToString() ?? string.Empty)">
@@ -115,31 +106,30 @@
                             : $"Qty on lines allows up to {picked.DecimalPrecision} decimal places.")
                     </p>
                 }
-            </div>
-        </div>
-    </section>
+            </CitusFormField>
+        </CitusFormGrid>
+        <CitusFormField Label="Description" Class="mt-4">
+            <CitusInput TValue="string" @bind-Value="_draft.Description" Placeholder="Optional" />
+        </CitusFormField>
+    </CitusFormSection>
 
-    <section class="citus-panel mb-4">
-        <h2 class="citus-panel__title">Pricing</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-                <label class="text-sm font-medium block mb-1">Default sales price (@ShellState.ActiveCompany.BaseCurrencyCode)</label>
+    <CitusFormSection Title="Pricing">
+        <CitusFormGrid Columns="2">
+            <CitusFormField Label="@($"Default sales price ({ShellState.ActiveCompany.BaseCurrencyCode})")">
                 <RadzenNumeric TValue="decimal?"
                                @bind-Value="_draft.DefaultSalesPrice"
                                Min="0"
                                Format="0.00"
                                Class="citus-control-full" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Default purchase price (@ShellState.ActiveCompany.BaseCurrencyCode)</label>
+            </CitusFormField>
+            <CitusFormField Label="@($"Default purchase price ({ShellState.ActiveCompany.BaseCurrencyCode})")">
                 <RadzenNumeric TValue="decimal?"
                                @bind-Value="_draft.DefaultPurchasePrice"
                                Min="0"
                                Format="0.00"
                                Class="citus-control-full" />
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Default sales tax</label>
+            </CitusFormField>
+            <CitusFormField Label="Default sales tax">
                 <select class="citus-form-field__input"
                         @bind="_draft.DefaultSalesTaxCodeId">
                     <option value="">— None —</option>
@@ -148,9 +138,8 @@
                         <option value="@tax.Id">@tax.Code · @tax.Name (@tax.RatePercent.ToString("0.##")%)</option>
                     }
                 </select>
-            </div>
-            <div>
-                <label class="text-sm font-medium block mb-1">Default purchase tax</label>
+            </CitusFormField>
+            <CitusFormField Label="Default purchase tax">
                 <select class="citus-form-field__input"
                         @bind="_draft.DefaultPurchaseTaxCodeId">
                     <option value="">— None —</option>
@@ -159,18 +148,16 @@
                         <option value="@tax.Id">@tax.Code · @tax.Name (@tax.RatePercent.ToString("0.##")%)</option>
                     }
                 </select>
-            </div>
-        </div>
-    </section>
+            </CitusFormField>
+        </CitusFormGrid>
+    </CitusFormSection>
 
-    <section class="citus-panel mb-4">
-        <h2 class="citus-panel__title">Accounting defaults</h2>
+    <CitusFormSection Title="Accounting defaults">
         <p class="text-fg-muted text-sm mb-3">
             Sales revenue is required — invoice lines pick this account up automatically when the item is selected. Other accounts are suggestions and can be overridden per line.
         </p>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-                <label class="text-sm font-medium block mb-1">Sales / revenue account <span class="text-error">*</span></label>
+        <CitusFormGrid Columns="2">
+            <CitusFormField Label="Sales / revenue account" Required="true">
                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                Context="items.sales_revenue"
@@ -181,11 +168,10 @@
                                AllowedRootTypes="revenue"
                                OnAccountSelected="@(a => _draft.DefaultSalesRevenueAccountId = a.Id)"
                                OnCleared="@(() => _draft.DefaultSalesRevenueAccountId = null)" />
-            </div>
+            </CitusFormField>
             @if (_draft.ItemKind == "stock")
             {
-                <div>
-                    <label class="text-sm font-medium block mb-1">Inventory asset account</label>
+                <CitusFormField Label="Inventory asset account">
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.inventory_asset"
@@ -194,9 +180,8 @@
                                    SelectedDisplayText="@AccountDisplay(_draft.DefaultInventoryAssetAccountId)"
                                    OnAccountSelected="@(a => _draft.DefaultInventoryAssetAccountId = a.Id)"
                                    OnCleared="@(() => _draft.DefaultInventoryAssetAccountId = null)" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">COGS account</label>
+                </CitusFormField>
+                <CitusFormField Label="COGS account">
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.cogs"
@@ -205,9 +190,8 @@
                                    SelectedDisplayText="@AccountDisplay(_draft.DefaultCogsAccountId)"
                                    OnAccountSelected="@(a => _draft.DefaultCogsAccountId = a.Id)"
                                    OnCleared="@(() => _draft.DefaultCogsAccountId = null)" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Write-off account</label>
+                </CitusFormField>
+                <CitusFormField Label="Write-off account">
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.writeoff"
@@ -216,9 +200,8 @@
                                    SelectedDisplayText="@AccountDisplay(_draft.DefaultWriteOffAccountId)"
                                    OnAccountSelected="@(a => _draft.DefaultWriteOffAccountId = a.Id)"
                                    OnCleared="@(() => _draft.DefaultWriteOffAccountId = null)" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Purchase-variance account</label>
+                </CitusFormField>
+                <CitusFormField Label="Purchase-variance account">
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.purchase_variance"
@@ -227,7 +210,7 @@
                                    SelectedDisplayText="@AccountDisplay(_draft.DefaultPurchaseVarianceAccountId)"
                                    OnAccountSelected="@(a => _draft.DefaultPurchaseVarianceAccountId = a.Id)"
                                    OnCleared="@(() => _draft.DefaultPurchaseVarianceAccountId = null)" />
-                </div>
+                </CitusFormField>
             }
             @if (_draft.ItemKind == "drop_ship")
             {
@@ -238,8 +221,7 @@
                    posting paths read in M6 iter 2 / iter 3. Empty selection
                    falls back to the company-level account resolved by
                    system_role = 'drop_ship_clearing'. *@
-                <div>
-                    <label class="text-sm font-medium block mb-1">Drop-ship clearing account</label>
+                <CitusFormField Label="Drop-ship clearing account">
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                    Context="items.drop_ship_clearing"
@@ -249,65 +231,59 @@
                                    Placeholder="Defaults to company Drop-ship Clearing"
                                    OnAccountSelected="@(a => _draft.DefaultDropShipClearingAccountId = a.Id)"
                                    OnCleared="@(() => _draft.DefaultDropShipClearingAccountId = null)" />
-                </div>
+                </CitusFormField>
             }
-        </div>
-    </section>
+        </CitusFormGrid>
+    </CitusFormSection>
 
     @if (_draft.ItemKind == "stock")
     {
-        <section class="citus-panel mb-4">
-            <h2 class="citus-panel__title">Inventory tracking</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Manage inventory method</label>
+        <CitusFormSection Title="Inventory tracking">
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Manage inventory method">
                     <select class="citus-form-field__input"
                             @bind="_draft.ManageInventoryMethod">
                         <option value="manage_stock">Manage stock</option>
                         <option value="manage_stock_by_sku">Manage stock by SKU</option>
                         <option value="dont_manage_stock">Don't manage stock</option>
                     </select>
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Costing method</label>
+                </CitusFormField>
+                <CitusFormField Label="Costing method">
                     <select class="citus-form-field__input"
                             @bind="_draft.DefaultCostingMethod">
                         <option value="moving_average">Moving average</option>
                         <option value="fifo">FIFO</option>
                     </select>
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Backorder policy</label>
+                </CitusFormField>
+                <CitusFormField Label="Backorder policy">
                     <select class="citus-form-field__input"
                             @bind="_draft.BackorderMode">
                         <option value="disallow">Disallow negative stock</option>
                         <option value="allow_negative_with_warning">Allow with warning</option>
                         <option value="allow_negative">Allow without warning</option>
                     </select>
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Low-stock activity</label>
+                </CitusFormField>
+                <CitusFormField Label="Low-stock activity">
                     <select class="citus-form-field__input"
                             @bind="_draft.LowStockActivity">
                         <option value="nothing">Do nothing</option>
                         <option value="warn">Warn</option>
                         <option value="block_outbound">Block outbound</option>
                     </select>
-                </div>
-            </div>
-        </section>
+                </CitusFormField>
+            </CitusFormGrid>
+        </CitusFormSection>
     }
 
-    <div class="flex gap-2 mt-4">
-        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
-            @(_isSubmitting ? "Saving…" : (_draft.Id == Guid.Empty ? "Save item" : "Update item"))
-        </CitusButton>
-        <CitusButton OnClick="CancelCreate">Cancel</CitusButton>
-    </div>
+    <CitusFormActions PrimaryLabel="@(_draft.Id == Guid.Empty ? "Save item" : "Update item")"
+                      CancelLabel="Cancel"
+                      IsSaving="@_isSubmitting"
+                      OnSave="SaveAsync"
+                      OnCancel="CancelCreate" />
 }
 else
 {
-    <section class="citus-panel">
+    <CitusFormSection Title="Products & services">
         <CitusAsyncBoundary IsLoading="@_isLoading"
                             IsEmpty="@(_items.Count == 0)"
                             EmptyIcon="IconName.LayoutDashboard"
@@ -354,7 +330,7 @@ else
                 </tbody>
             </table>
         </CitusAsyncBoundary>
-    </section>
+    </CitusFormSection>
 }
 
 @code {
