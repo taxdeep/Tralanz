@@ -12,10 +12,7 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button" href="journal-entry/new">
-            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-            <span>New journal entry</span>
-        </a>
+        <CitusLinkButton Href="journal-entry/new" LeadingIcon="IconName.Plus">New journal entry</CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -48,12 +45,11 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-7 flex flex-col gap-6">
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Recent journal reviews</h2>
+        <CitusFormSection Title="Recent journal reviews">
+            <HeaderActions>
                 <CitusBadge Color="@("blue")">Read-only</CitusBadge>
-            </header>
-
+            </HeaderActions>
+            <ChildContent>
             @if (_isLoading)
             {
                 <div class="mb-3"><CitusLoadingBar /></div>
@@ -137,14 +133,14 @@
                     </Columns>
                 </RadzenDataGrid>
             }
-        </section>
+            </ChildContent>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Current backend shape</h2>
+        <CitusFormSection Title="Current backend shape">
+            <HeaderActions>
                 <CitusBadge Color="@("blue")">Review + source linkage</CitusBadge>
-            </header>
-
+            </HeaderActions>
+            <ChildContent>
             <table class="citus-data-table">
                 <thead>
                     <tr>
@@ -162,21 +158,20 @@
                     }
                 </tbody>
             </table>
-        </section>
+            </ChildContent>
+        </CitusFormSection>
     </div>
 
     <div class="lg:col-span-5 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Why this surface matters</h2>
+        <CitusFormSection Title="Why this surface matters">
             <ul class="citus-bullet-list">
                 <li>Formal JE stays backend-owned and read-only.</li>
                 <li>Source linkage remains visible before anyone reviews lines.</li>
                 <li>Future compose flows should arrive after review feels trustworthy.</li>
             </ul>
-        </section>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Session guardrails</h2>
+        <CitusFormSection Title="Session guardrails">
             <table class="citus-keyvalue">
                 <tbody>
                     @foreach (var rule in _guardrailRows)
@@ -188,7 +183,7 @@
                     }
                 </tbody>
             </table>
-        </section>
+        </CitusFormSection>
     </div>
 </div>
 

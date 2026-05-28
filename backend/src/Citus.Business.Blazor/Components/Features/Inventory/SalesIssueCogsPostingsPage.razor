@@ -19,7 +19,7 @@
 
 @if (!ShellState.ActiveCompany.InventoryModuleEnabled)
 {
-    <section class="citus-panel">
+    <CitusFormSection Title="Sales Issue COGS">
         <div class="text-center py-8">
             <CitusIcon Name="IconName.Receipt" Size="IconSize.Display" />
             <h2 class="text-lg font-semibold mt-3">Tralanz Inventory is not enabled.</h2>
@@ -30,9 +30,9 @@
                     Inventory paid module. Without it, sales-issues are not generated
                     and there is no cost-layer truth to journalise.
                 </p>
-                <a class="citus-button citus-button--primary" href="company/inventory/activate">
+                <CitusLinkButton Href="company/inventory/activate" Variant="CitusButtonVariant.Primary">
                     Enable Tralanz Inventory →
-                </a>
+                </CitusLinkButton>
             }
             else
             {
@@ -43,7 +43,7 @@
                 <p class="text-fg-subtle text-xs">Coming in the next release.</p>
             }
         </div>
-    </section>
+    </CitusFormSection>
 }
 else
 {
@@ -52,7 +52,7 @@ else
         <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
     }
 
-    <section class="citus-panel">
+    <CitusFormSection Title="Sales Issue COGS">
         <CitusAsyncBoundary IsLoading="@_isLoading"
                             IsEmpty="@(_rows.Count == 0)"
                             EmptyIcon="IconName.Receipt"
@@ -94,10 +94,11 @@ else
                             <td class="text-right">
                                 @if (alreadyPosted)
                                 {
-                                    <a class="citus-button citus-button--ghost citus-button--small"
-                                       href="@($"journal-entry/{row.JournalEntryId:D}")">
+                                    <CitusLinkButton Href="@($"journal-entry/{row.JournalEntryId:D}")"
+                                                     Variant="CitusButtonVariant.Ghost"
+                                                     Size="CitusButtonSize.Small">
                                         View JE
-                                    </a>
+                                    </CitusLinkButton>
                                 }
                                 else if (row.EstimatedCogsBase <= 0m)
                                 {
@@ -118,7 +119,7 @@ else
                 </tbody>
             </table>
         </CitusAsyncBoundary>
-    </section>
+    </CitusFormSection>
 
     <p class="text-fg-subtle text-xs mt-3">
         Estimated COGS rolls up <code>inventory_layer_consumptions</code> per sales-issue.
