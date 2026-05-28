@@ -7,56 +7,56 @@
 
 <CitusPageHeader Model="_header" />
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Tax returns</h2>
+<CitusFormSection Title="Tax returns">
+    <HeaderActions>
         <label class="inline-flex items-center gap-2 text-sm">
             <input type="checkbox" checked="@_includeDrafts" @onchange="OnIncludeDraftsChanged" />
             <span>Include drafts</span>
         </label>
-    </header>
-
-    @if (_isLoading)
-    {
-        <CitusSkeleton Variant="SkeletonVariant.List" />
-    }
-    else if (_rows.Count == 0)
-    {
-        <CitusEmpty Title="No tax returns yet"
-                    Description="Period filings will appear here once posted."
-                    Icon="IconName.FileText" />
-    }
-    else
-    {
-        <table class="citus-data-table">
-            <thead>
-                <tr>
-                    <th>Filing #</th>
-                    <th>Regime</th>
-                    <th>Period</th>
-                    <th>Frequency</th>
-                    <th>Status</th>
-                    <th class="text-right">Net</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _rows)
-                {
+    </HeaderActions>
+    <ChildContent>
+        @if (_isLoading)
+        {
+            <CitusSkeleton Variant="SkeletonVariant.List" />
+        }
+        else if (_rows.Count == 0)
+        {
+            <CitusEmpty Title="No tax returns yet"
+                        Description="Period filings will appear here once posted."
+                        Icon="IconName.FileText" />
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
                     <tr>
-                        <td><a class="citus-link" href="@($"tax-returns/{row.Id:D}")">@row.DisplayNumber</a></td>
-                        <td>@row.TaxRegime</td>
-                        <td>@row.PeriodStart.ToString("yyyy-MM-dd") → @row.PeriodEnd.ToString("yyyy-MM-dd")</td>
-                        <td>@HumanizeFrequency(row.FilingFrequency)</td>
-                        <td>@HumanizeStatus(row.Status)</td>
-                        <td class="text-right">
-                            @(row.NetAmount >= 0 ? "+" : "")@row.NetAmount.ToString("N2") @row.BaseCurrencyCode
-                        </td>
+                        <th>Filing #</th>
+                        <th>Regime</th>
+                        <th>Period</th>
+                        <th>Frequency</th>
+                        <th>Status</th>
+                        <th class="text-right">Net</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    }
-</section>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td><a class="citus-link" href="@($"tax-returns/{row.Id:D}")">@row.DisplayNumber</a></td>
+                            <td>@row.TaxRegime</td>
+                            <td>@row.PeriodStart.ToString("yyyy-MM-dd") → @row.PeriodEnd.ToString("yyyy-MM-dd")</td>
+                            <td>@HumanizeFrequency(row.FilingFrequency)</td>
+                            <td>@HumanizeStatus(row.Status)</td>
+                            <td class="text-right">
+                                @(row.NetAmount >= 0 ? "+" : "")@row.NetAmount.ToString("N2") @row.BaseCurrencyCode
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </ChildContent>
+</CitusFormSection>
 
 @code {
     private readonly PageHeaderModel _header = new()

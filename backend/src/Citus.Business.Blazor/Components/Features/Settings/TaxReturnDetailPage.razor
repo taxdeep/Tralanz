@@ -7,10 +7,7 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <a class="citus-button citus-button--ghost" href="tax-returns">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to tax returns</span>
-        </a>
+        <CitusLinkButton Href="tax-returns" Variant="CitusButtonVariant.Ghost" LeadingIcon="IconName.ArrowLeft">Back to tax returns</CitusLinkButton>
     </Actions>
 </CitusPageHeader>
 
@@ -29,7 +26,7 @@ else if (_doc is null)
 }
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCardGrid Columns="4">
         <CitusStatCard Label="Filing #" Value="@_doc.DisplayNumber" Description="@_doc.TaxRegime"
                        Icon="IconName.FileText" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
@@ -41,12 +38,11 @@ else
                        Value="@($"{Math.Abs(_doc.NetAmount):N2} {_doc.BaseCurrencyCode}")"
                        Description="Collected − ITCs + Adj"
                        Icon="IconName.Coin" Tone="@(_doc.NetAmount >= 0 ? StatTone.Warning : StatTone.Success)" />
-    </div>
+    </CitusStatCardGrid>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Filing breakdown</h2>
+            <CitusFormSection Title="Filing breakdown">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -83,36 +79,32 @@ else
                     Posted JE clears Tax Payable + Tax Receivable accruals and lands the net on the
                     Tax Filing @(_doc.NetAmount >= 0 ? "Liability" : "Receivable") row.
                 </p>
-            </section>
+            </CitusFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_doc.Memo))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Memo</h2>
+                <CitusFormSection Title="Memo">
                     <p class="text-fg-muted text-sm">@_doc.Memo</p>
-                </section>
+                </CitusFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
-                <table class="citus-keyvalue">
-                    <tbody>
-                        <tr><th>Filing no.</th><td><span class="citus-inline-code">@_doc.DisplayNumber</span></td></tr>
-                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_doc.EntityNumber</span></td></tr>
-                        <tr><th>Regime</th><td>@_doc.TaxRegime</td></tr>
-                        <tr><th>Frequency</th><td>@HumanizeFrequency(_doc.FilingFrequency)</td></tr>
-                        <tr><th>Period start</th><td>@_doc.PeriodStart.ToString("yyyy-MM-dd")</td></tr>
-                        <tr><th>Period end</th><td>@_doc.PeriodEnd.ToString("yyyy-MM-dd")</td></tr>
-                        <tr><th>Currency</th><td>@_doc.BaseCurrencyCode</td></tr>
-                        @if (!string.IsNullOrWhiteSpace(_doc.RegulatorReferenceNo))
-                        {
-                            <tr><th>Regulator ref.</th><td><span class="citus-inline-code">@_doc.RegulatorReferenceNo</span></td></tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
+            <CitusFormSection Title="Document">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Filing no."><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_doc.EntityNumber</span></CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Regime">@_doc.TaxRegime</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Frequency">@HumanizeFrequency(_doc.FilingFrequency)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Period start">@_doc.PeriodStart.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Period end">@_doc.PeriodEnd.ToString("yyyy-MM-dd")</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Currency">@_doc.BaseCurrencyCode</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_doc.RegulatorReferenceNo))
+                    {
+                        <CitusKeyValueRow Label="Regulator ref."><span class="citus-inline-code">@_doc.RegulatorReferenceNo</span></CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
         </aside>
     </div>
 }
