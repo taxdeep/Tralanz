@@ -4402,3 +4402,28 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-shell__header-bar > .citus-topbar {
     width: 100%;
 }
+
+
+/* Batch 2e.5 — JE AccountPicker input fully matches cell-input.
+   Batch 2e.3 set border-color: transparent on the AccountPicker
+   input expecting JE's bare cell-inputs to also be borderless until
+   hover/focus, but inspection of the deployed CSS shows the
+   .citus-journal-lines__cell-input rule has a follow-up declaration
+   that sets border-color to var(--citus-color-border) — so the bare
+   inputs DO show a permanent border. AccountPicker was the odd one
+   out without a visible border, making columns within the same row
+   look like they had different heights / box-models. */
+.citus-data-table.citus-journal-lines .citus-account-picker__input {
+    box-sizing: border-box;
+    height: 1.75rem;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    padding: 0.25rem 1.85rem 0.25rem 0.5rem;
+    line-height: 1.4;
+    background: transparent;
+}
+.citus-data-table.citus-journal-lines .citus-account-picker__input:focus {
+    background: var(--citus-color-bg-elevated);
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
+}
