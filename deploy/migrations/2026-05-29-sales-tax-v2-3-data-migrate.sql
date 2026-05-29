@@ -25,7 +25,7 @@
 -- have applied. Apply with postgres superuser:
 --
 --     psql -U postgres -d citus_accounting \
---          -f deploy/migrations/2026-05-29-sales-tax-v2-data-migrate.sql
+--          -f deploy/migrations/2026-05-29-sales-tax-v2-3-data-migrate.sql
 
 -- ========================================================================
 -- 1. Helper: infer jurisdiction from a legacy tax_codes row

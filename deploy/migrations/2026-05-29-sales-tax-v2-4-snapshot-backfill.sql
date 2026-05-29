@@ -20,7 +20,7 @@
 -- Apply with postgres superuser:
 --
 --     psql -U postgres -d citus_accounting \
---          -f deploy/migrations/2026-05-29-sales-tax-v2-snapshot-backfill.sql
+--          -f deploy/migrations/2026-05-29-sales-tax-v2-4-snapshot-backfill.sql
 
 -- ========================================================================
 -- 1. Common-table-expression helper: legacy → v2 component resolver

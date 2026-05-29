@@ -14,11 +14,11 @@
 -- Idempotent — every INSERT uses ON CONFLICT.
 --
 -- DEPLOYMENT NOTE: requires the schema migration
--- (2026-05-29-sales-tax-v2-schema.sql) to have already applied. Apply
+-- (2026-05-29-sales-tax-v2-1-schema.sql) to have already applied. Apply
 -- with postgres superuser:
 --
 --     psql -U postgres -d citus_accounting \
---          -f deploy/migrations/2026-05-29-sales-tax-v2-catalog-seed.sql
+--          -f deploy/migrations/2026-05-29-sales-tax-v2-2-catalog-seed.sql
 
 -- ========================================================================
 -- 1. Jurisdictions
