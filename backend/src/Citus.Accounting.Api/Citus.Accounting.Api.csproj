@@ -16,6 +16,9 @@
     <ProjectReference Include="..\Modules\Tasks\Application\Citus.Modules.Tasks.Application.csproj" />
     <ProjectReference Include="..\Modules\Tasks\Application.Contracts\Citus.Modules.Tasks.Application.Contracts.csproj" />
     <ProjectReference Include="..\Modules\Tasks\Domain.Shared\Citus.Modules.Tasks.Domain.Shared.csproj" />
+    <ProjectReference Include="..\Modules\SalesTax\Application\Citus.Modules.SalesTax.Application.csproj" />
+    <ProjectReference Include="..\Modules\SalesTax\Application.Contracts\Citus.Modules.SalesTax.Application.Contracts.csproj" />
+    <ProjectReference Include="..\Modules\SalesTax\Domain.Shared\Citus.Modules.SalesTax.Domain.Shared.csproj" />
     <ProjectReference Include="..\Modules\UnitySearch\Application\Citus.Modules.UnitySearch.Application.csproj" />
     <ProjectReference Include="..\Modules\UnitySearch\Application.Contracts\Citus.Modules.UnitySearch.Application.Contracts.csproj" />
     <ProjectReference Include="..\Modules\UnityAi\Domain.Shared\Citus.Modules.UnityAi.Domain.Shared.csproj" />

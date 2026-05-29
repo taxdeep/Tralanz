@@ -268,6 +268,22 @@ builder.Services.AddSingleton<IItemPriceResolver, ItemPriceResolver>();
 // the workflow only adds state-machine validation.
 builder.Services.AddSingleton<ITaskStore, Infrastructure.PostgreSQL.Tasks.PostgreSqlTaskStore>();
 builder.Services.AddSingleton<ITaskWorkflow, TaskWorkflow>();
+// Sales Tax v2 module (S2.0). Engine is pure compute; the catalog
+// reader implementation in Infrastructure/PostgreSQL/SalesTax/ runs the
+// v2-tables SELECT join (sales_tax_codes ↔ components ↔ as-of rates ↔
+// jurisdictions ↔ box mappings). Persister writes to
+// document_line_sales_tax_snapshots. None of the three are invoked yet
+// — S2.1+ wires them into the per-document repositories' SaveDraftAsync
+// paths.
+builder.Services.AddSingleton<
+    Citus.Modules.SalesTax.Application.Contracts.ISalesTaxCatalogReader,
+    Infrastructure.PostgreSQL.SalesTax.PostgreSqlSalesTaxCatalogReader>();
+builder.Services.AddSingleton<
+    Citus.Modules.SalesTax.Application.Contracts.ISalesTaxEngine,
+    Citus.Modules.SalesTax.Application.SalesTaxEngine>();
+builder.Services.AddSingleton<
+    Citus.Modules.SalesTax.Application.Contracts.ITaxSnapshotPersister,
+    Infrastructure.PostgreSQL.SalesTax.PostgreSqlTaxSnapshotPersister>();
 // Batch 8: AR / AP line-link validator + per-table task_id column
 // initializer. Stateless singletons; the schema initializer runs at
 // startup to add the task_id column to every line table.
