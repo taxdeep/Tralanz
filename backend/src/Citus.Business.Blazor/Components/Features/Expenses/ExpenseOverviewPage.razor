@@ -22,12 +22,8 @@ else
 {
     @* === Block 1: Procurement flow + Vendor balances ==================== *@
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Procurement flow</h2>
-            <p class="text-fg-muted text-sm mb-3">
-                Click any solid node to jump to that module. Dashed nodes mark
-                upcoming surfaces (Projects, Bill Receipts).
-            </p>
+        <CitusFormSection Title="Procurement flow"
+                          Subtitle="Click any solid node to jump to that module. Dashed nodes mark upcoming surfaces (Projects, Bill Receipts).">
             <div class="expense-flow">
                 <svg class="expense-flow__edges" viewBox="0 0 720 460" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
                     <defs>
@@ -56,74 +52,67 @@ else
                 @RenderNode(440, 380, IconName.FileInvoice, "Bills", "bills")
                 @RenderNode(620, 380, IconName.Cash, "Pay Bills", "pay-bills")
             </div>
-        </section>
+        </CitusFormSection>
 
-        <section class="citus-panel">
-            <div class="flex items-center justify-between mb-3">
-                <h2 class="citus-panel__title m-0">Vendors</h2>
+        <CitusFormSection Title="Vendors">
+            <HeaderActions>
                 <span class="text-fg-subtle text-xs">
                     Balances as of @_asOfDate.ToString("yyyy-MM-dd")
                 </span>
-            </div>
+            </HeaderActions>
+            <ChildContent>
+                <label class="inline-flex items-center gap-2 text-sm mb-3">
+                    <input type="checkbox"
+                           checked="@_includeInactive"
+                           @onchange="@OnIncludeInactiveChanged" />
+                    <span>Include inactive vendors</span>
+                </label>
 
-            <label class="inline-flex items-center gap-2 text-sm mb-3">
-                <input type="checkbox"
-                       checked="@_includeInactive"
-                       @onchange="@OnIncludeInactiveChanged" />
-                <span>Include inactive vendors</span>
-            </label>
-
-            <div class="overflow-x-auto citus-scroll-y-md">
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th class="cursor-pointer select-none"
-                                @onclick="@(() => ToggleSort(VendorSort.Name))">
-                                Vendor Name @SortIndicator(VendorSort.Name)
-                            </th>
-                            <th class="text-right cursor-pointer select-none"
-                                @onclick="@(() => ToggleSort(VendorSort.Balance))">
-                                Balance @SortIndicator(VendorSort.Balance)
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_displayedVendors.Count == 0)
-                        {
-                            <tr><td colspan="2" class="text-fg-subtle text-sm py-4">No vendors to show.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _displayedVendors)
+                <div class="overflow-x-auto citus-scroll-y-md">
+                    <table class="citus-data-table">
+                        <thead>
+                            <tr>
+                                <th class="cursor-pointer select-none"
+                                    @onclick="@(() => ToggleSort(VendorSort.Name))">
+                                    Vendor Name @SortIndicator(VendorSort.Name)
+                                </th>
+                                <th class="text-right cursor-pointer select-none"
+                                    @onclick="@(() => ToggleSort(VendorSort.Balance))">
+                                    Balance @SortIndicator(VendorSort.Balance)
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_displayedVendors.Count == 0)
                             {
-                                <tr>
-                                    <td>
-                                        <a class="citus-link" href="@($"vendors/{row.VendorId:D}")">
-                                            @row.DisplayName
-                                        </a>
-                                    </td>
-                                    <td class="text-right citus-tabular">
-                                        @FormatCurrency(row.CurrencyCode, row.Balance)
-                                    </td>
-                                </tr>
+                                <tr><td colspan="2" class="text-fg-subtle text-sm py-4">No vendors to show.</td></tr>
                             }
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </section>
+                            else
+                            {
+                                @foreach (var row in _displayedVendors)
+                                {
+                                    <tr>
+                                        <td>
+                                            <a class="citus-link" href="@($"vendors/{row.VendorId:D}")">
+                                                @row.DisplayName
+                                            </a>
+                                        </td>
+                                        <td class="text-right citus-tabular">
+                                            @FormatCurrency(row.CurrencyCode, row.Balance)
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </CitusFormSection>
     </div>
 
     @* === Block 2: Cash Outflow chart =================================== *@
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Cash outflow</h2>
-        <p class="text-fg-muted text-sm mb-3">
-            Past 10 months of cash paid (posted bill payments + posted
-            expenses), the current month's running total, and a 3-month
-            forecast computed from open bills' due dates (bill + payment
-            term). All values in @_baseCurrencyCode.
-        </p>
-
+    <CitusFormSection Title="Cash outflow"
+                      Subtitle="@($"Past 10 months of cash paid (posted bill payments + posted expenses), the current month's running total, and a 3-month forecast computed from open bills' due dates (bill + payment term). All values in {_baseCurrencyCode}.")">
         @if (_cashOutflow is null || _cashOutflow.Months.Count == 0)
         {
             <p class="text-fg-subtle text-sm">No cash-outflow data yet.</p>
@@ -155,12 +144,12 @@ else
                 <RadzenLegend Position="LegendPosition.Bottom" />
             </RadzenChart>
         }
-    </section>
+    </CitusFormSection>
 
     @* === Block 3: Expense over time ==================================== *@
-    <section class="citus-panel">
-        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <h2 class="citus-panel__title m-0">Expense over time</h2>
+    <CitusFormSection Title="Expense over time"
+                      Subtitle="Posted bill totals plus posted expenses by month — accrual-basis cost, base currency.">
+        <HeaderActions>
             <div class="flex items-center gap-3 text-sm">
                 <label class="flex items-center gap-2">
                     Duration:
@@ -180,47 +169,44 @@ else
                     Compare to previous year
                 </label>
             </div>
-        </div>
-        <p class="text-fg-muted text-sm mb-3">
-            Posted bill totals plus posted expenses by month — accrual-basis
-            cost, base currency.
-        </p>
-
-        @if (_expense is null)
-        {
-            <p class="text-fg-subtle text-sm">No expense data yet.</p>
-        }
-        else
-        {
-            <RadzenChart Class="citus-chart--md">
-                <RadzenLineSeries Data="@_expensePoints"
-                                  CategoryProperty="Label"
-                                  ValueProperty="Amount"
-                                  Title="@($"This year ({_baseCurrencyCode})")"
-                                  Smooth="true"
-                                  LineType="LineType.Solid"
-                                  Stroke="var(--citus-color-warning)">
-                    <RadzenMarkers MarkerType="MarkerType.Circle" />
-                </RadzenLineSeries>
-                @if (_compareToPreviousYear && _previousExpensePoints.Count > 0)
-                {
-                    <RadzenLineSeries Data="@_previousExpensePoints"
+        </HeaderActions>
+        <ChildContent>
+            @if (_expense is null)
+            {
+                <p class="text-fg-subtle text-sm">No expense data yet.</p>
+            }
+            else
+            {
+                <RadzenChart Class="citus-chart--md">
+                    <RadzenLineSeries Data="@_expensePoints"
                                       CategoryProperty="Label"
                                       ValueProperty="Amount"
-                                      Title="Previous year"
+                                      Title="@($"This year ({_baseCurrencyCode})")"
                                       Smooth="true"
-                                      LineType="LineType.Dashed">
+                                      LineType="LineType.Solid"
+                                      Stroke="var(--citus-color-warning)">
                         <RadzenMarkers MarkerType="MarkerType.Circle" />
                     </RadzenLineSeries>
-                }
-                <RadzenCategoryAxis Padding="20" />
-                <RadzenValueAxis>
-                    <RadzenAxisTitle Text="@_baseCurrencyCode" />
-                </RadzenValueAxis>
-                <RadzenLegend Position="LegendPosition.Bottom" />
-            </RadzenChart>
-        }
-    </section>
+                    @if (_compareToPreviousYear && _previousExpensePoints.Count > 0)
+                    {
+                        <RadzenLineSeries Data="@_previousExpensePoints"
+                                          CategoryProperty="Label"
+                                          ValueProperty="Amount"
+                                          Title="Previous year"
+                                          Smooth="true"
+                                          LineType="LineType.Dashed">
+                            <RadzenMarkers MarkerType="MarkerType.Circle" />
+                        </RadzenLineSeries>
+                    }
+                    <RadzenCategoryAxis Padding="20" />
+                    <RadzenValueAxis>
+                        <RadzenAxisTitle Text="@_baseCurrencyCode" />
+                    </RadzenValueAxis>
+                    <RadzenLegend Position="LegendPosition.Bottom" />
+                </RadzenChart>
+            }
+        </ChildContent>
+    </CitusFormSection>
 }
 
 <style>
