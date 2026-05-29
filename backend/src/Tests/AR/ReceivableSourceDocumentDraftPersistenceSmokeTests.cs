@@ -175,10 +175,15 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
             invoiceId = saveResult.DocumentId;
 
-            var invoice = await invoiceRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), invoiceId, CancellationToken.None);
-            Assert.NotNull(invoice);
-            Assert.Equal("draft", invoice!.Status);
-            Assert.Equal(105m, invoice.TotalAmount);
+            // Read the persisted draft directly. GetForPostingAsync is
+            // posting-prep and rejects a tax-bearing line whose tax code has
+            // no payable GL account — that account routing is out of S2.1's
+            // draft-save scope (it belongs to S5/S6), so the engine's tax +
+            // snapshot are verified straight from the rows.
+            var (status, headerTax, headerTotal) = await GetInvoiceHeaderAsync(connectionFactory, invoiceId, CancellationToken.None);
+            Assert.Equal("draft", status);
+            Assert.Equal(5.00m, headerTax);
+            Assert.Equal(105.00m, headerTotal);
 
             var lineTaxTotal = await GetInvoiceLineTaxTotalAsync(connectionFactory, invoiceId, CancellationToken.None);
             Assert.Equal(5.00m, lineTaxTotal);
@@ -4210,6 +4215,20 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
 
         return (legacyTaxCodeId, salesTaxCodeId);
+    }
+
+    private static async Task<(string Status, decimal TaxAmount, decimal TotalAmount)> GetInvoiceHeaderAsync(
+        PostgresConnectionFactory connectionFactory,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select status, tax_amount, total_amount from invoices where id = @invoice_id;";
+        command.Parameters.AddWithValue("invoice_id", invoiceId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return (reader.GetString(0), reader.GetDecimal(1), reader.GetDecimal(2));
     }
 
     private static async Task<decimal> GetInvoiceLineTaxTotalAsync(
