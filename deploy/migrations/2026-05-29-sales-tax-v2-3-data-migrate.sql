@@ -214,12 +214,18 @@ migrated_components as (
     on conflict on constraint uq_sales_tax_code_components_sequence do nothing
     returning id, tax_code_id
 )
+-- NOTE: bridge component → legacy via the migrated_codes CTE, NOT via the
+-- sales_tax_codes TABLE. Data-modifying CTEs share one snapshot and cannot
+-- see each other's table writes, so a `join sales_tax_codes` here would not
+-- find the rows migrated_codes just inserted on a fresh run → 0 rates
+-- inserted. (This bug shipped once; 2026-05-29-sales-tax-v2-5-rate-backfill
+-- repairs already-migrated databases.)
 insert into sales_tax_code_component_rates
     (component_id, rate_percent, effective_from)
 select c.id, coalesce(i.rate_percent, 0), '1900-01-01'::date
 from migrated_components c
-join sales_tax_codes stc on stc.id = c.tax_code_id
-join inferred i on i.legacy_id = stc.legacy_tax_code_id
+join migrated_codes mc on mc.v2_id = c.tax_code_id
+join inferred i on i.legacy_id = mc.legacy_id
 on conflict on constraint uq_sales_tax_code_component_rates_natural_key do nothing;
 
 -- ========================================================================
