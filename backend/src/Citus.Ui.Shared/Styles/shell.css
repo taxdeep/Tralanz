@@ -4382,3 +4382,16 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     border-color: var(--citus-color-primary);
     box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
 }
+
+/* Center Radzen notification toasts horizontally. Radzen's default
+   wrapper sits top-right via inline styles — we pin top-center so the
+   "Active company switched", task action outcomes, and form-save
+   confirmations always appear above the content rather than tucked in
+   the corner. !important is required because Radzen sets right/left
+   via inline style on the wrapper element. */
+.rz-notifications-wrapper,
+.rz-growl-pl {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+}
