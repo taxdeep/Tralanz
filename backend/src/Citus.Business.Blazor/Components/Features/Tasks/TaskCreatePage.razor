@@ -90,16 +90,17 @@ else
                 <CitusFormField Label="Title">
                     <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" />
                 </CitusFormField>
-                <CitusFormField Label="Customer (optional)">
-                    @* Customer is optional in the schema, but required if the
-                       operator wants to bill this task later — the "Create
-                       invoice" button on TaskDetailPage only appears when
-                       customer_id is set. Capturing it here avoids the
-                       round-trip back through PUT /tasks/{id}. *@
+                <CitusFormField Label="Customer" Required="true">
+                    @* Customer is required at create-time so the task is
+                       immediately billable — TaskDetailPage's "Create invoice"
+                       affordance only appears when customer_id is set, and
+                       requiring it here avoids the round-trip back through
+                       PUT /tasks/{id}. The DB column stays nullable so legacy
+                       rows and future internal-only flows still parse. *@
                     <select class="citus-form-field__input"
                             value="@(_customerId?.ToString("D") ?? string.Empty)"
                             @onchange="OnCustomerChanged">
-                        <option value="">— None —</option>
+                        <option value="">— Select a customer —</option>
                         @foreach (var customer in _customers)
                         {
                             <option value="@customer.Id.ToString("D")">
@@ -444,6 +445,11 @@ else
         if (string.IsNullOrWhiteSpace(_currency))
         {
             _validation = "Currency is required.";
+            return;
+        }
+        if (_customerId is null)
+        {
+            _validation = "Customer is required.";
             return;
         }
 
