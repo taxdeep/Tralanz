@@ -272,9 +272,11 @@ builder.Services.AddSingleton<ITaskWorkflow, TaskWorkflow>();
 // reader implementation in Infrastructure/PostgreSQL/SalesTax/ runs the
 // v2-tables SELECT join (sales_tax_codes ↔ components ↔ as-of rates ↔
 // jurisdictions ↔ box mappings). Persister writes to
-// document_line_sales_tax_snapshots. None of the three are invoked yet
-// — S2.1+ wires them into the per-document repositories' SaveDraftAsync
-// paths.
+// document_line_sales_tax_snapshots. S2.1 wires the engine + persister
+// into PostgresInvoiceDocumentRepository.SaveDraftAsync, gated by the
+// SalesTaxV2:Enabled flag below (default off → unchanged behaviour).
+builder.Services.Configure<SalesTaxV2Options>(
+    builder.Configuration.GetSection(SalesTaxV2Options.SectionName));
 builder.Services.AddSingleton<
     Citus.Modules.SalesTax.Application.Contracts.ISalesTaxCatalogReader,
     Infrastructure.PostgreSQL.SalesTax.PostgreSqlSalesTaxCatalogReader>();

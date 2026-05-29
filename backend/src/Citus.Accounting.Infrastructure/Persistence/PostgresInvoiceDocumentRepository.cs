@@ -2,6 +2,9 @@ using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Documents;
+using Citus.Modules.SalesTax.Application.Contracts;
+using Citus.Modules.SalesTax.Domain.Shared;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -11,13 +14,22 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
 {
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+    private readonly ISalesTaxEngine? _salesTaxEngine;
+    private readonly ITaxSnapshotPersister? _taxSnapshotPersister;
+    private readonly bool _salesTaxV2Enabled;
 
     public PostgresInvoiceDocumentRepository(
         PostgresConnectionFactory connections,
-        PostgresExecutionContextAccessor executionContextAccessor)
+        PostgresExecutionContextAccessor executionContextAccessor,
+        ISalesTaxEngine? salesTaxEngine = null,
+        ITaxSnapshotPersister? taxSnapshotPersister = null,
+        IOptions<SalesTaxV2Options>? salesTaxV2Options = null)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
+        _salesTaxEngine = salesTaxEngine;
+        _taxSnapshotPersister = taxSnapshotPersister;
+        _salesTaxV2Enabled = salesTaxV2Options?.Value.Enabled ?? false;
     }
 
     public async Task<InvoiceDocument?> GetForPostingAsync(
@@ -312,6 +324,50 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         ArgumentNullException.ThrowIfNull(draft);
         ValidateDraft(draft);
 
+        // Assign a stable id per draft line up front. The same id flows to
+        // the invoice_lines row, the SalesTaxEngine line request, and the
+        // snapshot row, so snapshots key correctly to their line (the line
+        // table is delete-then-reinsert, so ids are not otherwise stable).
+        var orderedLines = draft.Lines
+            .OrderBy(static line => line.LineNumber)
+            .Select(static line => (Line: line, LineId: Guid.NewGuid()))
+            .ToList();
+
+        // Sales Tax v2 (S2.1): when the flag is on the engine is the
+        // authority for tax_amount — it overrides the client-sent value
+        // (engine-absolute) and its per-component output is persisted to
+        // document_line_sales_tax_snapshots after the lines commit. When
+        // off, behaviour is unchanged: the client-sent line.TaxAmount is
+        // used and no snapshots are written.
+        var salesTaxActive = _salesTaxV2Enabled
+            && _salesTaxEngine is not null
+            && _taxSnapshotPersister is not null;
+
+        SalesTaxComputationResult? taxResult = null;
+        if (salesTaxActive)
+        {
+            taxResult = await _salesTaxEngine!.ComputeAsync(
+                new SalesTaxComputationRequest(
+                    draft.CompanyId.Value,
+                    draft.InvoiceDate,
+                    draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+                    SalesTaxDocumentSide.Sales,
+                    orderedLines
+                        .Select(static entry => new SalesTaxLineRequest(
+                            entry.LineId,
+                            Round6(entry.Line.Quantity * entry.Line.UnitPrice),
+                            entry.Line.TaxCodeId))
+                        .ToList()),
+                cancellationToken);
+        }
+
+        var resolvedTaxByLineId = orderedLines.ToDictionary(
+            entry => entry.LineId,
+            entry => taxResult is null
+                ? entry.Line.TaxAmount
+                : taxResult.Lines.FirstOrDefault(r => r.LineId == entry.LineId)?.TotalTaxAmount ?? 0m);
+        var headerTaxAmount = Round6(resolvedTaxByLineId.Values.Sum());
+
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -413,7 +469,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   now()
                 );
                 """;
-            BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber);
+            BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         else
@@ -456,7 +512,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   and (cast(@expected_updated_at as timestamptz) is null
                        or updated_at = cast(@expected_updated_at as timestamptz));
                 """;
-            BindHeader(updateCommand, draft, documentId, entityNumber, displayNumber, includeIdentity: false);
+            BindHeader(updateCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount, includeIdentity: false);
             updateCommand.Parameters.AddWithValue(
                 "expected_updated_at",
                 draft.ExpectedUpdatedAt.HasValue
@@ -490,7 +546,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        foreach (var line in draft.Lines.OrderBy(static line => line.LineNumber))
+        foreach (var (line, lineId) in orderedLines)
         {
             await using var insertLineCommand = connection.CreateCommand();
             insertLineCommand.Transaction = transaction;
@@ -537,7 +593,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   now()
                 );
                 """;
-            insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+            insertLineCommand.Parameters.AddWithValue("id", lineId);
             insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("invoice_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
@@ -547,7 +603,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             insertLineCommand.Parameters.AddWithValue("unit_price", Round6(line.UnitPrice));
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.Quantity * line.UnitPrice));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
-            insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
+            insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(resolvedTaxByLineId[lineId]));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("item_id", NpgsqlDbType.Uuid) { TypedValue = line.ItemId });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("warehouse_id", NpgsqlDbType.Uuid) { TypedValue = line.WarehouseId });
             insertLineCommand.Parameters.AddWithValue("uom_code", string.IsNullOrWhiteSpace(line.UomCode) ? (object)DBNull.Value : line.UomCode.Trim().ToUpperInvariant());
@@ -564,6 +620,23 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        // Write the engine's snapshot rows after the lines commit. The
+        // persister uses its own connection/transaction (S2.0 design), so
+        // it must follow the commit; a draft re-save replaces the prior
+        // snapshot rows for this (company, document).
+        if (taxResult is not null)
+        {
+            SalesTaxComputationResult computed = taxResult;
+            await _taxSnapshotPersister!.PersistAsync(
+                draft.CompanyId.Value,
+                "invoice",
+                documentId,
+                orderedLines
+                    .Select(entry => (entry.LineId, computed.Lines.First(r => r.LineId == entry.LineId)))
+                    .ToList(),
+                cancellationToken);
+        }
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
     }
@@ -721,11 +794,11 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         Guid documentId,
         string entityNumber,
         string displayNumber,
+        decimal taxAmount,
         bool includeIdentity = true)
     {
         var (fxRate, fxSource, fxRequestedDate, fxEffectiveDate) = ResolveFx(draft.TransactionCurrencyCode, draft.BaseCurrencyCode, draft.InvoiceDate, draft.FxRate, draft.FxEffectiveDate, draft.FxSource);
         var subtotalAmount = Round6(draft.Lines.Sum(static line => line.Quantity * line.UnitPrice));
-        var taxAmount = Round6(draft.Lines.Sum(static line => line.TaxAmount));
         var totalAmount = Round6(subtotalAmount + taxAmount);
 
         command.Parameters.AddWithValue("id", documentId);

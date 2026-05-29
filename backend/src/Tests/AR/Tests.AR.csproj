@@ -24,6 +24,10 @@
     <ProjectReference Include="..\..\Modules\AR\Modules.AR.csproj" />
     <ProjectReference Include="..\..\Modules\Company\Modules.Company.csproj" />
     <ProjectReference Include="..\..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
+    <!-- S2.1 smoke test constructs the real SalesTaxEngine over the
+         PostgreSQL catalog reader to prove the invoice save path computes
+         tax + writes snapshots when the SalesTaxV2 flag is on. -->
+    <ProjectReference Include="..\..\Modules\SalesTax\Application\Citus.Modules.SalesTax.Application.csproj" />
   </ItemGroup>
 
   <!-- X-3: file-linked shared schema sync helper (no module-init

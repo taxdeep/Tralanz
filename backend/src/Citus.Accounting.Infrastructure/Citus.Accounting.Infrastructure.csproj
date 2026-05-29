@@ -18,6 +18,12 @@
          and IInventoryShipmentStore.GetInvoiceLaneSummaryAsync (find
          linked sales-issues). Both contract projects are leaves. -->
     <ProjectReference Include="..\Modules\Inventory\Application.Contracts\Citus.Modules.Inventory.Application.Contracts.csproj" />
+    <!-- Sales Tax v2 (S2.1): SaveDraftAsync paths call ISalesTaxEngine +
+         ITaxSnapshotPersister to compute tax and write snapshot rows when
+         the SalesTaxV2 flag is on. Application.Contracts is a leaf (DTOs +
+         interfaces only), so depending on it from Infrastructure is
+         consistent with the Tasks / Inventory references above. -->
+    <ProjectReference Include="..\Modules\SalesTax\Application.Contracts\Citus.Modules.SalesTax.Application.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />

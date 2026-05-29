@@ -4,9 +4,12 @@ using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Infrastructure.Fx;
 using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
+using Citus.Modules.SalesTax.Application;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Numbering;
+using Infrastructure.PostgreSQL.SalesTax;
+using Microsoft.Extensions.Options;
 
 namespace Tests.AR;
 
@@ -112,6 +115,85 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         {
             await CleanupDraftAsync(connectionFactory, "invoice_lines", "invoice_id", "invoices", invoiceId, CancellationToken.None);
             await CleanupDraftAsync(connectionFactory, "credit_note_lines", "credit_note_id", "credit_notes", creditNoteId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, revenueAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, receivableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task SaveDraftAsync_WithSalesTaxV2Enabled_ComputesEngineTaxAndWritesSnapshot()
+    {
+        // S2.1 proof point: with the SalesTaxV2 flag on, the engine — not
+        // the client — is the authority for tax. The line is sent with
+        // TaxAmount 0; the engine computes GST 5% on $100 = 5.00, the
+        // invoice header + line persist 5.00, and one snapshot row lands
+        // in document_line_sales_tax_snapshots.
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var engine = new SalesTaxEngine(new PostgreSqlSalesTaxCatalogReader(infrastructureConnectionFactory));
+        var persister = new PostgreSqlTaxSnapshotPersister(infrastructureConnectionFactory);
+        var invoiceRepository = new PostgresInvoiceDocumentRepository(
+            connectionFactory,
+            new PostgresExecutionContextAccessor(),
+            engine,
+            persister,
+            Options.Create(new SalesTaxV2Options { Enabled = true }));
+
+        Guid revenueAccountId = default;
+        Guid receivableControlAccountId = default;
+        UserId userId = default;
+        Guid invoiceId = Guid.Empty;
+        Guid legacyTaxCodeId = Guid.Empty;
+        Guid salesTaxCodeId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            receivableControlAccountId = await CreateReceivableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            revenueAccountId = await CreateRevenueAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            (legacyTaxCodeId, salesTaxCodeId) = await CreateGstFivePercentTaxCodeAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            var saveResult = await invoiceRepository.SaveDraftAsync(
+                new InvoiceDraftSaveModel(
+                    null,
+                    CompanyId.FromOrdinal(1),
+                    UserId.FromOrdinal(1),
+                    CustomerId,
+                    new DateOnly(2026, 4, 14),
+                    new DateOnly(2026, 5, 14),
+                    "USD",
+                    "USD",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Sales Tax v2 engine smoke test",
+                    [new InvoiceDraftLineSaveModel(1, revenueAccountId, "Taxable consulting", 1m, 100m, legacyTaxCodeId, 0m)]),
+                CancellationToken.None);
+
+            invoiceId = saveResult.DocumentId;
+
+            var invoice = await invoiceRepository.GetForPostingAsync(CompanyId.FromOrdinal(1), invoiceId, CancellationToken.None);
+            Assert.NotNull(invoice);
+            Assert.Equal("draft", invoice!.Status);
+            Assert.Equal(105m, invoice.TotalAmount);
+
+            var lineTaxTotal = await GetInvoiceLineTaxTotalAsync(connectionFactory, invoiceId, CancellationToken.None);
+            Assert.Equal(5.00m, lineTaxTotal);
+
+            var (snapshotCount, snapshotTaxTotal) = await GetSnapshotSummaryAsync(connectionFactory, "invoice", invoiceId, CancellationToken.None);
+            Assert.Equal(1, snapshotCount);
+            Assert.Equal(5.00m, snapshotTaxTotal);
+        }
+        finally
+        {
+            // Snapshots first: they RESTRICT-reference the v2 code/component.
+            await DeleteSnapshotsAsync(connectionFactory, "invoice", invoiceId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "invoice_lines", "invoice_id", "invoices", invoiceId, CancellationToken.None);
+            await DeleteSalesTaxCodeAsync(connectionFactory, salesTaxCodeId, CancellationToken.None);
+            await DeleteLegacyTaxCodeAsync(connectionFactory, legacyTaxCodeId, CancellationToken.None);
             await CleanupAccountAsync(connectionFactory, revenueAccountId, CancellationToken.None);
             await CleanupAccountAsync(connectionFactory, receivableControlAccountId, CancellationToken.None);
             await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
@@ -4019,6 +4101,202 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         headerCommand.CommandText = $"delete from {headerTable} where id = @document_id;";
         headerCommand.Parameters.AddWithValue("document_id", documentId);
         await headerCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    // S2.1 fixture: a single-component GST 5% tax code, both legacy and v2.
+    // The line carries the LEGACY tax_codes id (that is what the schema and
+    // existing UI send); the engine bridges to v2 via
+    // sales_tax_codes.legacy_tax_code_id. Jurisdiction is resolved from the
+    // S1 catalog seed (CA federal GST) rather than inserted.
+    private static async Task<(Guid LegacyTaxCodeId, Guid SalesTaxCodeId)> CreateGstFivePercentTaxCodeAsync(
+        PostgresConnectionFactory connectionFactory,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        var legacyTaxCodeId = Guid.NewGuid();
+        var salesTaxCodeId = Guid.NewGuid();
+        var componentId = Guid.NewGuid();
+        var rateId = Guid.NewGuid();
+        var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
+        var suffix = entityNumber[^5..];
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+
+        Guid jurisdictionId;
+        await using (var jurisdictionCommand = connection.CreateCommand())
+        {
+            jurisdictionCommand.CommandText =
+                """
+                select id
+                from sales_tax_jurisdictions
+                where country_code = 'CA' and regime_type = 'gst'
+                order by created_at
+                limit 1;
+                """;
+            var resolved = await jurisdictionCommand.ExecuteScalarAsync(cancellationToken);
+            jurisdictionId = resolved is Guid g
+                ? g
+                : throw new InvalidOperationException("S1 catalog seed missing: no CA GST jurisdiction found.");
+        }
+
+        await using (var legacyCommand = connection.CreateCommand())
+        {
+            legacyCommand.CommandText =
+                """
+                insert into tax_codes (
+                  id, company_id, entity_number, code, name, rate_percent,
+                  applies_to, is_active, created_at, updated_at)
+                values (
+                  @id, @company_id, @entity_number, @code, @name, 5,
+                  'both', true, now(), now());
+                """;
+            legacyCommand.Parameters.AddWithValue("id", legacyTaxCodeId);
+            legacyCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            legacyCommand.Parameters.AddWithValue("entity_number", entityNumber);
+            legacyCommand.Parameters.AddWithValue("code", $"GST5-{suffix}");
+            legacyCommand.Parameters.AddWithValue("name", "GST 5% (smoke)");
+            await legacyCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var codeCommand = connection.CreateCommand())
+        {
+            codeCommand.CommandText =
+                """
+                insert into sales_tax_codes (
+                  id, company_id, code, name, treatment, applies_to,
+                  is_active, legacy_tax_code_id, created_at, updated_at)
+                values (
+                  @id, @company_id, @code, @name, 'taxable', 'both',
+                  true, @legacy_id, now(), now());
+                """;
+            codeCommand.Parameters.AddWithValue("id", salesTaxCodeId);
+            codeCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            codeCommand.Parameters.AddWithValue("code", $"GST5V2-{suffix}");
+            codeCommand.Parameters.AddWithValue("name", "GST 5% v2 (smoke)");
+            codeCommand.Parameters.AddWithValue("legacy_id", legacyTaxCodeId);
+            await codeCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var componentCommand = connection.CreateCommand())
+        {
+            componentCommand.CommandText =
+                """
+                insert into sales_tax_code_components (
+                  id, company_id, tax_code_id, jurisdiction_id, sequence,
+                  is_compound, recoverability_mode, created_at, updated_at)
+                values (
+                  @id, @company_id, @tax_code_id, @jurisdiction_id, 1,
+                  false, 'full', now(), now());
+                """;
+            componentCommand.Parameters.AddWithValue("id", componentId);
+            componentCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            componentCommand.Parameters.AddWithValue("tax_code_id", salesTaxCodeId);
+            componentCommand.Parameters.AddWithValue("jurisdiction_id", jurisdictionId);
+            await componentCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var rateCommand = connection.CreateCommand())
+        {
+            rateCommand.CommandText =
+                """
+                insert into sales_tax_code_component_rates (
+                  id, component_id, rate_percent, effective_from, created_at)
+                values (
+                  @id, @component_id, 5, date '2000-01-01', now());
+                """;
+            rateCommand.Parameters.AddWithValue("id", rateId);
+            rateCommand.Parameters.AddWithValue("component_id", componentId);
+            await rateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return (legacyTaxCodeId, salesTaxCodeId);
+    }
+
+    private static async Task<decimal> GetInvoiceLineTaxTotalAsync(
+        PostgresConnectionFactory connectionFactory,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select coalesce(sum(tax_amount), 0) from invoice_lines where invoice_id = @invoice_id;";
+        command.Parameters.AddWithValue("invoice_id", invoiceId);
+        return Convert.ToDecimal(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task<(int Count, decimal TaxTotal)> GetSnapshotSummaryAsync(
+        PostgresConnectionFactory connectionFactory,
+        string documentType,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select count(*), coalesce(sum(tax_amount), 0)
+            from document_line_sales_tax_snapshots
+            where document_type = @document_type and document_id = @document_id;
+            """;
+        command.Parameters.AddWithValue("document_type", documentType);
+        command.Parameters.AddWithValue("document_id", documentId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return ((int)reader.GetInt64(0), reader.GetDecimal(1));
+    }
+
+    private static async Task DeleteSnapshotsAsync(
+        PostgresConnectionFactory connectionFactory,
+        string documentType,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        if (documentId == Guid.Empty)
+        {
+            return;
+        }
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "delete from document_line_sales_tax_snapshots where document_type = @document_type and document_id = @document_id;";
+        command.Parameters.AddWithValue("document_type", documentType);
+        command.Parameters.AddWithValue("document_id", documentId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task DeleteSalesTaxCodeAsync(
+        PostgresConnectionFactory connectionFactory,
+        Guid salesTaxCodeId,
+        CancellationToken cancellationToken)
+    {
+        if (salesTaxCodeId == Guid.Empty)
+        {
+            return;
+        }
+
+        // Components + rates cascade-delete from sales_tax_codes.
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "delete from sales_tax_codes where id = @id;";
+        command.Parameters.AddWithValue("id", salesTaxCodeId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task DeleteLegacyTaxCodeAsync(
+        PostgresConnectionFactory connectionFactory,
+        Guid legacyTaxCodeId,
+        CancellationToken cancellationToken)
+    {
+        if (legacyTaxCodeId == Guid.Empty)
+        {
+            return;
+        }
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "delete from tax_codes where id = @id;";
+        command.Parameters.AddWithValue("id", legacyTaxCodeId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task MarkDocumentPostedAsync(
