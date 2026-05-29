@@ -6,6 +6,7 @@
 @inject BusinessShellState ShellState
 @inject TaskClient TaskClient
 @inject NavigationManager NavigationManager
+@inject CitusToastService Toast
 
 <PageTitle>Tasks | Tralanz Books</PageTitle>
 
@@ -80,29 +81,53 @@ else
                         <th>Service date</th>
                         <th class="text-right">Billable value</th>
                         <th>Updated</th>
-                        <th style="width: 6rem"></th>
+                        <th style="width: 14rem"></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var task in _tasks)
                     {
                         var taskId = task.Id;
+                        var status = task.Status;
+                        var hasCustomer = task.CustomerId.HasValue;
                         <tr class="cursor-pointer" @onclick="@(() => OpenTask(taskId))">
                             <td>@task.TaskNo</td>
                             <td>@task.Title</td>
                             <td>
-                                <CitusDocumentStatusBadge Status="@task.Status.ToString()" />
+                                <CitusDocumentStatusBadge Status="@status.ToString()" />
                             </td>
                             <td>@(task.ServiceDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                             <td class="text-right">@($"{task.TotalBillableValue:N2} {task.CurrencyCode}")</td>
                             <td>@task.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
-                            @* Cell-level stopPropagation keeps a Cost click from also
-                               opening the task — pre-fills /expenses/new with this task. *@
+                            @* Cell-level stopPropagation keeps row-action clicks from
+                               also opening the task. Cost → pre-fills /expenses/new.
+                               Complete / Invoice mirror the TaskDetailPage header
+                               affordances so an operator can move a task forward
+                               without first opening it. *@
                             <td class="text-right" @onclick:stopPropagation="true">
-                                <CitusButton Variant="CitusButtonVariant.Ghost"
-                                             Size="CitusButtonSize.Small"
-                                             LeadingIcon="IconName.Receipt"
-                                             OnClick="@(() => AddCostFor(taskId))">Cost</CitusButton>
+                                <div class="inline-flex gap-2 justify-end">
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 LeadingIcon="IconName.Receipt"
+                                                 OnClick="@(() => AddCostFor(taskId))">Cost</CitusButton>
+                                    @if (status == TaskStatus.Open && CanComplete)
+                                    {
+                                        <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                     Size="CitusButtonSize.Small"
+                                                     LeadingIcon="IconName.CircleCheck"
+                                                     Disabled="@_busyTaskId.Equals(taskId)"
+                                                     OnClick="@(() => CompleteAsync(taskId))">Complete</CitusButton>
+                                    }
+                                    else if ((status == TaskStatus.Completed || status == TaskStatus.PartiallyBilled) && CanBill && hasCustomer)
+                                    {
+                                        <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                     Size="CitusButtonSize.Small"
+                                                     LeadingIcon="IconName.FileInvoice"
+                                                     OnClick="@(() => InvoiceFrom(taskId))">
+                                            @(status == TaskStatus.PartiallyBilled ? "Bill remaining" : "Invoice")
+                                        </CitusButton>
+                                    }
+                                </div>
                             </td>
                         </tr>
                     }
@@ -130,10 +155,15 @@ else
     private bool _isLoading = true;
     private string? _statusFilter;
     private IReadOnlyList<TaskSummary> _tasks = Array.Empty<TaskSummary>();
+    private Guid _busyTaskId = Guid.Empty;
 
     private bool CanCreate => ShellState.User.Roles.Contains("task.create", StringComparer.Ordinal);
 
     private bool CanViewMargin => ShellState.User.Roles.Contains("task.report.margin", StringComparer.Ordinal);
+
+    private bool CanComplete => ShellState.User.Roles.Contains("task.complete", StringComparer.Ordinal);
+
+    private bool CanBill => ShellState.User.Roles.Contains("task.bill", StringComparer.Ordinal);
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -161,4 +191,36 @@ else
     // gates expense.create, so we don't second-guess permission here.
     private void AddCostFor(Guid taskId) =>
         NavigationManager.NavigateTo($"expenses/new?taskId={taskId:D}");
+
+    // "Invoice" / "Bill remaining" shortcut — hands off to the AR invoice
+    // create page with ?FromTaskId. The create page pre-fills customer +
+    // lines + currency from the task, and the post handler flips the
+    // task to Billed (or keeps it PartiallyBilled) on a successful post.
+    private void InvoiceFrom(Guid taskId) =>
+        NavigationManager.NavigateTo($"invoices/new?FromTaskId={taskId:D}");
+
+    // "Complete" shortcut — calls the same workflow as TaskDetailPage's
+    // "Mark completed" button. Server rejects when the task has no lines;
+    // we surface the error as a toast and leave the row in place so the
+    // operator can open the task and add lines.
+    private async Task CompleteAsync(Guid taskId)
+    {
+        if (_busyTaskId != Guid.Empty) return;
+        _busyTaskId = taskId;
+        try
+        {
+            var outcome = await TaskClient.CompleteAsync(taskId, reason: null);
+            if (!outcome.Succeeded)
+            {
+                await Toast.ErrorAsync(outcome.ErrorMessage ?? "Unable to complete the task.");
+                return;
+            }
+            await Toast.SuccessAsync("Task marked completed.");
+            await ReloadAsync();
+        }
+        finally
+        {
+            _busyTaskId = Guid.Empty;
+        }
+    }
 }
