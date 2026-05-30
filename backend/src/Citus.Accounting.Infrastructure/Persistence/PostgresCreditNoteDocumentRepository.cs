@@ -2,6 +2,9 @@ using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Documents;
+using Citus.Modules.SalesTax.Application.Contracts;
+using Citus.Modules.SalesTax.Domain.Shared;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -11,13 +14,22 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
 {
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+    private readonly ISalesTaxEngine? _salesTaxEngine;
+    private readonly ITaxSnapshotPersister? _taxSnapshotPersister;
+    private readonly bool _salesTaxV2Enabled;
 
     public PostgresCreditNoteDocumentRepository(
         PostgresConnectionFactory connections,
-        PostgresExecutionContextAccessor executionContextAccessor)
+        PostgresExecutionContextAccessor executionContextAccessor,
+        ISalesTaxEngine? salesTaxEngine = null,
+        ITaxSnapshotPersister? taxSnapshotPersister = null,
+        IOptions<SalesTaxV2Options>? salesTaxV2Options = null)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
+        _salesTaxEngine = salesTaxEngine;
+        _taxSnapshotPersister = taxSnapshotPersister;
+        _salesTaxV2Enabled = salesTaxV2Options?.Value.Enabled ?? false;
     }
 
     public async Task<CreditNoteDocument?> GetForPostingAsync(
@@ -287,6 +299,48 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
         ArgumentNullException.ThrowIfNull(draft);
         ValidateDraft(draft);
 
+        // Stable id per draft line up front (the line table is
+        // delete-then-reinsert), reused for the line row, the engine line
+        // request, and the snapshot row.
+        var orderedLines = draft.Lines
+            .OrderBy(static line => line.LineNumber)
+            .Select(static line => (Line: line, LineId: Guid.NewGuid()))
+            .ToList();
+
+        // Sales Tax v2 (S2.3): credit note is the sales side. When the flag
+        // is on the engine is the authority for tax_amount (engine-absolute)
+        // and its per-component output is persisted to
+        // document_line_sales_tax_snapshots after commit. When off,
+        // behaviour is unchanged.
+        var salesTaxActive = _salesTaxV2Enabled
+            && _salesTaxEngine is not null
+            && _taxSnapshotPersister is not null;
+
+        SalesTaxComputationResult? taxResult = null;
+        if (salesTaxActive)
+        {
+            taxResult = await _salesTaxEngine!.ComputeAsync(
+                new SalesTaxComputationRequest(
+                    draft.CompanyId.Value,
+                    draft.CreditNoteDate,
+                    draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+                    SalesTaxDocumentSide.Sales,
+                    orderedLines
+                        .Select(static entry => new SalesTaxLineRequest(
+                            entry.LineId,
+                            Round6(entry.Line.Quantity * entry.Line.UnitPrice),
+                            entry.Line.TaxCodeId))
+                        .ToList()),
+                cancellationToken);
+        }
+
+        var resolvedTaxByLineId = orderedLines.ToDictionary(
+            entry => entry.LineId,
+            entry => taxResult is null
+                ? entry.Line.TaxAmount
+                : taxResult.Lines.FirstOrDefault(r => r.LineId == entry.LineId)?.TotalTaxAmount ?? 0m);
+        var headerTaxAmount = Round6(resolvedTaxByLineId.Values.Sum());
+
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -382,7 +436,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   now()
                 );
                 """;
-            BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber);
+            BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         else
@@ -414,7 +468,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   and company_id = @company_id
                   and status = 'draft';
                 """;
-            BindHeader(updateCommand, draft, documentId, entityNumber, displayNumber, includeIdentity: false);
+            BindHeader(updateCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount, includeIdentity: false);
             var affectedRows = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
@@ -436,7 +490,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        foreach (var line in draft.Lines.OrderBy(static line => line.LineNumber))
+        foreach (var (line, lineId) in orderedLines)
         {
             await using var insertLineCommand = connection.CreateCommand();
             insertLineCommand.Transaction = transaction;
@@ -477,7 +531,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   now()
                 );
                 """;
-            insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+            insertLineCommand.Parameters.AddWithValue("id", lineId);
             insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("credit_note_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
@@ -487,7 +541,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             insertLineCommand.Parameters.AddWithValue("unit_price", Round6(line.UnitPrice));
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.Quantity * line.UnitPrice));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
-            insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
+            insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(resolvedTaxByLineId[lineId]));
             // task_id column added by PostgresTaskLinkSchemaInitializer
             // (Batch 8). When set, PostCreditNoteCommandHandler's Step 2
             // hook rolls the linked tasks Billed -> Completed after post.
@@ -501,6 +555,21 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        // Persist the engine's snapshot rows after the lines commit (the
+        // persister has its own connection/transaction).
+        if (taxResult is not null)
+        {
+            SalesTaxComputationResult computed = taxResult;
+            await _taxSnapshotPersister!.PersistAsync(
+                draft.CompanyId.Value,
+                "credit_note",
+                documentId,
+                orderedLines
+                    .Select(entry => (entry.LineId, computed.Lines.First(r => r.LineId == entry.LineId)))
+                    .ToList(),
+                cancellationToken);
+        }
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
     }
@@ -602,11 +671,11 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
         Guid documentId,
         string entityNumber,
         string displayNumber,
+        decimal taxAmount,
         bool includeIdentity = true)
     {
         var (fxRate, fxSource, fxRequestedDate, fxEffectiveDate) = ResolveFx(draft.TransactionCurrencyCode, draft.BaseCurrencyCode, draft.CreditNoteDate, draft.FxRate, draft.FxEffectiveDate, draft.FxSource);
         var subtotalAmount = Round6(draft.Lines.Sum(static line => line.Quantity * line.UnitPrice));
-        var taxAmount = Round6(draft.Lines.Sum(static line => line.TaxAmount));
         var totalAmount = Round6(subtotalAmount + taxAmount);
 
         command.Parameters.AddWithValue("id", documentId);
