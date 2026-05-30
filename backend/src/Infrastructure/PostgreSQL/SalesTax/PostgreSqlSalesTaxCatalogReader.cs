@@ -45,6 +45,9 @@ public sealed class PostgreSqlSalesTaxCatalogReader : ISalesTaxCatalogReader
                 c.is_compound            as is_compound,
                 c.recoverability_mode    as recoverability_mode,
                 c.recoverable_percent    as recoverable_percent,
+                c.payable_account_id        as payable_account_id,
+                c.recoverable_account_id    as recoverable_account_id,
+                c.non_recoverable_account_id as non_recoverable_account_id,
                 coalesce(r.rate_percent, 0) as rate_percent,
                 coalesce(
                     (select array_agg(distinct b.box_code order by b.box_code)
@@ -104,7 +107,16 @@ public sealed class PostgreSqlSalesTaxCatalogReader : ISalesTaxCatalogReader
                     ? null
                     : reader.GetDecimal(reader.GetOrdinal("recoverable_percent")),
                 RatePercent: reader.GetDecimal(reader.GetOrdinal("rate_percent")),
-                BoxCodes: (string[])reader.GetValue(reader.GetOrdinal("box_codes"))));
+                BoxCodes: (string[])reader.GetValue(reader.GetOrdinal("box_codes")),
+                PayableAccountId: reader.IsDBNull(reader.GetOrdinal("payable_account_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("payable_account_id")),
+                RecoverableAccountId: reader.IsDBNull(reader.GetOrdinal("recoverable_account_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("recoverable_account_id")),
+                NonRecoverableAccountId: reader.IsDBNull(reader.GetOrdinal("non_recoverable_account_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("non_recoverable_account_id"))));
         }
 
         return byLegacy.ToDictionary(

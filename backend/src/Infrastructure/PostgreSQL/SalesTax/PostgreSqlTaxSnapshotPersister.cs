@@ -95,14 +95,18 @@ public sealed class PostgreSqlTaxSnapshotPersister : ITaxSnapshotPersister
                 code_snapshot, name_snapshot, regime_type_snapshot, treatment_snapshot,
                 rate_percent_snapshot, is_compound_snapshot, reporting_box_codes,
                 taxable_amount, tax_amount, recoverable_amount, non_recoverable_amount,
-                document_currency_code, tax_amount_base, fx_rate_snapshot, computed_at
+                document_currency_code, tax_amount_base, fx_rate_snapshot,
+                payable_account_id, recoverable_account_id, non_recoverable_account_id,
+                computed_at
             ) values (
                 @id, @company_id, @document_type, @document_id, @line_id, @sequence, @leg,
                 @tax_code_id, @component_id, @jurisdiction_id,
                 @code, @name, @regime, @treatment,
                 @rate, @compound, @boxes,
                 @taxable, @tax, @recoverable, @non_recoverable,
-                @currency, @tax_base, @fx, now()
+                @currency, @tax_base, @fx,
+                @payable_account_id, @recoverable_account_id, @non_recoverable_account_id,
+                now()
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
@@ -134,6 +138,9 @@ public sealed class PostgreSqlTaxSnapshotPersister : ITaxSnapshotPersister
         command.Parameters.AddWithValue("currency", snapshot.DocumentCurrencyCode);
         command.Parameters.AddWithValue("tax_base", snapshot.TaxAmountBase);
         command.Parameters.AddWithValue("fx", snapshot.FxRateSnapshot);
+        command.Parameters.Add(new NpgsqlParameter<Guid?>("payable_account_id", NpgsqlDbType.Uuid) { TypedValue = snapshot.PayableAccountId });
+        command.Parameters.Add(new NpgsqlParameter<Guid?>("recoverable_account_id", NpgsqlDbType.Uuid) { TypedValue = snapshot.RecoverableAccountId });
+        command.Parameters.Add(new NpgsqlParameter<Guid?>("non_recoverable_account_id", NpgsqlDbType.Uuid) { TypedValue = snapshot.NonRecoverableAccountId });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

@@ -133,7 +133,10 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
                 NonRecoverableAmount: nonRecoverable,
                 DocumentCurrencyCode: request.DocumentCurrencyCode,
                 TaxAmountBase: taxAmountBase,
-                FxRateSnapshot: request.FxRateToBase));
+                FxRateSnapshot: request.FxRateToBase,
+                PayableAccountId: component.PayableAccountId,
+                RecoverableAccountId: component.RecoverableAccountId,
+                NonRecoverableAccountId: component.NonRecoverableAccountId));
 
             totalTax += taxAmount;
             totalRecoverable += recoverable;

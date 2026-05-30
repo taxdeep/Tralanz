@@ -86,7 +86,14 @@ public sealed record TaxSnapshotDraft(
     decimal NonRecoverableAmount,
     string DocumentCurrencyCode,
     decimal TaxAmountBase,
-    decimal FxRateSnapshot);
+    decimal FxRateSnapshot,
+    // S5 (decision A): the component's GL accounts, snapshotted so posted
+    // documents are immutable in their routing. Null when the component has
+    // no account configured; the posting fragment builder requires a
+    // non-null account only for a leg that carries tax.
+    Guid? PayableAccountId = null,
+    Guid? RecoverableAccountId = null,
+    Guid? NonRecoverableAccountId = null);
 
 public interface ITaxSnapshotPersister
 {
@@ -133,4 +140,9 @@ public sealed record TaxCatalogComponentRow(
     string RecoverabilityMode,
     decimal? RecoverablePercent,
     decimal RatePercent,
-    IReadOnlyList<string> BoxCodes);
+    IReadOnlyList<string> BoxCodes,
+    // S5 (decision A): per-component GL routing, carried so the engine can
+    // snapshot it onto each TaxSnapshotDraft.
+    Guid? PayableAccountId = null,
+    Guid? RecoverableAccountId = null,
+    Guid? NonRecoverableAccountId = null);
