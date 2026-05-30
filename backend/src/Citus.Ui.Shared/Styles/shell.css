@@ -7,10 +7,14 @@
 .citus-shell {
     min-height: 100vh;
     background: var(--citus-color-bg);
+    display: flex;
+    flex-direction: column;
 }
 
-.citus-shell {
+.citus-shell__body {
     display: flex;
+    flex: 1;
+    min-height: 0;
 }
 
 .citus-shell__sider {
@@ -38,11 +42,20 @@
     display: flex;
     align-items: center;
     gap: var(--citus-space-3);
-    padding: var(--citus-space-4) var(--citus-space-5);
+    width: 240px;
+    height: var(--citus-header-height);
+    padding: 0 var(--citus-space-5);
     color: var(--citus-color-fg);
     font-weight: 600;
-    border-bottom: 1px solid var(--citus-color-border);
-    min-height: var(--citus-header-height);
+    border-right: 1px solid var(--citus-color-border);
+    flex-shrink: 0;
+    transition: width 180ms ease;
+}
+
+.citus-shell--collapsed .citus-shell__brand {
+    width: 64px;
+    justify-content: center;
+    padding: 0;
 }
 
 .citus-shell__brand-text {
@@ -64,11 +77,14 @@
 }
 
 .citus-shell__header {
+    display: flex;
+    align-items: center;
     background: var(--citus-color-bg-elevated) !important;
     border-bottom: 1px solid var(--citus-color-border);
-    padding: 0 var(--citus-space-5) !important;
+    padding: 0 !important;
     line-height: var(--citus-header-height) !important;
     height: var(--citus-header-height) !important;
+    flex-shrink: 0;
 }
 
 .citus-shell__content {
@@ -157,6 +173,41 @@
     letter-spacing: 0.06em;
 }
 
+.citus-nav-menu__group-toggle {
+    width: calc(100% - var(--citus-space-4));
+    margin: 0 var(--citus-space-2);
+    padding: var(--citus-space-2) var(--citus-space-3);
+    border: 0;
+    border-radius: var(--citus-radius-md);
+    background: transparent;
+    color: var(--citus-color-fg-subtle);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-2);
+    font: inherit;
+    font-size: var(--citus-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.citus-nav-menu__group-toggle:hover {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-nav-menu__group-toggle:focus-visible {
+    outline: 2px solid var(--citus-color-primary);
+    outline-offset: 2px;
+}
+
+.citus-nav-menu__group-title-text {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .citus-nav-menu__items {
     list-style: none;
     margin: 0;
@@ -209,6 +260,9 @@
     align-items: center;
     gap: var(--citus-space-3);
     height: 100%;
+    flex: 1;
+    min-width: 0;
+    padding: 0 var(--citus-space-5);
 }
 
 .citus-topbar__drawer-toggle,
@@ -1708,6 +1762,163 @@ a.citus-domain-card--linked:active {
     margin-left: auto;
 }
 
+/* ---------- Aise shared UI primitives ----------
+   New components use the Aise name while reusing the existing Citus
+   visual language. They are intentionally layout-only wrappers so
+   business pages keep owning handlers, validation, and API calls. */
+
+.aise-button-group {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+}
+
+.aise-button-group--wrap {
+    flex-wrap: wrap;
+}
+
+.aise-button-group--center {
+    justify-content: center;
+}
+
+.aise-button-group--end {
+    justify-content: flex-end;
+}
+
+.aise-button-group--between {
+    justify-content: space-between;
+}
+
+.aise-form-section__header {
+    align-items: flex-start;
+}
+
+.aise-form-section__heading {
+    min-width: 0;
+}
+
+.aise-form-section__description {
+    margin: calc(var(--citus-space-1) * -1) 0 0;
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+}
+
+.aise-form-section__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.aise-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--aise-form-grid-min, 16rem)), 1fr));
+    gap: var(--citus-space-3);
+}
+
+.aise-form-grid--dense {
+    gap: var(--citus-space-2);
+}
+
+@media (min-width: 48rem) {
+    .aise-form-grid--cols-1 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .aise-form-grid--cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .aise-form-grid--cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .aise-form-grid--cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+.aise-field-group__required {
+    color: var(--citus-color-danger);
+    margin-left: var(--citus-space-1);
+}
+
+.aise-field-group__helper,
+.aise-field-group__validation {
+    margin: 0;
+    font-size: var(--citus-text-xs);
+    line-height: var(--citus-leading-normal);
+}
+
+.aise-field-group__helper {
+    color: var(--citus-color-fg-subtle);
+}
+
+.aise-field-group__validation {
+    color: var(--citus-color-danger);
+}
+
+.aise-page-actionbar--static {
+    position: static;
+    margin: var(--citus-space-6) 0 0;
+}
+
+.aise-detail-meta-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--citus-space-2);
+    margin: 0 0 var(--citus-space-4);
+}
+
+.aise-summary-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-3);
+}
+
+.aise-summary-metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+    min-width: 0;
+}
+
+.aise-summary-metric__label {
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-xs);
+}
+
+.aise-summary-metric__value {
+    color: var(--citus-color-fg);
+    font-size: 1.15rem;
+    font-weight: 600;
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.aise-summary-metric__description {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+}
+
+.aise-summary-metric--success .aise-summary-metric__value {
+    color: var(--citus-color-success);
+}
+
+.aise-summary-metric--danger .aise-summary-metric__value {
+    color: var(--citus-color-danger);
+}
+
+.aise-summary-metric--warning .aise-summary-metric__value {
+    color: var(--citus-color-warning);
+}
+
+.aise-summary-metric--primary .aise-summary-metric__value {
+    color: var(--citus-color-primary);
+}
+
 /* Plain HTML form field. */
 .citus-form-field {
     display: flex;
@@ -2342,6 +2553,88 @@ html[data-theme="dark"] .citus-shell__sider {
    thin subdued row. Pickers slot in via .unity-picker without
    wrappers — they already drive their own colours through tokens. */
 
+.citus-je-workbench {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-3);
+}
+
+.citus-je-toolbar,
+.citus-je-sheet {
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    background: var(--citus-color-bg-elevated);
+}
+
+.citus-je-toolbar {
+    padding: var(--citus-space-3);
+}
+
+.citus-je-toolbar .citus-form-field__label {
+    margin-bottom: 0.125rem;
+    font-size: var(--citus-text-xs);
+}
+
+.citus-je-toolbar .citus-form-field__input {
+    min-height: 2rem;
+    padding-block: 0.25rem;
+}
+
+.citus-je-sheet {
+    overflow: hidden;
+}
+
+.citus-je-sheet__header,
+.citus-je-sheet__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-2) var(--citus-space-3);
+}
+
+.citus-je-sheet__header {
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-je-sheet__totals,
+.citus-je-footerbar__facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--citus-space-3);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.citus-je-sheet__actions {
+    border-top: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-je-summary-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.8fr);
+    gap: var(--citus-space-3);
+}
+
+.citus-je-summary-grid .citus-panel {
+    padding: var(--citus-space-3);
+    border-radius: var(--citus-radius-sm);
+}
+
+.citus-je-summary-grid .citus-keyvalue th,
+.citus-je-summary-grid .citus-keyvalue td {
+    padding-block: 0.35rem;
+}
+
+@media (max-width: 900px) {
+    .citus-je-summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .citus-journal-lines {
     table-layout: fixed;
     width: 100%;
@@ -2935,6 +3228,10 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     width: 100%;
 }
 
+.citus-account-picker:focus-within {
+    z-index: 1000;
+}
+
 .citus-account-picker--disabled {
     opacity: 0.6;
     pointer-events: none;
@@ -2957,15 +3254,29 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
 }
 
-.citus-account-picker__input {
+.citus-account-picker__control > input.citus-account-picker__input,
+.citus-account-picker__control > input.citus-account-picker__input:focus,
+.citus-account-picker__control > input.citus-account-picker__input:focus-visible {
+    all: unset;
     flex: 1;
-    border: 0;
-    outline: 0;
-    background: transparent;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 0;
+    border: 0 !important;
+    outline: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
     color: var(--citus-color-fg);
     font: inherit;
-    padding: var(--citus-space-1) 0;
-    min-width: 0;
+    font-size: var(--citus-text-sm);
+    line-height: var(--citus-input-line-height);
+    padding: 0;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
 }
 
 .citus-account-picker__input::placeholder {
@@ -2993,14 +3304,17 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     position: absolute;
     top: calc(100% + 2px);
     left: 0;
-    right: 0;
+    right: auto;
     z-index: 90;
+    width: clamp(22rem, 42vw, 34rem);
+    max-width: calc(100vw - 2rem);
     background: var(--citus-color-bg-elevated);
     border: 1px solid var(--citus-color-border);
     border-radius: var(--citus-radius-sm);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
     max-height: 320px;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .citus-account-picker__create {
@@ -3028,9 +3342,9 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 .citus-account-picker__option {
     display: grid;
-    grid-template-columns: minmax(80px, auto) 1fr minmax(120px, auto);
-    align-items: baseline;
-    gap: var(--citus-space-3);
+    grid-template-columns: 4.75rem minmax(0, 1fr) max-content;
+    align-items: center;
+    column-gap: var(--citus-space-3);
     width: 100%;
     background: transparent;
     border: 0;
@@ -3054,6 +3368,10 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 .citus-account-picker__option-name {
     color: var(--citus-color-fg);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .citus-account-picker__option-ccy {
@@ -3065,6 +3383,10 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     color: var(--citus-color-fg-muted);
     font-size: var(--citus-text-xs);
     text-align: right;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .citus-account-picker__match {
@@ -3076,6 +3398,60 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     color: var(--citus-color-fg-muted);
     font-size: var(--citus-text-sm);
     padding: var(--citus-space-2) var(--citus-space-3);
+}
+
+.bill-lines-panel {
+    overflow: hidden;
+}
+
+.bill-lines-panel .citus-data-table {
+    table-layout: fixed;
+}
+
+.bill-lines-table__col-index {
+    width: 2.75rem;
+}
+
+.bill-lines-table__col-item {
+    width: 14%;
+}
+
+.bill-lines-table__col-category {
+    width: 22%;
+}
+
+.bill-lines-table__col-description {
+    width: 20%;
+}
+
+.bill-lines-table__col-tax {
+    width: 5rem;
+}
+
+.bill-lines-table__col-tax-amount,
+.bill-lines-table__col-amount {
+    width: 7rem;
+}
+
+.bill-lines-table__col-actions {
+    width: 11.5rem;
+}
+
+.bill-lines-table th,
+.bill-lines-table td {
+    overflow: hidden;
+}
+
+.bill-lines-table__truncate {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.bill-lines-table__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--citus-space-2);
+    white-space: nowrap;
 }
 
 .citus-account-picker__create-panel {
@@ -3296,6 +3672,7 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
     max-height: 320px;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .citus-customer-picker__create {
@@ -3338,6 +3715,10 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     background: var(--citus-color-bg-muted);
 }
 
+.citus-customer-picker__option--customer {
+    grid-template-columns: 8.5rem minmax(0, 1fr) 4.5rem;
+}
+
 .citus-customer-picker__option-copy {
     display: grid;
     min-width: 0;
@@ -3356,6 +3737,31 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 .citus-customer-picker__option-kind {
+    text-align: right;
+}
+
+.citus-customer-picker__option-id,
+.citus-customer-picker__option-name,
+.citus-customer-picker__option-currency {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.citus-customer-picker__option-id {
+    color: var(--citus-color-fg-muted);
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.citus-customer-picker__option-name {
+    color: var(--citus-color-fg);
+    font-weight: 600;
+}
+
+.citus-customer-picker__option-currency {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
     text-align: right;
 }
 
@@ -3820,4 +4226,732 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 .citus-stack-list__row:last-child {
     border-bottom: 0;
+}
+
+/* Aiseworks home flow board. The layout intentionally echoes the
+   accountant-facing desktop home pages: grouped workflow lanes in the
+   center, company/banking shortcuts on the right, and compact clickable
+   icon nodes instead of dashboard cards. */
+.aise-home {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-3);
+}
+
+.aise-home__topline {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--citus-space-4);
+}
+
+.aise-home__eyebrow {
+    margin: 0 0 .25rem;
+    color: var(--citus-color-primary);
+    font-size: var(--text-xs, .75rem);
+    font-weight: var(--citus-font-weight-semibold, 600);
+    text-transform: uppercase;
+}
+
+.aise-home__title {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: var(--citus-font-weight-semibold, 600);
+    line-height: 1.2;
+}
+
+.aise-home__status-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--text-xs, .75rem);
+    white-space: nowrap;
+}
+
+.aise-home__status-strip span {
+    padding: .25rem .5rem;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    background: var(--citus-color-bg-elevated);
+}
+
+.aise-home__tabs {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.aise-home__tab {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.75rem;
+    padding: .25rem .875rem;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    color: var(--citus-color-fg-muted);
+    font-size: var(--text-sm, .875rem);
+}
+
+.aise-home__tab--active {
+    color: var(--citus-color-primary-fg);
+    background: var(--citus-color-primary);
+    border-color: var(--citus-color-primary);
+    font-weight: var(--citus-font-weight-semibold, 600);
+}
+
+.aise-home__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+    gap: var(--citus-space-3);
+    align-items: stretch;
+}
+
+.aise-home__main {
+    display: grid;
+    gap: var(--citus-space-3);
+}
+
+.aise-home__side {
+    display: grid;
+    gap: var(--citus-space-3);
+    align-content: start;
+}
+
+.aise-flow-panel {
+    position: relative;
+    min-width: 0;
+    border: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-elevated);
+}
+
+.aise-flow-panel__label {
+    position: absolute;
+    top: -.55rem;
+    left: 50%;
+    z-index: 2;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 4rem;
+    min-height: 1rem;
+    padding: .0625rem .5rem;
+    border: 1px solid color-mix(in srgb, var(--citus-color-primary) 45%, var(--citus-color-border));
+    border-radius: var(--citus-radius-sm);
+    background: var(--citus-color-bg);
+    color: var(--citus-color-primary);
+    font-size: .625rem;
+    font-weight: var(--citus-font-weight-semibold, 600);
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.aise-flow-panel--vendors {
+    min-height: 13.25rem;
+}
+
+.aise-flow-panel--customers {
+    min-height: 16.5rem;
+}
+
+.aise-flow-panel--employees {
+    min-height: 9rem;
+}
+
+.aise-flow-panel--side {
+    min-height: 13.25rem;
+}
+
+.aise-flow-canvas {
+    position: relative;
+    min-height: inherit;
+    overflow: hidden;
+}
+
+.aise-flow-node,
+.aise-shortcut {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    color: var(--citus-color-fg);
+    text-align: center;
+    text-decoration: none;
+    font-size: var(--text-xs, .75rem);
+    font-weight: var(--citus-font-weight-medium, 500);
+    line-height: 1.15;
+}
+
+.aise-flow-node svg,
+.aise-shortcut svg {
+    color: var(--citus-color-primary);
+}
+
+.aise-flow-node:hover,
+.aise-shortcut:hover {
+    color: var(--citus-color-primary);
+}
+
+.aise-flow-node {
+    position: absolute;
+    z-index: 2;
+    width: 7rem;
+    min-height: 3.75rem;
+    padding: .25rem;
+}
+
+.aise-flow-line {
+    position: absolute;
+    z-index: 1;
+    background: color-mix(in srgb, var(--citus-color-fg-muted) 45%, transparent);
+    pointer-events: none;
+}
+
+.aise-flow-line::after {
+    content: "";
+    position: absolute;
+    width: .45rem;
+    height: .45rem;
+    border-top: 2px solid color-mix(in srgb, var(--citus-color-fg-muted) 50%, transparent);
+    border-right: 2px solid color-mix(in srgb, var(--citus-color-fg-muted) 50%, transparent);
+}
+
+.aise-flow-line--vendor-top {
+    left: 14%;
+    right: 34%;
+    top: 3.1rem;
+    height: 3px;
+}
+
+.aise-flow-line--vendor-top::after {
+    right: -.15rem;
+    top: -.22rem;
+    transform: rotate(45deg);
+}
+
+.aise-flow-line--vendor-bill {
+    left: 24%;
+    top: 7.6rem;
+    width: 54%;
+    height: 3px;
+}
+
+.aise-flow-line--vendor-bill::after {
+    right: -.15rem;
+    top: -.22rem;
+    transform: rotate(45deg);
+}
+
+.aise-flow-line--vendor-pay {
+    left: 67%;
+    top: 5.05rem;
+    width: 3px;
+    height: 2.7rem;
+}
+
+.aise-flow-line--vendor-pay::after {
+    left: -.18rem;
+    bottom: -.1rem;
+    transform: rotate(135deg);
+}
+
+.aise-flow-line--vendor-inventory {
+    left: 50%;
+    top: 3.1rem;
+    width: 3px;
+    height: 4.6rem;
+}
+
+.aise-flow-line--customer-main {
+    left: 12%;
+    right: 10%;
+    top: 8.2rem;
+    height: 3px;
+}
+
+.aise-flow-line--customer-main::after {
+    right: -.15rem;
+    top: -.22rem;
+    transform: rotate(45deg);
+}
+
+.aise-flow-line--customer-invoice {
+    left: 24%;
+    top: 4.2rem;
+    width: 3px;
+    height: 4rem;
+}
+
+.aise-flow-line--customer-invoice::after,
+.aise-flow-line--customer-receipt::after,
+.aise-flow-line--customer-statements::after {
+    left: -.18rem;
+    bottom: -.1rem;
+    transform: rotate(135deg);
+}
+
+.aise-flow-line--customer-receipt {
+    left: 64%;
+    top: 3.8rem;
+    width: 3px;
+    height: 4.4rem;
+}
+
+.aise-flow-line--customer-statements {
+    left: 53%;
+    top: 8.2rem;
+    width: 3px;
+    height: 4.2rem;
+}
+
+.aise-flow-line--task-main {
+    left: 23%;
+    right: 23%;
+    top: 4.2rem;
+    height: 3px;
+}
+
+.aise-flow-line--task-main::after {
+    right: -.15rem;
+    top: -.22rem;
+    transform: rotate(45deg);
+}
+
+.aise-flow-node--vendor-po { left: 9%; top: 1.45rem; }
+.aise-flow-node--vendor-receive { left: 36%; top: 1.45rem; }
+.aise-flow-node--vendor-bill { left: 62%; top: 1.45rem; }
+.aise-flow-node--vendor-enter { left: 21%; top: 6rem; }
+.aise-flow-node--vendor-pay { left: 78%; top: 6rem; }
+.aise-flow-node--vendor-sales-tax { right: 2%; top: 1.45rem; }
+
+.aise-flow-node--customer-estimates { left: 8%; top: 6.65rem; }
+.aise-flow-node--customer-invoices { left: 20%; top: 6.65rem; }
+.aise-flow-node--customer-receive { left: 59%; top: 6.65rem; }
+.aise-flow-node--customer-sales-receipts { left: 62%; top: 1.8rem; }
+.aise-flow-node--customer-deposits { right: 5%; top: 6.65rem; }
+.aise-flow-node--customer-statements { left: 48%; top: 11rem; }
+.aise-flow-node--customer-refunds { right: 19%; top: 11rem; }
+
+.aise-flow-node--task-new { left: 20%; top: 2.35rem; }
+.aise-flow-node--task-cost { left: 46%; top: 2.35rem; }
+.aise-flow-node--task-margin { right: 18%; top: 2.35rem; }
+
+.aise-shortcut-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--citus-space-5) var(--citus-space-3);
+    padding: var(--citus-space-7) var(--citus-space-4) var(--citus-space-5);
+}
+
+.aise-shortcut {
+    min-height: 4.5rem;
+}
+
+@media (max-width: 72rem) {
+    .aise-home__layout {
+        grid-template-columns: 1fr;
+    }
+
+    .aise-home__side {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 48rem) {
+    .aise-home__topline {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .aise-home__status-strip,
+    .aise-home__side {
+        grid-template-columns: 1fr;
+        flex-wrap: wrap;
+    }
+
+    .aise-flow-canvas {
+        min-height: auto;
+        padding: var(--citus-space-6) var(--citus-space-3) var(--citus-space-4);
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--citus-space-3);
+    }
+
+    .aise-flow-node {
+        position: static;
+        width: auto;
+        border: 1px solid var(--citus-color-border);
+        border-radius: var(--citus-radius-sm);
+        background: var(--citus-color-bg);
+    }
+
+    .aise-flow-line {
+        display: none;
+    }
+}
+
+/* Invoice editor: a dense, QuickBooks-style workbench while preserving the
+   Aiseworks dark shell. Business behavior remains server-authoritative. */
+.citus-link-button {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--citus-color-primary);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.citus-link-button:hover {
+    color: var(--citus-color-primary-hover, var(--citus-color-primary));
+}
+
+.aise-invoice-page {
+    min-height: calc(100vh - 5rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-3);
+    padding-bottom: 4.5rem;
+}
+
+.aise-invoice-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-4);
+    min-height: 3.25rem;
+    padding: var(--citus-space-3) var(--citus-space-4);
+    border: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-elevated);
+}
+
+.aise-invoice-title,
+.aise-invoice-topbar__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-3);
+}
+
+.aise-invoice-title h1 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: var(--citus-font-weight-semibold, 600);
+    line-height: 1.2;
+}
+
+.aise-invoice-title span {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--text-xs, .75rem);
+}
+
+.aise-invoice-back {
+    color: var(--citus-color-fg-muted);
+    text-decoration: none;
+}
+
+.aise-invoice-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 19rem);
+    gap: var(--citus-space-3);
+    align-items: start;
+}
+
+.aise-invoice-sheet {
+    min-width: 0;
+    border: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-elevated);
+    box-shadow: var(--citus-shadow-1, 0 1px 2px rgba(0, 0, 0, .2));
+}
+
+.aise-invoice-sheet__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--citus-space-4);
+    padding: var(--citus-space-6);
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.aise-invoice-sheet__header h2 {
+    margin: 0;
+    color: var(--citus-color-primary);
+    font-size: 1rem;
+    font-weight: var(--citus-font-weight-semibold, 600);
+    text-transform: uppercase;
+}
+
+.aise-invoice-balance {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: .25rem;
+    color: var(--citus-color-fg-muted);
+    font-size: var(--text-sm, .875rem);
+}
+
+.aise-invoice-balance strong {
+    color: var(--citus-color-fg);
+}
+
+.aise-invoice-band {
+    display: grid;
+    grid-template-columns:
+        minmax(14rem, 1.05fr)
+        minmax(15rem, 1fr)
+        minmax(15rem, 1fr)
+        minmax(12rem, .75fr)
+        minmax(13rem, .75fr);
+    gap: var(--citus-space-4);
+    padding: var(--citus-space-5) var(--citus-space-6);
+    background: color-mix(in srgb, var(--citus-color-bg) 74%, var(--citus-color-bg-elevated));
+}
+
+.aise-invoice-customer,
+.aise-invoice-address {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.aise-invoice-shipping,
+.aise-invoice-meta {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-content: start;
+    align-items: center;
+    gap: .5rem .75rem;
+}
+
+.aise-invoice-label,
+.aise-invoice-shipping label,
+.aise-invoice-meta label,
+.aise-invoice-rail label,
+.aise-fx-drawer label {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--text-xs, .75rem);
+    font-weight: var(--citus-font-weight-semibold, 600);
+}
+
+.aise-invoice-textarea {
+    min-height: 5.25rem;
+    resize: vertical;
+}
+
+.aise-invoice-options {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: .5rem;
+    padding: var(--citus-space-4) var(--citus-space-6);
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.aise-invoice-tax-mode {
+    max-width: 18rem;
+}
+
+.aise-invoice-lines {
+    padding: var(--citus-space-4) var(--citus-space-6);
+}
+
+.aise-invoice-lines header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-3);
+}
+
+.aise-invoice-lines h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: var(--citus-font-weight-semibold, 600);
+}
+
+.aise-invoice-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--citus-color-border);
+}
+
+.aise-invoice-table {
+    min-width: 72rem;
+}
+
+.aise-invoice-line-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    margin-top: var(--citus-space-3);
+}
+
+.aise-invoice-lower {
+    display: grid;
+    grid-template-columns: minmax(18rem, 24rem) minmax(16rem, 20rem);
+    justify-content: space-between;
+    gap: var(--citus-space-6);
+    padding: var(--citus-space-5) var(--citus-space-6) var(--citus-space-8);
+}
+
+.aise-invoice-notes,
+.aise-invoice-totals,
+.aise-invoice-rail,
+.aise-fx-drawer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-3);
+}
+
+.aise-invoice-attachment {
+    padding: var(--citus-space-4);
+    border: 1px dashed var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    color: var(--citus-color-primary);
+    font-size: var(--text-xs, .75rem);
+    text-align: center;
+}
+
+.aise-invoice-attachment span {
+    color: var(--citus-color-fg-muted);
+}
+
+.aise-invoice-totals div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-4);
+    font-size: var(--text-sm, .875rem);
+}
+
+.aise-invoice-totals__grand {
+    margin-top: .25rem;
+    padding-top: .75rem;
+    border-top: 1px solid var(--citus-color-border);
+    font-weight: var(--citus-font-weight-semibold, 600);
+}
+
+.aise-invoice-rail {
+    position: sticky;
+    top: var(--citus-space-3);
+    min-width: 0;
+    padding: var(--citus-space-4);
+    border: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-elevated);
+}
+
+.aise-invoice-rail header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+}
+
+.aise-invoice-rail header span {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--text-xs, .75rem);
+    text-align: right;
+}
+
+.aise-invoice-rail section {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    padding-top: var(--citus-space-3);
+    border-top: 1px solid var(--citus-color-border);
+}
+
+.aise-invoice-payment-icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
+.aise-invoice-payment-icons span {
+    padding: .125rem .35rem;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    color: var(--citus-color-fg-muted);
+    font-size: .7rem;
+}
+
+.aise-fx-drawer__note {
+    padding: var(--citus-space-3);
+    border-radius: var(--citus-radius-sm);
+    background: var(--citus-color-bg);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--text-sm, .875rem);
+}
+
+.aise-fx-drawer h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: var(--citus-font-weight-semibold, 600);
+}
+
+.aise-fx-drawer hr {
+    width: 100%;
+    border: 0;
+    border-top: 1px solid var(--citus-color-border);
+}
+
+.aise-fx-drawer__radio {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    color: var(--citus-color-fg);
+    font-size: var(--text-sm, .875rem);
+}
+
+@media (max-width: 96rem) {
+    .aise-invoice-band {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 80rem) {
+    .aise-invoice-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .aise-invoice-rail {
+        position: static;
+    }
+}
+
+@media (max-width: 48rem) {
+    .aise-invoice-topbar,
+    .aise-invoice-lines header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .aise-invoice-band,
+    .aise-invoice-lower {
+        grid-template-columns: 1fr;
+    }
+
+    .aise-invoice-shipping,
+    .aise-invoice-meta {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Radzen notifications are app-level feedback, not page content. Keep them
+   visually anchored to the viewport center so desktop and web shells agree. */
+.rz-notification {
+    inset-block-start: var(--citus-space-4, 1rem);
+    inset-inline-start: 50%;
+    inset-inline-end: auto;
+    transform: translateX(-50%);
+}
+
+.rz-notification-item-wrapper {
+    width: min(26rem, calc(100vw - 2rem));
+    min-width: 0;
 }

@@ -53,12 +53,23 @@ else
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
     </div>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
+    <AiseFormSection Title="Actions" Class="mb-6">
+        <AiseButtonGroup>
+            @if (CanPost(_bill.Status))
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.Check"
+                             Disabled="@_isMutating"
+                             OnClick="PostAsync">
+                    Post
+                </CitusButton>
+            }
             @if (_bill.Status == "draft")
             {
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
+                <AiseConfirmDangerAction Label="Void"
+                                         Disabled="@_isMutating"
+                                         ConfirmMessage="Void this bill? This keeps the audit trail and cannot be undone from this screen."
+                                         OnConfirmed="VoidAsync" />
             }
             else if (_bill.Status == "posted")
             {
@@ -68,13 +79,12 @@ else
             {
                 <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{poId:D}")">View source PO</a>
             }
-        </div>
-    </section>
+        </AiseButtonGroup>
+    </AiseFormSection>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <AiseFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -98,20 +108,18 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_bill.Memo))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Memo</h2>
+                <AiseFormSection Title="Memo" Class="mt-6">
                     <p class="text-fg-muted text-sm">@_bill.Memo</p>
-                </section>
+                </AiseFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
+            <AiseFormSection Title="Document">
                 <table class="citus-keyvalue">
                     <tbody>
                         <tr><th>Bill no.</th><td><span class="citus-inline-code">@_bill.BillNumber</span></td></tr>
@@ -126,10 +134,9 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
+            <AiseFormSection Title="Totals">
                 <table class="citus-keyvalue">
                     <tbody>
                         <tr><th>Subtotal</th><td class="text-right">@_bill.SubtotalAmount.ToString("N2")</td></tr>
@@ -137,7 +144,7 @@ else
                         <tr><th>Total</th><td class="text-right"><strong>@_bill.TotalAmount.ToString("N2") @_bill.DocumentCurrencyCode</strong></td></tr>
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
         </aside>
     </div>
 }
@@ -203,6 +210,28 @@ else
         return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
     }
 
+    private async Task PostAsync()
+    {
+        if (_bill is null || _isMutating) return;
+        _isMutating = true;
+        _error = null;
+        try
+        {
+            var outcome = await BillClient.PostAsync(_bill.Id);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Post failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+
+            _bill = outcome.Saved;
+            ApplyHeader();
+            await Message.SuccessAsync("Bill posted.");
+        }
+        finally { _isMutating = false; }
+    }
+
     private async Task VoidAsync()
     {
         if (_bill is null || _isMutating) return;
@@ -225,9 +254,12 @@ else
 
     private static bool IsEditable(string status) => status is "draft";
 
+    private static bool CanPost(string status) => status is "draft" or "submitted";
+
     private static string HumanizeStatus(string status) => status switch
     {
         "draft" => "Draft",
+        "submitted" => "Submitted",
         "posted" => "Posted",
         "partially_paid" => "Partially paid",
         "paid" => "Paid",
@@ -239,6 +271,7 @@ else
     private static string StatusHint(string status) => status switch
     {
         "draft" => "Not posted yet.",
+        "submitted" => "Ready to post.",
         "posted" => "Awaiting payment.",
         "partially_paid" => "Some applications received.",
         "paid" => "Fully settled.",
@@ -250,6 +283,7 @@ else
     private static StatTone StatusTone(string status) => status switch
     {
         "draft" => StatTone.Neutral,
+        "submitted" => StatTone.Info,
         "posted" => StatTone.Info,
         "partially_paid" => StatTone.Info,
         "paid" => StatTone.Success,

@@ -1,3 +1,4 @@
+using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Repositories;
 using Modules.AP;
 using Modules.AP.Bills;
@@ -362,9 +363,21 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         CancellationToken cancellationToken)
     {
         if (lines.Count == 0) return;
+
+        var recoverableTaxCodeIds = await ReadRecoverablePurchaseTaxCodeIdsAsync(
+            connection,
+            transaction,
+            companyId,
+            lines,
+            cancellationToken).ConfigureAwait(false);
+
         for (var i = 0; i < lines.Count; i++)
         {
             var line = lines[i];
+            var isTaxRecoverable =
+                line.TaxCodeId is { } taxCodeId &&
+                recoverableTaxCodeIds.Contains(taxCodeId);
+
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
@@ -373,7 +386,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                     line_amount, tax_code_id, tax_amount, is_tax_recoverable)
                 VALUES (
                     @company_id, @bill_id, @line_number, @expense_account_id, @description,
-                    @line_amount, @tax_code_id, @tax_amount, FALSE);
+                    @line_amount, @tax_code_id, @tax_amount, @is_tax_recoverable);
                 """;
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("bill_id", billId);
@@ -383,8 +396,91 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
             command.Parameters.AddWithValue("line_amount", line.LineAmount);
             command.Parameters.AddWithValue("tax_code_id", (object?)line.TaxCodeId ?? DBNull.Value);
             command.Parameters.AddWithValue("tax_amount", line.TaxAmount);
+            command.Parameters.AddWithValue("is_tax_recoverable", isTaxRecoverable);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static async Task<IReadOnlySet<Guid>> ReadRecoverablePurchaseTaxCodeIdsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        IReadOnlyList<BillLineInput> lines,
+        CancellationToken cancellationToken)
+    {
+        var taxCodeIds = lines
+            .Select(static line => line.TaxCodeId)
+            .Where(static id => id is not null)
+            .Select(static id => id!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (taxCodeIds.Length == 0)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var recoverableTaxCodeIds = new HashSet<Guid>();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT tc.id,
+                   tc.code,
+                   tc.applies_to,
+                   tc.is_active,
+                   COALESCE(
+                       BOOL_OR(
+                           COALESCE(tcc.applies_to, tc.applies_to) IN ('purchase', 'both')
+                           AND COALESCE(tcc.recoverability_override, stc.recoverability) = 'recoverable'),
+                       tc.is_recoverable_on_purchase
+                       OR tc.recoverability_mode <> 'none') AS is_recoverable_on_purchase
+              FROM tax_codes tc
+            LEFT JOIN sales_tax_code_components tcc
+                ON tcc.company_id = tc.company_id::text
+               AND tcc.tax_code_id = tc.id
+            LEFT JOIN sales_tax_components stc
+                ON stc.company_id = tc.company_id::text
+               AND stc.id = tcc.tax_component_id
+             WHERE tc.company_id = @company_id
+               AND tc.id = ANY(@ids)
+            GROUP BY tc.id,
+                   tc.code,
+                   tc.applies_to,
+                   tc.is_active,
+                   tc.is_recoverable_on_purchase,
+                   tc.recoverability_mode;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.Add("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid).Value = taxCodeIds;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var found = 0;
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            found++;
+            var code = reader.GetString(1);
+            var appliesTo = reader.GetString(2);
+            var isActive = reader.GetBoolean(3);
+            var isRecoverableOnPurchase = reader.GetBoolean(4);
+            if (!isActive)
+            {
+                throw new InvalidOperationException($"Tax code '{code}' is inactive and cannot be used on a bill.");
+            }
+            if (appliesTo is not (TaxCodeAppliesTo.Purchase or TaxCodeAppliesTo.Both))
+            {
+                throw new InvalidOperationException($"Tax code '{code}' is not available for purchases.");
+            }
+            if (isRecoverableOnPurchase)
+            {
+                recoverableTaxCodeIds.Add(reader.GetGuid(0));
+            }
+        }
+
+        if (found != taxCodeIds.Length)
+        {
+            throw new InvalidOperationException("One or more tax codes are not available in the active company.");
+        }
+
+        return recoverableTaxCodeIds;
     }
 
     private static void BindUpsertParameters(

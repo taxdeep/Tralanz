@@ -47,6 +47,36 @@
     </CitusAlert>
 }
 
+@if (!string.IsNullOrWhiteSpace(_copiedFromDisplayNumber))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <strong>This is a copy of @_copiedFromDisplayNumber.</strong>
+            <div class="text-fg-muted text-sm mt-1">
+                The source date, memo, currency, exchange rate, and lines were copied into a new draft. Review them before posting; the original journal entry was not changed.
+            </div>
+            @if (_copiedFromSourceDate is not null)
+            {
+                <div class="flex flex-wrap items-center gap-2 mt-3">
+                    <span class="text-fg-muted text-sm">Source date: @_copiedFromSourceDate.Value.ToString("yyyy-MM-dd")</span>
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Size="CitusButtonSize.Small"
+                                 OnClick="UseCopiedSourceDate">
+                        Use source date
+                    </CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Size="CitusButtonSize.Small"
+                                 OnClick="UseTodayForCopy">
+                        Use today
+                    </CitusButton>
+                </div>
+            }
+        </MessageTemplate>
+    </CitusAlert>
+}
+
 @if (!string.IsNullOrWhiteSpace(_validationMessage))
 {
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validationMessage" ShowIcon="true" Class="mb-4" />
@@ -64,10 +94,9 @@
     </CitusAlert>
 }
 
-<div class="flex flex-col gap-6">
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+<div class="citus-je-workbench">
+    <section class="citus-je-toolbar">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-2">
                 @* Journal No. — pre-filled with the next system-assigned
                    number on form load, but the operator can override inline.
                    Backend honors the override if it doesn't collide; if the
@@ -133,7 +162,7 @@
                         </label>
                     }
                 </div>
-                <label class="citus-form-field md:col-span-4">
+                <label class="citus-form-field md:col-span-5">
                     <span class="citus-form-field__label">Description <span class="text-fg-subtle text-xs">(optional)</span></span>
                     <input type="text"
                            class="citus-form-field__input"
@@ -144,10 +173,17 @@
             </div>
         </section>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
+        <section class="citus-je-sheet">
+            <header class="citus-je-sheet__header">
                 <h2 class="citus-panel__title">Lines</h2>
-                <span class="text-fg-muted text-sm">Press Tab through cells; a new row appears as you fill the last one.</span>
+                <div class="citus-je-sheet__totals">
+                    <span>@_lines.Count lines</span>
+                    <span>Debit <strong>@FormatAmount(_totalDebit)</strong></span>
+                    <span>Credit <strong>@FormatAmount(_totalCredit)</strong></span>
+                    <CitusBadge Color="@(_isBalanced ? "green" : "orange")">
+                        @(_isBalanced ? "Balanced" : $"Diff {FormatAmount(Math.Abs(_totalDebit - _totalCredit))}")
+                    </CitusBadge>
+                </div>
             </header>
 
             <table class="citus-data-table citus-journal-lines">
@@ -239,12 +275,12 @@
                         <td colspan="3" class="text-right font-medium">Totals</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalDebit)</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalCredit)</td>
-                        <td colspan="4"></td>
+                        <td colspan="2"></td>
                     </tr>
                 </tbody>
             </table>
 
-            <div class="flex items-center gap-3 mt-3">
+            <div class="citus-je-sheet__actions">
             <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
             <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearAllLines">Clear all lines</CitusButton>
             @if (!_isBalanced)
@@ -256,7 +292,7 @@
         </div>
     </section>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+    <div class="citus-je-summary-grid">
         <section class="citus-panel h-full">
             <h2 class="citus-panel__title">Posting summary</h2>
             <table class="citus-keyvalue">
@@ -339,6 +375,14 @@
     [SupplyParameterFromQuery(Name = "from")]
     public Guid? FromJournalEntryId { get; set; }
 
+    /// <summary>
+    /// Optional ?copyFrom={journalEntryId} query param. Unlike "from",
+    /// this does not void or mutate the source entry; it simply opens a
+    /// new manual journal form prefilled from the posted journal truth.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "copyFrom")]
+    public Guid? CopyFromJournalEntryId { get; set; }
+
     private DateTime? _date = DateTime.Today;
     private string _description = string.Empty;
     private string _journalNumber = string.Empty;
@@ -352,6 +396,10 @@
     /// <summary>Display number of the source JE when this form was opened
     /// via Edit ("from=..." in the URL). Drives the info banner at the top.</summary>
     private string? _prefilledFromDisplayNumber;
+    /// <summary>Display number of the source JE when this form was opened
+    /// via Copy ("copyFrom=..." in the URL). Drives the copy banner.</summary>
+    private string? _copiedFromDisplayNumber;
+    private DateOnly? _copiedFromSourceDate;
 
     private decimal _totalDebit => _lines.Sum(l => l.Debit);
     private decimal _totalCredit => _lines.Sum(l => l.Credit);
@@ -362,16 +410,34 @@
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
 
         // When opened via the JE review page's "Edit" action the URL carries
-        // ?from={journalEntryId}. Fetch that entry up-front and pre-fill the
-        // form with its lines so the operator only edits the cells that
-        // actually need correcting. Date stays today (we're recording a
-        // correction now, not back-dating).
-        if (FromJournalEntryId is { } fromId && fromId != Guid.Empty)
+        // ?from={journalEntryId}; Copy uses ?copyFrom={journalEntryId}. Both
+        // pre-fill from posted journal truth, but only the review page's Edit
+        // flow voids the source before navigating here. Copy behaves like
+        // an operator-facing clone: it carries source header context forward
+        // while still reserving a fresh journal number on post.
+        var sourceId = ResolvePrefillSourceId();
+        if (sourceId is { } prefillSourceId && prefillSourceId != Guid.Empty)
         {
-            var source = await JournalEntryReviewClient.GetAsync(ShellState.ActiveCompany.Id, fromId);
+            var source = await JournalEntryReviewClient.GetAsync(ShellState.ActiveCompany.Id, prefillSourceId);
             if (source is not null && source.Lines.Count > 0)
             {
-                _prefilledFromDisplayNumber = source.DisplayNumber;
+                if (IsCopyMode)
+                {
+                    _copiedFromDisplayNumber = source.DisplayNumber;
+                    _copiedFromSourceDate = source.SourceDocumentDate;
+                    if (source.SourceDocumentDate is { } sourceDate)
+                    {
+                        _date = sourceDate.ToDateTime(TimeOnly.MinValue);
+                    }
+                    if (!string.IsNullOrWhiteSpace(source.SourceMemo))
+                    {
+                        _description = source.SourceMemo;
+                    }
+                }
+                else
+                {
+                    _prefilledFromDisplayNumber = source.DisplayNumber;
+                }
                 _currency = source.TransactionCurrencyCode;
                 if (!string.Equals(source.TransactionCurrencyCode, source.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                 {
@@ -434,6 +500,25 @@
         {
             _isLoadingCurrencies = false;
         }
+    }
+
+    private bool IsCopyMode =>
+        CopyFromJournalEntryId is { } copyFromId && copyFromId != Guid.Empty;
+
+    private Guid? ResolvePrefillSourceId() =>
+        IsCopyMode ? CopyFromJournalEntryId : FromJournalEntryId;
+
+    private void UseCopiedSourceDate()
+    {
+        if (_copiedFromSourceDate is { } sourceDate)
+        {
+            _date = sourceDate.ToDateTime(TimeOnly.MinValue);
+        }
+    }
+
+    private void UseTodayForCopy()
+    {
+        _date = DateTime.Today;
     }
 
     private void OnCurrencyChanged(ChangeEventArgs args)
@@ -625,7 +710,14 @@
             if (_lastResult.Succeeded)
             {
                 await Message.SuccessAsync("Journal entry posted.");
-                NavigationManager.NavigateTo("journal-entry");
+                if (_lastResult.JournalEntryId is { } journalEntryId && journalEntryId != Guid.Empty)
+                {
+                    NavigationManager.NavigateTo($"journal-entry/review/{journalEntryId:D}");
+                }
+                else
+                {
+                    NavigationManager.NavigateTo("journal-entry");
+                }
             }
             else
             {

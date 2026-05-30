@@ -1,4 +1,6 @@
 using Citus.Accounting.Api;
+using Citus.Accounting.Api.Authorization;
+using Citus.Accounting.Api.Tasks;
 using static Citus.Accounting.Api.CompanyCurrencyResponseMapper;
 using static Citus.Accounting.Api.InventoryItemRequestMapper;
 using Citus.Accounting.Api.Initialization;
@@ -11,6 +13,7 @@ using Citus.Accounting.Application.Invoices;
 using Citus.Accounting.Application.Queries;
 using Citus.Accounting.Application.Reconciliation;
 using Citus.Accounting.Application.Repositories;
+using Citus.Accounting.Application.SalesTax;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
 using Citus.Platform.Core.Abstractions;
@@ -30,7 +33,12 @@ using Citus.Modules.UnityAi.Application;
 using Citus.Modules.UnityAi.Application.Contracts;
 using Citus.Modules.UnityAi.Domain.Shared;
 using Citus.Modules.Inventory.Application.Contracts;
+using Citus.Modules.Inventory.Application.Contracts.Pricing;
+using Citus.Modules.Inventory.Application.Pricing;
 using Citus.Modules.Inventory.Domain.Shared;
+using Citus.Modules.Tasks.Application;
+using Citus.Modules.Tasks.Application.Contracts;
+using Citus.Modules.Tasks.Domain.Shared.Reports;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Accounts;
 using Infrastructure.PostgreSQL.BusinessAuth;
@@ -48,6 +56,7 @@ using Modules.AP.PurchaseOrders;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
+using Infrastructure.PostgreSQL.Tasks;
 using Infrastructure.PostgreSQL.Tax;
 using Infrastructure.PostgreSQL.UnitySearch;
 using Infrastructure.PostgreSQL.UnityAi;
@@ -57,8 +66,10 @@ using Modules.CompanyAccess.SessionContext;
 using Npgsql;
 using Modules.Company.MultiBook;
 using Modules.Company.MultiCurrency;
+using Modules.Company.FeatureManagement;
 using System.Text;
 using System.Threading.RateLimiting;
+using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus;
 using JournalEntryNumberLookup = Engines.Numbering.JournalEntry.IJournalEntryNumberLookup;
 using GlIJournalEntryLifecycleStore = Modules.GL.JournalEntry.IJournalEntryLifecycleStore;
 using GlIJournalEntryLifecycleWorkflow = Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow;
@@ -143,7 +154,7 @@ builder.Services.AddScoped<IVendorCreditDocumentRepository, PostgresVendorCredit
 builder.Services.AddScoped<IReceivePaymentDocumentRepository, PostgresReceivePaymentDocumentRepository>();
 // Self-heals dev / test DBs to the customer_deposits + extra_deposit_amount
 // shape introduced for the overpay → Customer Deposit feature. Production
-// runs the canonical CITUS_POSTGRESQL_MIGRATION_DRAFT.sql; this is just a
+// runs the canonical TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql; this is just a
 // safety net so app start works without a manual migration step.
 builder.Services.AddSingleton<PostgresCustomerDepositSchemaBootstrap>();
 builder.Services.AddSingleton<PostgresV1WriteFlowSchemaBootstrap>();
@@ -187,6 +198,17 @@ builder.Services.AddScoped<ICompanyBookPolicyStore, PostgreSqlCompanyBookPolicyS
 builder.Services.AddScoped<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
 builder.Services.AddScoped<ICompanyCurrencyProvisioningStore, PostgreSqlCompanyCurrencyProvisioningStore>();
 builder.Services.AddScoped<ICompanyCurrencyGovernanceWorkflow, CompanyCurrencyGovernanceWorkflow>();
+builder.Services.AddSingleton<ICompanyModuleFlagStore, PostgreSqlCompanyModuleFlagStore>();
+builder.Services.AddSingleton<ICompanyModuleFlagWorkflow, CompanyModuleFlagWorkflow>();
+builder.Services.AddSingleton<IInventoryItemPriceStore, PostgreSqlInventoryItemPriceStore>();
+builder.Services.AddSingleton<IItemPriceResolver, ItemPriceResolver>();
+builder.Services.AddSingleton<ITaskStore, PostgreSqlTaskStore>();
+builder.Services.AddSingleton<ITaskWorkflow, TaskWorkflow>();
+builder.Services.AddSingleton<ITaskLineLinkValidator, TaskLineLinkValidator>();
+builder.Services.AddSingleton<PostgresTaskLinkSchemaInitializer>();
+builder.Services.AddSingleton<ITaskBillingCoordinator, TaskBillingCoordinator>();
+builder.Services.AddSingleton<ITaskMarginReportService, PostgreSqlTaskMarginReportService>();
+builder.Services.AddSingleton<ITaskRelatedDocumentsService, PostgreSqlTaskRelatedDocumentsService>();
 builder.Services.AddScoped<IArOpenItemRepository, PostgresArOpenItemRepository>();
 builder.Services.AddScoped<IApOpenItemRepository, PostgresApOpenItemRepository>();
 builder.Services.AddScoped<IOpenItemAdjustmentAccountMappingRepository, PostgresOpenItemAdjustmentAccountMappingRepository>();
@@ -260,6 +282,8 @@ builder.Services.AddSingleton<IUserProfileOverrideStore, PostgreSqlUserProfileOv
 // table from the migration draft; safe defaults fill the columns the V1
 // settings UI does not yet expose (recoverability_mode, account refs).
 builder.Services.AddSingleton<ITaxCodeStore, PostgreSqlTaxCodeStore>();
+builder.Services.AddSingleton<ISalesTaxStore, PostgreSqlSalesTaxStore>();
+builder.Services.AddSingleton<ISalesTaxCalculationEngine, ServerAuthoritativeSalesTaxEngine>();
 
 // Chart of Accounts (per-company). Reads/writes the existing accounts
 // table from the migration draft. The UnitySearch projection store
@@ -585,6 +609,7 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         var unityAiSchemaInitializer = startupScope.ServiceProvider.GetRequiredService<PostgreSqlUnityAiSchemaInitializer>();
         var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
         var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
+        var salesTaxStore = startupScope.ServiceProvider.GetRequiredService<ISalesTaxStore>();
         var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
         var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
         var customerShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<ICustomerShippingAddressBookStore>();
@@ -607,6 +632,10 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
         var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
         var v1WriteFlowSchema = startupScope.ServiceProvider.GetRequiredService<PostgresV1WriteFlowSchemaBootstrap>();
+        var companyModuleFlagStore = startupScope.ServiceProvider.GetRequiredService<ICompanyModuleFlagStore>();
+        var inventoryItemPriceStore = startupScope.ServiceProvider.GetRequiredService<IInventoryItemPriceStore>();
+        var taskStore = startupScope.ServiceProvider.GetRequiredService<ITaskStore>();
+        var taskLinkSchema = startupScope.ServiceProvider.GetRequiredService<PostgresTaskLinkSchemaInitializer>();
         await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
         // Platform tables (currency_catalog, companies, users, company_memberships,
         // company_books, etc.) must exist FIRST because the master entity tables
@@ -617,6 +646,7 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         await sysAdminAuthRepository.EnsureSchemaAsync(CancellationToken.None);
         // Master entities: must exist before v1WriteFlow which FKs / indexes them.
         await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
+        await salesTaxStore.EnsureSchemaAsync(CancellationToken.None);
         await accountStore.EnsureSchemaAsync(CancellationToken.None);
         await customerStore.EnsureSchemaAsync(CancellationToken.None);
         await customerShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
@@ -625,11 +655,15 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
         // fxRateCache creates `company_fx_rate_snapshots` which v1WriteFlow indexes.
         await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
+        await inventoryItemPriceStore.EnsureSchemaAsync(CancellationToken.None);
         // Transactional tables in v1WriteFlow (invoices, bills, receive_payments,
         // credit_notes, etc.) FK back to customers / vendors / accounts. Then
         // customerDepositSchema ALTERs receive_payments to add extra_deposit_amount.
         await v1WriteFlowSchema.EnsureSchemaAsync(CancellationToken.None);
         await customerDepositSchema.EnsureSchemaAsync(CancellationToken.None);
+        await companyModuleFlagStore.EnsureSchemaAsync(CancellationToken.None);
+        await taskStore.EnsureSchemaAsync(CancellationToken.None);
+        await taskLinkSchema.EnsureSchemaAsync(CancellationToken.None);
         await accountingPeriodRepository.EnsureSchemaAsync(CancellationToken.None);
         await receiptDocumentRepository.EnsureSchemaAsync(CancellationToken.None);
         await purchaseOrderDocumentRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -991,6 +1025,90 @@ static bool ShouldApplyRuntimeSchemaManagement(
     return configured ?? environment.IsDevelopment();
 }
 
+static async Task<IResult?> EvaluateModuleExpiryForWriteAsync(
+    HttpRequest request,
+    BusinessSessionContext? session,
+    ICompanyModuleFlagWorkflow workflow,
+    CancellationToken cancellationToken)
+{
+    if (!IsBusinessWriteMethod(request.Method) ||
+        session is null ||
+        string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+    {
+        return null;
+    }
+
+    var moduleKey = ResolveExpiringModuleKey(request.Path.Value);
+    if (moduleKey is null)
+    {
+        return null;
+    }
+
+    var status = await workflow.GetAccessStatusAsync(
+        session.ActiveCompanyId,
+        moduleKey,
+        cancellationToken);
+    if (!status.Enabled || !status.IsExpired)
+    {
+        return null;
+    }
+
+    return Results.Json(
+        new
+        {
+            message = BuildModuleExpiredWriteMessage(moduleKey, status.AccessExpiresAtUtc),
+            moduleKey,
+            accessExpiresAtUtc = status.AccessExpiresAtUtc
+        },
+        statusCode: StatusCodes.Status409Conflict);
+}
+
+static bool IsBusinessWriteMethod(string method) =>
+    HttpMethods.IsPost(method) ||
+    HttpMethods.IsPut(method) ||
+    HttpMethods.IsPatch(method) ||
+    HttpMethods.IsDelete(method);
+
+static string? ResolveExpiringModuleKey(string? rawPath)
+{
+    if (string.IsNullOrWhiteSpace(rawPath))
+    {
+        return null;
+    }
+
+    var path = rawPath.Trim().ToLowerInvariant();
+    if (path.StartsWith("/accounting/tasks", StringComparison.Ordinal))
+    {
+        return CompanyModuleFlagCatalog.Task;
+    }
+
+    if (path.StartsWith("/accounting/inventory", StringComparison.Ordinal) ||
+        path.StartsWith("/accounting/company/inventory", StringComparison.Ordinal) ||
+        path.StartsWith("/accounting/warehouses", StringComparison.Ordinal) ||
+        path.StartsWith("/accounting/uoms", StringComparison.Ordinal) ||
+        path.StartsWith("/accounting/items", StringComparison.Ordinal) ||
+        path.StartsWith("/accounting/receipts", StringComparison.Ordinal))
+    {
+        return CompanyModuleFlagCatalog.Inventory;
+    }
+
+    return null;
+}
+
+static string BuildModuleExpiredWriteMessage(string moduleKey, DateTimeOffset? expiresAtUtc)
+{
+    var displayName = moduleKey switch
+    {
+        CompanyModuleFlagCatalog.Task => "Task",
+        CompanyModuleFlagCatalog.Inventory => "Inventory",
+        _ => moduleKey
+    };
+
+    return expiresAtUtc.HasValue
+        ? $"{displayName} access expired at {expiresAtUtc.Value:yyyy-MM-dd HH:mm} UTC. Existing records are read-only."
+        : $"{displayName} access has expired. Existing records are read-only.";
+}
+
 var accounting = app.MapGroup("/accounting");
 
 accounting.AddEndpointFilterFactory(
@@ -1032,6 +1150,16 @@ accounting.AddEndpointFilterFactory(
             if (guardResult.Session is not null)
             {
                 sessionAccessor.Set(guardResult.Session, guardResult.Resolution);
+            }
+
+            var moduleExpiryBlock = await EvaluateModuleExpiryForWriteAsync(
+                invocationContext.HttpContext.Request,
+                guardResult.Session,
+                services.GetRequiredService<ICompanyModuleFlagWorkflow>(),
+                invocationContext.HttpContext.RequestAborted);
+            if (moduleExpiryBlock is not null)
+            {
+                return moduleExpiryBlock;
             }
 
             return await next(invocationContext);
@@ -1820,6 +1948,55 @@ accounting.MapGet(
     });
 
 accounting.MapGet(
+    "/uoms",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view units of measure");
+        if (authority is not null) return authority;
+
+        var rows = await store.ListUomsAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/uoms",
+    async (
+        CompanyUomUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "manage units of measure");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var saved = await store.SaveUomAsync(
+                new CompanyUomUpsertRequest(
+                    session.ActiveCompanyId,
+                    request.UomCode,
+                    request.Name,
+                    request.Category,
+                    request.DecimalPlaces,
+                    request.IsActive),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
     "/items",
     async (
         BusinessSessionContextAccessor sessionAccessor,
@@ -1950,6 +2127,371 @@ accounting.MapPost(
             return Results.NotFound(new { message = ex.Message });
         }
     });
+
+accounting.MapGet(
+    "/company/module-flags",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyModuleFlagWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var rows = await workflow.ListAsync(session.ActiveCompanyId, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPut(
+    "/company/module-flags/{moduleKey}",
+    async (
+        string moduleKey,
+        CompanyModuleFlagToggleHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyModuleFlagWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        var ownerGate = RequireCompanyOwner(session, $"toggle module '{moduleKey}'");
+        if (ownerGate is not null) return ownerGate;
+
+        try
+        {
+            var result = await workflow.SetEnabledFromOwnerAsync(
+                session.ActiveCompanyId,
+                moduleKey,
+                request.Enabled,
+                request.Reason ?? string.Empty,
+                session.UserId,
+                cancellationToken);
+            return Results.Ok(result.Flag);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/tasks",
+    async (
+        TaskStatus? status,
+        Guid? customerId,
+        int? take,
+        int? skip,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "view tasks");
+        if (authority is not null) return authority;
+
+        var rows = await workflow.ListAsync(
+            new TaskQuery
+            {
+                CompanyId = session.ActiveCompanyId,
+                Status = status,
+                CustomerId = customerId,
+                OnlyAssignedToUserId = null,
+                Take = take ?? 50,
+                Skip = skip ?? 0
+            },
+            cancellationToken);
+
+        return Results.Ok(rows);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapGet(
+    "/tasks/{taskId:guid}",
+    async (
+        Guid taskId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "view tasks");
+        if (authority is not null) return authority;
+
+        var record = await workflow.GetAsync(session.ActiveCompanyId, taskId, cancellationToken);
+        return record is null ? Results.NotFound() : Results.Ok(record);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapGet(
+    "/tasks/lookup",
+    async (
+        Guid[]? ids,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "lookup tasks");
+        if (authority is not null) return authority;
+
+        var rows = await store.LookupDisplayAsync(
+            session.ActiveCompanyId,
+            ids ?? Array.Empty<Guid>(),
+            cancellationToken);
+        return Results.Ok(rows);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapGet(
+    "/tasks/{taskId:guid}/related-documents",
+    async (
+        Guid taskId,
+        string? baseCurrency,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        ITaskRelatedDocumentsService service,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "view task related documents");
+        if (authority is not null) return authority;
+
+        var task = await workflow.GetAsync(session.ActiveCompanyId, taskId, cancellationToken);
+        if (task is null) return Results.NotFound();
+
+        var resolvedBase = string.IsNullOrWhiteSpace(baseCurrency)
+            ? task.CurrencyCode
+            : baseCurrency.Trim().ToUpperInvariant();
+        if (resolvedBase.Length != 3)
+        {
+            return Results.BadRequest(new { message = $"baseCurrency must be a 3-letter ISO code; got '{baseCurrency}'." });
+        }
+
+        var rows = await service.ListForTaskAsync(session.ActiveCompanyId, taskId, resolvedBase, cancellationToken);
+        return Results.Ok(rows);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapPost(
+    "/tasks",
+    async (
+        TaskCreateRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "create tasks");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var created = await workflow.CreateAsync(session.ActiveCompanyId, session.UserId, request, cancellationToken);
+            return Results.Created($"/accounting/tasks/{created.Id:D}", created);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapPut(
+    "/tasks/{taskId:guid}",
+    async (
+        Guid taskId,
+        TaskUpdateRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "update tasks");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var updated = await workflow.UpdateAsync(session.ActiveCompanyId, taskId, session.UserId, request, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapPost(
+    "/tasks/{taskId:guid}/lines",
+    async (
+        Guid taskId,
+        TaskLineUpsertRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "edit task lines");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var updated = await workflow.AddLineAsync(session.ActiveCompanyId, taskId, session.UserId, request, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapDelete(
+    "/tasks/{taskId:guid}/lines/{lineId:guid}",
+    async (
+        Guid taskId,
+        Guid lineId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "edit task lines");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var updated = await workflow.RemoveLineAsync(session.ActiveCompanyId, taskId, lineId, session.UserId, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapPost(
+    "/tasks/{taskId:guid}/complete",
+    async (
+        Guid taskId,
+        TaskStateChangeRequest? request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "complete tasks");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var updated = await workflow.CompleteAsync(session.ActiveCompanyId, taskId, session.UserId, request?.Reason, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapPost(
+    "/tasks/{taskId:guid}/cancel",
+    async (
+        Guid taskId,
+        TaskStateChangeRequest? request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "cancel tasks");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var updated = await workflow.CancelAsync(session.ActiveCompanyId, taskId, session.UserId, request?.Reason, cancellationToken);
+            return Results.Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
+accounting.MapGet(
+    "/tasks/reports/margin",
+    async (
+        string? mode,
+        DateOnly? from,
+        DateOnly? to,
+        Guid? customerId,
+        string? assigneeId,
+        string? baseCurrency,
+        int? take,
+        int? skip,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskMarginReportService reportService,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "view task margin reports");
+        if (authority is not null) return authority;
+
+        var parsedMode = (mode ?? "operational").Trim().ToLowerInvariant() switch
+        {
+            "operational" => TaskMarginReportMode.Operational,
+            "billed" => TaskMarginReportMode.Billed,
+            _ => (TaskMarginReportMode?)null
+        };
+        if (parsedMode is null)
+        {
+            return Results.BadRequest(new { message = $"Unknown report mode '{mode}'. Use 'operational' or 'billed'." });
+        }
+
+        var resolvedBase = string.IsNullOrWhiteSpace(baseCurrency)
+            ? "USD"
+            : baseCurrency.Trim().ToUpperInvariant();
+        if (resolvedBase.Length != 3)
+        {
+            return Results.BadRequest(new { message = $"baseCurrency must be a 3-letter ISO code; got '{baseCurrency}'." });
+        }
+
+        UserId? parsedAssignee = string.IsNullOrWhiteSpace(assigneeId)
+            ? null
+            : UserId.Parse(assigneeId.Trim());
+
+        var result = await reportService.GetReportAsync(
+            new TaskMarginReportQuery
+            {
+                CompanyId = session.ActiveCompanyId,
+                BaseCurrencyCode = resolvedBase,
+                Mode = parsedMode.Value,
+                FromDate = from,
+                ToDate = to,
+                CustomerId = customerId,
+                AssignedToUserId = parsedAssignee,
+                Take = take ?? 200,
+                Skip = skip ?? 0
+            },
+            cancellationToken);
+
+        return Results.Ok(result);
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
 
 accounting.MapGet(
     "/company-books",
@@ -6173,6 +6715,260 @@ accounting.MapPost(
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
+// ===========================================================================
+// Sales Tax module
+//
+// Backend-authoritative indirect-tax surface. The read model bridges the
+// existing tax_codes table into expandable Tax Code / Tax Component rows,
+// while the new component/rate/snapshot tables prepare posting, reporting,
+// and future tax API adapters without mutating historical documents.
+// ===========================================================================
+
+accounting.MapGet(
+    "/sales-tax/codes",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view sales tax");
+        if (authority is not null) return authority;
+
+        var rows = await store.ListTaxCodesAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/sales-tax/codes",
+    async (
+        SalesTaxCodeUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "create sales tax");
+        if (authority is not null) return authority;
+
+        var validation = ValidateSalesTaxCodeInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var saved = await store.CreateTaxCodeAsync(
+                session.ActiveCompanyId,
+                ToSalesTaxCodeInput(request),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Sales tax code '{request.Code}' already exists for this company." });
+        }
+    });
+
+accounting.MapPut(
+    "/sales-tax/codes/{id:guid}",
+    async (
+        Guid id,
+        SalesTaxCodeUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "update sales tax");
+        if (authority is not null) return authority;
+
+        var validation = ValidateSalesTaxCodeInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var saved = await store.UpdateTaxCodeAsync(
+                session.ActiveCompanyId,
+                id,
+                ToSalesTaxCodeInput(request),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Sales tax code '{request.Code}' already exists for this company." });
+        }
+    });
+
+accounting.MapPost(
+    "/sales-tax/calculate-preview",
+    async (
+        SalesTaxPreviewRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxCalculationEngine engine,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "calculate sales tax");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var result = await engine.CalculateAsync(session.ActiveCompanyId, request, cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/sales-tax/reports/summary",
+    async (
+        DateOnly? from,
+        DateOnly? to,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view sales tax reports");
+        if (authority is not null) return authority;
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var start = from ?? new DateOnly(today.Year, 1, 1);
+        var end = to ?? today;
+        var rows = await store.GetSummaryReportAsync(session.ActiveCompanyId, start, end, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/sales-tax/reports/detail",
+    async (
+        DateOnly? from,
+        DateOnly? to,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view sales tax reports");
+        if (authority is not null) return authority;
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var start = from ?? new DateOnly(today.Year, 1, 1);
+        var end = to ?? today;
+        var rows = await store.GetDetailReportAsync(session.ActiveCompanyId, start, end, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+static string? ValidateSalesTaxCodeInput(SalesTaxCodeUpsertHttpRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
+    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
+    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
+    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
+
+    var components = request.Components ?? Array.Empty<SalesTaxCodeComponentUpsertHttpRequest>();
+    if (components.Count == 0) return "At least one sales tax line is required.";
+    if (components.Count > 12) return "A sales tax code can contain at most 12 component lines.";
+
+    for (var i = 0; i < components.Count; i++)
+    {
+        var component = components[i];
+        var lineNumber = i + 1;
+        if (component.RatePercent is null || component.RatePercent < 0m)
+        {
+            return $"Line {lineNumber}: rate must be 0 or greater.";
+        }
+        if (component.RatePercent > 100m)
+        {
+            return $"Line {lineNumber}: rate must be 100 or lower.";
+        }
+        if (string.IsNullOrWhiteSpace(component.TaxType) || component.TaxType.Length > 32)
+        {
+            return $"Line {lineNumber}: tax type is required.";
+        }
+        if (component.Recoverability is not SalesTaxRecoverability.Recoverable and not SalesTaxRecoverability.NonRecoverable)
+        {
+            return $"Line {lineNumber}: recoverability must be recoverable or non-recoverable.";
+        }
+        if (string.IsNullOrWhiteSpace(component.AppliesTo) ||
+            !TaxCodeAppliesTo.IsValid(component.AppliesTo.Trim().ToLowerInvariant()))
+        {
+            return $"Line {lineNumber}: applies to must be 'sales', 'purchase', or 'both'.";
+        }
+        if (!string.IsNullOrWhiteSpace(component.RegistrationNumber) && component.RegistrationNumber.Length > 64)
+        {
+            return $"Line {lineNumber}: registration number must be 64 characters or fewer.";
+        }
+    }
+
+    return null;
+}
+
+static SalesTaxCodeUpsertInput ToSalesTaxCodeInput(SalesTaxCodeUpsertHttpRequest request)
+{
+    var components = (request.Components ?? Array.Empty<SalesTaxCodeComponentUpsertHttpRequest>())
+        .Select(component => new SalesTaxCodeComponentUpsertInput(
+            RatePercent: component.RatePercent ?? 0m,
+            TaxType: component.TaxType!.Trim().ToLowerInvariant(),
+            Recoverability: component.Recoverability!,
+            AppliesTo: component.AppliesTo!.Trim().ToLowerInvariant(),
+            RegistrationNumber: component.RegistrationNumber))
+        .ToArray();
+
+    return new SalesTaxCodeUpsertInput(
+        Code: request.Code!.Trim(),
+        Name: request.Name!.Trim(),
+        AppliesTo: InferAppliesTo(components),
+        RegistrationNumber: components.FirstOrDefault(component => !string.IsNullOrWhiteSpace(component.RegistrationNumber))?.RegistrationNumber,
+        IsActive: request.IsActive ?? true,
+        Components: components);
+}
+
+static string InferAppliesTo(IReadOnlyList<SalesTaxCodeComponentUpsertInput> components)
+{
+    var hasSales = components.Any(component => component.AppliesTo is TaxCodeAppliesTo.Sales or TaxCodeAppliesTo.Both);
+    var hasPurchase = components.Any(component => component.AppliesTo is TaxCodeAppliesTo.Purchase or TaxCodeAppliesTo.Both);
+    return hasSales && hasPurchase
+        ? TaxCodeAppliesTo.Both
+        : hasSales
+            ? TaxCodeAppliesTo.Sales
+            : TaxCodeAppliesTo.Purchase;
+}
+
 static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
 {
     if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
@@ -7416,14 +8212,58 @@ accounting.MapPost(
     "/ap/bills/{billId:guid}/post",
     async (
         Guid billId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillDocumentRepository documentRepository,
+        PostBillCommandHandler handler,
+        IBillStore store,
         CancellationToken cancellationToken) =>
     {
-        await Task.CompletedTask;
-        return Results.Conflict(new
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "post bills");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
+        try
         {
-            code = "legacy_bill_posting_disabled",
-            message = "Bill posting is disabled on this legacy Bills page because it would not create the required journal entry and AP open item. Use the canonical bill posting workflow."
-        });
+            var document = await documentRepository.GetForPostingAsync(
+                session.ActiveCompanyId,
+                billId,
+                cancellationToken);
+            if (document is null) return Results.NotFound();
+
+            if (string.Equals(document.Status, "draft", StringComparison.OrdinalIgnoreCase))
+            {
+                await documentRepository.SubmitDraftAsync(
+                    session.ActiveCompanyId,
+                    actorId,
+                    billId,
+                    cancellationToken);
+            }
+            else if (!string.Equals(document.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+            {
+                return AccountingOperationBadRequest(
+                    new InvalidOperationException("Only draft or submitted bills can be posted."));
+            }
+
+            await handler.HandleAsync(
+                new PostBillCommand(
+                    session.ActiveCompanyId,
+                    billId,
+                    actorId,
+                    AcceptedFxSnapshotId: null,
+                    IdempotencyKey: null),
+                cancellationToken);
+
+            var saved = await store.GetByIdAsync(session.ActiveCompanyId, billId, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
 
 accounting.MapPost(
@@ -8012,6 +8852,7 @@ static string? ValidateExpenseInput(ExpenseUpsertHttpRequest request)
         if (line.ExpenseAccountId == Guid.Empty) return "Each line must point to a category account.";
         if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
         if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
+        if (line.TaskId == Guid.Empty) return "Line task id cannot be empty.";
     }
     return null;
 }
@@ -8043,7 +8884,8 @@ static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => n
             Description: l.Description ?? string.Empty,
             Quantity: l.Quantity,
             UnitPrice: l.UnitPrice,
-            TaxCodeId: l.TaxCodeId))
+            TaxCodeId: l.TaxCodeId,
+            TaskId: l.TaskId))
         .ToArray());
 
 // ===========================================================================
@@ -8192,8 +9034,18 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authority = RequireBusinessOperationAuthority(session, "accounting", "view accounts");
-        if (authority is not null) return authority;
+        if (!BusinessApprovalAuthority.CanViewAccounts(session))
+        {
+            return Results.Json(
+                new
+                {
+                    moduleCode = "accounting",
+                    operationCode = "view accounts",
+                    outcomeCode = "blocked_business_operation_authority",
+                    message = "The current business session is not authorized to view accounts."
+                },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
 
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         if (!string.IsNullOrWhiteSpace(rootType))
@@ -12448,7 +13300,8 @@ accounting.MapPost(
                     request.AcceptedFxSnapshotId,
                     request.Memo,
                     request.Lines.Select(line => new SettlementDraftLine(line.TargetOpenItemId, line.AppliedAmountTx)).ToArray(),
-                    request.ExtraDepositAmount),
+                    request.ExtraDepositAmount,
+                    request.ClientRequestId),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -12814,7 +13667,8 @@ accounting.MapPost(
                     request.PaymentDate,
                     request.AcceptedFxSnapshotId,
                     request.Memo,
-                    request.Lines.Select(line => new SettlementDraftLine(line.TargetOpenItemId, line.AppliedAmountTx)).ToArray()),
+                    request.Lines.Select(line => new SettlementDraftLine(line.TargetOpenItemId, line.AppliedAmountTx)).ToArray(),
+                    request.ClientRequestId),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -14291,6 +15145,30 @@ static IResult? RequireBusinessOperationAuthority(
             statusCode: StatusCodes.Status403Forbidden);
 }
 
+static IResult? RequireCompanyOwner(
+    BusinessSessionContext? session,
+    string operationCode)
+{
+    if (session is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var isOwner = session.Roles.Any(
+        static role => string.Equals(role?.Trim(), "owner", StringComparison.OrdinalIgnoreCase));
+
+    return isOwner
+        ? null
+        : Results.Json(
+            new
+            {
+                operationCode,
+                outcomeCode = "blocked_owner_required",
+                message = $"Only the company owner can {operationCode}."
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
 static IResult? RequireActiveCompanyQuery(
     BusinessSessionContext? session,
     CompanyId companyId)
@@ -14627,6 +15505,8 @@ static JournalEntryReviewSummary MapJournalEntryReview(JournalEntryReview review
         SourceType = review.SourceType,
         SourceTypeLabel = MapJournalEntrySourceTypeLabel(review.SourceType),
         SourceId = review.SourceId,
+        SourceDocumentDate = review.SourceDocumentDate,
+        SourceMemo = review.SourceMemo,
         TransactionCurrencyCode = review.TransactionCurrencyCode,
         BaseCurrencyCode = review.BaseCurrencyCode,
         ExchangeRate = review.ExchangeRate,
