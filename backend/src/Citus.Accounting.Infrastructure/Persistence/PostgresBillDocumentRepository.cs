@@ -3,6 +3,9 @@ using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Documents;
+using Citus.Modules.SalesTax.Application.Contracts;
+using Citus.Modules.SalesTax.Domain.Shared;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -12,13 +15,22 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
 {
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+    private readonly ISalesTaxEngine? _salesTaxEngine;
+    private readonly ITaxSnapshotPersister? _taxSnapshotPersister;
+    private readonly bool _salesTaxV2Enabled;
 
     public PostgresBillDocumentRepository(
         PostgresConnectionFactory connections,
-        PostgresExecutionContextAccessor executionContextAccessor)
+        PostgresExecutionContextAccessor executionContextAccessor,
+        ISalesTaxEngine? salesTaxEngine = null,
+        ITaxSnapshotPersister? taxSnapshotPersister = null,
+        IOptions<SalesTaxV2Options>? salesTaxV2Options = null)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
+        _salesTaxEngine = salesTaxEngine;
+        _taxSnapshotPersister = taxSnapshotPersister;
+        _salesTaxV2Enabled = salesTaxV2Options?.Value.Enabled ?? false;
     }
 
     public async Task<BillDocument?> GetForPostingAsync(
@@ -258,6 +270,50 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         ArgumentNullException.ThrowIfNull(draft);
         ValidateDraft(draft);
 
+        // Stable id per draft line up front (the line table is
+        // delete-then-reinsert), reused for the bill_lines row, the
+        // engine line request, and the snapshot row.
+        var orderedLines = draft.Lines
+            .OrderBy(static line => line.LineNumber)
+            .Select(static line => (Line: line, LineId: Guid.NewGuid()))
+            .ToList();
+
+        // Sales Tax v2 (S2.2): purchase side. When the flag is on the
+        // engine is the authority for tax_amount (engine-absolute) — on
+        // bills this OVERRIDES the operator-entered tax_amount — and its
+        // per-component output (incl. recoverable / non-recoverable split)
+        // is persisted to document_line_sales_tax_snapshots after commit.
+        // When off, behaviour is unchanged: the client-sent line.TaxAmount
+        // is used and no snapshots are written.
+        var salesTaxActive = _salesTaxV2Enabled
+            && _salesTaxEngine is not null
+            && _taxSnapshotPersister is not null;
+
+        SalesTaxComputationResult? taxResult = null;
+        if (salesTaxActive)
+        {
+            taxResult = await _salesTaxEngine!.ComputeAsync(
+                new SalesTaxComputationRequest(
+                    draft.CompanyId.Value,
+                    draft.BillDate,
+                    draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+                    SalesTaxDocumentSide.Purchase,
+                    orderedLines
+                        .Select(static entry => new SalesTaxLineRequest(
+                            entry.LineId,
+                            Round6(entry.Line.LineAmount),
+                            entry.Line.TaxCodeId))
+                        .ToList()),
+                cancellationToken);
+        }
+
+        var resolvedTaxByLineId = orderedLines.ToDictionary(
+            entry => entry.LineId,
+            entry => taxResult is null
+                ? entry.Line.TaxAmount
+                : taxResult.Lines.FirstOrDefault(r => r.LineId == entry.LineId)?.TotalTaxAmount ?? 0m);
+        var headerTaxAmount = Round6(resolvedTaxByLineId.Values.Sum());
+
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -376,7 +432,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   now()
                 );
                 """;
-            BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber);
+            BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         else
@@ -407,7 +463,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   and company_id = @company_id
                   and status = 'draft';
                 """;
-            BindHeader(updateCommand, draft, documentId, entityNumber, displayNumber, includeIdentity: false);
+            BindHeader(updateCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount, includeIdentity: false);
             var affectedRows = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
@@ -429,7 +485,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        foreach (var line in draft.Lines.OrderBy(static line => line.LineNumber))
+        foreach (var (line, lineId) in orderedLines)
         {
             await using var insertLineCommand = connection.CreateCommand();
             insertLineCommand.Transaction = transaction;
@@ -478,7 +534,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   now()
                 );
                 """;
-            insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+            insertLineCommand.Parameters.AddWithValue("id", lineId);
             insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("bill_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
@@ -493,12 +549,29 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("purchase_order_id", NpgsqlDbType.Uuid) { TypedValue = line.PurchaseOrderId });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<int?>("purchase_order_line_number", NpgsqlDbType.Integer) { TypedValue = line.PurchaseOrderLineNumber });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
-            insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
+            insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(resolvedTaxByLineId[lineId]));
             insertLineCommand.Parameters.AddWithValue("is_tax_recoverable", line.IsTaxRecoverable);
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        // Write the engine's snapshot rows after the lines commit. The
+        // persister uses its own connection/transaction (S2.0 design), so
+        // it must follow the commit; a draft re-save replaces the prior
+        // snapshot rows for this (company, document).
+        if (taxResult is not null)
+        {
+            SalesTaxComputationResult computed = taxResult;
+            await _taxSnapshotPersister!.PersistAsync(
+                draft.CompanyId.Value,
+                "bill",
+                documentId,
+                orderedLines
+                    .Select(entry => (entry.LineId, computed.Lines.First(r => r.LineId == entry.LineId)))
+                    .ToList(),
+                cancellationToken);
+        }
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
     }
@@ -776,11 +849,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         Guid documentId,
         string entityNumber,
         string displayNumber,
+        decimal taxAmount,
         bool includeIdentity = true)
     {
         var (fxRate, fxSource, fxRequestedDate, fxEffectiveDate) = ResolveFx(draft.TransactionCurrencyCode, draft.BaseCurrencyCode, draft.BillDate, draft.FxRate, draft.FxEffectiveDate, draft.FxSource);
         var subtotalAmount = Round6(draft.Lines.Sum(static line => line.LineAmount));
-        var taxAmount = Round6(draft.Lines.Sum(static line => line.TaxAmount));
         var totalAmount = Round6(subtotalAmount + taxAmount);
 
         command.Parameters.AddWithValue("id", documentId);
