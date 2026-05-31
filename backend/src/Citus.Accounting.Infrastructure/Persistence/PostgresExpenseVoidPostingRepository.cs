@@ -187,7 +187,7 @@ public sealed class PostgresExpenseVoidPostingRepository : IExpenseVoidPostingRe
     {
         await using var command = scope.CreateCommand(
             """
-            select je.id, e.expense_no, je.posted_at::date as posting_date,
+            select je.id, e.expense_number, je.posted_at::date as posting_date,
                    je.transaction_currency_code, je.base_currency_code, je.exchange_rate
             from journal_entries je
             join expenses e on e.id = je.source_id and e.company_id = je.company_id
