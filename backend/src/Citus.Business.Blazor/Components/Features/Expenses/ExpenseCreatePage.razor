@@ -8,6 +8,7 @@
 @inject VendorClient VendorClient
 @inject AccountClient AccountClient
 @inject TaxCodeClient TaxCodeClient
+@inject TaxCodeSetClient TaxCodeSetClient
 @inject ExpenseClient ExpenseClient
 @inject TaskClient TaskClient
 @inject CitusToastService Message
@@ -235,10 +236,10 @@ else
                                 </td>
                                 <td>
                                     <RadzenDropDown TValue="Guid?"
-                                                    Data="@_taxCodes"
-                                                    Value="@line.TaxCodeId"
-                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
-                                                    TextProperty="Code"
+                                                    Data="@_taxOptions"
+                                                    Value="@(line.TaxCodeSetId ?? line.TaxCodeId)"
+                                                    Change="@(v => ApplyLineTaxSelection(index, v as Guid?))"
+                                                    TextProperty="Label"
                                                     ValueProperty="Id"
                                                     AllowClear="true"
                                                     Class="citus-control-full" />
@@ -328,6 +329,9 @@ else
     private IReadOnlyList<PaymentAccountOption> _paymentAccountOptions = Array.Empty<PaymentAccountOption>();
     private IReadOnlyList<CategoryOption> _categoryAccounts = Array.Empty<CategoryOption>();
     private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
+    // R2: Tax Code bundles + the combined per-line picker options (Rules + Codes).
+    private IReadOnlyList<TaxCodeSetSummary> _taxCodeSets = Array.Empty<TaxCodeSetSummary>();
+    private IReadOnlyList<TaxOption> _taxOptions = Array.Empty<TaxOption>();
 
     private string _payeeKind = "vendor";
     private Guid? _payeeId;
@@ -528,7 +532,8 @@ else
             var vendorsTask = VendorClient.ListAsync();
             var accountsTask = AccountClient.ListAsync();
             var taxTask = TaxCodeClient.ListAsync(appliesTo: "purchase");
-            await Task.WhenAll(vendorsTask, accountsTask, taxTask);
+            var taxSetTask = TaxCodeSetClient.ListAsync(appliesTo: "purchase");
+            await Task.WhenAll(vendorsTask, accountsTask, taxTask, taxSetTask);
 
             _vendors = vendorsTask.Result;
             _accountsRaw = accountsTask.Result;
@@ -549,6 +554,8 @@ else
                 .Select(a => new CategoryOption(a.Id, $"{a.Code}  {a.Name}"))
                 .ToList();
             _taxCodes = taxTask.Result;
+            _taxCodeSets = taxSetTask.Result;
+            _taxOptions = BuildTaxOptions(_taxCodeSets, _taxCodes);
         }
         finally { _isLoading = false; }
     }
@@ -705,7 +712,8 @@ else
                         Quantity: l.Quantity,
                         UnitPrice: l.UnitPrice,
                         TaxCodeId: l.TaxCodeId,
-                        TaskId: l.TaskId))
+                        TaskId: l.TaskId,
+                        TaxCodeSetId: l.TaxCodeSetId))
                     .ToArray(),
                 // Copy A3 Phase 1: server records this in audit_logs.
                 CopiedFromExpenseId: _copiedFromExpenseId);
@@ -731,6 +739,37 @@ else
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    // R2: one entry in the per-line tax dropdown — either a single Tax Rule
+    // (IsCode=false → line.TaxCodeId) or a Tax Code bundle (IsCode=true →
+    // line.TaxCodeSetId). Disambiguated on selection by id membership.
+    private sealed record TaxOption(Guid Id, string Label, bool IsCode);
+
+    private static IReadOnlyList<TaxOption> BuildTaxOptions(
+        IReadOnlyList<TaxCodeSetSummary> codes,
+        IReadOnlyList<TaxCodeSummary> rules)
+    {
+        var options = new List<TaxOption>(codes.Count + rules.Count);
+        foreach (var c in codes)
+        {
+            options.Add(new TaxOption(c.Id, $"{c.Code} — {c.Name} (Tax Code)", true));
+        }
+        foreach (var r in rules)
+        {
+            options.Add(new TaxOption(r.Id, r.Code, false));
+        }
+        return options;
+    }
+
+    private void ApplyLineTaxSelection(int index, Guid? id)
+    {
+        var isCode = id is { } gid && _taxCodeSets.Any(s => s.Id == gid);
+        UpdateLine(index, l => l with
+        {
+            TaxCodeSetId = isCode ? id : null,
+            TaxCodeId = isCode ? null : id,
+        });
+    }
+
     private sealed record LineDraft
     {
         public Guid? ExpenseAccountId { get; set; }
@@ -738,6 +777,8 @@ else
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
         public Guid? TaxCodeId { get; set; }
+        // R2: when the operator picks a Tax Code bundle instead of a single Rule.
+        public Guid? TaxCodeSetId { get; set; }
         // Optional Task back-link, mirrors the bill page pattern.
         public Guid? TaskId { get; set; }
         public string TaskDisplay { get; set; } = string.Empty;

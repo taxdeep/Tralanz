@@ -8515,7 +8515,8 @@ static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => n
             Quantity: l.Quantity,
             UnitPrice: l.UnitPrice,
             TaxCodeId: l.TaxCodeId,
-            TaskId: l.TaskId))
+            TaskId: l.TaskId,
+            TaxCodeSetId: l.TaxCodeSetId))
         .ToArray(),
     // Copy A3 Phase 1: thread through to the store so it writes the
     // expense_copied audit_log row alongside the regular CREATE.

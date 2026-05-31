@@ -252,6 +252,8 @@ public sealed record ExpenseLinePayload(
     Guid? TaxCodeId,
     // Optional Task back-link sent on write. Server validates via
     // ITaskLineLinkValidator and persists to expense_lines.task_id.
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    // R2: tax_code_sets.id — a Tax Code bundle selected on the line.
+    Guid? TaxCodeSetId = null);
 
 public sealed record ExpenseMutationOutcome(bool Succeeded, ExpenseRecordDto? Saved, string? ErrorMessage);

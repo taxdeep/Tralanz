@@ -42,4 +42,6 @@ public sealed record ExpenseLineHttpRequest(
     // Optional Task this line bills against. Validated server-side via
     // ITaskLineLinkValidator before insert; persists to expense_lines.task_id
     // (column added by Batch 8). Feeds the Batch 10 margin report.
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    // R2: tax_code_sets.id — a Tax Code bundle selected on the line.
+    Guid? TaxCodeSetId = null);
