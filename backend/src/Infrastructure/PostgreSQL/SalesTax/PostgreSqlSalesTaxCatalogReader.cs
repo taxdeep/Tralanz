@@ -123,4 +123,90 @@ public sealed class PostgreSqlSalesTaxCatalogReader : ISalesTaxCatalogReader
             kv => kv.Key,
             kv => (IReadOnlyList<TaxCatalogComponentRow>)kv.Value);
     }
+
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>>> GetRulesForTaxCodeSetsAsync(
+        string companyId,
+        IReadOnlyList<Guid> taxCodeSetIds,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        if (taxCodeSetIds.Count == 0)
+        {
+            return new Dictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>>();
+        }
+
+        // A Rule (tax_codes) carries its own single rate + recoverability + GL
+        // accounts, so there is no effective-dated rate join here (asOfDate is
+        // accepted for interface symmetry / future use). Each member Rule maps
+        // to one TaxCatalogComponentRow; sequence + compound come from the
+        // membership row.
+        const string sql = """
+            select
+                s.id                       as set_id,
+                tc.id                      as tax_code_id,
+                tc.code                    as code,
+                tc.name                    as name,
+                m.id                       as membership_id,
+                m.sequence                 as sequence,
+                m.is_compound              as is_compound,
+                tc.recoverability_mode     as recoverability_mode,
+                tc.rate_percent            as rate_percent,
+                tc.payable_account_id      as payable_account_id,
+                tc.recoverable_account_id  as recoverable_account_id
+            from tax_code_sets s
+            join tax_code_set_rules m on m.tax_code_set_id = s.id
+            join tax_codes tc          on tc.id = m.tax_rule_id
+            where s.company_id = @company_id
+              and s.id = any(@set_ids)
+              and s.is_active = true
+              and tc.is_active = true
+            order by s.id, m.sequence;
+            """;
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("set_ids", taxCodeSetIds.ToArray());
+
+        var bySet = new Dictionary<Guid, List<TaxCatalogComponentRow>>();
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult, cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var setId = reader.GetGuid(reader.GetOrdinal("set_id"));
+            if (!bySet.TryGetValue(setId, out var list))
+            {
+                list = new List<TaxCatalogComponentRow>(2);
+                bySet[setId] = list;
+            }
+            list.Add(new TaxCatalogComponentRow(
+                TaxCodeId: reader.GetGuid(reader.GetOrdinal("tax_code_id")),
+                Code: reader.GetString(reader.GetOrdinal("code")),
+                Name: reader.GetString(reader.GetOrdinal("name")),
+                Treatment: "taxable",
+                // No v2 component/jurisdiction for a Rule-based leg: ComponentId
+                // carries the membership id (a stable per-leg identifier);
+                // JurisdictionId / RegimeType / BoxCodes are deferred (decision #2).
+                ComponentId: reader.GetGuid(reader.GetOrdinal("membership_id")),
+                JurisdictionId: Guid.Empty,
+                RegimeType: string.Empty,
+                Sequence: reader.GetInt32(reader.GetOrdinal("sequence")),
+                IsCompound: reader.GetBoolean(reader.GetOrdinal("is_compound")),
+                RecoverabilityMode: reader.GetString(reader.GetOrdinal("recoverability_mode")),
+                RecoverablePercent: null,
+                RatePercent: reader.GetDecimal(reader.GetOrdinal("rate_percent")),
+                BoxCodes: Array.Empty<string>(),
+                PayableAccountId: reader.IsDBNull(reader.GetOrdinal("payable_account_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("payable_account_id")),
+                RecoverableAccountId: reader.IsDBNull(reader.GetOrdinal("recoverable_account_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("recoverable_account_id")),
+                NonRecoverableAccountId: null));
+        }
+
+        return bySet.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<TaxCatalogComponentRow>)kv.Value);
+    }
 }

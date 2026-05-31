@@ -25,6 +25,9 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
     private const int CurrencyMinorUnit = 2;
     private const MidpointRounding RoundingMode = MidpointRounding.ToEven;
 
+    private static readonly IReadOnlyDictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>> EmptyRows
+        = new Dictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>>();
+
     private readonly ISalesTaxCatalogReader _catalog;
 
     public SalesTaxEngine(ISalesTaxCatalogReader catalog)
@@ -42,13 +45,23 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
             return new SalesTaxComputationResult(Array.Empty<SalesTaxLineResult>());
         }
 
+        // Redesign (R3): a line may select a Tax Code bundle (TaxCodeSetId)
+        // or, on the legacy path, a single Rule (LegacyTaxCodeId). A bundle
+        // takes precedence; the legacy path is left untouched so live
+        // documents carrying a single Rule id compute exactly as before.
+        var distinctSetIds = request.Lines
+            .Where(l => l.TaxCodeSetId.HasValue)
+            .Select(l => l.TaxCodeSetId!.Value)
+            .Distinct()
+            .ToArray();
+
         var distinctLegacyIds = request.Lines
-            .Where(l => l.LegacyTaxCodeId.HasValue)
+            .Where(l => !l.TaxCodeSetId.HasValue && l.LegacyTaxCodeId.HasValue)
             .Select(l => l.LegacyTaxCodeId!.Value)
             .Distinct()
             .ToArray();
 
-        if (distinctLegacyIds.Length == 0)
+        if (distinctSetIds.Length == 0 && distinctLegacyIds.Length == 0)
         {
             return new SalesTaxComputationResult(
                 request.Lines
@@ -57,22 +70,37 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
                     .ToArray());
         }
 
-        var componentsByLegacyId = await _catalog.GetComponentsForLegacyIdsAsync(
-            request.CompanyId, distinctLegacyIds, request.TaxPointDate, cancellationToken);
+        var rulesBySetId = distinctSetIds.Length > 0
+            ? await _catalog.GetRulesForTaxCodeSetsAsync(
+                request.CompanyId, distinctSetIds, request.TaxPointDate, cancellationToken)
+            : EmptyRows;
+
+        var componentsByLegacyId = distinctLegacyIds.Length > 0
+            ? await _catalog.GetComponentsForLegacyIdsAsync(
+                request.CompanyId, distinctLegacyIds, request.TaxPointDate, cancellationToken)
+            : EmptyRows;
 
         var resultLines = new List<SalesTaxLineResult>(request.Lines.Count);
         foreach (var line in request.Lines)
         {
-            if (!line.LegacyTaxCodeId.HasValue
-                || !componentsByLegacyId.TryGetValue(line.LegacyTaxCodeId.Value, out var components)
-                || components.Count == 0)
+            IReadOnlyList<TaxCatalogComponentRow>? rows = null;
+            if (line.TaxCodeSetId.HasValue)
+            {
+                rulesBySetId.TryGetValue(line.TaxCodeSetId.Value, out rows);
+            }
+            else if (line.LegacyTaxCodeId.HasValue)
+            {
+                componentsByLegacyId.TryGetValue(line.LegacyTaxCodeId.Value, out rows);
+            }
+
+            if (rows is null || rows.Count == 0)
             {
                 resultLines.Add(new SalesTaxLineResult(
                     line.LineId, 0m, 0m, 0m, Array.Empty<TaxSnapshotDraft>()));
                 continue;
             }
 
-            resultLines.Add(ComputeLine(line, components, request));
+            resultLines.Add(ComputeLine(line, rows, request));
         }
 
         return new SalesTaxComputationResult(resultLines);

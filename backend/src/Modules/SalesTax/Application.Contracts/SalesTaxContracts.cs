@@ -48,7 +48,11 @@ public sealed record SalesTaxLineRequest(
     // Legacy tax_codes.id — engine resolves to v2 sales_tax_codes via
     // the legacy_tax_code_id back-reference written by S1.3. Null when
     // the operator skipped tax (engine returns an empty Snapshots list).
-    Guid? LegacyTaxCodeId);
+    Guid? LegacyTaxCodeId,
+    // Redesign (R3): tax_code_sets.id — a "Tax Code" bundle. When set, the
+    // engine expands it to its member Rules (tax_codes) and ignores
+    // LegacyTaxCodeId. A bundle of one Rule == a single tax.
+    Guid? TaxCodeSetId = null);
 
 public sealed record SalesTaxComputationResult(
     IReadOnlyList<SalesTaxLineResult> Lines)
@@ -123,6 +127,20 @@ public interface ISalesTaxCatalogReader
     Task<IReadOnlyDictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>>> GetComponentsForLegacyIdsAsync(
         string companyId,
         IReadOnlyList<Guid> legacyTaxCodeIds,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Redesign (R3): expand "Tax Codes" (tax_code_sets) to their ordered
+    /// member Rules (tax_codes). Each Rule is mapped to a
+    /// <see cref="TaxCatalogComponentRow"/> (rate + recoverability + GL
+    /// accounts straight off the tax_codes row) so the engine's existing
+    /// per-leg ComputeLine handles a bundle exactly like a multi-component
+    /// code. Keyed by tax_code_sets.id; only active sets + active Rules.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>>> GetRulesForTaxCodeSetsAsync(
+        string companyId,
+        IReadOnlyList<Guid> taxCodeSetIds,
         DateOnly asOfDate,
         CancellationToken cancellationToken);
 }
