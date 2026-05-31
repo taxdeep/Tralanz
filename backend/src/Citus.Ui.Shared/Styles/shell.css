@@ -3459,7 +3459,7 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-more-menu__panel {
     position: absolute;
     top: calc(100% + var(--citus-space-1));
-    right: 0;
+    left: 0;
     z-index: 60;
     min-width: 200px;
     background: var(--citus-color-bg-elevated);
