@@ -177,6 +177,15 @@ builder.Services.AddHttpClient<TaxCodeClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// R2: Tax Code bundles (tax_code_sets) for the per-line tax pickers.
+builder.Services.AddHttpClient<TaxCodeSetClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<AccountClient>(
         (serviceProvider, client) =>
         {

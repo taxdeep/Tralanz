@@ -385,6 +385,9 @@ builder.Services.AddSingleton<IUserProfileOverrideStore, PostgreSqlUserProfileOv
 // table from the migration draft; safe defaults fill the columns the V1
 // settings UI does not yet expose (recoverability_mode, account refs).
 builder.Services.AddSingleton<ITaxCodeStore, PostgreSqlTaxCodeStore>();
+// Sales Tax redesign (R2): Tax Code bundles (tax_code_sets) — read surface
+// for the per-line tax pickers.
+builder.Services.AddSingleton<ITaxCodeSetStore, PostgreSqlTaxCodeSetStore>();
 
 // Chart of Accounts (per-company). Reads/writes the existing accounts
 // table from the migration draft. The UnitySearch projection store
@@ -6488,6 +6491,39 @@ accounting.MapGet(
         if (!string.IsNullOrWhiteSpace(appliesTo))
         {
             // applies_to=sales also surfaces 'both'; same for purchase.
+            var wanted = appliesTo.Trim().ToLowerInvariant();
+            rows = wanted switch
+            {
+                TaxCodeAppliesTo.Sales => rows.Where(r => r.AppliesTo is TaxCodeAppliesTo.Sales or TaxCodeAppliesTo.Both).ToArray(),
+                TaxCodeAppliesTo.Purchase => rows.Where(r => r.AppliesTo is TaxCodeAppliesTo.Purchase or TaxCodeAppliesTo.Both).ToArray(),
+                TaxCodeAppliesTo.Both => rows,
+                _ => rows,
+            };
+        }
+        return Results.Ok(rows);
+    });
+
+// Sales Tax redesign (R2 slice 1a): list the user's Tax Codes (bundles of
+// Rules) for the per-line tax pickers. Mirrors GET /tax-codes' shape +
+// applies_to filter.
+accounting.MapGet(
+    "/tax-code-sets",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeSetStore store,
+        bool? includeInactive,
+        string? appliesTo,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(appliesTo))
+        {
             var wanted = appliesTo.Trim().ToLowerInvariant();
             rows = wanted switch
             {
