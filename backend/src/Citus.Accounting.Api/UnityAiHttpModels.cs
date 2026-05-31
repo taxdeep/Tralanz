@@ -77,6 +77,23 @@ public sealed record TaxCodeUpsertHttpRequest
     public bool? IsActive { get; init; }
 }
 
+// R2: a Tax Code (tax_code_sets) — a bundle of Tax Rules.
+public sealed record TaxCodeSetUpsertHttpRequest
+{
+    public string? Code { get; init; }
+    public string? Name { get; init; }
+    public string? AppliesTo { get; init; }
+    public bool? IsActive { get; init; }
+    public IReadOnlyList<TaxCodeSetMemberHttpRequest>? Members { get; init; }
+}
+
+public sealed record TaxCodeSetMemberHttpRequest
+{
+    public Guid RuleId { get; init; }
+    public int Sequence { get; init; }
+    public bool IsCompound { get; init; }
+}
+
 public sealed record AccountUpsertHttpRequest
 {
     public string? Code { get; init; }

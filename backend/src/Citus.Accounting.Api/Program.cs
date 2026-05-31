@@ -6658,6 +6658,111 @@ accounting.MapPost(
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
 
+// Sales Tax redesign (R2 slice 2a): Tax Code (bundle) create / edit /
+// activate. Mirrors the /tax-codes mutation surface; the store writes the
+// tax_code_sets row + its tax_code_set_rules membership transactionally.
+accounting.MapPost(
+    "/tax-code-sets",
+    async (
+        TaxCodeSetUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeSetStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var validation = ValidateTaxCodeSetInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+        try
+        {
+            var record = await store.CreateAsync(session.ActiveCompanyId, MapTaxCodeSetInput(request), cancellationToken);
+            return Results.Ok(record);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
+        }
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+
+accounting.MapPut(
+    "/tax-code-sets/{id:guid}",
+    async (
+        Guid id,
+        TaxCodeSetUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeSetStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var validation = ValidateTaxCodeSetInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+        try
+        {
+            var updated = await store.UpdateAsync(session.ActiveCompanyId, id, MapTaxCodeSetInput(request), cancellationToken);
+            return updated is null ? Results.NotFound() : Results.Ok(updated);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
+        }
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+
+accounting.MapPost(
+    "/tax-code-sets/{id:guid}/activate",
+    async (Guid id, BusinessSessionContextAccessor sessionAccessor, ITaxCodeSetStore store, CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+
+accounting.MapPost(
+    "/tax-code-sets/{id:guid}/deactivate",
+    async (Guid id, BusinessSessionContextAccessor sessionAccessor, ITaxCodeSetStore store, CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+
+static TaxCodeSetUpsertInput MapTaxCodeSetInput(TaxCodeSetUpsertHttpRequest request)
+    => new(
+        Code: request.Code!.Trim(),
+        Name: request.Name!.Trim(),
+        AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
+        IsActive: request.IsActive ?? true,
+        Members: (request.Members ?? Array.Empty<TaxCodeSetMemberHttpRequest>())
+            .Select((m, i) => new TaxCodeSetMemberInput(m.RuleId, m.Sequence > 0 ? m.Sequence : i + 1, m.IsCompound))
+            .ToList());
+
+static string? ValidateTaxCodeSetInput(TaxCodeSetUpsertHttpRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
+    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
+    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
+    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
+    if (!TaxCodeAppliesTo.IsValid(request.AppliesTo?.Trim().ToLowerInvariant())) return "Applies-to must be sales, purchase, or both.";
+    var members = request.Members ?? Array.Empty<TaxCodeSetMemberHttpRequest>();
+    if (members.Count == 0) return "A Tax Code must contain at least one Tax Rule.";
+    if (members.Select(m => m.RuleId).Distinct().Count() != members.Count) return "A Tax Rule can appear at most once in a Tax Code.";
+    return null;
+}
+
 static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
 {
     if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
