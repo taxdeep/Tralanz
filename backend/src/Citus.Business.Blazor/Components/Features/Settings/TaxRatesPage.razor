@@ -2,6 +2,7 @@
 
 @inject BusinessShellState ShellState
 @inject TaxCodeClient TaxCodeClient
+@inject TaxCodeSetClient TaxCodeSetClient
 @inject CitusToastService Message
 
 @*
@@ -16,21 +17,28 @@
     batch when the Posting Engine wiring needs it.
 *@
 
-<PageTitle>Tax Rates | Tralanz Books</PageTitle>
+<PageTitle>Sales Tax | Tralanz Books</PageTitle>
 
 <CitusPageHeader Model="_header">
     <Actions>
         <CitusButton LeadingIcon="IconName.Plus"
-                     Variant="CitusButtonVariant.Primary"
+                     Variant="CitusButtonVariant.Ghost"
                      Size="CitusButtonSize.Small"
                      Disabled="@_isLoading"
                      OnClick="StartCreating">
-            New tax code
+            New Tax Rule
+        </CitusButton>
+        <CitusButton LeadingIcon="IconName.Plus"
+                     Variant="CitusButtonVariant.Primary"
+                     Size="CitusButtonSize.Small"
+                     Disabled="@_isLoading"
+                     OnClick="StartCreatingCode">
+            New Tax Code
         </CitusButton>
     </Actions>
 </CitusPageHeader>
 
-<CitusFormSection Title="Tax codes">
+<CitusFormSection Title="Tax Rules">
     <HeaderActions>
         <label class="inline-flex items-center gap-2 text-sm">
             <input type="checkbox"
@@ -49,7 +57,7 @@
         }
         else if (_rows.Count == 0)
         {
-            <CitusInlineEmpty Message="No tax codes yet. Click New tax code to create your first one." />
+            <CitusInlineEmpty Message="No Tax Rules yet. A Tax Rule is one tax (e.g. GST 5%). Click New Tax Rule to create your first one." />
         }
         else
         {
@@ -112,9 +120,72 @@
     </ChildContent>
 </CitusFormSection>
 
+<CitusFormSection Title="Tax Codes">
+    <HeaderActions>
+        <span class="text-fg-subtle text-xs">A Tax Code bundles several Tax Rules (e.g. BC = GST + PST).</span>
+    </HeaderActions>
+    <ChildContent>
+        @if (_isLoading)
+        {
+            <CitusLoadingBar />
+        }
+        else if (_codeRows.Count == 0)
+        {
+            <CitusInlineEmpty Message="No Tax Codes yet. Click New Tax Code to bundle a few Tax Rules into one selectable code." />
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 8rem">Code</th>
+                        <th>Name</th>
+                        <th>Rules</th>
+                        <th style="width: 8rem">Applies to</th>
+                        <th style="width: 6rem">Status</th>
+                        <th style="width: 9rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _codeRows)
+                    {
+                        <tr class="@(row.IsActive ? null : "citus-data-table__row--muted")">
+                            <td><span class="citus-inline-code">@row.Code</span></td>
+                            <td>@row.Name</td>
+                            <td>@DescribeMembers(row)</td>
+                            <td>@HumanizeAppliesTo(row.AppliesTo)</td>
+                            <td>
+                                <CitusBadge Color="@(row.IsActive ? "green" : "default")">
+                                    @(row.IsActive ? "Active" : "Inactive")
+                                </CitusBadge>
+                            </td>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => StartEditingCode(row))">
+                                        Edit
+                                    </CitusButton>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => ToggleCodeActiveAsync(row))">
+                                        @(row.IsActive ? "Deactivate" : "Activate")
+                                    </CitusButton>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </ChildContent>
+</CitusFormSection>
+
 @if (_isFormOpen)
 {
-    <CitusFormSection Title="@(_editingId is null ? "New tax code" : "Edit tax code")">
+    <CitusFormSection Title="@(_editingId is null ? "New Tax Rule" : "Edit Tax Rule")">
         <form @onsubmit="OnSaveAsync" @onsubmit:preventDefault>
             <CitusFormGrid Columns="2">
                 <CitusFormField Label="Code">
@@ -199,12 +270,126 @@
     </CitusFormSection>
 }
 
+@if (_isCodeFormOpen)
+{
+    <CitusFormSection Title="@(_editingCodeId is null ? "New Tax Code" : "Edit Tax Code")">
+        <form @onsubmit="OnSaveCodeAsync" @onsubmit:preventDefault>
+            <CitusFormGrid Columns="2">
+                <CitusFormField Label="Code">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_codeFormCode"
+                           @oninput="@(e => _codeFormCode = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="32"
+                           placeholder="BC, ON, …"
+                           disabled="@_isMutating" />
+                </CitusFormField>
+
+                <CitusFormField Label="Name">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_codeFormName"
+                           @oninput="@(e => _codeFormName = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="120"
+                           placeholder="BC (GST + PST)"
+                           disabled="@_isMutating" />
+                </CitusFormField>
+
+                <CitusFormField Label="Applies to">
+                    <select class="citus-form-field__input"
+                            value="@_codeFormAppliesTo"
+                            @onchange="@(e => _codeFormAppliesTo = e.Value?.ToString() ?? "both")"
+                            disabled="@_isMutating">
+                        <option value="sales">Sales only</option>
+                        <option value="purchase">Purchases only</option>
+                        <option value="both">Sales and purchases</option>
+                    </select>
+                </CitusFormField>
+            </CitusFormGrid>
+
+            <div class="citus-form-field mt-4">
+                <span class="citus-form-field__label">Tax Rules in this code</span>
+                @if (_codeMembers.Count == 0)
+                {
+                    <span class="text-fg-subtle text-xs">
+                        Add at least one Tax Rule. Each becomes its own tax leg on the journal entry, in the order listed.
+                    </span>
+                }
+                else
+                {
+                    <table class="citus-data-table">
+                        <tbody>
+                            @for (var i = 0; i < _codeMembers.Count; i++)
+                            {
+                                var idx = i;
+                                var member = _codeMembers[idx];
+                                var rule = _rows.FirstOrDefault(r => r.Id == member.RuleId);
+                                <tr>
+                                    <td style="width: 2rem">@(idx + 1)</td>
+                                    <td>
+                                        <span class="citus-inline-code">@(rule?.Code ?? "?")</span>
+                                        @(rule?.Name)
+                                    </td>
+                                    <td class="text-right" style="width: 5rem">@(rule is null ? "" : FormatRate(rule.RatePercent))</td>
+                                    <td style="width: 9rem">
+                                        <label class="inline-flex items-center gap-1 text-xs">
+                                            <input type="checkbox"
+                                                   checked="@member.IsCompound"
+                                                   @onchange="@(e => SetMemberCompound(idx, (bool)(e.Value ?? false)))"
+                                                   disabled="@_isMutating" />
+                                            Compound
+                                        </label>
+                                    </td>
+                                    <td style="width: 5rem">
+                                        <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                     Size="CitusButtonSize.Small"
+                                                     Disabled="@_isMutating"
+                                                     OnClick="@(() => RemoveMember(idx))">
+                                            Remove
+                                        </CitusButton>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                <div class="mt-2">
+                    <select class="citus-form-field__input"
+                            value=""
+                            @onchange="OnAddMember"
+                            disabled="@_isMutating">
+                        <option value="">+ Add a Tax Rule…</option>
+                        @foreach (var r in AvailableRules())
+                        {
+                            <option value="@r.Id">@r.Code — @r.Name (@FormatRate(r.RatePercent))</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <label class="inline-flex items-center gap-2 text-sm mt-4">
+                <input type="checkbox"
+                       checked="@_codeFormIsActive"
+                       @onchange="@(e => _codeFormIsActive = (bool)(e.Value ?? false))"
+                       disabled="@_isMutating" />
+                Active (available for selection on new documents)
+            </label>
+
+            <CitusFormActions PrimaryLabel="Save"
+                              CancelLabel="Cancel"
+                              IsSaving="@_isMutating"
+                              OnSave="OnSaveCodeAsync"
+                              OnCancel="CancelCodeForm" />
+        </form>
+    </CitusFormSection>
+}
+
 @code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Settings",
-        Title = "Tax rates",
-        Subtitle = "Per-company tax-code catalog. Used by journal entry, invoice, and bill surfaces."
+        Title = "Sales Tax",
+        Subtitle = "Tax Rules (single taxes) and Tax Codes (bundles of Rules). Used by the per-line tax pickers on documents."
     };
 
     private bool _isLoading = true;
@@ -231,8 +416,11 @@
         _isLoading = true;
         try
         {
-            var rows = await TaxCodeClient.ListAsync(includeInactive: _includeInactive);
-            _rows = rows.OrderByDescending(r => r.IsActive).ThenBy(r => r.Code).ToList();
+            var rulesTask = TaxCodeClient.ListAsync(includeInactive: _includeInactive);
+            var codesTask = TaxCodeSetClient.ListAsync(includeInactive: _includeInactive);
+            await Task.WhenAll(rulesTask, codesTask);
+            _rows = rulesTask.Result.OrderByDescending(r => r.IsActive).ThenBy(r => r.Code).ToList();
+            _codeRows = codesTask.Result.OrderByDescending(r => r.IsActive).ThenBy(r => r.Code).ToList();
         }
         finally
         {
@@ -368,4 +556,147 @@
         "both" => "Sales + purchases",
         _ => appliesTo,
     };
+
+    // ---------------------------------------------------------------------
+    // R2: Tax Codes (bundles of Tax Rules) — tax_code_sets.
+    // ---------------------------------------------------------------------
+    private List<TaxCodeSetSummary> _codeRows = new();
+    private bool _isCodeFormOpen;
+    private Guid? _editingCodeId;
+    private string _codeFormCode = string.Empty;
+    private string _codeFormName = string.Empty;
+    private string _codeFormAppliesTo = "both";
+    private bool _codeFormIsActive = true;
+    private readonly List<CodeMemberDraft> _codeMembers = new();
+
+    private void StartCreatingCode()
+    {
+        _editingCodeId = null;
+        _codeFormCode = string.Empty;
+        _codeFormName = string.Empty;
+        _codeFormAppliesTo = "both";
+        _codeFormIsActive = true;
+        _codeMembers.Clear();
+        _isCodeFormOpen = true;
+    }
+
+    private void StartEditingCode(TaxCodeSetSummary row)
+    {
+        _editingCodeId = row.Id;
+        _codeFormCode = row.Code;
+        _codeFormName = row.Name;
+        _codeFormAppliesTo = row.AppliesTo;
+        _codeFormIsActive = row.IsActive;
+        _codeMembers.Clear();
+        foreach (var m in row.Members.OrderBy(m => m.Sequence))
+        {
+            _codeMembers.Add(new CodeMemberDraft { RuleId = m.RuleId, IsCompound = m.IsCompound });
+        }
+        _isCodeFormOpen = true;
+    }
+
+    private void CancelCodeForm()
+    {
+        _isCodeFormOpen = false;
+        _editingCodeId = null;
+    }
+
+    private IEnumerable<TaxCodeSummary> AvailableRules()
+        => _rows.Where(r => r.IsActive && _codeMembers.All(m => m.RuleId != r.Id));
+
+    private void OnAddMember(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var ruleId)
+            && _codeMembers.All(m => m.RuleId != ruleId))
+        {
+            _codeMembers.Add(new CodeMemberDraft { RuleId = ruleId, IsCompound = false });
+        }
+    }
+
+    private void RemoveMember(int index)
+    {
+        if (index >= 0 && index < _codeMembers.Count)
+        {
+            _codeMembers.RemoveAt(index);
+        }
+    }
+
+    private void SetMemberCompound(int index, bool value)
+    {
+        if (index >= 0 && index < _codeMembers.Count)
+        {
+            _codeMembers[index].IsCompound = value;
+        }
+    }
+
+    private async Task OnSaveCodeAsync()
+    {
+        if (_isMutating) return;
+        if (string.IsNullOrWhiteSpace(_codeFormCode)) { await Message.WarningAsync("Code is required."); return; }
+        if (string.IsNullOrWhiteSpace(_codeFormName)) { await Message.WarningAsync("Name is required."); return; }
+        if (_codeMembers.Count == 0) { await Message.WarningAsync("Add at least one Tax Rule."); return; }
+
+        _isMutating = true;
+        try
+        {
+            var payload = new TaxCodeSetUpsertPayload(
+                Code: _codeFormCode.Trim(),
+                Name: _codeFormName.Trim(),
+                AppliesTo: _codeFormAppliesTo,
+                IsActive: _codeFormIsActive,
+                Members: _codeMembers.Select((m, i) => new TaxCodeSetMemberPayload(m.RuleId, i + 1, m.IsCompound)).ToList());
+
+            var wasCreate = _editingCodeId is null;
+            var outcome = wasCreate
+                ? await TaxCodeSetClient.CreateAsync(payload)
+                : await TaxCodeSetClient.UpdateAsync(_editingCodeId!.Value, payload);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(string.IsNullOrWhiteSpace(outcome.ErrorMessage) ? "Unable to save Tax Code." : outcome.ErrorMessage);
+                return;
+            }
+
+            _isCodeFormOpen = false;
+            _editingCodeId = null;
+            await LoadAsync();
+            await Message.SuccessAsync(wasCreate ? "Tax Code created." : "Tax Code updated.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private async Task ToggleCodeActiveAsync(TaxCodeSetSummary row)
+    {
+        if (_isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await TaxCodeSetClient.SetActiveAsync(row.Id, !row.IsActive);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to update Tax Code status.");
+                return;
+            }
+            await LoadAsync();
+            await Message.SuccessAsync(row.IsActive ? "Tax Code deactivated." : "Tax Code activated.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private static string DescribeMembers(TaxCodeSetSummary row)
+        => row.Members.Count == 0
+            ? "—"
+            : string.Join(" + ", row.Members.OrderBy(m => m.Sequence).Select(m => $"{m.RuleCode} {FormatRate(m.RatePercent)}"));
+
+    private sealed class CodeMemberDraft
+    {
+        public Guid RuleId { get; set; }
+        public bool IsCompound { get; set; }
+    }
 }
