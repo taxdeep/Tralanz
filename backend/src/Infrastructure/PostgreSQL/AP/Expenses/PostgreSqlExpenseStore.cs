@@ -1,5 +1,7 @@
 using Modules.AP.Expenses;
 using Modules.AP;
+using Citus.Modules.SalesTax.Application.Contracts;
+using Citus.Modules.SalesTax.Domain.Shared;
 using Npgsql;
 using NpgsqlTypes;
 using Infrastructure.PostgreSQL.Numbering;
@@ -11,8 +13,18 @@ namespace Infrastructure.PostgreSQL.AP.Expenses;
 /// <c>expenses</c> + <c>expense_lines</c> tables. EnsureSchemaAsync
 /// verifies the migration-installed schema instead of applying DDL or
 /// data migrations from the application process.
+///
+/// S5.4: when <paramref name="salesTaxV2Enabled"/> is on and a
+/// <paramref name="salesTaxEngine"/> is supplied, CreateAsync computes the
+/// purchase-side tax from each line's tax code (replacing the V1 tax=0
+/// stub), reflects it on the header total, and posts a recoverable-tax leg
+/// on the expense JE. The void path mirrors automatically (it reads + flips
+/// the posted JE lines). Flag off → unchanged (tax stays 0).
 /// </summary>
-public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connections) : IExpenseStore
+public sealed class PostgreSqlExpenseStore(
+    PostgreSqlConnectionFactory connections,
+    ISalesTaxEngine? salesTaxEngine = null,
+    bool salesTaxV2Enabled = false) : IExpenseStore
 {
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
@@ -182,8 +194,55 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             throw new InvalidOperationException(crossValidation);
         }
 
-        var (subtotal, discount, tax, total) = ComputeTotals(input);
         var transactionCurrency = input.TransactionCurrencyCode.Trim().ToUpperInvariant();
+
+        // S5.4: compute the purchase-side tax from the engine (replacing the
+        // V1 tax=0 stub) when the flag is on. Inclusive tax mode is left at 0
+        // (the engine does exclusive only). recoverableTaxLines route the ITC
+        // to the snapshotted recoverable account (decision A); any
+        // non-recoverable portion folds into the expense allocation.
+        var salesTaxActive = salesTaxV2Enabled
+            && salesTaxEngine is not null
+            && string.Equals(input.TaxMode, "exclusive", StringComparison.OrdinalIgnoreCase);
+
+        decimal engineTax = 0m;
+        decimal nonRecoverableTax = 0m;
+        var recoverableTaxLines = new List<(Guid AccountId, decimal AmountTx)>();
+        if (salesTaxActive)
+        {
+            var taxResult = await salesTaxEngine!.ComputeAsync(
+                new SalesTaxComputationRequest(
+                    companyId.Value,
+                    input.PaymentDate,
+                    transactionCurrency,
+                    SalesTaxDocumentSide.Purchase,
+                    input.Lines
+                        .Select(static l => new SalesTaxLineRequest(
+                            Guid.NewGuid(),
+                            Math.Round(l.Quantity * l.UnitPrice, 4),
+                            l.TaxCodeId))
+                        .ToList()),
+                cancellationToken).ConfigureAwait(false);
+
+            engineTax = taxResult.TotalTaxAmount;
+            nonRecoverableTax = taxResult.Lines.Sum(static l => l.TotalNonRecoverableAmount);
+
+            var grouped = taxResult.Lines
+                .SelectMany(static l => l.Snapshots)
+                .Where(static s => s.RecoverableAmount != 0m)
+                .GroupBy(static s => s.RecoverableAccountId)
+                .Select(g => (AccountId: g.Key, Amount: g.Sum(static s => s.RecoverableAmount)))
+                .ToList();
+            if (grouped.Any(static g => g.AccountId is null))
+            {
+                throw new InvalidOperationException(
+                    "A recoverable tax component on this expense has no recoverable GL account configured.");
+            }
+            recoverableTaxLines.AddRange(grouped.Select(static g => (g.AccountId!.Value, g.Amount)));
+        }
+
+        var (subtotal, discount, tax, total) = ComputeTotals(input, engineTax);
+        var expenseAllocationTx = Math.Round(subtotal - discount + nonRecoverableTax, 4);
         var sameCurrency = string.Equals(transactionCurrency, baseCurrencyCode, StringComparison.Ordinal);
         var fxRate = FxRatePostingPolicy.ResolveTransactionToBaseRate(
             input.FxRate,
@@ -274,6 +333,8 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             fxRate,
             total,
             discount,
+            expenseAllocationTx,
+            recoverableTaxLines,
             cancellationToken).ConfigureAwait(false);
 
         await using (var updateJournalCommand = connection.CreateCommand())
@@ -474,7 +535,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         }
     }
 
-    private static (decimal subtotal, decimal discount, decimal tax, decimal total) ComputeTotals(ExpenseUpsertInput input)
+    private static (decimal subtotal, decimal discount, decimal tax, decimal total) ComputeTotals(ExpenseUpsertInput input, decimal engineTax)
     {
         decimal subtotal = 0m;
         foreach (var line in input.Lines)
@@ -492,7 +553,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             discount = Math.Round(amt, 4);
         }
 
-        decimal tax = 0m; // V1 — tax engine not yet wired.
+        decimal tax = engineTax; // S5.4: engine-computed (0 when flag off / inclusive).
         decimal total = string.Equals(input.TaxMode, "inclusive", StringComparison.OrdinalIgnoreCase)
             ? Math.Round(subtotal - discount, 4)
             : Math.Round(subtotal - discount + tax, 4);
@@ -514,6 +575,8 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         decimal fxRate,
         decimal totalTx,
         decimal discountTx,
+        decimal expenseAllocationTx,
+        IReadOnlyList<(Guid AccountId, decimal AmountTx)> recoverableTaxLines,
         CancellationToken cancellationToken)
     {
         if (activeLines.Count == 0)
@@ -577,7 +640,11 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             }
         }
 
-        var lineAllocations = AllocateExpenseLines(activeLines, totalTx, discountTx, fxRate);
+        // S5.4: expense Dr lines carry only the net cost (subtotal − discount)
+        // plus any non-recoverable tax; the recoverable tax is a separate Dr
+        // to the ITC account. With the flag off expenseAllocationTx == totalTx
+        // and recoverableTaxLines is empty, so the JE is unchanged.
+        var lineAllocations = AllocateExpenseLines(activeLines, expenseAllocationTx, discountTx, fxRate);
         var lineNumber = 1;
         foreach (var allocation in lineAllocations)
         {
@@ -599,6 +666,30 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 postingDate: input.PaymentDate,
                 postingRole: "source_line:expense",
                 sourceLineNumber: allocation.Line.Sequence,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        // S5.4: recoverable purchase-tax leg(s) — Dr the ITC account.
+        foreach (var taxLine in recoverableTaxLines)
+        {
+            await InsertJournalAndLedgerLineAsync(
+                connection,
+                transaction,
+                companyId,
+                journalEntryId,
+                lineNumber++,
+                taxLine.AccountId,
+                input.PayeeKind,
+                input.PayeeId,
+                $"Recoverable purchase tax for expense {expenseNumber}",
+                transactionCurrency,
+                txDebit: taxLine.AmountTx,
+                txCredit: 0m,
+                debit: RoundBase(taxLine.AmountTx * fxRate),
+                credit: 0m,
+                postingDate: input.PaymentDate,
+                postingRole: "tax:purchase_tax_recoverable",
+                sourceLineNumber: null,
                 cancellationToken).ConfigureAwait(false);
         }
 

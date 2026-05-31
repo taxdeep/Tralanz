@@ -502,7 +502,14 @@ builder.Services.AddSingleton<IPurchaseOrderStore, PostgreSqlPurchaseOrderStore>
 // expense_lines. Posted-only state machine — Expense reflects payments
 // already made, no Draft. V1 framework writes the document but defers
 // the journal-entry pipeline alongside the Bill GL integration batch.
-builder.Services.AddSingleton<IExpenseStore, PostgreSqlExpenseStore>();
+// S5.4: factory so the expense store gets the SalesTax engine + flag.
+// SalesTaxV2Options lives in Citus.Accounting.Infrastructure (not
+// Infrastructure.PostgreSQL where the store is), so the flag is passed as a
+// plain bool resolved here.
+builder.Services.AddSingleton<IExpenseStore>(sp => new PostgreSqlExpenseStore(
+    sp.GetRequiredService<Infrastructure.PostgreSQL.PostgreSqlConnectionFactory>(),
+    sp.GetService<Citus.Modules.SalesTax.Application.Contracts.ISalesTaxEngine>(),
+    sp.GetRequiredService<IOptions<SalesTaxV2Options>>().Value.Enabled));
 
 // CoA starter templates. Static C# data (no DB tables); the seeder is
 // additive — re-applying the same template skips rows that already
