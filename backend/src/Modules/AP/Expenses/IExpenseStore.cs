@@ -165,7 +165,11 @@ public sealed record ExpenseLineInput(
     decimal UnitPrice,
     Guid? TaxCodeId,
     // See ExpenseLineRecord.TaskId.
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    // R4 redesign: tax_code_sets.id — a Tax Code bundle. When set, the store
+    // passes it to the engine as TaxCodeSetId (multi-Rule tax); the single
+    // legacy Rule TaxCodeId is the fallback used when this is null.
+    Guid? TaxCodeSetId = null);
 
 public static class ExpenseStatus
 {

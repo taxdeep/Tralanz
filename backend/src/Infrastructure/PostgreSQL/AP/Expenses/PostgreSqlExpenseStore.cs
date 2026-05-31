@@ -220,7 +220,8 @@ public sealed class PostgreSqlExpenseStore(
                         .Select(static l => new SalesTaxLineRequest(
                             Guid.NewGuid(),
                             Math.Round(l.Quantity * l.UnitPrice, 4),
-                            l.TaxCodeId))
+                            l.TaxCodeId,
+                            l.TaxCodeSetId))
                         .ToList()),
                 cancellationToken).ConfigureAwait(false);
 
@@ -510,11 +511,11 @@ public sealed class PostgreSqlExpenseStore(
                 INSERT INTO expense_lines (
                     expense_id, sequence, service_date,
                     item_id, expense_account_id, description,
-                    quantity, unit_price, tax_code_id, line_total, task_id)
+                    quantity, unit_price, tax_code_id, tax_code_set_id, line_total, task_id)
                 VALUES (
                     @expense_id, @sequence, @service_date,
                     @item_id, @expense_account_id, @description,
-                    @quantity, @unit_price, @tax_code_id, @line_total, @task_id);
+                    @quantity, @unit_price, @tax_code_id, @tax_code_set_id, @line_total, @task_id);
                 """;
             command.Parameters.AddWithValue("expense_id", expenseId);
             command.Parameters.AddWithValue("sequence", line.Sequence);
@@ -526,6 +527,7 @@ public sealed class PostgreSqlExpenseStore(
             command.Parameters.AddWithValue("quantity", line.Quantity);
             command.Parameters.AddWithValue("unit_price", line.UnitPrice);
             command.Parameters.AddWithValue("tax_code_id", (object?)line.TaxCodeId ?? DBNull.Value);
+            command.Parameters.AddWithValue("tax_code_set_id", (object?)line.TaxCodeSetId ?? DBNull.Value);
             command.Parameters.AddWithValue("line_total", Math.Round(line.Quantity * line.UnitPrice, 4));
             // task_id column added by PostgresTaskLinkSchemaInitializer
             // (Batch 8). Validator already rejected billed / canceled /
