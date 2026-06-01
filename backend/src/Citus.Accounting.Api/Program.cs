@@ -6567,7 +6567,10 @@ accounting.MapPost(
                     RatePercent: request.RatePercent ?? 0m,
                     AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
                     RegistrationNumber: request.RegistrationNumber,
-                    IsActive: request.IsActive ?? true),
+                    IsActive: request.IsActive ?? true,
+                    RecoverabilityMode: string.Equals(request.RecoverabilityMode, "none", StringComparison.OrdinalIgnoreCase) ? "none" : "full",
+                    PayableAccountId: request.PayableAccountId,
+                    RecoverableAccountId: request.RecoverableAccountId),
                 cancellationToken);
             // H15: refresh tax-code picker projection so the new code shows
             // up in line-level pickers immediately.
@@ -6614,7 +6617,10 @@ accounting.MapPut(
                     RatePercent: request.RatePercent ?? 0m,
                     AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
                     RegistrationNumber: request.RegistrationNumber,
-                    IsActive: request.IsActive ?? true),
+                    IsActive: request.IsActive ?? true,
+                    RecoverabilityMode: string.Equals(request.RecoverabilityMode, "none", StringComparison.OrdinalIgnoreCase) ? "none" : "full",
+                    PayableAccountId: request.PayableAccountId,
+                    RecoverableAccountId: request.RecoverableAccountId),
                 cancellationToken);
             if (updated is not null)
             {

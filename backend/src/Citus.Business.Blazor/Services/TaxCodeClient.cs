@@ -142,7 +142,10 @@ public sealed record TaxCodeSummary(
     string? RegistrationNumber,
     bool IsActive,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string RecoverabilityMode = "full",
+    Guid? PayableAccountId = null,
+    Guid? RecoverableAccountId = null);
 
 public sealed record TaxCodeUpsertPayload(
     string Code,
@@ -150,6 +153,9 @@ public sealed record TaxCodeUpsertPayload(
     decimal RatePercent,
     string AppliesTo,
     string? RegistrationNumber,
-    bool IsActive);
+    bool IsActive,
+    string RecoverabilityMode = "full",
+    Guid? PayableAccountId = null,
+    Guid? RecoverableAccountId = null);
 
 public sealed record TaxCodeMutationOutcome(bool Succeeded, TaxCodeSummary? Saved, string? ErrorMessage);

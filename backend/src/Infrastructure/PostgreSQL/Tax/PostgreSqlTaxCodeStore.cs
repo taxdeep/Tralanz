@@ -108,12 +108,15 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         command.CommandText = """
             INSERT INTO tax_codes (
                 id, company_id, entity_number, code, name, rate_percent,
-                applies_to, registration_number, is_active, created_at, updated_at)
+                applies_to, registration_number, is_active, created_at, updated_at,
+                recoverability_mode, is_recoverable_on_purchase, payable_account_id, recoverable_account_id)
             VALUES (
                 @id, @company_id, @entity_number, @code, @name, @rate_percent,
-                @applies_to, @registration_number, @is_active, @now, @now)
+                @applies_to, @registration_number, @is_active, @now, @now,
+                @recoverability_mode, @is_recoverable_on_purchase, @payable_account_id, @recoverable_account_id)
             RETURNING id, company_id, entity_number, code, name, rate_percent,
-                      applies_to, registration_number, is_active, created_at, updated_at;
+                      applies_to, registration_number, is_active, created_at, updated_at,
+                      recoverability_mode, payable_account_id, recoverable_account_id;
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -126,6 +129,11 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
             string.IsNullOrWhiteSpace(input.RegistrationNumber) ? (object)DBNull.Value : input.RegistrationNumber.Trim());
         command.Parameters.AddWithValue("is_active", input.IsActive);
         command.Parameters.AddWithValue("now", now);
+        command.Parameters.AddWithValue("recoverability_mode", input.RecoverabilityMode);
+        command.Parameters.AddWithValue("is_recoverable_on_purchase",
+            !string.Equals(input.RecoverabilityMode, "none", StringComparison.OrdinalIgnoreCase));
+        command.Parameters.AddWithValue("payable_account_id", (object?)input.PayableAccountId ?? DBNull.Value);
+        command.Parameters.AddWithValue("recoverable_account_id", (object?)input.RecoverableAccountId ?? DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -153,10 +161,15 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                    applies_to = @applies_to,
                    registration_number = @registration_number,
                    is_active = @is_active,
+                   recoverability_mode = @recoverability_mode,
+                   is_recoverable_on_purchase = @is_recoverable_on_purchase,
+                   payable_account_id = @payable_account_id,
+                   recoverable_account_id = @recoverable_account_id,
                    updated_at = @now
              WHERE company_id = @company_id AND id = @id
             RETURNING id, company_id, entity_number, code, name, rate_percent,
-                      applies_to, registration_number, is_active, created_at, updated_at;
+                      applies_to, registration_number, is_active, created_at, updated_at,
+                      recoverability_mode, payable_account_id, recoverable_account_id;
             """;
         command.Parameters.AddWithValue("id", taxCodeId);
         command.Parameters.AddWithValue("company_id", companyId.Value);
@@ -168,6 +181,11 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
             string.IsNullOrWhiteSpace(input.RegistrationNumber) ? (object)DBNull.Value : input.RegistrationNumber.Trim());
         command.Parameters.AddWithValue("is_active", input.IsActive);
         command.Parameters.AddWithValue("now", now);
+        command.Parameters.AddWithValue("recoverability_mode", input.RecoverabilityMode);
+        command.Parameters.AddWithValue("is_recoverable_on_purchase",
+            !string.Equals(input.RecoverabilityMode, "none", StringComparison.OrdinalIgnoreCase));
+        command.Parameters.AddWithValue("payable_account_id", (object?)input.PayableAccountId ?? DBNull.Value);
+        command.Parameters.AddWithValue("recoverable_account_id", (object?)input.RecoverableAccountId ?? DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
@@ -215,7 +233,8 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
 
     private const string SelectColumns = """
         SELECT id, company_id, entity_number, code, name, rate_percent,
-               applies_to, registration_number, is_active, created_at, updated_at
+               applies_to, registration_number, is_active, created_at, updated_at,
+               recoverability_mode, payable_account_id, recoverable_account_id
         FROM tax_codes
         """;
 
@@ -230,5 +249,8 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         RegistrationNumber: reader.IsDBNull(7) ? null : reader.GetString(7),
         IsActive: reader.GetBoolean(8),
         CreatedAt: reader.GetFieldValue<DateTimeOffset>(9),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(10));
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(10),
+        RecoverabilityMode: reader.IsDBNull(11) ? "full" : reader.GetString(11),
+        PayableAccountId: reader.IsDBNull(12) ? null : reader.GetGuid(12),
+        RecoverableAccountId: reader.IsDBNull(13) ? null : reader.GetGuid(13));
 }

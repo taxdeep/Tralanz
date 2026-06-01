@@ -24,7 +24,15 @@ public sealed record TaxCodeRecord(
     string? RegistrationNumber,
     bool IsActive,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    // R2: recoverability + GL account routing — now user-editable on the
+    // Sales Tax page. RecoverabilityMode: 'full' (recoverable / ITC) or
+    // 'none' (not recoverable). PayableAccountId is the liability account
+    // for tax collected/owed; RecoverableAccountId is the ITC asset account
+    // used only when recoverable.
+    string RecoverabilityMode = "full",
+    Guid? PayableAccountId = null,
+    Guid? RecoverableAccountId = null);
 
 public static class TaxCodeAppliesTo
 {
@@ -41,7 +49,10 @@ public sealed record TaxCodeUpsertInput(
     decimal RatePercent,
     string AppliesTo,
     string? RegistrationNumber,
-    bool IsActive);
+    bool IsActive,
+    string RecoverabilityMode = "full",
+    Guid? PayableAccountId = null,
+    Guid? RecoverableAccountId = null);
 
 public interface ITaxCodeStore
 {

@@ -75,6 +75,13 @@ public sealed record TaxCodeUpsertHttpRequest
     /// </summary>
     public string? RegistrationNumber { get; init; }
     public bool? IsActive { get; init; }
+    // R2: recoverability + GL routing. RecoverabilityMode = "full"
+    // (recoverable / ITC) or "none" (not recoverable). PayableAccountId is
+    // the liability account; RecoverableAccountId is the ITC asset account
+    // (used only when recoverable).
+    public string? RecoverabilityMode { get; init; }
+    public Guid? PayableAccountId { get; init; }
+    public Guid? RecoverableAccountId { get; init; }
 }
 
 // R2: a Tax Code (tax_code_sets) — a bundle of Tax Rules.
