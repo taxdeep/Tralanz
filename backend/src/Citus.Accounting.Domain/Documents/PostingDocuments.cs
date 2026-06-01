@@ -220,9 +220,14 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
             throw new ArgumentOutOfRangeException(nameof(unitPrice), "Invoice amounts cannot be negative.");
         }
 
-        if (taxAmount > 0m && payableTaxAccountId is null)
+        // A single line-level payable account only fits a single-rule tax.
+        // A multi-rule Tax Code (e.g. GST + PST) splits into several legs
+        // whose payable accounts live on the per-leg tax snapshots, so the
+        // line-level account is legitimately null there. Require a payable
+        // account ONLY when the line bears tax but has no snapshots to carry it.
+        if (taxAmount > 0m && payableTaxAccountId is null && (taxSnapshots is null || taxSnapshots.Count == 0))
         {
-            throw new InvalidOperationException("Tax-bearing invoice lines must resolve to a payable tax account.");
+            throw new InvalidOperationException("Tax-bearing invoice lines must resolve to a payable tax account (directly or via tax snapshots).");
         }
 
         LineNumber = lineNumber;
