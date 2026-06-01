@@ -151,6 +151,27 @@ public sealed class ManualJournalDocument : IPostingDocument
     }
 }
 
+/// <summary>
+/// S5: one posted tax-snapshot row attached to a posting-document line.
+/// This is a LOCAL Citus.Accounting.Domain read-model (deliberately not the
+/// SalesTax module's record, to avoid a Domain→SalesTax dependency). It is
+/// populated by the per-document <c>GetForPostingAsync</c> from
+/// <c>document_line_sales_tax_snapshots</c>; the posting fragment builder
+/// (S5.2) reads it to route each tax leg to its snapshotted GL account. The
+/// list is empty when the document was saved with SalesTaxV2 off — the
+/// builder then falls back to the single <c>line.TaxAmount</c> path.
+/// </summary>
+public sealed record DocumentLineTaxSnapshot(
+    int Sequence,
+    string Leg,
+    string RegimeType,
+    decimal TaxAmount,
+    decimal RecoverableAmount,
+    decimal NonRecoverableAmount,
+    Guid? PayableAccountId,
+    Guid? RecoverableAccountId,
+    Guid? NonRecoverableAccountId);
+
 public sealed record InvoiceDocumentLine : IPostingDocumentLine
 {
     public InvoiceDocumentLine(
@@ -170,7 +191,9 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         // create page can propagate the source line's task_id when
         // pre-filling from an invoice. Persisted in invoice_lines.task_id;
         // the posting engine ignores this field.
-        Guid? taskId = null)
+        Guid? taskId = null,
+        // S5: per-line tax snapshots (empty when saved with the flag off).
+        IReadOnlyList<DocumentLineTaxSnapshot>? taxSnapshots = null)
     {
         if (lineNumber <= 0)
         {
@@ -215,6 +238,7 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         WarehouseId = warehouseId;
         UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
         TaskId = taskId;
+        TaxSnapshots = taxSnapshots ?? Array.Empty<DocumentLineTaxSnapshot>();
     }
 
     public int LineNumber { get; }
@@ -242,6 +266,8 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
     public string? UomCode { get; }
 
     public Guid? TaskId { get; }
+
+    public IReadOnlyList<DocumentLineTaxSnapshot> TaxSnapshots { get; }
 }
 
 public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
