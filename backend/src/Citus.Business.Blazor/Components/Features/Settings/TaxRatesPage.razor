@@ -3,6 +3,7 @@
 @inject BusinessShellState ShellState
 @inject TaxCodeClient TaxCodeClient
 @inject TaxCodeSetClient TaxCodeSetClient
+@inject AccountClient AccountClient
 @inject CitusToastService Message
 
 @*
@@ -187,14 +188,15 @@
 {
     <CitusFormSection Title="@(_editingId is null ? "New Tax Rule" : "Edit Tax Rule")">
         <form @onsubmit="OnSaveAsync" @onsubmit:preventDefault>
+            @* Section 1: identity *@
             <CitusFormGrid Columns="2">
-                <CitusFormField Label="Code">
+                <CitusFormField Label="Tax Rule">
                     <input type="text"
                            class="citus-form-field__input"
                            value="@_formCode"
                            @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
                            maxlength="32"
-                           placeholder="HST_ON, GST, PST_BC, …"
+                           placeholder="GST, PST_BC, HST_ON, …"
                            disabled="@_isMutating" />
                 </CitusFormField>
 
@@ -209,10 +211,6 @@
                 </CitusFormField>
 
                 <CitusFormField Label="Rate (%)">
-                    @* RadzenNumeric with two-way @bind-Value works reliably across
-                       browsers; the previous raw <input type="number"> with a manual
-                       oninput handler intermittently rejected keystrokes when the
-                       initial value attribute was set. *@
                     <RadzenNumeric TValue="decimal?"
                                    @bind-Value="_formRate"
                                    Min="0"
@@ -223,7 +221,11 @@
                                    Class="citus-control-full"
                                    Disabled="@_isMutating" />
                 </CitusFormField>
+            </CitusFormGrid>
 
+            @* Section 2: applies-to + recoverability + GL routing *@
+            <div class="citus-form-field__label mt-5" style="font-weight:600;">Routing</div>
+            <CitusFormGrid Columns="2">
                 <CitusFormField Label="Applies to">
                     <select class="citus-form-field__input"
                             value="@_formAppliesTo"
@@ -234,9 +236,88 @@
                         <option value="both">Sales and purchases</option>
                     </select>
                 </CitusFormField>
+
+                <CitusFormField Label="Type">
+                    <select class="citus-form-field__input"
+                            value="@_formRecoverabilityMode"
+                            @onchange="@(e => _formRecoverabilityMode = e.Value?.ToString() ?? "none")"
+                            disabled="@_isMutating">
+                        <option value="none">Not recoverable</option>
+                        <option value="full">Recoverable (ITC)</option>
+                    </select>
+                </CitusFormField>
             </CitusFormGrid>
 
-            <label class="citus-form-field mt-4">
+            <CitusFormField Label="@(_formRecoverabilityMode == "full" ? "Payable account (tax collected / owed)" : "Tax account")">
+                <div class="flex items-center gap-2">
+                    <select class="citus-form-field__input"
+                            value="@(_formPayableAccountId?.ToString() ?? "")"
+                            @onchange="@(e => _formPayableAccountId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : (Guid?)null)"
+                            disabled="@_isMutating">
+                        <option value="">— Select an account —</option>
+                        @foreach (var a in _accounts.Where(a => a.RootType == "liability"))
+                        {
+                            <option value="@a.Id">@a.Code  @a.Name</option>
+                        }
+                    </select>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                 Disabled="@_isMutating" OnClick="@(() => StartCreatingAccount("payable"))">
+                        ＋ New
+                    </CitusButton>
+                </div>
+            </CitusFormField>
+
+            @if (_formRecoverabilityMode == "full")
+            {
+                <CitusFormField Label="Recoverable (ITC) account">
+                    <div class="flex items-center gap-2">
+                        <select class="citus-form-field__input"
+                                value="@(_formRecoverableAccountId?.ToString() ?? "")"
+                                @onchange="@(e => _formRecoverableAccountId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : (Guid?)null)"
+                                disabled="@_isMutating">
+                            <option value="">— Select an account —</option>
+                            @foreach (var a in _accounts.Where(a => a.RootType == "asset"))
+                            {
+                                <option value="@a.Id">@a.Code  @a.Name</option>
+                            }
+                        </select>
+                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                     Disabled="@_isMutating" OnClick="@(() => StartCreatingAccount("recoverable"))">
+                            ＋ New
+                        </CitusButton>
+                    </div>
+                </CitusFormField>
+            }
+
+            @if (_creatingAccountFor is not null)
+            {
+                <div class="mt-2 p-3" style="border:1px solid var(--citus-color-border); border-radius:var(--citus-radius-md);">
+                    <span class="citus-form-field__label">
+                        New @(_creatingAccountFor == "payable" ? "payable (liability)" : "recoverable (asset)") account
+                    </span>
+                    <CitusFormGrid Columns="2">
+                        <CitusFormField Label="Account code">
+                            <input type="text" class="citus-form-field__input" value="@_newAccountCode"
+                                   @oninput="@(e => _newAccountCode = e.Value?.ToString() ?? string.Empty)"
+                                   maxlength="32" placeholder="e.g. 250100" disabled="@_isMutating" />
+                        </CitusFormField>
+                        <CitusFormField Label="Account name">
+                            <input type="text" class="citus-form-field__input" value="@_newAccountName"
+                                   @oninput="@(e => _newAccountName = e.Value?.ToString() ?? string.Empty)"
+                                   maxlength="120" placeholder="e.g. PST Payable" disabled="@_isMutating" />
+                        </CitusFormField>
+                    </CitusFormGrid>
+                    <div class="flex gap-2 mt-2">
+                        <CitusButton Variant="CitusButtonVariant.Primary" Size="CitusButtonSize.Small"
+                                     Disabled="@_isMutating" OnClick="CreateAccountAsync">Create account</CitusButton>
+                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                     Disabled="@_isMutating" OnClick="@(() => _creatingAccountFor = null)">Cancel</CitusButton>
+                    </div>
+                </div>
+            }
+
+            @* Section 3: registration *@
+            <label class="citus-form-field mt-5">
                 <span class="citus-form-field__label">
                     Tax registration number <span class="text-error">*</span>
                 </span>
@@ -249,7 +330,6 @@
                        disabled="@_isMutating" />
                 <span class="text-fg-subtle text-xs mt-1">
                     Issued by the taxing authority (GST/HST #, VAT #, EIN, etc.).
-                    Invoices and tax returns surface this number on documents that use this code.
                 </span>
             </label>
 
@@ -403,6 +483,14 @@
     private string _formAppliesTo = "both";
     private string _formRegistrationNumber = string.Empty;
     private bool _formIsActive = true;
+    // R2: recoverability + GL accounts on the Tax Rule form.
+    private string _formRecoverabilityMode = "none";
+    private Guid? _formPayableAccountId;
+    private Guid? _formRecoverableAccountId;
+    private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
+    private string? _creatingAccountFor; // "payable" | "recoverable"
+    private string _newAccountCode = string.Empty;
+    private string _newAccountName = string.Empty;
 
     private List<TaxCodeSummary> _rows = new();
 
@@ -418,9 +506,11 @@
         {
             var rulesTask = TaxCodeClient.ListAsync(includeInactive: _includeInactive);
             var codesTask = TaxCodeSetClient.ListAsync(includeInactive: _includeInactive);
-            await Task.WhenAll(rulesTask, codesTask);
+            var accountsTask = AccountClient.ListAsync();
+            await Task.WhenAll(rulesTask, codesTask, accountsTask);
             _rows = rulesTask.Result.OrderByDescending(r => r.IsActive).ThenBy(r => r.Code).ToList();
             _codeRows = codesTask.Result.OrderByDescending(r => r.IsActive).ThenBy(r => r.Code).ToList();
+            _accounts = accountsTask.Result.Where(a => a.IsActive && a.AllowManualPosting).OrderBy(a => a.Code).ToList();
         }
         finally
         {
@@ -443,6 +533,10 @@
         _formAppliesTo = "both";
         _formRegistrationNumber = string.Empty;
         _formIsActive = true;
+        _formRecoverabilityMode = "none";
+        _formPayableAccountId = null;
+        _formRecoverableAccountId = null;
+        _creatingAccountFor = null;
         _isFormOpen = true;
     }
 
@@ -455,6 +549,10 @@
         _formAppliesTo = row.AppliesTo;
         _formRegistrationNumber = row.RegistrationNumber ?? string.Empty;
         _formIsActive = row.IsActive;
+        _formRecoverabilityMode = string.Equals(row.RecoverabilityMode, "none", StringComparison.OrdinalIgnoreCase) ? "none" : "full";
+        _formPayableAccountId = row.PayableAccountId;
+        _formRecoverableAccountId = row.RecoverableAccountId;
+        _creatingAccountFor = null;
         _isFormOpen = true;
     }
 
@@ -462,6 +560,52 @@
     {
         _isFormOpen = false;
         _editingId = null;
+    }
+
+    private void StartCreatingAccount(string slot)
+    {
+        _creatingAccountFor = slot;
+        _newAccountCode = string.Empty;
+        _newAccountName = string.Empty;
+    }
+
+    private async Task CreateAccountAsync()
+    {
+        if (_isMutating || _creatingAccountFor is null) return;
+        if (string.IsNullOrWhiteSpace(_newAccountCode) || string.IsNullOrWhiteSpace(_newAccountName))
+        {
+            await Message.WarningAsync("Account code and name are required.");
+            return;
+        }
+        _isMutating = true;
+        try
+        {
+            var slot = _creatingAccountFor;
+            var rootType = slot == "payable" ? "liability" : "asset";
+            var outcome = await AccountClient.CreateAsync(new AccountUpsertPayload(
+                Code: _newAccountCode.Trim(),
+                Name: _newAccountName.Trim(),
+                RootType: rootType,
+                DetailType: null,
+                CurrencyCode: null,
+                AllowManualPosting: true,
+                IsActive: true));
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to create account.");
+                return;
+            }
+            var accounts = await AccountClient.ListAsync();
+            _accounts = accounts.Where(a => a.IsActive && a.AllowManualPosting).OrderBy(a => a.Code).ToList();
+            if (slot == "payable") _formPayableAccountId = outcome.Saved.Id;
+            else _formRecoverableAccountId = outcome.Saved.Id;
+            _creatingAccountFor = null;
+            await Message.SuccessAsync($"Account {outcome.Saved.Code} created.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
     }
 
     private async Task OnSaveAsync()
@@ -500,7 +644,10 @@
                 RatePercent: rate,
                 AppliesTo: _formAppliesTo,
                 RegistrationNumber: registration,
-                IsActive: _formIsActive);
+                IsActive: _formIsActive,
+                RecoverabilityMode: _formRecoverabilityMode,
+                PayableAccountId: _formPayableAccountId,
+                RecoverableAccountId: _formRecoverabilityMode == "full" ? _formRecoverableAccountId : null);
 
             TaxCodeMutationOutcome outcome = _editingId is null
                 ? await TaxCodeClient.CreateAsync(payload)
