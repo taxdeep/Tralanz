@@ -222,10 +222,22 @@
                 <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
                 <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
                 <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
+                @* Live tax preview, broken out per Tax Rule (the components
+                   of each selected Tax Code — e.g. GST / PST inside a BC/GP
+                   code). Computed client-side from the loaded code rates;
+                   the engine recomputes the authoritative split on save. *@
+                @foreach (var t in _taxByRule)
+                {
+                    <CitusKeyValueRow Label="@t.RuleCode">@FormatAmount(t.Amount)</CitusKeyValueRow>
+                }
                 <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
                 @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                 {
                     <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
+                }
+                @if (_taxTotal > 0m)
+                {
+                    <CitusKeyValueRow Label="Total"><strong>@FormatAmount(_total + _taxTotal) @_currency.ToUpperInvariant()</strong></CitusKeyValueRow>
                 }
             </CitusKeyValueTable>
         </CitusFormSection>
@@ -375,6 +387,44 @@
 
     // R2: Tax Codes (bundles) for the per-line tax dropdown (Code-only).
     private IReadOnlyList<TaxCodeSetSummary> _taxCodeSets = Array.Empty<TaxCodeSetSummary>();
+
+    // Live tax preview for the Summary: each selected Tax Code is split
+    // into its Tax Rules (GST, PST, …) and summed across lines. Mirrors
+    // the engine's per-rule split (rate × line amount; a compound rule
+    // builds on the running base) so the operator sees the breakdown
+    // before posting. The engine recomputes the authoritative amounts.
+    private IReadOnlyList<(string RuleCode, decimal Amount)> _taxByRule
+    {
+        get
+        {
+            var totals = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<string>();
+            foreach (var line in _lines)
+            {
+                if (line.TaxCodeSetId is not { } setId) continue;
+                var set = _taxCodeSets.FirstOrDefault(s => s.Id == setId);
+                if (set is null || set.Members.Count == 0) continue;
+                var lineAmount = line.Quantity * line.UnitPrice;
+                if (lineAmount <= 0m) continue;
+                var compoundBase = lineAmount;
+                foreach (var rule in set.Members.OrderBy(m => m.Sequence))
+                {
+                    var taxable = rule.IsCompound ? compoundBase : lineAmount;
+                    var amount = Math.Round(taxable * rule.RatePercent / 100m, 2, MidpointRounding.AwayFromZero);
+                    if (!totals.ContainsKey(rule.RuleCode))
+                    {
+                        totals[rule.RuleCode] = 0m;
+                        order.Add(rule.RuleCode);
+                    }
+                    totals[rule.RuleCode] += amount;
+                    if (rule.IsCompound) compoundBase += amount;
+                }
+            }
+            return order.Select(c => (c, totals[c])).ToList();
+        }
+    }
+
+    private decimal _taxTotal => _taxByRule.Sum(t => t.Amount);
 
     protected override async Task OnInitializedAsync()
     {
