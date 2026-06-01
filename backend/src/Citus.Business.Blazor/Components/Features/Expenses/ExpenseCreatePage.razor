@@ -748,16 +748,12 @@ else
         IReadOnlyList<TaxCodeSetSummary> codes,
         IReadOnlyList<TaxCodeSummary> rules)
     {
-        var options = new List<TaxOption>(codes.Count + rules.Count);
-        foreach (var c in codes)
-        {
-            options.Add(new TaxOption(c.Id, $"{c.Code} — {c.Name} (Tax Code)", true));
-        }
-        foreach (var r in rules)
-        {
-            options.Add(new TaxOption(r.Id, r.Code, false));
-        }
-        return options;
+        // Code-only: document lines pick Tax Codes (bundles), never raw Tax
+        // Rules. Rules are building blocks configured on the Sales Tax page.
+        _ = rules;
+        return codes
+            .Select(c => new TaxOption(c.Id, $"{c.Code} — {c.Name}", true))
+            .ToList();
     }
 
     private void ApplyLineTaxSelection(int index, Guid? id)
