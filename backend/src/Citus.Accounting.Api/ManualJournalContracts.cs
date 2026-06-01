@@ -267,7 +267,9 @@ public sealed record SaveInvoiceDraftLineHttpRequest(
     // to the legacy whole-task path via TaskId alone (matches
     // pre-H6-2 behavior; existing drafts in the DB without
     // task_line_id keep working unchanged).
-    Guid? TaskLineId = null);
+    Guid? TaskLineId = null,
+    // R2: tax_code_sets.id — a Tax Code bundle selected on this line.
+    Guid? TaxCodeSetId = null);
 
 public sealed record InvoiceLookupQuery(CompanyId CompanyId);
 

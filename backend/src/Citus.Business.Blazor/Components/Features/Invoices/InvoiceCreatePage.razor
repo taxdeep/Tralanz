@@ -10,6 +10,7 @@
 @inject ItemClient ItemClient
 @inject AccountClient AccountClient
 @inject TaxCodeClient TaxCodeClient
+@inject TaxCodeSetClient TaxCodeSetClient
 @inject UomClient UomClient
 @inject SalesOrderClient SalesOrderClient
 @inject TaskClient TaskClient
@@ -185,12 +186,15 @@
                             <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
                             <td>
-                                <TaxCodePicker SelectedId="@line.TaxCodeId"
-                                               SelectedDisplayText="@line.TaxCode"
-                                               AppliesTo="sales"
-                                               Placeholder="Tax"
-                                               OnTaxCodeSelected="@(tax => OnTaxCodeSelected(i, tax))"
-                                               OnCleared="@(() => OnTaxCodeCleared(i))" />
+                                <RadzenDropDown TValue="Guid?"
+                                                Data="@_taxCodeSets"
+                                                Value="@line.TaxCodeSetId"
+                                                Change="@(v => Update(i, l => l with { TaxCodeSetId = v as Guid? }))"
+                                                TextProperty="Code"
+                                                ValueProperty="Id"
+                                                AllowClear="true"
+                                                Placeholder="Tax"
+                                                Class="citus-control-full" />
                             </td>
                             <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
                             <td>
@@ -321,6 +325,7 @@
         string AccountCode = "",
         Guid? TaxCodeId = null,
         string TaxCode = "",
+        Guid? TaxCodeSetId = null,
         // Back-link to the Task this line bills. Set on every line when
         // the page is opened via "Bill this task" (FromTaskId path). The
         // submit projection passes it to the wire shape so the post
@@ -357,6 +362,9 @@
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
+    // R2: Tax Codes (bundles) for the per-line tax dropdown (Code-only).
+    private IReadOnlyList<TaxCodeSetSummary> _taxCodeSets = Array.Empty<TaxCodeSetSummary>();
+
     protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
@@ -366,6 +374,7 @@
         _accountsById = accounts.ToDictionary(a => a.Id);
         var uoms = await UomClient.ListAsync(includeInactive: false);
         _uomsByCode = uoms.ToDictionary(u => u.Code, StringComparer.OrdinalIgnoreCase);
+        _taxCodeSets = await TaxCodeSetClient.ListAsync(appliesTo: "sales");
 
         if (FromSalesOrderId is { } soId && soId != Guid.Empty)
         {
@@ -795,19 +804,6 @@
         return (accountId, account.Code, $"{account.Code} {account.Name}");
     }
 
-    private void OnTaxCodeSelected(int i, TaxCodeSummary tax)
-    {
-        Update(i, l => l with
-        {
-            TaxCodeId = tax.Id,
-            TaxCode = tax.Code
-        });
-    }
-
-    private void OnTaxCodeCleared(int i)
-    {
-        Update(i, l => l with { TaxCodeId = null, TaxCode = string.Empty });
-    }
 
     private async Task PostAsync()
     {
@@ -850,6 +846,7 @@
                     Quantity = l.Quantity,
                     UnitPrice = l.UnitPrice,
                     TaxCodeId = l.TaxCodeId,
+                    TaxCodeSetId = l.TaxCodeSetId,
                     TaxAmount = 0m, // Tax computed server-side from tax_code rate; client doesn't push a computed amount.
                     TaskId = l.TaskId,
                 }).ToArray()

@@ -879,6 +879,8 @@ public sealed record InvoiceLineDraft
     /// distinct task_ids to flip source tasks Completed -> Billed.
     /// </summary>
     public Guid? TaskId { get; init; }
+    // R2: tax_code_sets.id — a Tax Code bundle selected on this line.
+    public Guid? TaxCodeSetId { get; init; }
 }
 
 /// <summary>
