@@ -266,6 +266,71 @@ public sealed class BusinessWriteFlowClient
         }
     }
 
+    /// <summary>
+    /// Post an already-saved invoice draft (draft → posted) WITHOUT
+    /// re-saving its lines. Backs the invoice detail page's Post action.
+    /// Hits only step 2 of the two-step flow
+    /// (<c>POST /invoices/{id}/post</c>) — the draft must already exist.
+    /// </summary>
+    public async Task<WriteFlowResult> PostExistingInvoiceDraftAsync(
+        Guid documentId,
+        CompanyId companyId,
+        UserId userId,
+        string displayNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var postPayload = new
+        {
+            companyId,
+            userId,
+            acceptedFxSnapshotId = (Guid?)null,
+            idempotencyKey = (string?)null,
+        };
+
+        try
+        {
+            using var postResponse = await _httpClient.PostAsJsonAsync(
+                $"accounting/invoices/{documentId:D}/post",
+                postPayload,
+                cancellationToken);
+
+            if (!postResponse.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(postResponse, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Posting failed (HTTP {(int)postResponse.StatusCode}).",
+                    Operation: nameof(PostExistingInvoiceDraftAsync),
+                    DraftEcho: (object)documentId)
+                {
+                    DocumentId = documentId,
+                };
+            }
+
+            var posted = await postResponse.Content.ReadFromJsonAsync<InvoicePostResponse>(cancellationToken);
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: ComposePostInvoiceMessage(displayNumber, posted),
+                Operation: nameof(PostExistingInvoiceDraftAsync),
+                DraftEcho: posted ?? (object)documentId)
+            {
+                DocumentId = documentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invoice post call failed for {DocumentId}.", documentId);
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to post the invoice. Please retry.",
+                Operation: nameof(PostExistingInvoiceDraftAsync),
+                DraftEcho: (object)documentId)
+            {
+                DocumentId = documentId,
+            };
+        }
+    }
+
     private static string ComposePostInvoiceMessage(string displayNumber, InvoicePostResponse? posted)
     {
         if (posted is null)

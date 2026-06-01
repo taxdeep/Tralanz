@@ -5,6 +5,8 @@
 @inject AccountClient AccountClient
 @inject CustomerClient CustomerClient
 @inject NavigationManager Navigation
+@inject BusinessWriteFlowClient WriteFlow
+@inject CitusToastService Message
 
 @*
     InvoiceDetailPage — read-only detail surface for a posted invoice.
@@ -63,34 +65,7 @@ else
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
     </CitusStatCardGrid>
 
-    @* Copy A3 Phase 2: More menu hosts secondary actions (Copy today;
-       Print / Audit history come later). State-specific primary
-       actions (Receive payment / Issue credit memo) sit alongside as
-       inline ghost / primary buttons because they're the operator's
-       main jobs on a posted invoice. *@
-    <CitusActionsPanel MoreMenuItems="@_moreItems">
-        @if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
-        {
-            <CitusLinkButton Href="receive-payment"
-                             Variant="CitusButtonVariant.Primary"
-                             LeadingIcon="IconName.Cash">
-                Receive payment
-            </CitusLinkButton>
-            <CitusLinkButton Href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")"
-                             Variant="CitusButtonVariant.Ghost">
-                Issue credit memo
-            </CitusLinkButton>
-            <span class="text-fg-muted text-sm">Settlement happens in Receive Payment.</span>
-        }
-        else if (_invoice.Status == "draft")
-        {
-            <span class="text-fg-muted text-sm">Open the editor to finish this draft and post it.</span>
-        }
-        else if (_invoice.Status == "voided" || _invoice.Status == "reversed")
-        {
-            <span class="text-fg-muted text-sm">This invoice has no outstanding balance.</span>
-        }
-    </CitusActionsPanel>
+    @* Actions relocated to a sticky bottom bar (see end of this block). *@
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
@@ -168,6 +143,42 @@ else
             </CitusFormSection>
         </aside>
     </div>
+
+    @* Sticky bottom action bar. Primary action varies by lifecycle;
+       Post finalizes a draft straight from this surface. *@
+    @if (_invoice.Status == "draft")
+    {
+        <CitusFormActions Sticky="true"
+                          PrimaryLabel="Post invoice"
+                          SavingLabel="Posting…"
+                          CancelVisible="false"
+                          IsSaving="@_isPosting"
+                          Disabled="@ShellState.AreWritesBlocked"
+                          OnSave="PostInvoiceAsync">
+            <ExtraContent>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isPosting" OnClick="CopyAsync">Copy</CitusButton>
+            </ExtraContent>
+        </CitusFormActions>
+    }
+    else if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
+    {
+        <CitusFormActions Sticky="true"
+                          PrimaryLabel="Receive payment"
+                          CancelVisible="false"
+                          OnSave="@(() => Navigation.NavigateTo("receive-payment"))">
+            <ExtraContent>
+                <CitusLinkButton Href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")" Variant="CitusButtonVariant.Ghost">Issue credit memo</CitusLinkButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="CopyAsync">Copy</CitusButton>
+            </ExtraContent>
+        </CitusFormActions>
+    }
+    else
+    {
+        <CitusFormActions Sticky="true"
+                          PrimaryLabel="Copy invoice"
+                          CancelVisible="false"
+                          OnSave="CopyAsync" />
+    }
 }
 
 @code {
@@ -250,16 +261,34 @@ else
         Navigation.NavigateTo($"invoices/new?copyFrom={_invoice.Id:D}");
     }
 
-    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _invoice is null
-        ? Array.Empty<CitusMoreMenuItem>()
-        : new[]
+    private bool _isPosting;
+
+    // Stage 1: post a draft straight from the detail page (draft → posted).
+    // Reuses the proven step-2 post endpoint via the write-flow client,
+    // then reloads so the status card + sticky bar reflect "posted".
+    private async Task PostInvoiceAsync()
+    {
+        if (_invoice is null || _isPosting) return;
+        _isPosting = true;
+        try
         {
-            new CitusMoreMenuItem
+            var result = await WriteFlow.PostExistingInvoiceDraftAsync(
+                _invoice.Id,
+                ShellState.ActiveCompany.Id,
+                ShellState.User.Id,
+                _invoice.DisplayNumber);
+            if (result.Succeeded)
             {
-                Label = "Copy",
-                OnClick = EventCallback.Factory.Create(this, CopyAsync)
+                await Message.SuccessAsync(result.Message);
+                await LoadAsync();
             }
-        };
+            else
+            {
+                await Message.InfoAsync(result.Message);
+            }
+        }
+        finally { _isPosting = false; }
+    }
 
     private static string HumanizeStatus(string status) => status switch
     {
