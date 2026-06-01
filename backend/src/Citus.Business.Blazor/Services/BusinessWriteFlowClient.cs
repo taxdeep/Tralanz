@@ -141,36 +141,7 @@ public sealed class BusinessWriteFlowClient
             return new WriteFlowResult(false, "At least one line is required.", nameof(PostInvoiceAsync), draft);
         }
 
-        var savePayload = new
-        {
-            companyId = draft.CompanyId,
-            userId = draft.UserId,
-            customerId = draft.CustomerId.Value,
-            invoiceDate = draft.DocumentDate,
-            dueDate = draft.DueDate ?? draft.DocumentDate,
-            transactionCurrencyCode = string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
-            baseCurrencyCode = string.IsNullOrWhiteSpace(draft.BaseCurrencyCode)
-                ? (string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant())
-                : draft.BaseCurrencyCode.Trim().ToUpperInvariant(),
-            fxSnapshotId = (Guid?)null,
-            fxRate = draft.FxRate,
-            fxEffectiveDate = (DateOnly?)null,
-            fxSource = (string?)null,
-            memo = draft.Memo,
-            lines = draft.Lines.Select(l => new
-            {
-                lineNumber = l.LineNumber,
-                revenueAccountId = l.RevenueAccountId,
-                description = l.Description,
-                quantity = l.Quantity,
-                unitPrice = l.UnitPrice,
-                taxCodeId = l.TaxCodeId,
-                taxAmount = l.TaxAmount,
-                taskId = l.TaskId,
-            }).ToArray(),
-            customerPoNumber = string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? null : draft.CustomerPoNumber.Trim(),
-            salesOrderId = draft.SalesOrderId,
-        };
+        var savePayload = BuildInvoiceDraftPayload(draft);
 
         Guid documentId;
         string displayNumber;
@@ -328,6 +299,114 @@ public sealed class BusinessWriteFlowClient
             {
                 DocumentId = documentId,
             };
+        }
+    }
+
+    /// <summary>
+    /// Builds the JSON body shared by the invoice draft save (POST
+    /// /invoices/drafts) and update (PUT /invoices/drafts/{id}) calls —
+    /// a single source of truth so the two paths never drift (a per-line
+    /// field missing from one copy once silently dropped tax on save).
+    /// Callers must validate CompanyId / UserId / CustomerId / Lines first.
+    /// </summary>
+    private static object BuildInvoiceDraftPayload(InvoiceDraft draft) => new
+    {
+        companyId = draft.CompanyId,
+        userId = draft.UserId,
+        customerId = draft.CustomerId!.Value,
+        invoiceDate = draft.DocumentDate,
+        dueDate = draft.DueDate ?? draft.DocumentDate,
+        transactionCurrencyCode = string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+        baseCurrencyCode = string.IsNullOrWhiteSpace(draft.BaseCurrencyCode)
+            ? (string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant())
+            : draft.BaseCurrencyCode.Trim().ToUpperInvariant(),
+        fxSnapshotId = (Guid?)null,
+        fxRate = draft.FxRate,
+        fxEffectiveDate = (DateOnly?)null,
+        fxSource = (string?)null,
+        memo = draft.Memo,
+        lines = draft.Lines.Select(l => new
+        {
+            lineNumber = l.LineNumber,
+            revenueAccountId = l.RevenueAccountId,
+            description = l.Description,
+            quantity = l.Quantity,
+            unitPrice = l.UnitPrice,
+            taxCodeId = l.TaxCodeId,
+            taxCodeSetId = l.TaxCodeSetId,
+            taxAmount = l.TaxAmount,
+            taskId = l.TaskId,
+        }).ToArray(),
+        customerPoNumber = string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? null : draft.CustomerPoNumber.Trim(),
+        salesOrderId = draft.SalesOrderId,
+    };
+
+    /// <summary>
+    /// Update an existing invoice DRAFT in place (PUT /invoices/drafts/{id})
+    /// WITHOUT posting it — backs the invoice editor's Edit mode. The
+    /// invoice stays a draft; the operator posts later from the detail
+    /// page. ExpectedUpdatedAt is omitted (null) so v1 opts out of the
+    /// optimistic-concurrency check.
+    /// </summary>
+    public async Task<WriteFlowResult> UpdateInvoiceDraftAsync(
+        Guid documentId,
+        InvoiceDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        if (draft.CompanyId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active company is required.", nameof(UpdateInvoiceDraftAsync), draft);
+        }
+        if (draft.UserId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active user is required.", nameof(UpdateInvoiceDraftAsync), draft);
+        }
+        if (draft.CustomerId is null || draft.CustomerId == Guid.Empty)
+        {
+            return new WriteFlowResult(false, "Customer is required.", nameof(UpdateInvoiceDraftAsync), draft);
+        }
+        if (draft.Lines.Count == 0)
+        {
+            return new WriteFlowResult(false, "At least one line is required.", nameof(UpdateInvoiceDraftAsync), draft);
+        }
+
+        try
+        {
+            using var response = await _httpClient.PutAsJsonAsync(
+                $"accounting/invoices/drafts/{documentId:D}",
+                BuildInvoiceDraftPayload(draft),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(response, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Could not save the invoice draft (HTTP {(int)response.StatusCode}).",
+                    Operation: nameof(UpdateInvoiceDraftAsync),
+                    DraftEcho: draft)
+                {
+                    DocumentId = documentId,
+                };
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: "Draft saved.",
+                Operation: nameof(UpdateInvoiceDraftAsync),
+                DraftEcho: draft)
+            {
+                DocumentId = documentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invoice draft update call failed for {DocumentId}.", documentId);
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to save the invoice draft. Please retry.",
+                Operation: nameof(UpdateInvoiceDraftAsync),
+                DraftEcho: draft);
         }
     }
 

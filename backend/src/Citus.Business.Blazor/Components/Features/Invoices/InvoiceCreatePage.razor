@@ -1,4 +1,5 @@
 @page "/invoices/new"
+@page "/invoices/{InvoiceId:guid}/edit"
 
 @using Citus.Modules.UnitySearch.Blazor
 @using Citus.Modules.Tasks.Domain.Shared
@@ -241,8 +242,8 @@
    have no Save Draft pathway, Back navigates away). ErrorHint nudges
    the operator back up to the top-of-page validation alert. *@
 <CitusFormActions Sticky="true"
-                  PrimaryLabel="Post invoice"
-                  SavingLabel="Posting..."
+                  PrimaryLabel="@(_editInvoiceId is null ? "Post invoice" : "Save draft")"
+                  SavingLabel="@(_editInvoiceId is null ? "Posting..." : "Saving...")"
                   CancelVisible="false"
                   IsSaving="@_isSubmitting"
                   Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
@@ -277,6 +278,16 @@
     /// no FK back, no JE link.
     /// </summary>
     [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromInvoiceId { get; set; }
+
+    /// <summary>
+    /// Route param for the edit flow (/invoices/{id}/edit). When set, the
+    /// page loads that draft and saves via PUT (stays a draft) instead of
+    /// the create-and-post path.
+    /// </summary>
+    [Parameter] public Guid? InvoiceId { get; set; }
+
+    // Non-null while editing an existing draft (set by PrefillFromEditSource).
+    private Guid? _editInvoiceId;
 
     private PageHeaderModel _header = new()
     {
@@ -388,6 +399,10 @@
         {
             await PrefillFromCopySourceAsync(copyId);
         }
+        else if (InvoiceId is { } editId && editId != Guid.Empty)
+        {
+            await PrefillFromEditSourceAsync(editId);
+        }
     }
 
     /// <summary>
@@ -473,6 +488,81 @@
         {
             Title = "New invoice (copy)",
             Subtitle = $"Pre-filled from {source.DisplayNumber}. The original invoice is unchanged."
+        };
+    }
+
+    /// <summary>
+    /// Edit mode (/invoices/{id}/edit): load an existing DRAFT into the
+    /// form, keeping its id / number / dates / PO / SO so a save updates
+    /// the same draft in place (PUT) instead of creating a new one.
+    /// v1 limitation: the invoice read DTO doesn't surface per-line tax
+    /// codes, so the tax dropdown loads empty and the operator re-picks.
+    /// </summary>
+    private async Task PrefillFromEditSourceAsync(Guid invoiceId)
+    {
+        InvoiceRecordDto? source;
+        try
+        {
+            source = await InvoiceClient.GetByIdAsync(invoiceId, ShellState.ActiveCompany.Id);
+        }
+        catch
+        {
+            _validation = "Could not load this invoice for editing.";
+            return;
+        }
+        if (source is null)
+        {
+            _validation = "This invoice is not visible in the active company.";
+            return;
+        }
+        if (source.Status != "draft")
+        {
+            _validation = $"Only draft invoices can be edited (this one is '{source.Status}').";
+            return;
+        }
+
+        _editInvoiceId = source.Id;
+
+        var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
+        _customerId = source.CustomerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = source.TransactionCurrencyCode;
+        _documentDate = source.DocumentDate.ToDateTime(TimeOnly.MinValue);
+        _dueDate = source.DueDate?.ToDateTime(TimeOnly.MinValue);
+        _fxRate = null;
+        _memo = source.Memo ?? string.Empty;
+        _customerPoNumber = source.CustomerPoNumber ?? string.Empty;
+        _salesOrderId = source.SalesOrderId;
+        _salesOrderNumber = null;
+
+        _lines.Clear();
+        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+        {
+            var accountDisplay = line.RevenueAccountId is { } rid && _accountsById.TryGetValue(rid, out var acct)
+                ? $"{acct.Code}  {acct.Name}"
+                : string.Empty;
+            var accountCode = line.RevenueAccountId is { } rid2 && _accountsById.TryGetValue(rid2, out var acct2)
+                ? acct2.Code
+                : string.Empty;
+            _lines.Add(new InvoiceLineEditState(
+                ItemId: Guid.Empty,
+                ItemDisplay: string.Empty,
+                Description: line.Description ?? string.Empty,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                AccountId: line.RevenueAccountId,
+                AccountDisplay: accountDisplay,
+                AccountCode: accountCode,
+                TaxCodeId: null,            // read DTO doesn't surface tax codes yet — operator re-picks (v1)
+                TaxCode: string.Empty,
+                TaskId: line.TaskId));
+        }
+        if (_lines.Count == 0) _lines.Add(new InvoiceLineEditState());
+
+        _header = _header with
+        {
+            Title = $"Edit invoice {source.DisplayNumber}",
+            Subtitle = "Update this draft. Saving keeps it a draft — post it from the detail page."
         };
     }
 
@@ -851,7 +941,9 @@
                     TaskId = l.TaskId,
                 }).ToArray()
             };
-            _lastResult = await WriteFlow.PostInvoiceAsync(draft);
+            _lastResult = _editInvoiceId is { } editId
+                ? await WriteFlow.UpdateInvoiceDraftAsync(editId, draft)
+                : await WriteFlow.PostInvoiceAsync(draft);
             if (_lastResult.Succeeded)
             {
                 // Use the composed message — includes "Invoice INV-XXXX posted"

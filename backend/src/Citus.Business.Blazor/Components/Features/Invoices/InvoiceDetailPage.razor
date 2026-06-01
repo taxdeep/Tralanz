@@ -156,6 +156,7 @@ else
                           Disabled="@ShellState.AreWritesBlocked"
                           OnSave="PostInvoiceAsync">
             <ExtraContent>
+                <CitusLinkButton Href="@($"invoices/{_invoice.Id:D}/edit")" Variant="CitusButtonVariant.Ghost" LeadingIcon="IconName.Pencil">Edit</CitusLinkButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isPosting" OnClick="CopyAsync">Copy</CitusButton>
             </ExtraContent>
         </CitusFormActions>
