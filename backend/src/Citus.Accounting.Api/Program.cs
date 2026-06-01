@@ -10554,7 +10554,15 @@ accounting.MapGet(
                 line.TaxAmount,
                 line.PayableTaxAccountId,
                 line.TaskId
-            })
+            }),
+            // Per-Tax-Rule tax breakdown (GST, PST-BC, …) aggregated from the
+            // line snapshots so the detail Totals can split a multi-rule Tax
+            // Code into its component rules.
+            TaxBreakdown = document.InvoiceLines
+                .SelectMany(line => line.TaxSnapshots)
+                .GroupBy(snapshot => snapshot.Code)
+                .OrderBy(group => group.Min(snapshot => snapshot.Sequence))
+                .Select(group => new { Code = group.Key, Amount = group.Sum(snapshot => snapshot.TaxAmount) })
         });
     });
 

@@ -27,7 +27,8 @@ internal static class PostgresLineTaxSnapshotLoader
             """
             select line_id, sequence, leg, regime_type_snapshot,
                    tax_amount, recoverable_amount, non_recoverable_amount,
-                   payable_account_id, recoverable_account_id, non_recoverable_account_id
+                   payable_account_id, recoverable_account_id, non_recoverable_account_id,
+                   code_snapshot
             from document_line_sales_tax_snapshots
             where company_id = @company_id
               and document_type = @document_type
@@ -57,7 +58,8 @@ internal static class PostgresLineTaxSnapshotLoader
                 NonRecoverableAmount: reader.GetDecimal(6),
                 PayableAccountId: reader.IsDBNull(7) ? null : reader.GetGuid(7),
                 RecoverableAccountId: reader.IsDBNull(8) ? null : reader.GetGuid(8),
-                NonRecoverableAccountId: reader.IsDBNull(9) ? null : reader.GetGuid(9)));
+                NonRecoverableAccountId: reader.IsDBNull(9) ? null : reader.GetGuid(9),
+                Code: reader.GetString(10)));
         }
 
         return byLine.ToDictionary(

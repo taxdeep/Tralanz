@@ -136,7 +136,10 @@ public sealed record InvoiceRecordDto(
     string? Memo,
     string? CustomerPoNumber,
     Guid? SalesOrderId,
-    IReadOnlyList<InvoiceLineDto> Lines);
+    IReadOnlyList<InvoiceLineDto> Lines,
+    IReadOnlyList<InvoiceTaxBreakdownLine>? TaxBreakdown = null);
+
+public sealed record InvoiceTaxBreakdownLine(string Code, decimal Amount);
 
 public sealed record InvoiceLineDto(
     int LineNumber,

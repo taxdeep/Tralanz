@@ -170,7 +170,10 @@ public sealed record DocumentLineTaxSnapshot(
     decimal NonRecoverableAmount,
     Guid? PayableAccountId,
     Guid? RecoverableAccountId,
-    Guid? NonRecoverableAccountId);
+    Guid? NonRecoverableAccountId,
+    // The Tax Rule's code at compute time (e.g. GST, PST-BC). Lets read
+    // surfaces show the per-rule tax breakdown without re-deriving it.
+    string Code = "");
 
 public sealed record InvoiceDocumentLine : IPostingDocumentLine
 {

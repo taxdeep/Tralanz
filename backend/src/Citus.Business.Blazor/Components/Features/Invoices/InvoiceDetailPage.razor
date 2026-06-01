@@ -137,7 +137,20 @@ else
             <CitusFormSection Title="Totals">
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_invoice.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_invoice.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    @* Split a multi-rule Tax Code (e.g. BC = GST + PST) into
+                       its component rules; single-rule / legacy falls back to
+                       one combined Tax row. *@
+                    @if (_invoice.TaxBreakdown is { Count: > 1 } taxBreakdown)
+                    {
+                        @foreach (var taxLine in taxBreakdown)
+                        {
+                            <CitusKeyValueRow Label="@taxLine.Code" ValueAlignRight="true">@taxLine.Amount.ToString("N2")</CitusKeyValueRow>
+                        }
+                    }
+                    else
+                    {
+                        <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@_invoice.TaxAmount.ToString("N2")</CitusKeyValueRow>
+                    }
                     <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@_invoice.TotalAmount.ToString("N2") @_invoice.TransactionCurrencyCode</strong></CitusKeyValueRow>
                 </CitusKeyValueTable>
             </CitusFormSection>
