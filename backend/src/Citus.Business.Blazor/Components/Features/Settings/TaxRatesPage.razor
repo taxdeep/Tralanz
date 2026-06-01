@@ -255,7 +255,7 @@
                             @onchange="@(e => _formPayableAccountId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : (Guid?)null)"
                             disabled="@_isMutating">
                         <option value="">— Select an account —</option>
-                        @foreach (var a in _accounts.Where(a => a.RootType == "liability"))
+                        @foreach (var a in _accounts)
                         {
                             <option value="@a.Id">@a.Code  @a.Name</option>
                         }
@@ -276,7 +276,9 @@
                                 @onchange="@(e => _formRecoverableAccountId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : (Guid?)null)"
                                 disabled="@_isMutating">
                             <option value="">— Select an account —</option>
-                            @foreach (var a in _accounts.Where(a => a.RootType == "asset"))
+                            @* Recoverable account is NOT restricted to asset accounts — it
+                               may be the same account as the payable account. *@
+                            @foreach (var a in _accounts)
                             {
                                 <option value="@a.Id">@a.Code  @a.Name</option>
                             }
