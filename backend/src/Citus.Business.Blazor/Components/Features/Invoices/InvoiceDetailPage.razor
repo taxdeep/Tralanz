@@ -170,6 +170,7 @@ else
             <ExtraContent>
                 <CitusLinkButton Href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")" Variant="CitusButtonVariant.Ghost">Issue credit memo</CitusLinkButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="CopyAsync">Copy</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isVoiding" OnClick="VoidInvoiceAsync">Void</CitusButton>
             </ExtraContent>
         </CitusFormActions>
     }
@@ -289,6 +290,30 @@ else
             }
         }
         finally { _isPosting = false; }
+    }
+
+    private bool _isVoiding;
+
+    // Void a posted invoice: reverses its journal entry (incl. every
+    // per-rule tax leg) via the source-document lifecycle endpoint.
+    private async Task VoidInvoiceAsync()
+    {
+        if (_invoice is null || _isVoiding) return;
+        _isVoiding = true;
+        try
+        {
+            var outcome = await InvoiceClient.VoidAsync(_invoice.Id, ShellState.ActiveCompany.Id);
+            if (outcome.Succeeded)
+            {
+                await Message.SuccessAsync($"Invoice {_invoice.DisplayNumber} voided — the posting was reversed.");
+                await LoadAsync();
+            }
+            else
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Void failed.");
+            }
+        }
+        finally { _isVoiding = false; }
     }
 
     private static string HumanizeStatus(string status) => status switch

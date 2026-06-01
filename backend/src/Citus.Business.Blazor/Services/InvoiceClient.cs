@@ -53,7 +53,53 @@ public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> 
             return null;
         }
     }
+
+    /// <summary>
+    /// Voids a posted invoice via the generic source-document lifecycle
+    /// endpoint (reverses its journal entry, including every per-rule tax
+    /// leg). No request body — the company comes from the query string.
+    /// </summary>
+    public async Task<InvoiceVoidOutcome> VoidAsync(
+        Guid invoiceId,
+        CompanyId companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestUri = $"accounting/source-document-lifecycle/invoice/{invoiceId:D}/void?CompanyId={companyId:D}";
+        try
+        {
+            using var response = await httpClient.PostAsync(requestUri, content: null, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new InvoiceVoidOutcome(true, null);
+            }
+
+            string? message = null;
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(
+                    await response.Content.ReadAsStringAsync(cancellationToken));
+                if (document.RootElement.TryGetProperty("message", out var m) &&
+                    m.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    message = m.GetString();
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Non-JSON error body — fall back to the status code message.
+            }
+
+            return new InvoiceVoidOutcome(false, message ?? $"Void failed (HTTP {(int)response.StatusCode}).");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to void invoice {InvoiceId}.", invoiceId);
+            return new InvoiceVoidOutcome(false, "Could not reach the server to void the invoice. Please retry.");
+        }
+    }
 }
+
+public sealed record InvoiceVoidOutcome(bool Succeeded, string? ErrorMessage);
 
 public sealed record InvoiceSummaryDto(
     Guid Id,
