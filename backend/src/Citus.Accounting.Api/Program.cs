@@ -10585,6 +10585,58 @@ accounting.MapPost(
         }
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
 
+accounting.MapPost(
+    "/invoices/{documentId:guid}/reverse",
+    async (
+        Guid documentId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInvoiceDocumentRepository repository,
+        Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow journalEntryLifecycle,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        if (string.IsNullOrEmpty(session.UserId.Value))
+        {
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            var journalEntryId = await repository.GetPostedJournalEntryIdAsync(
+                session.ActiveCompanyId, documentId, cancellationToken);
+            if (journalEntryId is null)
+            {
+                return Results.BadRequest(new { message = "This invoice has no posted journal entry to reverse." });
+            }
+
+            // Reverse the original posting with a compensating journal entry —
+            // this reverses every leg, including each per-rule sales-tax leg.
+            var lifecycle = await journalEntryLifecycle.VoidAsync(
+                session.ActiveCompanyId, journalEntryId.Value, session.UserId, cancellationToken);
+
+            // Flip the invoice out of the receivable set (mirrors the expense
+            // void: compensation JE first, then the source-row status flip).
+            await repository.MarkReversedAsync(session.ActiveCompanyId, documentId, cancellationToken);
+
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
+            return Results.Ok(new
+            {
+                reversed = true,
+                compensationJournalEntryId = lifecycle.CompensationJournalEntryId,
+                compensationDisplayNumber = lifecycle.CompensationDisplayNumber,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
+
 accounting.MapGet(
     "/invoices",
     async (CompanyId companyId, bool? includeDrafts, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>

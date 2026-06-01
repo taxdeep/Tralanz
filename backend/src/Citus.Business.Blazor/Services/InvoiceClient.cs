@@ -55,22 +55,24 @@ public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> 
     }
 
     /// <summary>
-    /// Voids a posted invoice via the generic source-document lifecycle
-    /// endpoint (reverses its journal entry, including every per-rule tax
-    /// leg). No request body — the company comes from the query string.
+    /// Reverses a posted invoice: the dedicated endpoint posts a
+    /// compensating journal entry (reversing every leg, including each
+    /// per-rule sales-tax leg) and flips the invoice to 'reversed' so it
+    /// leaves the receivable set. Company / actor come from the session,
+    /// so there is no request body and the call only succeeds (200) when
+    /// the reversal actually executed.
     /// </summary>
-    public async Task<InvoiceVoidOutcome> VoidAsync(
+    public async Task<InvoiceReverseOutcome> ReverseAsync(
         Guid invoiceId,
-        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
-        var requestUri = $"accounting/source-document-lifecycle/invoice/{invoiceId:D}/void?CompanyId={companyId:D}";
+        var requestUri = $"accounting/invoices/{invoiceId:D}/reverse";
         try
         {
             using var response = await httpClient.PostAsync(requestUri, content: null, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
-                return new InvoiceVoidOutcome(true, null);
+                return new InvoiceReverseOutcome(true, null);
             }
 
             string? message = null;
@@ -89,17 +91,17 @@ public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> 
                 // Non-JSON error body — fall back to the status code message.
             }
 
-            return new InvoiceVoidOutcome(false, message ?? $"Void failed (HTTP {(int)response.StatusCode}).");
+            return new InvoiceReverseOutcome(false, message ?? $"Reverse failed (HTTP {(int)response.StatusCode}).");
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Unable to void invoice {InvoiceId}.", invoiceId);
-            return new InvoiceVoidOutcome(false, "Could not reach the server to void the invoice. Please retry.");
+            logger.LogWarning(ex, "Unable to reverse invoice {InvoiceId}.", invoiceId);
+            return new InvoiceReverseOutcome(false, "Could not reach the server to reverse the invoice. Please retry.");
         }
     }
 }
 
-public sealed record InvoiceVoidOutcome(bool Succeeded, string? ErrorMessage);
+public sealed record InvoiceReverseOutcome(bool Succeeded, string? ErrorMessage);
 
 public sealed record InvoiceSummaryDto(
     Guid Id,

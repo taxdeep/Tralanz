@@ -652,6 +652,59 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
     }
 
+    public async Task<Guid?> GetPostedJournalEntryIdAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            """
+            select id
+            from journal_entries
+            where company_id = @company_id
+              and source_type = 'invoice'
+              and source_id = @source_id
+              and status = 'posted'
+            order by posted_at desc
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("source_id", invoiceId);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is Guid journalEntryId ? journalEntryId : null;
+    }
+
+    public async Task MarkReversedAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            """
+            update invoices
+               set status = 'reversed',
+                   updated_at = now()
+             where company_id = @company_id
+               and id = @id
+               and status in ('posted', 'partially_paid');
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("id", invoiceId);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
         CompanyId companyId,
         Guid invoiceId,

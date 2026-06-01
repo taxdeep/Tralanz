@@ -25,6 +25,25 @@ public interface IInvoiceDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Resolves the posted journal entry id for an invoice (via
+    /// journal_entries.source_type='invoice' + source_id), or null when the
+    /// invoice has no posted JE. Backs the reverse flow.
+    /// </summary>
+    Task<Guid?> GetPostedJournalEntryIdAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Flips a posted invoice to 'reversed' so it leaves the receivable set
+    /// once its journal entry has been reversed by a compensating entry.
+    /// </summary>
+    Task MarkReversedAsync(
+        CompanyId companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<InvoiceListItem>> ListAsync(
         CompanyId companyId,
         bool includeDrafts,
