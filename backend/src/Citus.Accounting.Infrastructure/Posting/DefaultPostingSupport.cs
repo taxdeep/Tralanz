@@ -533,18 +533,49 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
             if (line.TaxAmount > 0m)
             {
-                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
-                fragments.Add(new PostingFragment(
-                    line.PayableTaxAccountId!.Value,
-                    invoice.TransactionCurrencyCode,
-                    0m,
-                    line.TaxAmount,
-                    0m,
-                    baseTax,
-                    $"Sales tax for invoice {invoice.DisplayNumber.Value} line {line.LineNumber}",
-                    TaxComponentType: "sales_tax_payable",
-                    PostingRole: "tax:sales_tax_payable",
-                    SourceLineNumber: line.LineNumber));
+                if (line.TaxSnapshots.Count > 0)
+                {
+                    // Multi-rule Tax Code: emit one Cr payable leg PER snapshot
+                    // (per Tax Rule — GST, PST, …), each crediting that rule's
+                    // own payable account for its own tax amount. The legs sum
+                    // back to line.TaxAmount, so the JE still balances vs AR.
+                    foreach (var snap in line.TaxSnapshots.OrderBy(s => s.Sequence))
+                    {
+                        if (snap.TaxAmount == 0m || snap.PayableAccountId is not { } legPayableAccountId)
+                        {
+                            continue;
+                        }
+
+                        var baseLegTax = Math.Round(snap.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                        fragments.Add(new PostingFragment(
+                            legPayableAccountId,
+                            invoice.TransactionCurrencyCode,
+                            0m,
+                            snap.TaxAmount,
+                            0m,
+                            baseLegTax,
+                            $"Sales tax for invoice {invoice.DisplayNumber.Value} line {line.LineNumber} (leg {snap.Sequence})",
+                            TaxComponentType: "sales_tax_payable",
+                            PostingRole: "tax:sales_tax_payable",
+                            SourceLineNumber: line.LineNumber));
+                    }
+                }
+                else
+                {
+                    // Legacy single-tax fallback (snapshots empty = SalesTaxV2 off).
+                    var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                    fragments.Add(new PostingFragment(
+                        line.PayableTaxAccountId!.Value,
+                        invoice.TransactionCurrencyCode,
+                        0m,
+                        line.TaxAmount,
+                        0m,
+                        baseTax,
+                        $"Sales tax for invoice {invoice.DisplayNumber.Value} line {line.LineNumber}",
+                        TaxComponentType: "sales_tax_payable",
+                        PostingRole: "tax:sales_tax_payable",
+                        SourceLineNumber: line.LineNumber));
+                }
             }
         }
 
