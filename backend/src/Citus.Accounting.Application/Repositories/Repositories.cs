@@ -443,7 +443,11 @@ public sealed record InvoiceDraftLineSaveModel(
     // (Open|Completed -> PartiallyBilled, or -> Billed when this is
     // the final un-billed line). Null falls back to the legacy
     // whole-task marking via task_id alone.
-    Guid? TaskLineId = null);
+    Guid? TaskLineId = null,
+    // R4-sales: tax_code_sets.id — a Tax Code bundle on this line. When set,
+    // the engine expands it to its member Rules (multi-tax); otherwise the
+    // single Rule in TaxCodeId is used.
+    Guid? TaxCodeSetId = null);
 
 public sealed record CreditNoteDraftSaveModel(
     Guid? DocumentId,

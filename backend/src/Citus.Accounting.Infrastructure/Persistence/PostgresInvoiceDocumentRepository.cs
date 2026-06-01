@@ -164,11 +164,17 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                 "Invoice routing could not resolve an active Accounts Receivable control account.");
         }
 
+        // S5.1: load the per-line tax snapshots once, attach to each line
+        // below. Empty when the document was saved with SalesTaxV2 off.
+        var taxSnapshotsByLine = await PostgresLineTaxSnapshotLoader.LoadAsync(
+            scope, companyId, "invoice", documentId, cancellationToken);
+
         var lines = new List<InvoiceDocumentLine>();
 
         await using (var linesCommand = scope.CreateCommand(
                          """
                          select
+                           l.id,
                            l.line_number,
                            l.revenue_account_id,
                            l.description,
@@ -217,7 +223,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                     reader.IsDBNull(reader.GetOrdinal("item_id")) ? null : reader.GetGuid(reader.GetOrdinal("item_id")),
                     reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : reader.GetGuid(reader.GetOrdinal("warehouse_id")),
                     reader.IsDBNull(reader.GetOrdinal("uom_code")) ? null : reader.GetString(reader.GetOrdinal("uom_code")),
-                    reader.IsDBNull(reader.GetOrdinal("task_id")) ? null : reader.GetGuid(reader.GetOrdinal("task_id"))));
+                    reader.IsDBNull(reader.GetOrdinal("task_id")) ? null : reader.GetGuid(reader.GetOrdinal("task_id")),
+                    PostgresLineTaxSnapshotLoader.ForLine(taxSnapshotsByLine, reader.GetGuid(reader.GetOrdinal("id")))));
             }
         }
 
@@ -356,7 +363,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                         .Select(static entry => new SalesTaxLineRequest(
                             entry.LineId,
                             Round6(entry.Line.Quantity * entry.Line.UnitPrice),
-                            entry.Line.TaxCodeId))
+                            entry.Line.TaxCodeId,
+                            entry.Line.TaxCodeSetId))
                         .ToList()),
                 cancellationToken);
         }
@@ -563,6 +571,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   unit_price,
                   line_amount,
                   tax_code_id,
+                  tax_code_set_id,
                   tax_amount,
                   item_id,
                   warehouse_id,
@@ -583,6 +592,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   @unit_price,
                   @line_amount,
                   @tax_code_id,
+                  @tax_code_set_id,
                   @tax_amount,
                   @item_id,
                   @warehouse_id,
@@ -603,6 +613,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             insertLineCommand.Parameters.AddWithValue("unit_price", Round6(line.UnitPrice));
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.Quantity * line.UnitPrice));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_set_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeSetId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(resolvedTaxByLineId[lineId]));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("item_id", NpgsqlDbType.Uuid) { TypedValue = line.ItemId });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("warehouse_id", NpgsqlDbType.Uuid) { TypedValue = line.WarehouseId });
