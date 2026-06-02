@@ -302,7 +302,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                         .Select(static entry => new SalesTaxLineRequest(
                             entry.LineId,
                             Round6(entry.Line.LineAmount),
-                            entry.Line.TaxCodeId))
+                            entry.Line.TaxCodeId,
+                            entry.Line.TaxCodeSetId))
                         .ToList()),
                 cancellationToken);
         }
@@ -359,7 +360,9 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
-            displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
+            displayNumber = !string.IsNullOrWhiteSpace(draft.BillNumber)
+                ? draft.BillNumber.Trim()
+                : await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
                 draft.CompanyId,
@@ -401,6 +404,9 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   tax_amount,
                   total_amount,
                   memo,
+                  payment_term_id,
+                  source_purchase_order_id,
+                  source_purchase_order_number,
                   posted_at,
                   created_by_user_id,
                   created_at,
@@ -426,6 +432,9 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   @tax_amount,
                   @total_amount,
                   @memo,
+                  @payment_term_id,
+                  @source_purchase_order_id,
+                  @source_purchase_order_number,
                   null,
                   @created_by_user_id,
                   now(),
@@ -458,6 +467,9 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                     tax_amount = @tax_amount,
                     total_amount = @total_amount,
                     memo = @memo,
+                    payment_term_id = @payment_term_id,
+                    source_purchase_order_id = @source_purchase_order_id,
+                    source_purchase_order_number = @source_purchase_order_number,
                     updated_at = now()
                 where id = @id
                   and company_id = @company_id
@@ -507,8 +519,10 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   purchase_order_id,
                   purchase_order_line_number,
                   tax_code_id,
+                  tax_code_set_id,
                   tax_amount,
                   is_tax_recoverable,
+                  task_id,
                   created_at,
                   updated_at
                 )
@@ -528,8 +542,10 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   @purchase_order_id,
                   @purchase_order_line_number,
                   @tax_code_id,
+                  @tax_code_set_id,
                   @tax_amount,
                   @is_tax_recoverable,
+                  @task_id,
                   now(),
                   now()
                 );
@@ -549,8 +565,10 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("purchase_order_id", NpgsqlDbType.Uuid) { TypedValue = line.PurchaseOrderId });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<int?>("purchase_order_line_number", NpgsqlDbType.Integer) { TypedValue = line.PurchaseOrderLineNumber });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_set_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeSetId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(resolvedTaxByLineId[lineId]));
             insertLineCommand.Parameters.AddWithValue("is_tax_recoverable", line.IsTaxRecoverable);
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -879,6 +897,9 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         command.Parameters.AddWithValue("tax_amount", taxAmount);
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(draft.Memo) ? (object)DBNull.Value : draft.Memo.Trim());
+        command.Parameters.Add(new NpgsqlParameter<Guid?>("payment_term_id", NpgsqlDbType.Uuid) { TypedValue = draft.PaymentTermId });
+        command.Parameters.Add(new NpgsqlParameter<Guid?>("source_purchase_order_id", NpgsqlDbType.Uuid) { TypedValue = draft.SourcePurchaseOrderId });
+        command.Parameters.AddWithValue("source_purchase_order_number", string.IsNullOrWhiteSpace(draft.SourcePurchaseOrderNumber) ? (object)DBNull.Value : draft.SourcePurchaseOrderNumber.Trim());
     }
 
     private static void ValidateFx(string transactionCurrencyCode, string baseCurrencyCode, decimal? fxRate)

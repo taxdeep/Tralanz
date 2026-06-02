@@ -503,6 +503,12 @@ public sealed class BusinessWriteFlowClient
         string DisplayNumber,
         string Status);
 
+    private sealed record BillSaveDraftResponse(
+        Guid DocumentId,
+        string EntityNumber,
+        string DisplayNumber,
+        string Status);
+
     private sealed record InvoicePostResponse(
         Guid JournalEntryId,
         string JournalEntryDisplayNumber,
@@ -548,6 +554,194 @@ public sealed class BusinessWriteFlowClient
 
     public Task<WriteFlowResult> PostBillAsync(BillDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostBillAsync), draft);
+
+    /// <summary>
+    /// Builds the JSON body shared by the bill draft save (POST
+    /// /bills/drafts) and update (PUT /bills/drafts/{id}) calls — mirror of
+    /// <see cref="BuildInvoiceDraftPayload"/>. JSON keys are camelCase to
+    /// match <c>SaveBillDraftHttpRequest</c> / <c>SaveBillDraftLineHttpRequest</c>.
+    /// Callers must validate CompanyId / UserId / VendorId / Lines first.
+    /// </summary>
+    private static object BuildBillDraftPayload(BillDraft draft) => new
+    {
+        companyId = draft.CompanyId,
+        userId = draft.UserId,
+        vendorId = draft.VendorId!.Value,
+        billDate = draft.DocumentDate,
+        dueDate = draft.DueDate ?? draft.DocumentDate,
+        transactionCurrencyCode = string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+        baseCurrencyCode = string.IsNullOrWhiteSpace(draft.BaseCurrencyCode)
+            ? (string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant())
+            : draft.BaseCurrencyCode.Trim().ToUpperInvariant(),
+        fxSnapshotId = (Guid?)null,
+        fxRate = draft.FxRate,
+        fxEffectiveDate = (DateOnly?)null,
+        fxSource = (string?)null,
+        memo = draft.Memo,
+        billNumber = string.IsNullOrWhiteSpace(draft.BillNumber) ? null : draft.BillNumber.Trim(),
+        paymentTermId = draft.PaymentTermId,
+        sourcePurchaseOrderId = draft.SourcePurchaseOrderId,
+        sourcePurchaseOrderNumber = string.IsNullOrWhiteSpace(draft.SourcePurchaseOrderNumber) ? null : draft.SourcePurchaseOrderNumber.Trim(),
+        lines = draft.Lines.Select(l => new
+        {
+            lineNumber = l.LineNumber,
+            expenseAccountId = l.ExpenseAccountId,
+            description = l.Description,
+            lineAmount = l.LineAmount,
+            taxCodeId = l.TaxCodeId,
+            taxCodeSetId = l.TaxCodeSetId,
+            taxAmount = l.TaxAmount,
+            isTaxRecoverable = l.IsTaxRecoverable,
+            itemId = l.ItemId,
+            warehouseId = l.WarehouseId,
+            uomCode = l.UomCode,
+            quantity = l.Quantity,
+            unitCost = l.UnitCost,
+            purchaseOrderId = l.PurchaseOrderId,
+            purchaseOrderLineNumber = l.PurchaseOrderLineNumber,
+            taskId = l.TaskId,
+        }).ToArray(),
+    };
+
+    /// <summary>
+    /// Save a NEW bill draft through the v2 engine path (POST /bills/drafts)
+    /// — mirror of the save-draft half of <see cref="PostInvoiceAsync"/>.
+    /// The bill page has no Post action, so there is no second step: the
+    /// draft is created (running the purchase-tax engine + snapshot write)
+    /// and the operator stays on the draft.
+    /// </summary>
+    public async Task<WriteFlowResult> PostBillDraftAsync(BillDraft draft, CancellationToken cancellationToken = default)
+    {
+        if (draft.CompanyId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active company is required.", nameof(PostBillDraftAsync), draft);
+        }
+        if (draft.UserId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active user is required.", nameof(PostBillDraftAsync), draft);
+        }
+        if (draft.VendorId is null || draft.VendorId == Guid.Empty)
+        {
+            return new WriteFlowResult(false, "Vendor is required.", nameof(PostBillDraftAsync), draft);
+        }
+        if (draft.Lines.Count == 0)
+        {
+            return new WriteFlowResult(false, "At least one line is required.", nameof(PostBillDraftAsync), draft);
+        }
+
+        try
+        {
+            using var saveResponse = await _httpClient.PostAsJsonAsync(
+                "accounting/bills/drafts",
+                BuildBillDraftPayload(draft),
+                cancellationToken);
+
+            if (!saveResponse.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(saveResponse, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Could not save the bill draft (HTTP {(int)saveResponse.StatusCode}).",
+                    Operation: nameof(PostBillDraftAsync),
+                    DraftEcho: draft);
+            }
+
+            var saved = await saveResponse.Content.ReadFromJsonAsync<BillSaveDraftResponse>(cancellationToken);
+            if (saved is null || saved.DocumentId == Guid.Empty)
+            {
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: "Server saved the draft but did not return a document id.",
+                    Operation: nameof(PostBillDraftAsync),
+                    DraftEcho: draft);
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: $"Bill {saved.DisplayNumber} saved.",
+                Operation: nameof(PostBillDraftAsync),
+                DraftEcho: draft)
+            {
+                DocumentId = saved.DocumentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bill draft save call failed.");
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to save the bill draft. Please retry.",
+                Operation: nameof(PostBillDraftAsync),
+                DraftEcho: draft);
+        }
+    }
+
+    /// <summary>
+    /// Update an existing bill DRAFT in place (PUT /bills/drafts/{id})
+    /// through the v2 engine path — mirror of
+    /// <see cref="UpdateInvoiceDraftAsync"/>.
+    /// </summary>
+    public async Task<WriteFlowResult> UpdateBillDraftAsync(
+        Guid documentId,
+        BillDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        if (draft.CompanyId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active company is required.", nameof(UpdateBillDraftAsync), draft);
+        }
+        if (draft.UserId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active user is required.", nameof(UpdateBillDraftAsync), draft);
+        }
+        if (draft.VendorId is null || draft.VendorId == Guid.Empty)
+        {
+            return new WriteFlowResult(false, "Vendor is required.", nameof(UpdateBillDraftAsync), draft);
+        }
+        if (draft.Lines.Count == 0)
+        {
+            return new WriteFlowResult(false, "At least one line is required.", nameof(UpdateBillDraftAsync), draft);
+        }
+
+        try
+        {
+            using var response = await _httpClient.PutAsJsonAsync(
+                $"accounting/bills/drafts/{documentId:D}",
+                BuildBillDraftPayload(draft),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(response, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Could not save the bill draft (HTTP {(int)response.StatusCode}).",
+                    Operation: nameof(UpdateBillDraftAsync),
+                    DraftEcho: draft)
+                {
+                    DocumentId = documentId,
+                };
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: "Draft saved.",
+                Operation: nameof(UpdateBillDraftAsync),
+                DraftEcho: draft)
+            {
+                DocumentId = documentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bill draft update call failed for {DocumentId}.", documentId);
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to save the bill draft. Please retry.",
+                Operation: nameof(UpdateBillDraftAsync),
+                DraftEcho: draft);
+        }
+    }
 
     /// <summary>
     /// Sales receipt = invoice + receive-payment in one shot. The cash
@@ -1367,14 +1561,42 @@ public sealed record TaxReturnDraft
 
 public sealed record BillDraft
 {
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public DateOnly? DueDate { get; init; }
     public Guid? VendorId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     /// <summary>Per-document FX rate (transaction → base). Same semantics as <see cref="InvoiceDraft.FxRate"/>.</summary>
     public decimal? FxRate { get; init; }
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+    /// <summary>Supplier's own invoice number (AP reference). Stored as the bill's display number; v2 auto-numbers only when this is blank.</summary>
+    public string BillNumber { get; init; } = string.Empty;
+    public Guid? PaymentTermId { get; init; }
+    public Guid? SourcePurchaseOrderId { get; init; }
+    public string SourcePurchaseOrderNumber { get; init; } = string.Empty;
+    public IReadOnlyList<BillLineDraft> Lines { get; init; } = Array.Empty<BillLineDraft>();
+}
+
+public sealed record BillLineDraft
+{
+    public int LineNumber { get; init; }
+    public Guid ExpenseAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal LineAmount { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public Guid? TaxCodeSetId { get; init; }
+    public decimal TaxAmount { get; init; }
+    public bool IsTaxRecoverable { get; init; }
+    public Guid? ItemId { get; init; }
+    public Guid? WarehouseId { get; init; }
+    public string? UomCode { get; init; }
+    public decimal? Quantity { get; init; }
+    public decimal? UnitCost { get; init; }
+    public Guid? PurchaseOrderId { get; init; }
+    public int? PurchaseOrderLineNumber { get; init; }
+    public Guid? TaskId { get; init; }
 }
 
 public sealed record ReceivePaymentDraft

@@ -10924,7 +10924,13 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitCost,
                         line.PurchaseOrderId,
-                        line.PurchaseOrderLineNumber)).ToArray()),
+                        line.PurchaseOrderLineNumber,
+                        line.TaxCodeSetId,
+                        line.TaskId)).ToArray(),
+                    request.PaymentTermId,
+                    request.SourcePurchaseOrderId,
+                    request.SourcePurchaseOrderNumber,
+                    request.BillNumber),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -10970,7 +10976,13 @@ accounting.MapPut(
                         line.Quantity,
                         line.UnitCost,
                         line.PurchaseOrderId,
-                        line.PurchaseOrderLineNumber)).ToArray()),
+                        line.PurchaseOrderLineNumber,
+                        line.TaxCodeSetId,
+                        line.TaskId)).ToArray(),
+                    request.PaymentTermId,
+                    request.SourcePurchaseOrderId,
+                    request.SourcePurchaseOrderNumber,
+                    request.BillNumber),
                 cancellationToken);
 
             return Results.Ok(result);

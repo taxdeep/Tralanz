@@ -334,7 +334,11 @@ public sealed record SaveBillDraftHttpRequest(
     DateOnly? FxEffectiveDate,
     string? FxSource,
     string? Memo,
-    IReadOnlyList<SaveBillDraftLineHttpRequest> Lines);
+    IReadOnlyList<SaveBillDraftLineHttpRequest> Lines,
+    Guid? PaymentTermId = null,
+    Guid? SourcePurchaseOrderId = null,
+    string? SourcePurchaseOrderNumber = null,
+    string? BillNumber = null);
 
 public sealed record SaveBillDraftLineHttpRequest(
     int LineNumber,
@@ -350,7 +354,9 @@ public sealed record SaveBillDraftLineHttpRequest(
     decimal? Quantity,
     decimal? UnitCost,
     Guid? PurchaseOrderId = null,
-    int? PurchaseOrderLineNumber = null);
+    int? PurchaseOrderLineNumber = null,
+    Guid? TaxCodeSetId = null,
+    Guid? TaskId = null);
 
 public sealed record BillLookupQuery(CompanyId CompanyId);
 

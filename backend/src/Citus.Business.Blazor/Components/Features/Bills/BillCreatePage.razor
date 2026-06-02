@@ -11,8 +11,10 @@
 @inject VendorClient VendorClient
 @inject AccountClient AccountClient
 @inject TaxCodeClient TaxCodeClient
+@inject TaxCodeSetClient TaxCodeSetClient
 @inject PaymentTermClient PaymentTermClient
 @inject BillClient BillClient
+@inject BusinessWriteFlowClient WriteFlow
 @inject TaskClient TaskClient
 @inject ItemClient ItemClient
 @inject CitusToastService Message
@@ -270,9 +272,9 @@ else
                         }
                         <td>
                             <RadzenDropDown TValue="Guid?"
-                                            Data="@_taxCodes"
-                                            Value="@line.TaxCodeId"
-                                            Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
+                                            Data="@_taxCodeSets"
+                                            Value="@line.TaxCodeSetId"
+                                            Change="@(v => UpdateLine(index, l => l with { TaxCodeSetId = v as Guid? }))"
                                             TextProperty="Code"
                                             ValueProperty="Id"
                                             AllowClear="true"
@@ -335,6 +337,7 @@ else
     private IReadOnlyList<AccountSummary> _accountsRaw = Array.Empty<AccountSummary>();
     private IReadOnlyList<AccountOption> _accounts = Array.Empty<AccountOption>();
     private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
+    private IReadOnlyList<TaxCodeSetSummary> _taxCodeSets = Array.Empty<TaxCodeSetSummary>();
     private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
     // Item lookup powers the Item-pick → Category auto-fill on bill lines.
     // Loaded once on page init alongside accounts; the picker still searches
@@ -485,9 +488,10 @@ else
             var vendorsTask = VendorClient.ListAsync();
             var accountsTask = AccountClient.ListAsync();
             var taxTask = TaxCodeClient.ListAsync(appliesTo: "purchase");
+            var taxSetTask = TaxCodeSetClient.ListAsync(appliesTo: "purchase");
             var termsTask = PaymentTermClient.ListAsync(includeInactive: false);
             var itemsTask = ItemClient.ListAsync(includeInactive: false);
-            await Task.WhenAll(vendorsTask, accountsTask, taxTask, termsTask, itemsTask);
+            await Task.WhenAll(vendorsTask, accountsTask, taxTask, taxSetTask, termsTask, itemsTask);
 
             _vendors = vendorsTask.Result;
             _accountsRaw = accountsTask.Result;
@@ -496,6 +500,7 @@ else
                 .Select(a => new AccountOption(a.Id, $"{a.Code}  {a.Name}"))
                 .ToList();
             _taxCodes = taxTask.Result;
+            _taxCodeSets = taxSetTask.Result;
             _paymentTerms = termsTask.Result;
             _itemsById = itemsTask.Result.ToDictionary(i => i.Id);
 
@@ -684,64 +689,47 @@ else
         {
             var billDate = DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date);
             var dueDate = DateOnly.FromDateTime((_dueDate ?? _billDate ?? DateTime.Today).Date);
-            var payload = new BillUpsertPayload(
-                BillNumber: _billNumber.Trim(),
-                VendorId: _vendorId.Value,
-                BillDate: billDate,
-                DueDate: dueDate,
-                DocumentCurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency,
-                FxRate: _fxRate,
-                Memo: NullIfEmpty(_memo),
-                PaymentTermId: _paymentTermId,
-                SourcePurchaseOrderId: _sourcePurchaseOrderId,
-                SourcePurchaseOrderNumber: _sourcePurchaseOrderNumber,
-                Lines: _lines
-                    .Where(l => l.ExpenseAccountId is not null && (l.LineAmount > 0 || !string.IsNullOrWhiteSpace(l.Description)))
-                    .Select((l, i) => new BillLinePayload(
-                        LineNumber: i + 1,
-                        ExpenseAccountId: l.ExpenseAccountId!.Value,
-                        Description: l.Description ?? string.Empty,
-                        LineAmount: l.LineAmount,
-                        TaxCodeId: l.TaxCodeId,
-                        TaxAmount: l.TaxAmount,
-                        TaskId: l.TaskId))
-                    .ToArray(),
-                ExpectedUpdatedAt: _billId is null ? null : _expectedUpdatedAt,
-                // Copy A3 Phase 2: server writes bill_copied audit_log.
-                // Only sent on CREATE (the field is ignored on UPDATE
-                // path anyway since the bill already exists).
-                CopiedFromBillId: _copiedFromBillId);
-
-            BillMutationOutcome outcome = _billId is null
-                ? await BillClient.CreateAsync(payload)
-                : await BillClient.UpdateAsync(_billId.Value, payload);
-
-            if (!outcome.Succeeded || outcome.Saved is null)
+            var draft = new BillDraft
             {
-                if (outcome.IsConcurrencyConflict)
-                {
-                    // Another session moved the bill between this editor's
-                    // GET and PUT. Surface a refresh-and-retry CTA — the
-                    // operator's draft state is preserved here so they
-                    // can decide what to do (reload + redo vs. discard).
-                    _validation = outcome.ErrorMessage
-                        ?? "This bill was modified by another session. Reload the page to see the latest version, then re-apply your changes.";
-                    await Message.WarningAsync(_validation);
-                    return;
-                }
-                _validation = outcome.ErrorMessage ?? "Could not save the bill.";
+                CompanyId = ShellState.ActiveCompany.Id,
+                UserId = ShellState.User.Id,
+                DocumentDate = billDate,
+                DueDate = dueDate,
+                VendorId = _vendorId,
+                TransactionCurrencyCode = string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency,
+                BaseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode,
+                FxRate = _fxRate,
+                Memo = _memo?.Trim() ?? string.Empty,
+                BillNumber = _billNumber?.Trim() ?? string.Empty,
+                PaymentTermId = _paymentTermId,
+                SourcePurchaseOrderId = _sourcePurchaseOrderId,
+                SourcePurchaseOrderNumber = _sourcePurchaseOrderNumber ?? string.Empty,
+                Lines = _lines
+                    .Where(l => l.ExpenseAccountId is not null && (l.LineAmount > 0 || !string.IsNullOrWhiteSpace(l.Description)))
+                    .Select((l, i) => new BillLineDraft
+                    {
+                        LineNumber = i + 1,
+                        ExpenseAccountId = l.ExpenseAccountId!.Value,
+                        Description = l.Description ?? string.Empty,
+                        LineAmount = l.LineAmount,
+                        TaxCodeId = l.TaxCodeId,
+                        TaxCodeSetId = l.TaxCodeSetId,
+                        TaxAmount = 0m,
+                        IsTaxRecoverable = true,
+                        TaskId = l.TaskId,
+                    })
+                    .ToArray(),
+            };
+            var result = _billId is null
+                ? await WriteFlow.PostBillDraftAsync(draft)
+                : await WriteFlow.UpdateBillDraftAsync(_billId.Value, draft);
+            if (!result.Succeeded)
+            {
+                _validation = result.Message ?? "Could not save the bill.";
                 return;
             }
-
-            // Capture the new updated_at from the just-saved row so the
-            // next save in this same editor session doesn't conflict
-            // with itself.
-            _expectedUpdatedAt = outcome.Saved.UpdatedAt;
-
-            var saved = outcome.Saved;
-            await Message.SuccessAsync($"Bill {saved.BillNumber} saved.");
-
-            Navigation.NavigateTo($"bills/{saved.Id:D}");
+            await Message.SuccessAsync(result.Message);
+            Navigation.NavigateTo(result.DocumentId is { } newId ? $"bills/{newId:D}" : (_billId is { } existing ? $"bills/{existing:D}" : "bills"));
         }
         finally { _isSaving = false; }
     }
@@ -765,6 +753,7 @@ else
         public string Description { get; set; } = string.Empty;
         public decimal LineAmount { get; set; }
         public Guid? TaxCodeId { get; set; }
+        public Guid? TaxCodeSetId { get; set; }
         public decimal TaxAmount { get; set; }
         // Optional Task back-link. Edit-page loads it from
         // BillLineDto.TaskId; new lines start blank. Display text falls

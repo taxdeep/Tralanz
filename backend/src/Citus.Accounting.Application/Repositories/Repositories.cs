@@ -517,7 +517,11 @@ public sealed record BillDraftSaveModel(
     DateOnly? FxEffectiveDate,
     string? FxSource,
     string? Memo,
-    IReadOnlyList<BillDraftLineSaveModel> Lines);
+    IReadOnlyList<BillDraftLineSaveModel> Lines,
+    Guid? PaymentTermId = null,
+    Guid? SourcePurchaseOrderId = null,
+    string? SourcePurchaseOrderNumber = null,
+    string? BillNumber = null);
 
 public sealed record BillDraftLineSaveModel(
     int LineNumber,
@@ -533,7 +537,9 @@ public sealed record BillDraftLineSaveModel(
     decimal? Quantity = null,
     decimal? UnitCost = null,
     Guid? PurchaseOrderId = null,
-    int? PurchaseOrderLineNumber = null);
+    int? PurchaseOrderLineNumber = null,
+    Guid? TaxCodeSetId = null,
+    Guid? TaskId = null);
 
 public sealed record VendorCreditDraftSaveModel(
     Guid? DocumentId,
