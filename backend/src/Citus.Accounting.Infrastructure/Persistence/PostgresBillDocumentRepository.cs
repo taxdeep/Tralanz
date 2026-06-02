@@ -159,9 +159,85 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                            l.purchase_order_id,
                            l.purchase_order_line_number,
                            l.tax_amount,
-                           l.is_tax_recoverable,
+                           case
+                             when l.is_tax_recoverable then true
+                             when l.tax_code_id is null then false
+                             else coalesce(
+                               (
+                                 select bool_or(
+                                   coalesce(tcc.applies_to, tc.applies_to) in ('purchase', 'both')
+                                   and coalesce(tcc.recoverability_override, stc.recoverability) = 'recoverable')
+                                 from sales_tax_code_components tcc
+                                 left join sales_tax_components stc
+                                   on stc.company_id = tc.company_id::text
+                                  and stc.id = tcc.tax_component_id
+                                 where tcc.company_id = tc.company_id::text
+                                   and tcc.tax_code_id = tc.id
+                               ),
+                               tc.is_recoverable_on_purchase or tc.recoverability_mode <> 'none',
+                               false)
+                           end as is_tax_recoverable,
                            l.tax_code_id,
-                           tc.recoverable_account_id
+                           tc.recoverable_account_id,
+                           coalesce(
+                             (
+                               select sum(
+                                 case
+                                   when coalesce(tcc.applies_to, tc.applies_to) in ('purchase', 'both')
+                                   then coalesce(rate.rate_percent, tc.rate_percent)
+                                   else 0
+                                 end)
+                               from sales_tax_code_components tcc
+                               left join sales_tax_components stc
+                                 on stc.company_id = tc.company_id::text
+                                and stc.id = tcc.tax_component_id
+                               left join lateral (
+                                 select r.rate_percent
+                                   from sales_tax_component_rates r
+                                  where r.company_id = tc.company_id::text
+                                    and r.tax_component_id = stc.id
+                                    and r.effective_from <= @bill_date
+                                    and (r.effective_to is null or r.effective_to >= @bill_date)
+                               order by r.effective_from desc
+                                  limit 1
+                               ) rate on true
+                               where tcc.company_id = tc.company_id::text
+                                 and tcc.tax_code_id = tc.id
+                             ),
+                             tc.rate_percent,
+                             0) as purchase_tax_rate_percent,
+                           coalesce(
+                             (
+                               select sum(
+                                 case
+                                   when coalesce(tcc.applies_to, tc.applies_to) in ('purchase', 'both')
+                                    and coalesce(tcc.recoverability_override, stc.recoverability) = 'recoverable'
+                                   then coalesce(rate.rate_percent, tc.rate_percent) * (coalesce(tcc.recoverable_percent, 100) / 100.0)
+                                   else 0
+                                 end)
+                               from sales_tax_code_components tcc
+                               left join sales_tax_components stc
+                                 on stc.company_id = tc.company_id::text
+                                and stc.id = tcc.tax_component_id
+                               left join lateral (
+                                 select r.rate_percent
+                                   from sales_tax_component_rates r
+                                  where r.company_id = tc.company_id::text
+                                    and r.tax_component_id = stc.id
+                                    and r.effective_from <= @bill_date
+                                    and (r.effective_to is null or r.effective_to >= @bill_date)
+                               order by r.effective_from desc
+                                  limit 1
+                               ) rate on true
+                               where tcc.company_id = tc.company_id::text
+                                 and tcc.tax_code_id = tc.id
+                             ),
+                             case
+                               when tc.is_recoverable_on_purchase or tc.recoverability_mode <> 'none'
+                               then tc.rate_percent
+                               else 0
+                             end,
+                             0) as recoverable_tax_rate_percent
                          from bill_lines l
                          left join tax_codes tc
                            on tc.id = l.tax_code_id
@@ -173,24 +249,39 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         {
             linesCommand.Parameters.AddWithValue("company_id", companyId.Value);
             linesCommand.Parameters.AddWithValue("document_id", documentId);
+            linesCommand.Parameters.Add("bill_date", NpgsqlDbType.Date).Value = billDate.ToDateTime(TimeOnly.MinValue);
 
             await using var reader = await linesCommand.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                var lineNumber = reader.GetInt32(reader.GetOrdinal("line_number"));
+                var description = reader.GetString(reader.GetOrdinal("description"));
+                if (string.IsNullOrWhiteSpace(description))
+                {
+                    description = $"Bill {billNumber} line {lineNumber}";
+                }
+
                 var recoverableTaxAccountId = reader.IsDBNull(reader.GetOrdinal("recoverable_account_id"))
                     ? (Guid?)null
                     : reader.GetGuid(reader.GetOrdinal("recoverable_account_id"));
                 var taxCodeId = reader.IsDBNull(reader.GetOrdinal("tax_code_id"))
                     ? (Guid?)null
                     : reader.GetGuid(reader.GetOrdinal("tax_code_id"));
+                var lineTaxAmount = reader.GetDecimal(reader.GetOrdinal("tax_amount"));
+                var isTaxRecoverable = reader.GetBoolean(reader.GetOrdinal("is_tax_recoverable"));
+                var recoverableTaxAmount = ResolveRecoverableTaxAmount(
+                    lineTaxAmount,
+                    isTaxRecoverable,
+                    reader.GetDecimal(reader.GetOrdinal("purchase_tax_rate_percent")),
+                    reader.GetDecimal(reader.GetOrdinal("recoverable_tax_rate_percent")));
 
                 lines.Add(new BillDocumentLine(
-                    reader.GetInt32(reader.GetOrdinal("line_number")),
+                    lineNumber,
                     reader.GetGuid(reader.GetOrdinal("expense_account_id")),
-                    reader.GetString(reader.GetOrdinal("description")),
+                    description,
                     reader.GetDecimal(reader.GetOrdinal("line_amount")),
-                    reader.GetDecimal(reader.GetOrdinal("tax_amount")),
-                    reader.GetBoolean(reader.GetOrdinal("is_tax_recoverable")),
+                    lineTaxAmount,
+                    isTaxRecoverable,
                     recoverableTaxAccountId,
                     taxCodeId,
                     reader.IsDBNull(reader.GetOrdinal("item_id")) ? null : reader.GetGuid(reader.GetOrdinal("item_id")),
@@ -199,7 +290,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                     reader.IsDBNull(reader.GetOrdinal("quantity")) ? null : reader.GetDecimal(reader.GetOrdinal("quantity")),
                     reader.IsDBNull(reader.GetOrdinal("unit_cost")) ? null : reader.GetDecimal(reader.GetOrdinal("unit_cost")),
                     reader.IsDBNull(reader.GetOrdinal("purchase_order_id")) ? null : reader.GetGuid(reader.GetOrdinal("purchase_order_id")),
-                    reader.IsDBNull(reader.GetOrdinal("purchase_order_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("purchase_order_line_number"))));
+                    reader.IsDBNull(reader.GetOrdinal("purchase_order_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("purchase_order_line_number")),
+                    recoverableTaxAmount));
             }
         }
 
@@ -503,6 +595,28 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
     }
 
+    private static decimal ResolveRecoverableTaxAmount(
+        decimal taxAmount,
+        bool isTaxRecoverable,
+        decimal purchaseTaxRatePercent,
+        decimal recoverableTaxRatePercent)
+    {
+        if (taxAmount <= 0m)
+        {
+            return 0m;
+        }
+
+        if (purchaseTaxRatePercent > 0m)
+        {
+            return Math.Round(
+                taxAmount * Math.Clamp(recoverableTaxRatePercent, 0m, purchaseTaxRatePercent) / purchaseTaxRatePercent,
+                6,
+                MidpointRounding.ToEven);
+        }
+
+        return isTaxRecoverable ? taxAmount : 0m;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SubmitDraftAsync(
         CompanyId companyId,
         UserId userId,
@@ -682,7 +796,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 line.Quantity,
                 line.UnitCost,
                 line.PurchaseOrderId,
-                line.PurchaseOrderLineNumber));
+                line.PurchaseOrderLineNumber,
+                line.RecoverableTaxAmount));
         }
 
         return rewritten;

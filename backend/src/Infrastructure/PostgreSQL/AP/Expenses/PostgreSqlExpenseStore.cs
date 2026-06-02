@@ -1,5 +1,6 @@
 using Modules.AP.Expenses;
 using Modules.AP;
+using Citus.Accounting.Application.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 using Infrastructure.PostgreSQL.Numbering;
@@ -72,7 +73,8 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 "quantity",
                 "unit_price",
                 "tax_code_id",
-                "line_total"
+                "line_total",
+                "task_id"
             },
             "Expense line schema has not been installed. Apply database migrations before using expenses.",
             cancellationToken).ConfigureAwait(false);
@@ -182,7 +184,6 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             throw new InvalidOperationException(crossValidation);
         }
 
-        var (subtotal, discount, tax, total) = ComputeTotals(input);
         var transactionCurrency = input.TransactionCurrencyCode.Trim().ToUpperInvariant();
         var sameCurrency = string.Equals(transactionCurrency, baseCurrencyCode, StringComparison.Ordinal);
         var fxRate = FxRatePostingPolicy.ResolveTransactionToBaseRate(
@@ -191,6 +192,17 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             baseCurrencyCode,
             "expense");
         var fxSource = sameCurrency ? "identity" : "manual";
+
+        var activeLines = input.Lines
+            .Where(static line => line.ExpenseAccountId != Guid.Empty && (line.Quantity > 0m || line.UnitPrice > 0m))
+            .ToArray();
+        if (activeLines.Length == 0)
+        {
+            throw new InvalidOperationException("At least one active expense line is required.");
+        }
+
+        var taxProfiles = await ReadTaxProfilesAsync(connection, companyId, activeLines, cancellationToken).ConfigureAwait(false);
+        var (subtotal, discount, tax, total) = ComputeTotals(input, activeLines, taxProfiles);
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
@@ -255,10 +267,6 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             expenseId = (Guid)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         }
 
-        var activeLines = input.Lines
-            .Where(static line => line.ExpenseAccountId != Guid.Empty && (line.Quantity > 0m || line.UnitPrice > 0m))
-            .ToArray();
-
         await InsertLinesAsync(connection, transaction, expenseId, activeLines, cancellationToken).ConfigureAwait(false);
         var journalEntryId = await InsertPostedExpenseJournalAsync(
             connection,
@@ -274,6 +282,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             fxRate,
             total,
             discount,
+            taxProfiles,
             cancellationToken).ConfigureAwait(false);
 
         await using (var updateJournalCommand = connection.CreateCommand())
@@ -474,10 +483,13 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         }
     }
 
-    private static (decimal subtotal, decimal discount, decimal tax, decimal total) ComputeTotals(ExpenseUpsertInput input)
+    private static (decimal subtotal, decimal discount, decimal tax, decimal total) ComputeTotals(
+        ExpenseUpsertInput input,
+        IReadOnlyList<ExpenseLineInput> activeLines,
+        IReadOnlyDictionary<Guid, ExpenseTaxCodePostingProfile> taxProfiles)
     {
         decimal subtotal = 0m;
-        foreach (var line in input.Lines)
+        foreach (var line in activeLines)
         {
             subtotal += Math.Round(line.Quantity * line.UnitPrice, 4);
         }
@@ -492,12 +504,143 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             discount = Math.Round(amt, 4);
         }
 
-        decimal tax = 0m; // V1 — tax engine not yet wired.
+        decimal tax = 0m;
+        var isInclusive = string.Equals(input.TaxMode, "inclusive", StringComparison.OrdinalIgnoreCase);
+        foreach (var line in activeLines)
+        {
+            if (line.TaxCodeId is not { } taxCodeId ||
+                !taxProfiles.TryGetValue(taxCodeId, out var taxProfile) ||
+                taxProfile.RatePercent <= 0m)
+            {
+                continue;
+            }
+
+            var lineGross = Math.Round(line.Quantity * line.UnitPrice, 4);
+            var lineDiscount = discount == 0m || subtotal == 0m
+                ? 0m
+                : Math.Round(discount * (lineGross / subtotal), 6, MidpointRounding.ToEven);
+            var taxableAmount = Math.Max(0m, lineGross - lineDiscount);
+            var lineTax = isInclusive
+                ? taxableAmount - (taxableAmount / (1m + (taxProfile.RatePercent / 100m)))
+                : taxableAmount * taxProfile.RatePercent / 100m;
+            tax += Math.Round(lineTax, 6, MidpointRounding.ToEven);
+        }
+
+        tax = Math.Round(tax, 4, MidpointRounding.ToEven);
         decimal total = string.Equals(input.TaxMode, "inclusive", StringComparison.OrdinalIgnoreCase)
             ? Math.Round(subtotal - discount, 4)
             : Math.Round(subtotal - discount + tax, 4);
 
         return (subtotal, discount, tax, total);
+    }
+
+    private static async Task<IReadOnlyDictionary<Guid, ExpenseTaxCodePostingProfile>> ReadTaxProfilesAsync(
+        NpgsqlConnection connection,
+        CompanyId companyId,
+        IReadOnlyList<ExpenseLineInput> activeLines,
+        CancellationToken cancellationToken)
+    {
+        var taxCodeIds = activeLines
+            .Select(static line => line.TaxCodeId)
+            .Where(static id => id is not null)
+            .Select(static id => id!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (taxCodeIds.Length == 0)
+        {
+            return new Dictionary<Guid, ExpenseTaxCodePostingProfile>();
+        }
+
+        var recoverableTaxAccountId = await ReadRecoverableTaxAccountAsync(connection, companyId, cancellationToken).ConfigureAwait(false);
+        var profiles = new Dictionary<Guid, ExpenseTaxCodePostingProfile>(taxCodeIds.Length);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT tc.id,
+                   tc.code,
+                   tc.rate_percent,
+                   tc.applies_to,
+                   tc.is_active,
+                   COALESCE(
+                       BOOL_OR(
+                           COALESCE(tcc.applies_to, tc.applies_to) IN ('purchase', 'both')
+                           AND COALESCE(tcc.recoverability_override, stc.recoverability) = 'recoverable'),
+                       tc.is_recoverable_on_purchase
+                       OR tc.recoverability_mode <> 'none') AS is_recoverable_on_purchase,
+                   tc.recoverable_account_id
+              FROM tax_codes tc
+            LEFT JOIN sales_tax_code_components tcc
+                ON tcc.company_id = tc.company_id::text
+               AND tcc.tax_code_id = tc.id
+            LEFT JOIN sales_tax_components stc
+                ON stc.company_id = tc.company_id::text
+               AND stc.id = tcc.tax_component_id
+             WHERE tc.company_id = @company_id
+               AND tc.id = ANY(@ids)
+            GROUP BY tc.id,
+                   tc.code,
+                   tc.rate_percent,
+                   tc.applies_to,
+                   tc.is_active,
+                   tc.is_recoverable_on_purchase,
+                   tc.recoverability_mode,
+                   tc.recoverable_account_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.Add("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid).Value = taxCodeIds;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var id = reader.GetGuid(0);
+            var code = reader.GetString(1);
+            var appliesTo = reader.GetString(3);
+            var isActive = reader.GetBoolean(4);
+            var isRecoverableOnPurchase = reader.GetBoolean(5);
+            var taxAccountId = reader.IsDBNull(6) ? recoverableTaxAccountId : reader.GetGuid(6);
+            if (!isActive)
+            {
+                throw new InvalidOperationException($"Tax code '{code}' is inactive and cannot be used on a new expense.");
+            }
+            if (appliesTo is not (TaxCodeAppliesTo.Purchase or TaxCodeAppliesTo.Both))
+            {
+                throw new InvalidOperationException($"Tax code '{code}' is not available for purchases.");
+            }
+
+            profiles[id] = new ExpenseTaxCodePostingProfile(
+                RatePercent: reader.GetDecimal(2),
+                IsRecoverableOnPurchase: isRecoverableOnPurchase,
+                RecoverableAccountId: taxAccountId);
+        }
+
+        if (profiles.Count != taxCodeIds.Length)
+        {
+            throw new InvalidOperationException("One or more tax codes are not available in the active company.");
+        }
+
+        return profiles;
+    }
+
+    private static async Task<Guid> ReadRecoverableTaxAccountAsync(
+        NpgsqlConnection connection,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id
+              FROM accounts
+             WHERE company_id = @company_id
+               AND root_type = 'asset'
+               AND detail_type = 'tax'
+               AND is_active = TRUE
+             ORDER BY CASE WHEN code = '13700' THEN 0 ELSE 1 END, code
+             LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is Guid id
+            ? id
+            : throw new InvalidOperationException("Recoverable purchase tax requires an active asset tax account.");
     }
 
     private static async Task<Guid> InsertPostedExpenseJournalAsync(
@@ -514,6 +657,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         decimal fxRate,
         decimal totalTx,
         decimal discountTx,
+        IReadOnlyDictionary<Guid, ExpenseTaxCodePostingProfile> taxProfiles,
         CancellationToken cancellationToken)
     {
         if (activeLines.Count == 0)
@@ -577,7 +721,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             }
         }
 
-        var lineAllocations = AllocateExpenseLines(activeLines, totalTx, discountTx, fxRate);
+        var lineAllocations = AllocateExpenseLines(activeLines, totalTx, discountTx, fxRate, input.TaxMode, taxProfiles);
         var lineNumber = 1;
         foreach (var allocation in lineAllocations)
         {
@@ -587,7 +731,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 companyId,
                 journalEntryId,
                 lineNumber++,
-                allocation.Line.ExpenseAccountId,
+                allocation.AccountId,
                 input.PayeeKind,
                 input.PayeeId,
                 allocation.Description(expenseNumber),
@@ -597,7 +741,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                 debit: allocation.BaseAmount,
                 credit: 0m,
                 postingDate: input.PaymentDate,
-                postingRole: "source_line:expense",
+                postingRole: allocation.PostingRole,
                 sourceLineNumber: allocation.Line.Sequence,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -623,6 +767,116 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             cancellationToken).ConfigureAwait(false);
 
         return journalEntryId;
+    }
+
+    private static async Task InsertVoidedExpenseJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ExpenseRecord expense,
+        CancellationToken cancellationToken)
+    {
+        if (expense.Lines.Count == 0)
+        {
+            throw new InvalidOperationException("Expense has no lines to reverse.");
+        }
+
+        var journalEntryId = Guid.NewGuid();
+        var postedAt = DateTimeOffset.UtcNow;
+        var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, expense.CompanyId, cancellationToken).ConfigureAwait(false);
+        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, expense.CompanyId, expense.PaymentDate.Year, cancellationToken).ConfigureAwait(false);
+        var idempotencyKey = $"expense-void:{expense.Id:D}";
+        var totalTx = RoundTx(expense.TotalAmount);
+        var totalBase = RoundBase(expense.TotalAmount * expense.FxRate);
+        var createdByUserId = await ReadJournalCreatedByUserIdAsync(
+            connection,
+            transaction,
+            expense.CompanyId,
+            expense.PostedJournalEntryId!.Value,
+            cancellationToken).ConfigureAwait(false);
+
+        await using (var insertEntryCommand = connection.CreateCommand())
+        {
+            insertEntryCommand.Transaction = transaction;
+            insertEntryCommand.CommandText = """
+                INSERT INTO journal_entries (
+                  id, company_id, entity_number, display_number, status,
+                  source_type, source_id,
+                  transaction_currency_code, base_currency_code,
+                  exchange_rate, exchange_rate_date, exchange_rate_source,
+                  fx_rate_snapshot_id,
+                  total_tx_debit, total_tx_credit, total_debit, total_credit,
+                  posting_run_id, idempotency_key, posted_at, created_by_user_id, created_at
+                )
+                VALUES (
+                  @id, @company_id, @entity_number, @display_number, 'posted',
+                  'expense_void', @source_id,
+                  @transaction_currency_code, @base_currency_code,
+                  @exchange_rate, @exchange_rate_date, @exchange_rate_source,
+                  NULL,
+                  @total_tx_debit, @total_tx_credit, @total_debit, @total_credit,
+                  @posting_run_id, @idempotency_key, @posted_at, @created_by_user_id, NOW()
+                )
+                ON CONFLICT (company_id, idempotency_key) DO NOTHING;
+                """;
+            insertEntryCommand.Parameters.AddWithValue("id", journalEntryId);
+            insertEntryCommand.Parameters.AddWithValue("company_id", expense.CompanyId.Value);
+            insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
+            insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
+            insertEntryCommand.Parameters.AddWithValue("source_id", expense.Id);
+            insertEntryCommand.Parameters.AddWithValue("transaction_currency_code", expense.TransactionCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("base_currency_code", expense.BaseCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate", RoundRate(expense.FxRate));
+            insertEntryCommand.Parameters.Add("exchange_rate_date", NpgsqlDbType.Date).Value = expense.PaymentDate.ToDateTime(TimeOnly.MinValue);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate_source", expense.FxSource);
+            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", totalTx);
+            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", totalTx);
+            insertEntryCommand.Parameters.AddWithValue("total_debit", totalBase);
+            insertEntryCommand.Parameters.AddWithValue("total_credit", totalBase);
+            insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
+            insertEntryCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+            insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
+            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+            var insertedRows = await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (insertedRows != 1)
+            {
+                return;
+            }
+        }
+
+        var originalLines = await ReadPostedJournalLinesForReversalAsync(
+            connection,
+            transaction,
+            expense.CompanyId,
+            expense.PostedJournalEntryId.Value,
+            cancellationToken).ConfigureAwait(false);
+        if (originalLines.Count == 0)
+        {
+            throw new InvalidOperationException("Posted expense journal entry has no lines to reverse.");
+        }
+
+        var lineNumber = 1;
+        foreach (var originalLine in originalLines)
+        {
+            await InsertJournalAndLedgerLineAsync(
+                connection,
+                transaction,
+                expense.CompanyId,
+                journalEntryId,
+                lineNumber++,
+                originalLine.AccountId,
+                originalLine.PartyType,
+                originalLine.PartyId,
+                $"Void {originalLine.Description}",
+                expense.TransactionCurrencyCode,
+                txDebit: originalLine.TxCredit,
+                txCredit: originalLine.TxDebit,
+                debit: originalLine.Credit,
+                credit: originalLine.Debit,
+                postingDate: expense.PaymentDate,
+                postingRole: $"void:{originalLine.PostingRole}",
+                sourceLineNumber: originalLine.SourceLineNumber,
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async Task InsertJournalAndLedgerLineAsync(
@@ -717,7 +971,9 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         IReadOnlyList<ExpenseLineInput> activeLines,
         decimal totalTx,
         decimal discountTx,
-        decimal fxRate)
+        decimal fxRate,
+        string taxMode,
+        IReadOnlyDictionary<Guid, ExpenseTaxCodePostingProfile> taxProfiles)
     {
         var subtotalTx = activeLines.Sum(static line => Math.Round(line.Quantity * line.UnitPrice, 4));
         if (subtotalTx <= 0m)
@@ -728,37 +984,45 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
         var allocations = new List<ExpenseLineAllocation>(activeLines.Count);
         var remainingTx = RoundTx(totalTx);
         var remainingBase = RoundBase(totalTx * fxRate);
+        var isInclusive = string.Equals(taxMode, ExpenseTaxMode.Inclusive, StringComparison.OrdinalIgnoreCase);
 
         for (var i = 0; i < activeLines.Count; i++)
         {
             var line = activeLines[i];
             var lineGross = Math.Round(line.Quantity * line.UnitPrice, 4);
-            decimal lineTx;
-            decimal lineBase;
-            if (i == activeLines.Count - 1)
-            {
-                lineTx = remainingTx;
-                lineBase = remainingBase;
-            }
-            else
-            {
-                var lineDiscount = discountTx == 0m ? 0m : Math.Round(discountTx * (lineGross / subtotalTx), 6, MidpointRounding.ToEven);
-                lineTx = RoundTx(lineGross - lineDiscount);
-                lineBase = RoundBase(lineTx * fxRate);
-                remainingTx -= lineTx;
-                remainingBase -= lineBase;
-            }
+            var lineDiscount = discountTx == 0m ? 0m : Math.Round(discountTx * (lineGross / subtotalTx), 6, MidpointRounding.ToEven);
+            var lineAmountAfterDiscount = Math.Max(0m, lineGross - lineDiscount);
+            var taxProfile = line.TaxCodeId is { } taxCodeId && taxProfiles.TryGetValue(taxCodeId, out var profile)
+                ? profile
+                : null;
+            var hasTax = taxProfile is not null && taxProfile.RatePercent > 0m;
+            var lineTax = hasTax
+                ? CalculateLineTax(lineAmountAfterDiscount, taxProfile!.RatePercent, isInclusive)
+                : 0m;
 
-            if (lineTx <= 0m)
-            {
-                continue;
-            }
-
-            allocations.Add(new ExpenseLineAllocation(
+            var expenseTx = hasTax && taxProfile!.IsRecoverableOnPurchase
+                ? isInclusive ? lineAmountAfterDiscount - lineTax : lineAmountAfterDiscount
+                : isInclusive ? lineAmountAfterDiscount : lineAmountAfterDiscount + lineTax;
+            AddAllocation(
+                allocations,
                 line,
-                lineTx,
-                lineBase,
-                number => $"Expense {number} line {line.Sequence}: {line.Description}".TrimEnd()));
+                line.ExpenseAccountId,
+                expenseTx,
+                fxRate,
+                "source_line:expense",
+                number => $"Expense {number} line {line.Sequence}: {line.Description}".TrimEnd());
+
+            if (hasTax && taxProfile!.IsRecoverableOnPurchase && lineTax > 0m)
+            {
+                AddAllocation(
+                    allocations,
+                    line,
+                    taxProfile.RecoverableAccountId,
+                    lineTax,
+                    fxRate,
+                    "tax:recoverable_purchase_tax",
+                    number => $"Recoverable tax for expense {number} line {line.Sequence}");
+            }
         }
 
         if (allocations.Count == 0)
@@ -766,8 +1030,52 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             throw new InvalidOperationException("Expense total must be greater than zero.");
         }
 
-        return allocations;
+        for (var i = 0; i < allocations.Count; i++)
+        {
+            if (i == allocations.Count - 1)
+            {
+                allocations[i] = allocations[i] with { TxAmount = remainingTx, BaseAmount = remainingBase };
+                break;
+            }
+
+            remainingTx -= allocations[i].TxAmount;
+            remainingBase -= allocations[i].BaseAmount;
+        }
+
+        return allocations.Where(static allocation => allocation.TxAmount > 0m).ToArray();
     }
+
+    private static void AddAllocation(
+        List<ExpenseLineAllocation> allocations,
+        ExpenseLineInput line,
+        Guid accountId,
+        decimal txAmount,
+        decimal fxRate,
+        string postingRole,
+        Func<string, string> description)
+    {
+        var roundedTx = RoundTx(txAmount);
+        if (roundedTx <= 0m)
+        {
+            return;
+        }
+
+        allocations.Add(new ExpenseLineAllocation(
+            line,
+            accountId,
+            roundedTx,
+            RoundBase(roundedTx * fxRate),
+            postingRole,
+            description));
+    }
+
+    private static decimal CalculateLineTax(decimal taxableAmount, decimal ratePercent, bool isInclusive)
+        => Math.Round(
+            isInclusive
+                ? taxableAmount - (taxableAmount / (1m + (ratePercent / 100m)))
+                : taxableAmount * ratePercent / 100m,
+            6,
+            MidpointRounding.ToEven);
 
     private static async Task<Guid> ReadExistingJournalEntryIdAsync(
         NpgsqlConnection connection,
@@ -843,6 +1151,76 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             cancellationToken).ConfigureAwait(false);
     }
 
+    private static async Task<string> ReadJournalCreatedByUserIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT created_by_user_id
+              FROM journal_entries
+             WHERE company_id = @company_id
+               AND id = @journal_entry_id
+             LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+        return (string)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Posted expense journal entry could not be found for reversal."));
+    }
+
+    private static async Task<IReadOnlyList<ExpenseJournalLineSnapshot>> ReadPostedJournalLinesForReversalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT account_id,
+                   description,
+                   party_type,
+                   party_id,
+                   tx_debit,
+                   tx_credit,
+                   debit,
+                   credit,
+                   posting_role,
+                   source_line_number
+              FROM journal_entry_lines
+             WHERE company_id = @company_id
+               AND journal_entry_id = @journal_entry_id
+             ORDER BY line_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+
+        var lines = new List<ExpenseJournalLineSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            lines.Add(new ExpenseJournalLineSnapshot(
+                AccountId: reader.GetGuid(0),
+                Description: reader.GetString(1),
+                PartyType: reader.IsDBNull(2) ? null : reader.GetString(2),
+                PartyId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                TxDebit: reader.GetDecimal(4),
+                TxCredit: reader.GetDecimal(5),
+                Debit: reader.GetDecimal(6),
+                Credit: reader.GetDecimal(7),
+                PostingRole: reader.GetString(8),
+                SourceLineNumber: reader.IsDBNull(9) ? null : reader.GetInt32(9)));
+        }
+
+        return lines;
+    }
+
     private static decimal RoundTx(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
 
@@ -854,9 +1232,28 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
 
     private sealed record ExpenseLineAllocation(
         ExpenseLineInput Line,
+        Guid AccountId,
         decimal TxAmount,
         decimal BaseAmount,
+        string PostingRole,
         Func<string, string> Description);
+
+    private sealed record ExpenseTaxCodePostingProfile(
+        decimal RatePercent,
+        bool IsRecoverableOnPurchase,
+        Guid RecoverableAccountId);
+
+    private sealed record ExpenseJournalLineSnapshot(
+        Guid AccountId,
+        string Description,
+        string? PartyType,
+        Guid? PartyId,
+        decimal TxDebit,
+        decimal TxCredit,
+        decimal Debit,
+        decimal Credit,
+        string PostingRole,
+        int? SourceLineNumber);
 
     private static async Task<string> ReadBaseCurrencyAsync(
         NpgsqlConnection connection,

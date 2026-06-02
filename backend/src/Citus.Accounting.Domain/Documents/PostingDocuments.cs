@@ -553,7 +553,8 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         decimal? quantity = null,
         decimal? unitCost = null,
         Guid? purchaseOrderId = null,
-        int? purchaseOrderLineNumber = null)
+        int? purchaseOrderLineNumber = null,
+        decimal? recoverableTaxAmount = null)
     {
         if (lineNumber <= 0)
         {
@@ -575,7 +576,15 @@ public sealed record BillDocumentLine : IPostingDocumentLine
             throw new ArgumentOutOfRangeException(nameof(lineAmount), "Bill line amounts must be positive and tax cannot be negative.");
         }
 
-        if (taxAmount > 0m && isTaxRecoverable && recoverableTaxAccountId is null)
+        var resolvedRecoverableTaxAmount = recoverableTaxAmount ?? (isTaxRecoverable ? taxAmount : 0m);
+        if (resolvedRecoverableTaxAmount < 0m || resolvedRecoverableTaxAmount > taxAmount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(recoverableTaxAmount),
+                "Recoverable tax amount must be between zero and the bill line tax amount.");
+        }
+
+        if (resolvedRecoverableTaxAmount > 0m && recoverableTaxAccountId is null)
         {
             throw new InvalidOperationException("Recoverable tax bill lines must resolve to a recoverable tax account.");
         }
@@ -644,7 +653,8 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         Description = description.Trim();
         LineAmount = lineAmount;
         TaxAmount = taxAmount;
-        IsTaxRecoverable = isTaxRecoverable;
+        RecoverableTaxAmount = resolvedRecoverableTaxAmount;
+        IsTaxRecoverable = RecoverableTaxAmount > 0m;
         RecoverableTaxAccountId = recoverableTaxAccountId;
         TaxCodeId = taxCodeId;
         ItemId = itemId;
@@ -667,6 +677,8 @@ public sealed record BillDocumentLine : IPostingDocumentLine
     public decimal TaxAmount { get; }
 
     public bool IsTaxRecoverable { get; }
+
+    public decimal RecoverableTaxAmount { get; }
 
     public Guid? RecoverableTaxAccountId { get; }
 
@@ -2082,7 +2094,9 @@ public sealed class ReceivePaymentDocument : IPostingDocument, ISettlementDocume
         FxSnapshotRef? fxSnapshot,
         IEnumerable<ReceivePaymentDocumentLine> lines,
         decimal totalAmount,
-        string? memo = null)
+        string? memo = null,
+        decimal extraDepositAmount = 0m,
+        Guid? customerDepositAccountId = null)
     {
         if (customerId == Guid.Empty)
         {
@@ -2097,6 +2111,16 @@ public sealed class ReceivePaymentDocument : IPostingDocument, ISettlementDocume
         if (receivableAccountId == Guid.Empty)
         {
             throw new ArgumentException("Receivable account id is required.", nameof(receivableAccountId));
+        }
+
+        if (extraDepositAmount < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(extraDepositAmount), "Extra deposit amount cannot be negative.");
+        }
+
+        if (extraDepositAmount > 0m && (!customerDepositAccountId.HasValue || customerDepositAccountId.Value == Guid.Empty))
+        {
+            throw new InvalidOperationException("Receive payment overpayment requires a Customer Deposit account.");
         }
 
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
@@ -2115,6 +2139,9 @@ public sealed class ReceivePaymentDocument : IPostingDocument, ISettlementDocume
         FxSnapshot = fxSnapshot;
         TotalAmount = totalAmount;
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        ExtraDepositAmount = Math.Round(extraDepositAmount, 6, MidpointRounding.ToEven);
+        ExtraDepositAmountBase = Math.Round(ExtraDepositAmount * (fxSnapshot?.Rate ?? 1m), 2, MidpointRounding.ToEven);
+        CustomerDepositAccountId = NormalizeOptionalAccountId(customerDepositAccountId, nameof(customerDepositAccountId));
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -2157,6 +2184,12 @@ public sealed class ReceivePaymentDocument : IPostingDocument, ISettlementDocume
     public FxSnapshotRef? FxSnapshot { get; }
 
     public decimal TotalAmount { get; }
+
+    public decimal ExtraDepositAmount { get; }
+
+    public decimal ExtraDepositAmountBase { get; }
+
+    public Guid? CustomerDepositAccountId { get; }
 
     public string? Memo { get; }
 

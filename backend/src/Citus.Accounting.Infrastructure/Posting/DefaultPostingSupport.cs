@@ -197,19 +197,26 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
 
             var appliedTotal = receivePayment.PaymentLines.Sum(static line => line.AppliedAmount);
-            if (appliedTotal != receivePayment.TotalAmount)
+            if (appliedTotal + receivePayment.ExtraDepositAmount != receivePayment.TotalAmount)
             {
-                throw new InvalidOperationException("Receive payment total must equal the sum of its application lines.");
+                throw new InvalidOperationException("Receive payment total must equal the sum of its application lines plus extra customer deposit amount.");
             }
 
             var expectedBaseTotal = SettlementAmountMath.RoundBase(
                 receivePayment.TotalAmount * (receivePayment.FxSnapshot?.Rate ?? 1m));
             var appliedBaseTotal = SettlementAmountMath.RoundBase(
-                receivePayment.PaymentLines.Sum(static line => line.AppliedAmountBase));
+                receivePayment.PaymentLines.Sum(static line => line.AppliedAmountBase) +
+                receivePayment.ExtraDepositAmountBase);
             if (appliedBaseTotal != expectedBaseTotal)
             {
                 throw new InvalidOperationException(
                     "Receive payment application base amounts do not reconcile to the document settlement base total.");
+            }
+
+            if (receivePayment.ExtraDepositAmount > 0m && !receivePayment.CustomerDepositAccountId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "Receive payment overpayment requires a Customer Deposit account before posting.");
             }
 
             if (receivePayment.TransactionCurrencyCode != receivePayment.BaseCurrencyCode)
@@ -958,9 +965,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
         foreach (var line in bill.BillLines)
         {
-            var expenseAmount = line.IsTaxRecoverable
-                ? line.LineAmount
-                : line.LineAmount + line.TaxAmount;
+            var recoverableTaxAmount = line.RecoverableTaxAmount;
+            var nonRecoverableTaxAmount = line.TaxAmount - recoverableTaxAmount;
+            var expenseAmount = line.LineAmount + nonRecoverableTaxAmount;
 
             var baseExpense = Math.Round(expenseAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
             fragments.Add(new PostingFragment(
@@ -974,13 +981,13 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 PostingRole: "source_line:expense",
                 SourceLineNumber: line.LineNumber));
 
-            if (line.TaxAmount > 0m && line.IsTaxRecoverable)
+            if (recoverableTaxAmount > 0m)
             {
-                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseTax = Math.Round(recoverableTaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
                 fragments.Add(new PostingFragment(
                     line.RecoverableTaxAccountId!.Value,
                     bill.TransactionCurrencyCode,
-                    line.TaxAmount,
+                    recoverableTaxAmount,
                     0m,
                     baseTax,
                     0m,
@@ -1114,6 +1121,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             receivePayment.PaymentLines.Sum(static line => line.AppliedAmountBase));
         var carryingBaseTotal = SettlementAmountMath.RoundBase(
             receivePayment.PaymentLines.Sum(static line => line.CarryingAmountBase));
+        var appliedTxTotal = receivePayment.PaymentLines.Sum(static line => line.AppliedAmount);
+        var bankBaseTotal = SettlementAmountMath.RoundBase(
+            settlementBaseTotal + receivePayment.ExtraDepositAmountBase);
         var fragments = new List<PostingFragment>
         {
             new(
@@ -1121,7 +1131,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 receivePayment.TransactionCurrencyCode,
                 receivePayment.TotalAmount,
                 0m,
-                settlementBaseTotal,
+                bankBaseTotal,
                 0m,
                 $"Bank receipt for payment {receivePayment.DisplayNumber.Value}",
                 PostingRole: "cash:receipt"),
@@ -1129,7 +1139,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 receivePayment.ReceivableAccountId,
                 receivePayment.TransactionCurrencyCode,
                 0m,
-                receivePayment.TotalAmount,
+                appliedTxTotal,
                 0m,
                 carryingBaseTotal,
                 $"Accounts Receivable settlement for payment {receivePayment.DisplayNumber.Value}",
@@ -1137,6 +1147,22 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 PartyId: receivePayment.PartyId,
                 PostingRole: "control:accounts_receivable")
         };
+
+        if (receivePayment.ExtraDepositAmount > 0m)
+        {
+            fragments.Add(new PostingFragment(
+                receivePayment.CustomerDepositAccountId ?? throw new InvalidOperationException(
+                    "Receive payment is missing a Customer Deposit account."),
+                receivePayment.TransactionCurrencyCode,
+                0m,
+                receivePayment.ExtraDepositAmount,
+                0m,
+                receivePayment.ExtraDepositAmountBase,
+                $"Customer deposit liability from overpayment {receivePayment.DisplayNumber.Value}",
+                ControlRole: "customer_deposit",
+                PartyId: receivePayment.PartyId,
+                PostingRole: "control:customer_deposit"));
+        }
 
         AppendReceivePaymentRealizedFxFragment(receivePayment, fragments, settlementBaseTotal, carryingBaseTotal);
         EnsureBalancedBaseCurrency(fragments);
