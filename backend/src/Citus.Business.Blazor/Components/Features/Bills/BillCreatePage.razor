@@ -94,13 +94,19 @@ else
             <div class="lg:col-span-8">
                 <CitusFormGrid Columns="2">
                     <CitusFormField Label="Supplier" Required="true">
+                        @* AllowFiltering is OFF: Radzen 5.0.0's filter path initializes
+                           Radzen.Blazor.DynamicLinqCustomTypeProvider, which calls a
+                           ParsingConfig.CustomTypeProvider overload removed in the pinned
+                           System.Linq.Dynamic.Core 1.6.4 -> MissingMethodException crashes
+                           the circuit on first keystroke. Re-enable once the Radzen /
+                           System.Linq.Dynamic.Core versions are aligned (app-wide issue). *@
                         <RadzenDropDown TValue="Guid?"
                                         Data="@_vendors"
                                         @bind-Value="_vendorId"
                                         TextProperty="DisplayName"
                                         ValueProperty="Id"
                                         Placeholder="Choose a supplier…"
-                                        AllowFiltering="true"
+                                        AllowFiltering="false"
                                         Class="citus-control-full"
                                         Change="@(_ => OnVendorChanged())" />
                     </CitusFormField>
