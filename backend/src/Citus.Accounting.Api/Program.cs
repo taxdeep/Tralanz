@@ -202,6 +202,7 @@ builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueC
 // builds a pre-flipped ExpenseVoidPostingDocument.
 builder.Services.AddScoped<IExpenseVoidPostingRepository, PostgresExpenseVoidPostingRepository>();
 builder.Services.AddScoped<IInvoiceReversePostingRepository, PostgresInvoiceReversePostingRepository>();
+builder.Services.AddScoped<IBillReversePostingRepository, PostgresBillReversePostingRepository>();
 builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoiceDropShipCogsPostingRepository>();
 builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearingAgingReader>();
 builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
@@ -342,6 +343,7 @@ builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
 // H1: orchestrates the Expense Void compensating JE via the Posting Engine.
 builder.Services.AddScoped<PostExpenseVoidCommandHandler>();
 builder.Services.AddScoped<PostInvoiceReverseCommandHandler>();
+builder.Services.AddScoped<PostBillReverseCommandHandler>();
 // P0-2 (C2): compensating COGS post on invoice-reverse. Mirror of the
 // forward sales-issue COGS handler with isReverse=true on the posting
 // document. Invoked by PostgresAccountingDocumentReviewRepository
@@ -11231,6 +11233,54 @@ accounting.MapPost(
             // H15-b: bill status flipped draft → posted.
             await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApBillPost);
+
+// Reverse a posted bill: posts a compensating JE (source_type='bill_reversal')
+// that flips every original leg incl. each per-rule recoverable-tax (ITC) leg,
+// then flips the bill to 'reversed'. Mirror of /invoices/{id}/reverse.
+accounting.MapPost(
+    "/bills/{documentId:guid}/reverse",
+    async (
+        Guid documentId,
+        BusinessSessionContextAccessor sessionAccessor,
+        PostBillReverseCommandHandler reverseHandler,
+        IBillDocumentRepository repository,
+        IUnitySearchProjectionStore unitySearchProjectionStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        if (string.IsNullOrEmpty(session.UserId.Value))
+        {
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            var result = await reverseHandler.HandleAsync(
+                new PostBillReverseCommand(session.ActiveCompanyId, session.UserId, documentId),
+                cancellationToken);
+
+            // Flip the bill out of the payable set (mirrors the invoice
+            // reverse: compensation JE first, then the source-row status flip).
+            await repository.MarkReversedAsync(session.ActiveCompanyId, documentId, cancellationToken);
+
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
+            return Results.Ok(new
+            {
+                reversed = true,
+                compensationJournalEntryId = result.JournalEntryId,
+                compensationDisplayNumber = result.JournalEntryDisplayNumber,
+                alreadyReversed = result.AlreadyReversed,
+            });
         }
         catch (InvalidOperationException ex)
         {

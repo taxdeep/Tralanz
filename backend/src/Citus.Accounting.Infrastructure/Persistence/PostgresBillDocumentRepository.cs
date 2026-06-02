@@ -154,11 +154,19 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 "Bill routing could not resolve an active Accounts Payable control account.");
         }
 
+        // B2 (S5.1): load the per-line tax snapshots once, attach to each
+        // line below so the posting fragment builder can emit per-rule ITC /
+        // non-recoverable legs. Empty when the document was saved with
+        // SalesTaxV2 off (then the legacy single-leg path runs).
+        var taxSnapshotsByLine = await PostgresLineTaxSnapshotLoader.LoadAsync(
+            scope, companyId, "bill", documentId, cancellationToken);
+
         var lines = new List<BillDocumentLine>();
 
         await using (var linesCommand = scope.CreateCommand(
                          """
                          select
+                           l.id,
                            l.line_number,
                            l.expense_account_id,
                            l.description,
@@ -211,7 +219,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                     reader.IsDBNull(reader.GetOrdinal("quantity")) ? null : reader.GetDecimal(reader.GetOrdinal("quantity")),
                     reader.IsDBNull(reader.GetOrdinal("unit_cost")) ? null : reader.GetDecimal(reader.GetOrdinal("unit_cost")),
                     reader.IsDBNull(reader.GetOrdinal("purchase_order_id")) ? null : reader.GetGuid(reader.GetOrdinal("purchase_order_id")),
-                    reader.IsDBNull(reader.GetOrdinal("purchase_order_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("purchase_order_line_number"))));
+                    reader.IsDBNull(reader.GetOrdinal("purchase_order_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("purchase_order_line_number")),
+                    PostgresLineTaxSnapshotLoader.ForLine(taxSnapshotsByLine, reader.GetGuid(reader.GetOrdinal("id")))));
             }
         }
 
@@ -676,6 +685,34 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "cancelled");
     }
 
+    public async Task MarkReversedAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        // Conservative guard: only an unpaid posted bill flips to 'reversed'.
+        // partially_paid / paid carry Pay Bills applications that the
+        // compensation JE does not unwind, so they are not reversible here.
+        await using var command = scope.CreateCommand(
+            """
+            update bills
+               set status = 'reversed',
+                   updated_at = now()
+             where company_id = @company_id
+               and id = @id
+               and status = 'posted';
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("id", documentId);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<List<BillDocumentLine>> ApplyDropShipClearingOverrideAsync(
         PostgresCommandScope scope,
         CompanyId companyId,
@@ -757,7 +794,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             // Re-build the line with the overridden expense account. All
             // other fields stay as-is — itemId is preserved (used by the
             // M6 iter 4 aging workbench), warehouse/qty/cost stay null
-            // (drop-ship lines never carry them), tax fields unchanged.
+            // (drop-ship lines never carry them), tax fields + snapshots
+            // unchanged (the multi-leg posting needs the snapshots intact).
             rewritten.Add(new BillDocumentLine(
                 line.LineNumber,
                 resolved.Value,
@@ -773,7 +811,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 line.Quantity,
                 line.UnitCost,
                 line.PurchaseOrderId,
-                line.PurchaseOrderLineNumber));
+                line.PurchaseOrderLineNumber,
+                line.TaxSnapshots));
         }
 
         return rewritten;

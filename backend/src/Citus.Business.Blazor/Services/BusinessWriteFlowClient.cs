@@ -303,6 +303,70 @@ public sealed class BusinessWriteFlowClient
     }
 
     /// <summary>
+    /// Post an existing bill draft straight from the detail page (draft →
+    /// posted) through the v2 engine path — the posting engine's JE writer
+    /// flips the bill draft to posted directly, so no separate submit step is
+    /// needed. Mirror of <see cref="PostExistingInvoiceDraftAsync"/>.
+    /// </summary>
+    public async Task<WriteFlowResult> PostExistingBillDraftAsync(
+        Guid documentId,
+        CompanyId companyId,
+        UserId userId,
+        string displayNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var postPayload = new
+        {
+            companyId,
+            userId,
+            acceptedFxSnapshotId = (Guid?)null,
+            idempotencyKey = (string?)null,
+        };
+
+        try
+        {
+            using var postResponse = await _httpClient.PostAsJsonAsync(
+                $"accounting/bills/{documentId:D}/post",
+                postPayload,
+                cancellationToken);
+
+            if (!postResponse.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(postResponse, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Posting failed (HTTP {(int)postResponse.StatusCode}).",
+                    Operation: nameof(PostExistingBillDraftAsync),
+                    DraftEcho: (object)documentId)
+                {
+                    DocumentId = documentId,
+                };
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: $"Bill {displayNumber} posted.",
+                Operation: nameof(PostExistingBillDraftAsync),
+                DraftEcho: (object)documentId)
+            {
+                DocumentId = documentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bill post call failed for {DocumentId}.", documentId);
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to post the bill. Please retry.",
+                Operation: nameof(PostExistingBillDraftAsync),
+                DraftEcho: (object)documentId)
+            {
+                DocumentId = documentId,
+            };
+        }
+    }
+
+    /// <summary>
     /// Builds the JSON body shared by the invoice draft save (POST
     /// /invoices/drafts) and update (PUT /invoices/drafts/{id}) calls —
     /// a single source of truth so the two paths never drift (a per-line

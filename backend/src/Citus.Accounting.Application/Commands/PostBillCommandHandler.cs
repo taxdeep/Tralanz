@@ -43,9 +43,14 @@ public sealed class PostBillCommandHandler
                 throw new InvalidOperationException("Bill document was not found in the active company context.");
             }
 
-            if (!string.Equals(document.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+            // The JE writer flips a bill draft → posted (its source-status
+            // claim matches status='draft'), so a draft posts directly from
+            // the detail page — mirroring the invoice. 'submitted' is also
+            // accepted for any approval-flow caller that pre-submits.
+            if (!string.Equals(document.Status, "draft", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(document.Status, "submitted", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Only submitted bills can be posted.");
+                throw new InvalidOperationException("Only draft or submitted bills can be posted.");
             }
 
             await _purchaseOrders.ValidateBillAnchorsForPostingAsync(

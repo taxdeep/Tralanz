@@ -435,6 +435,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildExpenseVoidFragments(expenseVoid).AsReadOnly()),
             InvoiceReversePostingDocument invoiceReverse => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildInvoiceReverseFragments(invoiceReverse).AsReadOnly()),
+            BillReversePostingDocument billReverse => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildBillReverseFragments(billReverse).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -478,6 +480,35 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     // emit them verbatim and re-assert balance on both axes.
     private static List<PostingFragment> BuildInvoiceReverseFragments(
         InvoiceReversePostingDocument document)
+    {
+        var fragments = new List<PostingFragment>(document.ReverseLines.Count);
+        foreach (var line in document.ReverseLines)
+        {
+            fragments.Add(new PostingFragment(
+                line.AccountId,
+                document.TransactionCurrencyCode,
+                line.TxDebit,
+                line.TxCredit,
+                line.Debit,
+                line.Credit,
+                line.Description,
+                TaxComponentType: null,
+                ControlRole: line.ControlRole,
+                PartyId: line.PartyId,
+                PostingRole: line.PostingRole,
+                SourceLineNumber: line.SourceLineNumber));
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    // Bill reverse: the document's lines are already the flipped legs of the
+    // original bill JE (read + swapped by the repository) — AP, expense, and
+    // each per-rule recoverable-tax (ITC) leg — so we emit them verbatim and
+    // re-assert balance. Mirror of BuildInvoiceReverseFragments.
+    private static List<PostingFragment> BuildBillReverseFragments(
+        BillReversePostingDocument document)
     {
         var fragments = new List<PostingFragment>(document.ReverseLines.Count);
         foreach (var line in document.ReverseLines)
@@ -1019,36 +1050,85 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
         foreach (var line in bill.BillLines)
         {
-            var expenseAmount = line.IsTaxRecoverable
-                ? line.LineAmount
-                : line.LineAmount + line.TaxAmount;
-
-            var baseExpense = Math.Round(expenseAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
-            fragments.Add(new PostingFragment(
-                line.ExpenseAccountId,
-                bill.TransactionCurrencyCode,
-                expenseAmount,
-                0m,
-                baseExpense,
-                0m,
-                BuildSourceLineDescription("Bill expense", bill.DisplayNumber.Value, line.LineNumber, line.Description),
-                PostingRole: "source_line:expense",
-                SourceLineNumber: line.LineNumber));
-
-            if (line.TaxAmount > 0m && line.IsTaxRecoverable)
+            if (line.TaxSnapshots.Count > 0)
             {
-                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                // B2 — multi-rule Tax Code (e.g. GST + PST). Each Rule's tax
+                // splits into a recoverable (ITC) portion and a non-recoverable
+                // portion. Recoverable → its own Dr leg on that Rule's ITC
+                // account; non-recoverable → folded into the expense Dr (it's a
+                // cost of the purchase). Dr expense + Σ Dr ITC = LineAmount + Σ
+                // tax = this line's share of the AP credit, so the JE balances.
+                // Mirrors the invoice multi-leg + the S5.4 expense allocation.
+                var nonRecoverableTotal = line.TaxSnapshots.Sum(static snap => snap.NonRecoverableAmount);
+                var expenseAmount = line.LineAmount + nonRecoverableTotal;
+
+                var baseExpense = Math.Round(expenseAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
                 fragments.Add(new PostingFragment(
-                    line.RecoverableTaxAccountId!.Value,
+                    line.ExpenseAccountId,
                     bill.TransactionCurrencyCode,
-                    line.TaxAmount,
+                    expenseAmount,
                     0m,
-                    baseTax,
+                    baseExpense,
                     0m,
-                    $"Recoverable purchase tax for bill {bill.DisplayNumber.Value} line {line.LineNumber}",
-                    TaxComponentType: "purchase_tax_recoverable",
-                    PostingRole: "tax:purchase_tax_recoverable",
+                    BuildSourceLineDescription("Bill expense", bill.DisplayNumber.Value, line.LineNumber, line.Description),
+                    PostingRole: "source_line:expense",
                     SourceLineNumber: line.LineNumber));
+
+                foreach (var snap in line.TaxSnapshots.OrderBy(static snap => snap.Sequence))
+                {
+                    if (snap.RecoverableAmount == 0m || snap.RecoverableAccountId is not { } recoverableAccountId)
+                    {
+                        continue;
+                    }
+
+                    var baseLegTax = Math.Round(snap.RecoverableAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                    fragments.Add(new PostingFragment(
+                        recoverableAccountId,
+                        bill.TransactionCurrencyCode,
+                        snap.RecoverableAmount,
+                        0m,
+                        baseLegTax,
+                        0m,
+                        $"Recoverable purchase tax for bill {bill.DisplayNumber.Value} line {line.LineNumber} (leg {snap.Sequence})",
+                        TaxComponentType: "purchase_tax_recoverable",
+                        PostingRole: "tax:purchase_tax_recoverable",
+                        SourceLineNumber: line.LineNumber));
+                }
+            }
+            else
+            {
+                // Legacy single-tax fallback (snapshots empty = SalesTaxV2 off).
+                var expenseAmount = line.IsTaxRecoverable
+                    ? line.LineAmount
+                    : line.LineAmount + line.TaxAmount;
+
+                var baseExpense = Math.Round(expenseAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                fragments.Add(new PostingFragment(
+                    line.ExpenseAccountId,
+                    bill.TransactionCurrencyCode,
+                    expenseAmount,
+                    0m,
+                    baseExpense,
+                    0m,
+                    BuildSourceLineDescription("Bill expense", bill.DisplayNumber.Value, line.LineNumber, line.Description),
+                    PostingRole: "source_line:expense",
+                    SourceLineNumber: line.LineNumber));
+
+                if (line.TaxAmount > 0m && line.IsTaxRecoverable)
+                {
+                    var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                    fragments.Add(new PostingFragment(
+                        line.RecoverableTaxAccountId!.Value,
+                        bill.TransactionCurrencyCode,
+                        line.TaxAmount,
+                        0m,
+                        baseTax,
+                        0m,
+                        $"Recoverable purchase tax for bill {bill.DisplayNumber.Value} line {line.LineNumber}",
+                        TaxComponentType: "purchase_tax_recoverable",
+                        PostingRole: "tax:purchase_tax_recoverable",
+                        SourceLineNumber: line.LineNumber));
+                }
             }
         }
 

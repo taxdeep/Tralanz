@@ -76,6 +76,31 @@ public sealed class BillClient(HttpClient httpClient, ILogger<BillClient> logger
     public Task<BillMutationOutcome> VoidAsync(Guid id, CancellationToken cancellationToken = default)
         => SendStatusActionAsync($"accounting/ap/bills/{id:D}/void", cancellationToken);
 
+    /// <summary>
+    /// Reverse a POSTED bill: posts a compensating journal entry (incl. every
+    /// per-rule recoverable-tax leg) and flips the bill to 'reversed'. HTTP
+    /// 200 genuinely means executed. Mirror of <c>InvoiceClient.ReverseAsync</c>.
+    /// </summary>
+    public async Task<BillReverseOutcome> ReverseAsync(Guid billId, CancellationToken cancellationToken = default)
+    {
+        var requestUri = $"accounting/bills/{billId:D}/reverse";
+        try
+        {
+            using var response = await httpClient.PostAsync(requestUri, content: null, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new BillReverseOutcome(true, null);
+            }
+
+            return new BillReverseOutcome(false, await ReadMessageAsync(response, cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to reverse bill {BillId}.", billId);
+            return new BillReverseOutcome(false, "Could not reach the server to reverse the bill. Please retry.");
+        }
+    }
+
     private async Task<BillMutationOutcome> SendUpsertAsync(
         HttpMethod method,
         string path,
@@ -271,3 +296,5 @@ public sealed record BillMutationOutcome(
     // GET and PUT. Pages use this to render a refresh-and-retry CTA
     // instead of a generic "save failed" toast.
     bool IsConcurrencyConflict = false);
+
+public sealed record BillReverseOutcome(bool Succeeded, string? ErrorMessage);

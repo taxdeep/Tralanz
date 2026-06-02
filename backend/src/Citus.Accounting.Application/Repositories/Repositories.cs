@@ -204,6 +204,15 @@ public interface IBillDocumentRepository
         UserId userId,
         Guid documentId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Flips a posted bill to 'reversed' after its compensation JE posts.
+    /// Mirror of <see cref="IInvoiceDocumentRepository.MarkReversedAsync"/>.
+    /// </summary>
+    Task MarkReversedAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
 }
 
 public interface IVendorCreditDocumentRepository

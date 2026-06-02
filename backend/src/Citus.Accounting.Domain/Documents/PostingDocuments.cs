@@ -587,7 +587,13 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         decimal? quantity = null,
         decimal? unitCost = null,
         Guid? purchaseOrderId = null,
-        int? purchaseOrderLineNumber = null)
+        int? purchaseOrderLineNumber = null,
+        // S5/B2: per-line tax snapshots (empty when saved with the flag off).
+        // A multi-rule Tax Code splits purchase tax into per-rule recoverable
+        // (ITC) and non-recoverable portions whose accounts live on these
+        // snapshots; the posting fragment builder reads them to emit one ITC
+        // leg per recoverable rule and folds non-recoverable into the expense.
+        IReadOnlyList<DocumentLineTaxSnapshot>? taxSnapshots = null)
     {
         if (lineNumber <= 0)
         {
@@ -688,6 +694,7 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         UnitCost = unitCost;
         PurchaseOrderId = purchaseOrderId;
         PurchaseOrderLineNumber = purchaseOrderLineNumber;
+        TaxSnapshots = taxSnapshots ?? Array.Empty<DocumentLineTaxSnapshot>();
     }
 
     public int LineNumber { get; }
@@ -719,6 +726,8 @@ public sealed record BillDocumentLine : IPostingDocumentLine
     public Guid? PurchaseOrderId { get; }
 
     public int? PurchaseOrderLineNumber { get; }
+
+    public IReadOnlyList<DocumentLineTaxSnapshot> TaxSnapshots { get; }
 }
 
 public sealed class BillDocument : IPostingDocument, IOpenItemDocument
@@ -4475,6 +4484,96 @@ public sealed class InvoiceReversePostingDocument : IPostingDocument
 /// relative to the forward invoice post (Dr/Cr and TxDr/TxCr swapped).
 /// </summary>
 public sealed record InvoiceReversePostingDocumentLine(
+    int LineNumber,
+    Guid AccountId,
+    decimal TxDebit,
+    decimal TxCredit,
+    decimal Debit,
+    decimal Credit,
+    string Description,
+    string PostingRole,
+    string? ControlRole = null,
+    Guid? PartyId = null,
+    int? SourceLineNumber = null) : IPostingDocumentLine;
+
+public sealed class BillReversePostingDocument : IPostingDocument
+{
+    public BillReversePostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        Guid billId,
+        DateOnly documentDate,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        decimal fxRate,
+        IEnumerable<BillReversePostingDocumentLine> lines)
+    {
+        if (billId == Guid.Empty)
+        {
+            throw new ArgumentException("Bill id is required.", nameof(billId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber;
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        BillId = billId;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        FxRate = fxRate;
+
+        var materialized = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materialized.Length == 0)
+        {
+            throw new InvalidOperationException("Bill-reverse document must carry at least one line.");
+        }
+
+        ReverseLines = Array.AsReadOnly(materialized);
+        Lines = Array.AsReadOnly(materialized.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "bill_reversal";
+
+    public string Status => "draft";
+    public Guid BillId { get; }
+    public DateOnly DocumentDate { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public decimal FxRate { get; }
+    public IReadOnlyList<BillReversePostingDocumentLine> ReverseLines { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    // Reuse the bill's CAPTURED rate (read from the original JE's
+    // exchange_rate) instead of resolving a fresh FX snapshot — exactly how
+    // InvoiceReversePostingDocument hands the engine a Guid.Empty FxSnapshotRef
+    // for a manual/foreign rate, so no local-snapshot lookup runs. Null
+    // (identity) when the transaction currency equals base.
+    public FxSnapshotRef? FxSnapshot =>
+        TransactionCurrencyCode == BaseCurrencyCode && FxRate == 1m
+            ? null
+            : new FxSnapshotRef(
+                Guid.Empty,
+                BaseCurrencyCode,
+                TransactionCurrencyCode,
+                FxRate,
+                DocumentDate,
+                DocumentDate,
+                "reverse_captured");
+}
+
+/// <summary>
+/// One leg of a bill-reverse compensation JE — amounts ALREADY flipped
+/// relative to the forward bill post (Dr/Cr and TxDr/TxCr swapped).
+/// </summary>
+public sealed record BillReversePostingDocumentLine(
     int LineNumber,
     Guid AccountId,
     decimal TxDebit,
