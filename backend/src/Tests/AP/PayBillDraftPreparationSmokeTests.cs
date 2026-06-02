@@ -37,11 +37,13 @@ public sealed class PayBillDraftPreparationSmokeTests
         Guid seededOpenItemId = Guid.Empty;
         UserId userId = default;
         var createdUser = false;
+        var createdVendor = false;
         var originalLock = await ReadVendorLockAsync(connectionFactory, VendorId, CancellationToken.None);
 
         try
         {
             (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            createdVendor = await EnsureVendorAsync(connectionFactory, VendorId, CancellationToken.None);
             bankAccountId = await CreateBankAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
             (seededBillId, seededOpenItemId) = await SeedBillAndOpenItemAsync(
                 connectionFactory, userId, CancellationToken.None);
@@ -86,7 +88,14 @@ public sealed class PayBillDraftPreparationSmokeTests
             await CleanupOpenItemAndBillAsync(
                 connectionFactory, seededOpenItemId, seededBillId, CancellationToken.None);
             await CleanupBankAccountAsync(connectionFactory, bankAccountId, CancellationToken.None);
-            await RestoreVendorLockAsync(connectionFactory, VendorId, originalLock, CancellationToken.None);
+            if (createdVendor)
+            {
+                await CleanupVendorAsync(connectionFactory, VendorId, CancellationToken.None);
+            }
+            else
+            {
+                await RestoreVendorLockAsync(connectionFactory, VendorId, originalLock, CancellationToken.None);
+            }
             await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
         }
     }
@@ -423,6 +432,76 @@ public sealed class PayBillDraftPreparationSmokeTests
             where id = @vendor_id;
             """;
         command.Parameters.AddWithValue("currency_locked", currencyLocked);
+        command.Parameters.AddWithValue("vendor_id", vendorId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> EnsureVendorAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        Guid vendorId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using (var findCommand = connection.CreateCommand())
+        {
+            findCommand.CommandText =
+                """
+                select 1
+                from vendors
+                where company_id = @company_id
+                  and id = @vendor_id
+                limit 1;
+                """;
+            findCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
+            findCommand.Parameters.AddWithValue("vendor_id", vendorId);
+            if (await findCommand.ExecuteScalarAsync(cancellationToken) is not null)
+            {
+                return false;
+            }
+        }
+
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.CommandText =
+            """
+            insert into vendors (
+              id,
+              company_id,
+              entity_number,
+              display_name,
+              default_currency_code,
+              is_active,
+              currency_locked
+            )
+            values (
+              @id,
+              @company_id,
+              @entity_number,
+              @display_name,
+              'USD',
+              true,
+              false
+            );
+            """;
+        insertCommand.Parameters.AddWithValue("id", vendorId);
+        insertCommand.Parameters.AddWithValue("company_id", CompanyId.Value);
+        insertCommand.Parameters.AddWithValue("entity_number", "EN2026PBVND");
+        insertCommand.Parameters.AddWithValue("display_name", "Pay bill smoke vendor");
+        await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        return true;
+    }
+
+    private static async Task CleanupVendorAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        Guid vendorId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            delete from vendors
+            where id = @vendor_id;
+            """;
         command.Parameters.AddWithValue("vendor_id", vendorId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

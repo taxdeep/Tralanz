@@ -11,6 +11,8 @@ namespace Modules.Company.FeatureManagement;
 /// </summary>
 public static class CompanyModuleFlagCatalog
 {
+    public const int DefaultSelfServiceAccessDays = 30;
+
     /// <summary>
     /// Task module: service-delivery execution unit that records
     /// completed work, accepts AP direct costs, and signals AR to bill.
@@ -19,12 +21,18 @@ public static class CompanyModuleFlagCatalog
     /// </summary>
     public const string Task = "task";
 
+    public const string Inventory = "inventory";
+
     public static IReadOnlyList<CompanyModuleFlagOption> Options { get; } =
     [
         new(
             Task,
             "Task",
             "Service-delivery execution units. Records work done, accepts AP direct cost, and signals AR for billing."),
+        new(
+            Inventory,
+            "Inventory",
+            "Inventory tracking, warehouses, stock items, adjustments, and stock-linked costing."),
     ];
 
     public static IReadOnlyList<string> KnownKeys { get; } =

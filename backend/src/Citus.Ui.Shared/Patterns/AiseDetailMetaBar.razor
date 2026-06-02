@@ -1,0 +1,14 @@
+<div class="@CssClass">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string CssClass =>
+        string.IsNullOrWhiteSpace(Class)
+            ? "aise-detail-meta-bar"
+            : $"aise-detail-meta-bar {Class}";
+}

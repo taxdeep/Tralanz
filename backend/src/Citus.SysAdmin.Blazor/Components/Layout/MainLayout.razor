@@ -41,7 +41,7 @@ else if (!ShellState.IsAuthenticated)
 else
 {
     <div class="citus-shell @(_collapsed ? "citus-shell--collapsed" : null)">
-        <aside class="citus-shell__sider">
+        <header class="citus-shell__header">
             <div class="citus-shell__brand">
                 <CitusIcon Name="IconName.ShieldLock" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
                 @if (!_collapsed)
@@ -49,14 +49,16 @@ else
                     <span class="citus-shell__brand-text">Tralanz SysAdmin</span>
                 }
             </div>
+
+            <SysAdminTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
+        </header>
+
+        <div class="citus-shell__body">
+            <aside class="citus-shell__sider">
             <SysAdminNavMenu Collapsed="@_collapsed" />
-        </aside>
+            </aside>
 
-        <div class="citus-shell__main">
-            <header class="citus-shell__header">
-                <SysAdminTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
-            </header>
-
+            <div class="citus-shell__main">
             <main class="citus-shell__content">
                 @if (_isContextLoading)
                 {
@@ -68,6 +70,7 @@ else
                 <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
                 @Body
             </main>
+            </div>
         </div>
     </div>
 }

@@ -4,19 +4,7 @@
     migration: the previous menu primitives are gone; the
     `.active` class that NavLink toggles drives the selected style via
     shell.css's .citus-nav-menu__link.active rule.
-
-    Batch 6: items carrying a ModuleKey are filtered against
-    ShellState.ModuleFlags. A section whose items all fail the filter
-    is suppressed entirely so the sidebar doesn't show empty headers.
-
-    2026-05-25: subscribe to ShellState.OnChanged so toggling a module
-    flag (Settings → Optional Modules) or switching companies updates
-    the sidebar live, without a page refresh. The previous behaviour
-    relied on accidental re-renders from elsewhere — CreateNewButton
-    happened to refresh on each <details> click but this nav did not.
 *@
-
-@implements IDisposable
 
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
 
@@ -32,21 +20,42 @@
             continue;
         }
 
+        var sectionKey = SectionKey(navSection.Title);
+        var sectionCollapsed = !Collapsed && _collapsedSections.Contains(sectionKey);
+
         <div class="citus-nav-menu__group">
-            <div class="citus-nav-menu__group-title">@navSection.Title</div>
-            <ul class="citus-nav-menu__items">
-                @foreach (var item in visibleItems)
-                {
-                    <li>
-                        <NavLink class="citus-nav-menu__link"
-                                 href="@item.Href"
-                                 Match="NavLinkMatch.Prefix">
-                            <CitusIcon Name="item.Icon" Size="IconSize.Action" />
-                            <span class="citus-nav-menu__label">@item.Title</span>
-                        </NavLink>
-                    </li>
-                }
-            </ul>
+            @if (Collapsed)
+            {
+                <div class="citus-nav-menu__group-title">@navSection.Title</div>
+            }
+            else
+            {
+                <button type="button"
+                        class="citus-nav-menu__group-toggle"
+                        aria-expanded="@(!sectionCollapsed)"
+                        aria-controls="@($"{sectionKey}-items")"
+                        @onclick="@(() => ToggleSection(sectionKey))">
+                    <span class="citus-nav-menu__group-title-text">@navSection.Title</span>
+                    <CitusIcon Name="@(sectionCollapsed ? IconName.ChevronRight : IconName.ChevronDown)" Size="IconSize.Inline" />
+                </button>
+            }
+
+            @if (!sectionCollapsed)
+            {
+                <ul id="@($"{sectionKey}-items")" class="citus-nav-menu__items">
+                    @foreach (var item in visibleItems)
+                    {
+                        <li>
+                            <NavLink class="citus-nav-menu__link"
+                                     href="@item.Href"
+                                     Match="NavLinkMatch.Prefix">
+                                <CitusIcon Name="item.Icon" Size="IconSize.Action" />
+                                <span class="citus-nav-menu__label">@item.Title</span>
+                            </NavLink>
+                        </li>
+                    }
+                </ul>
+            }
         </div>
     }
 </nav>
@@ -54,15 +63,24 @@
 @code {
     [Parameter] public bool Collapsed { get; set; }
 
-    protected override void OnInitialized()
+    private readonly HashSet<string> _collapsedSections = new(StringComparer.OrdinalIgnoreCase);
+
+    private void ToggleSection(string sectionKey)
     {
-        ShellState.OnChanged += HandleShellChanged;
+        if (!_collapsedSections.Add(sectionKey))
+        {
+            _collapsedSections.Remove(sectionKey);
+        }
     }
 
-    public void Dispose()
+    private static string SectionKey(string title)
     {
-        ShellState.OnChanged -= HandleShellChanged;
-    }
+        var key = new string(title
+            .Trim()
+            .ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')
+            .ToArray());
 
-    private void HandleShellChanged() => InvokeAsync(StateHasChanged);
+        return $"nav-{key.Trim('-')}";
+    }
 }

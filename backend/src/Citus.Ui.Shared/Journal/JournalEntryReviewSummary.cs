@@ -18,6 +18,10 @@ public sealed record class JournalEntryReviewSummary
 
     public Guid SourceId { get; init; }
 
+    public DateOnly? SourceDocumentDate { get; init; }
+
+    public string SourceMemo { get; init; } = string.Empty;
+
     public string TransactionCurrencyCode { get; init; } = string.Empty;
 
     public string BaseCurrencyCode { get; init; } = string.Empty;

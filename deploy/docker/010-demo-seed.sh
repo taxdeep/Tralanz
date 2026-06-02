@@ -19,16 +19,16 @@ insert into companies (
 )
 values
   (
-    '5e492df2-37ab-47df-a1bb-2d559c876cbc',
-    'EN202600000001',
+    'C000001',
+    'EN202600001',
     'Northwind Studio Ltd.',
     'USD',
     true,
     'active'
   ),
   (
-    'e56df08c-39ae-405b-8ed2-247b97d2f9f6',
-    'EN202600000002',
+    'C000002',
+    'EN202600002',
     'Blue Harbor Trading Co.',
     'CAD',
     false,
@@ -53,7 +53,7 @@ insert into users (
 )
 values
   (
-    '7bd0e908-cfe7-4f7b-8a0d-f19292e4186d',
+    'U000001',
     'alice.rowan@northwind.example',
     'alice.rowan',
     'Alice Rowan',
@@ -63,7 +63,7 @@ values
     'none'
   ),
   (
-    '3512739f-2af3-41f5-8fd4-d648d913a274',
+    'U000002',
     'ben.mercer@blueharbor.example',
     'ben.mercer',
     'Ben Mercer',
@@ -92,16 +92,16 @@ insert into company_memberships (
 values
   (
     '7f9db7cf-9eb8-4fe7-b8aa-4b6ea51b20a1',
-    '5e492df2-37ab-47df-a1bb-2d559c876cbc',
-    '7bd0e908-cfe7-4f7b-8a0d-f19292e4186d',
+    'C000001',
+    'U000001',
     'owner',
     true,
     '["reports"]'::jsonb
   ),
   (
     'ac2bd623-64e3-41ca-b2a2-fa6511962711',
-    'e56df08c-39ae-405b-8ed2-247b97d2f9f6',
-    '3512739f-2af3-41f5-8fd4-d648d913a274',
+    'C000002',
+    'U000002',
     'user',
     true,
     '["ap"]'::jsonb

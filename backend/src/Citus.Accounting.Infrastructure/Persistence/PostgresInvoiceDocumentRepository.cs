@@ -30,9 +30,10 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             _executionContextAccessor,
             cancellationToken);
 
-        // Schema for item_id / warehouse_id / uom_code on invoice_lines
+        // Schema for item_id / warehouse_id / uom_code / task_line_id on invoice_lines
         // is applied via deploy/migrations/2026-05-08-invoice-line-
-        // inventory-columns.sql. No inline ALTER on the read path.
+        // inventory-columns.sql and 2026-06-01-invoice-line-task-line-link.sql.
+        // No inline ALTER on the read path.
 
         Guid id;
         string entityNumber;
@@ -156,20 +157,58 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
 
         await using (var linesCommand = scope.CreateCommand(
                          """
-                         select
-                           l.line_number,
-                           l.revenue_account_id,
-                           l.description,
-                           l.quantity,
+                          select
+                            l.id,
+                            l.line_number,
+                            l.revenue_account_id,
+                            l.description,
+                            l.quantity,
                            l.unit_price,
                            l.line_amount,
                            l.tax_amount,
-                           l.tax_code_id,
-                           tc.payable_account_id,
-                           l.item_id,
-                           l.warehouse_id,
-                           l.uom_code,
-                           l.task_id
+                            l.tax_code_id,
+                           case
+                             when l.tax_amount > 0 then coalesce(
+                               (
+                                 select stm.payable_account_id
+                                   from sales_tax_code_components tcc
+                              left join sales_tax_account_mappings stm
+                                     on stm.company_id = tcc.company_id
+                                    and stm.tax_component_id = tcc.tax_component_id
+                                    and stm.applies_to in ('sales', 'both')
+                                    and stm.payable_account_id is not null
+                                  where tcc.company_id = l.company_id::text
+                                    and tcc.tax_code_id = l.tax_code_id
+                                    and coalesce(tcc.applies_to, tc.applies_to, 'both') in ('sales', 'both')
+                               order by tcc.sequence, stm.updated_at desc, stm.created_at desc
+                                  limit 1
+                               ),
+                               tc.payable_account_id,
+                               (
+                                 select a.id
+                                   from accounts a
+                                  where a.company_id = l.company_id
+                                    and a.root_type = 'liability'
+                                    and a.detail_type = 'tax'
+                                    and a.is_active = true
+                               order by
+                                    case
+                                      when a.system_key = 'tax:payable' then 0
+                                      when a.system_role = 'tax_payable' then 1
+                                      when a.code = '25000' then 2
+                                      when a.name ilike '%Sales Tax Payable%' then 3
+                                      else 4
+                                    end,
+                                    a.code
+                                  limit 1
+                               ))
+                             else tc.payable_account_id
+                           end as payable_account_id,
+                            l.item_id,
+                            l.warehouse_id,
+                            l.uom_code,
+                            l.task_id,
+                            l.task_line_id
                          from invoice_lines l
                          left join tax_codes tc
                            on tc.id = l.tax_code_id
@@ -205,7 +244,9 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                     reader.IsDBNull(reader.GetOrdinal("item_id")) ? null : reader.GetGuid(reader.GetOrdinal("item_id")),
                     reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : reader.GetGuid(reader.GetOrdinal("warehouse_id")),
                     reader.IsDBNull(reader.GetOrdinal("uom_code")) ? null : reader.GetString(reader.GetOrdinal("uom_code")),
-                    reader.IsDBNull(reader.GetOrdinal("task_id")) ? null : reader.GetGuid(reader.GetOrdinal("task_id"))));
+                    reader.IsDBNull(reader.GetOrdinal("task_id")) ? null : reader.GetGuid(reader.GetOrdinal("task_id")),
+                    reader.IsDBNull(reader.GetOrdinal("task_line_id")) ? null : reader.GetGuid(reader.GetOrdinal("task_line_id")),
+                    reader.GetGuid(reader.GetOrdinal("id"))));
             }
         }
 
@@ -315,9 +356,10 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        // Inventory-grade invoice_lines columns are managed by the
+        // Inventory-grade and task-line provenance invoice_lines columns are managed by the
         // migration runner (see 2026-05-08-invoice-line-inventory-
-        // columns.sql); no inline ALTER on this write path.
+        // columns.sql and 2026-06-01-invoice-line-task-line-link.sql);
+        // no inline ALTER on this write path.
 
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         string entityNumber;
@@ -551,14 +593,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("item_id", NpgsqlDbType.Uuid) { TypedValue = line.ItemId });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("warehouse_id", NpgsqlDbType.Uuid) { TypedValue = line.WarehouseId });
             insertLineCommand.Parameters.AddWithValue("uom_code", string.IsNullOrWhiteSpace(line.UomCode) ? (object)DBNull.Value : line.UomCode.Trim().ToUpperInvariant());
-            // task_id column is added by PostgresTaskLinkSchemaInitializer
-            // (Batch 8). When the invoice is created via "Bill this task"
-            // every line carries the source task id; otherwise null.
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskId });
-            // H6-2: task_line_id pins to a specific task_lines row.
-            // Optional — null falls back to legacy whole-task billing
-            // via task_id alone (no UI yet sends this field; the post
-            // handler accepts both shapes).
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("task_line_id", NpgsqlDbType.Uuid) { TypedValue = line.TaskLineId });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -566,33 +601,6 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         await transaction.CommitAsync(cancellationToken);
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
-    }
-
-    public async Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
-        CompanyId companyId,
-        Guid invoiceId,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            select distinct task_id
-            from invoice_lines
-            where company_id = @company_id
-              and invoice_id = @invoice_id
-              and task_id is not null;
-            """;
-        command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("invoice_id", invoiceId);
-
-        var ids = new List<Guid>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            ids.Add(reader.GetGuid(0));
-        }
-        return ids;
     }
 
     public async Task<IReadOnlyList<InvoiceLineTaskLink>> ListLinkedTaskLineMappingsAsync(
@@ -623,6 +631,7 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                 TaskId: reader.GetGuid(1),
                 TaskLineId: reader.IsDBNull(2) ? null : reader.GetGuid(2)));
         }
+
         return rows;
     }
 
@@ -667,6 +676,554 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "submitted");
     }
 
+    public async Task<InvoiceDocument?> VoidAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var invoice = await LoadInvoiceForVoidAsync(
+            connection,
+            transaction,
+            companyId,
+            documentId,
+            cancellationToken);
+
+        if (invoice is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(invoice.Status, "draft", StringComparison.Ordinal))
+        {
+            await MarkInvoiceVoidedAsync(
+                connection,
+                transaction,
+                companyId,
+                documentId,
+                expectedStatus: "draft",
+                cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            return await GetForPostingAsync(companyId, documentId, cancellationToken);
+        }
+
+        if (!string.Equals(invoice.Status, "posted", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Invoice in status '{invoice.Status}' cannot be voided.");
+        }
+
+        await EnsureInvoiceHasNoSettlementApplicationsAsync(
+            connection,
+            transaction,
+            companyId,
+            documentId,
+            cancellationToken);
+
+        var journal = await ReadPostedInvoiceJournalAsync(
+            connection,
+            transaction,
+            companyId,
+            documentId,
+            cancellationToken);
+
+        var originalLines = await ReadPostedJournalLinesForReversalAsync(
+            connection,
+            transaction,
+            companyId,
+            journal.Id,
+            cancellationToken);
+
+        if (originalLines.Count == 0)
+        {
+            throw new InvalidOperationException("Posted invoice journal entry has no lines to reverse.");
+        }
+
+        await InsertVoidedInvoiceJournalAsync(
+            connection,
+            transaction,
+            invoice,
+            journal,
+            originalLines,
+            cancellationToken);
+
+        await VoidInvoiceOpenItemAsync(
+            connection,
+            transaction,
+            companyId,
+            documentId,
+            cancellationToken);
+
+        await MarkInvoiceVoidedAsync(
+            connection,
+            transaction,
+            companyId,
+            documentId,
+            expectedStatus: "posted",
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetForPostingAsync(companyId, documentId, cancellationToken);
+    }
+
+    private static async Task<InvoiceVoidHeaderSnapshot?> LoadInvoiceForVoidAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id,
+                   company_id,
+                   status,
+                   invoice_date,
+                   created_by_user_id
+            from invoices
+            where company_id = @company_id
+              and id = @document_id
+            for update;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new InvoiceVoidHeaderSnapshot(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            companyId,
+            reader.GetString(reader.GetOrdinal("status")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("invoice_date")),
+            reader.GetString(reader.GetOrdinal("created_by_user_id")));
+    }
+
+    private static async Task MarkInvoiceVoidedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        string expectedStatus,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update invoices
+            set status = 'voided',
+                updated_at = now()
+            where company_id = @company_id
+              and id = @document_id
+              and status = @expected_status;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+        command.Parameters.AddWithValue("expected_status", expectedStatus);
+
+        var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affectedRows != 1)
+        {
+            throw new InvalidOperationException("Invoice could not be marked voided.");
+        }
+    }
+
+    private static async Task EnsureInvoiceHasNoSettlementApplicationsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select count(*)
+            from settlement_applications sa
+            inner join ar_open_items oi
+              on oi.company_id = sa.company_id
+             and oi.id = sa.target_open_item_id
+            where sa.company_id = @company_id
+              and sa.target_open_item_type = 'ar_open_item'
+              and oi.source_type = 'invoice'
+              and oi.source_id = @document_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        var applicationCount = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
+        if (applicationCount > 0)
+        {
+            throw new InvalidOperationException(
+                "This invoice already has payment/application history. Void or reverse the related Receive Payment or credit application before voiding the invoice.");
+        }
+    }
+
+    private static async Task<InvoiceJournalHeaderSnapshot> ReadPostedInvoiceJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id,
+                   transaction_currency_code,
+                   base_currency_code,
+                   exchange_rate,
+                   exchange_rate_date,
+                   exchange_rate_source,
+                   created_by_user_id
+            from journal_entries
+            where company_id = @company_id
+              and source_type = 'invoice'
+              and source_id = @document_id
+              and status = 'posted'
+            order by posted_at desc nulls last, created_at desc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("Posted invoice has no linked journal entry to reverse.");
+        }
+
+        return new InvoiceJournalHeaderSnapshot(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("transaction_currency_code")),
+            reader.GetString(reader.GetOrdinal("base_currency_code")),
+            reader.GetDecimal(reader.GetOrdinal("exchange_rate")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("exchange_rate_date")),
+            reader.GetString(reader.GetOrdinal("exchange_rate_source")),
+            reader.GetString(reader.GetOrdinal("created_by_user_id")));
+    }
+
+    private static async Task<IReadOnlyList<InvoiceJournalLineSnapshot>> ReadPostedJournalLinesForReversalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select account_id,
+                   description,
+                   party_type,
+                   party_id,
+                   tx_debit,
+                   tx_credit,
+                   debit,
+                   credit,
+                   posting_role,
+                   source_line_number
+            from journal_entry_lines
+            where company_id = @company_id
+              and journal_entry_id = @journal_entry_id
+            order by line_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+
+        var lines = new List<InvoiceJournalLineSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            lines.Add(new InvoiceJournalLineSnapshot(
+                reader.GetGuid(reader.GetOrdinal("account_id")),
+                reader.GetString(reader.GetOrdinal("description")),
+                reader.IsDBNull(reader.GetOrdinal("party_type")) ? null : reader.GetString(reader.GetOrdinal("party_type")),
+                reader.IsDBNull(reader.GetOrdinal("party_id")) ? null : reader.GetGuid(reader.GetOrdinal("party_id")),
+                reader.GetDecimal(reader.GetOrdinal("tx_debit")),
+                reader.GetDecimal(reader.GetOrdinal("tx_credit")),
+                reader.GetDecimal(reader.GetOrdinal("debit")),
+                reader.GetDecimal(reader.GetOrdinal("credit")),
+                reader.GetString(reader.GetOrdinal("posting_role")),
+                reader.IsDBNull(reader.GetOrdinal("source_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("source_line_number"))));
+        }
+
+        return lines;
+    }
+
+    private static async Task InsertVoidedInvoiceJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        InvoiceVoidHeaderSnapshot invoice,
+        InvoiceJournalHeaderSnapshot journal,
+        IReadOnlyList<InvoiceJournalLineSnapshot> originalLines,
+        CancellationToken cancellationToken)
+    {
+        var voidJournalEntryId = Guid.NewGuid();
+        var postedAt = DateTimeOffset.UtcNow;
+        var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(
+            connection,
+            transaction,
+            invoice.CompanyId,
+            cancellationToken);
+        var entityNumber = await ReserveEntityNumberAsync(
+            connection,
+            transaction,
+            invoice.CompanyId,
+            invoice.InvoiceDate.Year,
+            cancellationToken);
+        var idempotencyKey = $"invoice-void:{invoice.Id:D}";
+
+        await using (var insertEntryCommand = connection.CreateCommand())
+        {
+            insertEntryCommand.Transaction = transaction;
+            insertEntryCommand.CommandText =
+                """
+                insert into journal_entries (
+                  id, company_id, entity_number, display_number, status,
+                  source_type, source_id,
+                  transaction_currency_code, base_currency_code,
+                  exchange_rate, exchange_rate_date, exchange_rate_source,
+                  fx_rate_snapshot_id,
+                  total_tx_debit, total_tx_credit, total_debit, total_credit,
+                  posting_run_id, idempotency_key, posted_at, created_by_user_id, created_at
+                )
+                values (
+                  @id, @company_id, @entity_number, @display_number, 'posted',
+                  'invoice_void', @source_id,
+                  @transaction_currency_code, @base_currency_code,
+                  @exchange_rate, @exchange_rate_date, @exchange_rate_source,
+                  null,
+                  @total_tx_debit, @total_tx_credit, @total_debit, @total_credit,
+                  @posting_run_id, @idempotency_key, @posted_at, @created_by_user_id, now()
+                );
+                """;
+            insertEntryCommand.Parameters.AddWithValue("id", voidJournalEntryId);
+            insertEntryCommand.Parameters.AddWithValue("company_id", invoice.CompanyId.Value);
+            insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
+            insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
+            insertEntryCommand.Parameters.AddWithValue("source_id", invoice.Id);
+            insertEntryCommand.Parameters.AddWithValue("transaction_currency_code", journal.TransactionCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("base_currency_code", journal.BaseCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate", RoundRate(journal.ExchangeRate));
+            insertEntryCommand.Parameters.Add("exchange_rate_date", NpgsqlDbType.Date).Value =
+                journal.ExchangeRateDate.ToDateTime(TimeOnly.MinValue);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate_source", journal.ExchangeRateSource);
+            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", RoundTx(originalLines.Sum(static line => line.TxCredit)));
+            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", RoundTx(originalLines.Sum(static line => line.TxDebit)));
+            insertEntryCommand.Parameters.AddWithValue("total_debit", RoundBase(originalLines.Sum(static line => line.Credit)));
+            insertEntryCommand.Parameters.AddWithValue("total_credit", RoundBase(originalLines.Sum(static line => line.Debit)));
+            insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
+            insertEntryCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+            insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
+            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", journal.CreatedByUserId);
+            await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var lineNumber = 1;
+        foreach (var originalLine in originalLines)
+        {
+            await InsertJournalAndLedgerLineAsync(
+                connection,
+                transaction,
+                invoice.CompanyId,
+                voidJournalEntryId,
+                lineNumber++,
+                originalLine.AccountId,
+                originalLine.PartyType,
+                originalLine.PartyId,
+                $"Void {originalLine.Description}",
+                journal.TransactionCurrencyCode,
+                txDebit: originalLine.TxCredit,
+                txCredit: originalLine.TxDebit,
+                debit: originalLine.Credit,
+                credit: originalLine.Debit,
+                postingDate: invoice.InvoiceDate,
+                postingRole: $"void:{originalLine.PostingRole}",
+                sourceLineNumber: originalLine.SourceLineNumber,
+                cancellationToken);
+        }
+    }
+
+    private static async Task VoidInvoiceOpenItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update ar_open_items
+            set status = 'voided',
+                open_amount_tx = 0,
+                open_amount_base = 0,
+                updated_at = now()
+            where company_id = @company_id
+              and source_type = 'invoice'
+              and source_id = @document_id
+              and status <> 'voided';
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertJournalAndLedgerLineAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        int lineNumber,
+        Guid accountId,
+        string? partyType,
+        Guid? partyId,
+        string description,
+        string transactionCurrencyCode,
+        decimal txDebit,
+        decimal txCredit,
+        decimal debit,
+        decimal credit,
+        DateOnly postingDate,
+        string postingRole,
+        int? sourceLineNumber,
+        CancellationToken cancellationToken)
+    {
+        var journalEntryLineId = Guid.NewGuid();
+
+        await using (var insertLineCommand = connection.CreateCommand())
+        {
+            insertLineCommand.Transaction = transaction;
+            insertLineCommand.CommandText =
+                """
+                insert into journal_entry_lines (
+                  id, company_id, journal_entry_id, line_number,
+                  account_id, description, party_type, party_id,
+                  tx_debit, tx_credit, debit, credit,
+                  tax_component_type, control_role, posting_role, source_line_number,
+                  created_at
+                )
+                values (
+                  @id, @company_id, @journal_entry_id, @line_number,
+                  @account_id, @description, @party_type, @party_id,
+                  @tx_debit, @tx_credit, @debit, @credit,
+                  null, null, @posting_role, @source_line_number,
+                  now()
+                );
+                """;
+            insertLineCommand.Parameters.AddWithValue("id", journalEntryLineId);
+            insertLineCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            insertLineCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+            insertLineCommand.Parameters.AddWithValue("line_number", lineNumber);
+            insertLineCommand.Parameters.AddWithValue("account_id", accountId);
+            insertLineCommand.Parameters.AddWithValue("description", description);
+            insertLineCommand.Parameters.AddWithValue("party_type", string.IsNullOrWhiteSpace(partyType) ? DBNull.Value : partyType);
+            insertLineCommand.Parameters.AddWithValue("party_id", (object?)partyId ?? DBNull.Value);
+            insertLineCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
+            insertLineCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
+            insertLineCommand.Parameters.AddWithValue("debit", RoundBase(debit));
+            insertLineCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+            insertLineCommand.Parameters.AddWithValue("posting_role", postingRole);
+            insertLineCommand.Parameters.AddWithValue("source_line_number", (object?)sourceLineNumber ?? DBNull.Value);
+            await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var insertLedgerCommand = connection.CreateCommand();
+        insertLedgerCommand.Transaction = transaction;
+        insertLedgerCommand.CommandText =
+            """
+            insert into ledger_entries (
+              id, company_id, journal_entry_id, journal_entry_line_id,
+              posting_date, account_id, debit, credit,
+              transaction_currency_code, tx_debit, tx_credit,
+              created_at
+            )
+            values (
+              @id, @company_id, @journal_entry_id, @journal_entry_line_id,
+              @posting_date, @account_id, @debit, @credit,
+              @transaction_currency_code, @tx_debit, @tx_credit,
+              now()
+            );
+            """;
+        insertLedgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+        insertLedgerCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        insertLedgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+        insertLedgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
+        insertLedgerCommand.Parameters.AddWithValue("posting_date", postingDate);
+        insertLedgerCommand.Parameters.AddWithValue("account_id", accountId);
+        insertLedgerCommand.Parameters.AddWithValue("debit", RoundBase(debit));
+        insertLedgerCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+        insertLedgerCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        insertLedgerCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
+        insertLedgerCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
+        await insertLedgerCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<string> ReserveJournalDisplayNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        var seedNumber = await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
+            connection,
+            transaction,
+            companyId,
+            "journal_entries",
+            "display_number",
+            "^JE-[0-9]+$",
+            4,
+            cancellationToken);
+
+        return await PostgresSourceDocumentDraftNumbering.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "journal-entry-display",
+            "JE-",
+            6,
+            seedNumber,
+            cancellationToken);
+    }
+
+    private static async Task<string> ReserveEntityNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        int year,
+        CancellationToken cancellationToken)
+    {
+        var seedNumber = await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
+            connection,
+            transaction,
+            companyId,
+            year,
+            cancellationToken);
+
+        return await PostgresSourceDocumentDraftNumbering.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            $"entity-number:all:{year}",
+            $"EN{year}",
+            5,
+            seedNumber,
+            cancellationToken);
+    }
+
     private static void ValidateDraft(InvoiceDraftSaveModel draft)
     {
         if (draft.CustomerId == Guid.Empty)
@@ -696,8 +1253,10 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                 throw new InvalidOperationException("Invoice draft lines with tax must provide a tax code.");
             }
 
+            // Product/service identity alone is valid for ordinary AR lines.
+            // The shipment-first bridge starts only when the line carries
+            // inventory anchors beyond ItemId: warehouse and UOM.
             var hasOutboundInventoryField =
-                line.ItemId.HasValue ||
                 line.WarehouseId.HasValue ||
                 !string.IsNullOrWhiteSpace(line.UomCode);
 
@@ -780,6 +1339,43 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
 
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static decimal RoundTx(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static decimal RoundBase(decimal value) =>
+        Math.Round(value, 2, MidpointRounding.ToEven);
+
+    private static decimal RoundRate(decimal value) =>
+        Math.Round(value, 10, MidpointRounding.ToEven);
+
+    private sealed record InvoiceVoidHeaderSnapshot(
+        Guid Id,
+        CompanyId CompanyId,
+        string Status,
+        DateOnly InvoiceDate,
+        string CreatedByUserId);
+
+    private sealed record InvoiceJournalHeaderSnapshot(
+        Guid Id,
+        string TransactionCurrencyCode,
+        string BaseCurrencyCode,
+        decimal ExchangeRate,
+        DateOnly ExchangeRateDate,
+        string ExchangeRateSource,
+        string CreatedByUserId);
+
+    private sealed record InvoiceJournalLineSnapshot(
+        Guid AccountId,
+        string Description,
+        string? PartyType,
+        Guid? PartyId,
+        decimal TxDebit,
+        decimal TxCredit,
+        decimal Debit,
+        decimal Credit,
+        string PostingRole,
+        int? SourceLineNumber);
 
     // EnsureInventoryGradeInvoiceLineColumnsAsync used to live here.
     // The three columns (item_id, warehouse_id, uom_code) are now in

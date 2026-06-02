@@ -18,6 +18,11 @@ public interface ICompanyModuleFlagWorkflow
         string moduleKey,
         CancellationToken cancellationToken);
 
+    Task<CompanyModuleFlagAccessStatus> GetAccessStatusAsync(
+        CompanyId companyId,
+        string moduleKey,
+        CancellationToken cancellationToken);
+
     Task<CompanyModuleFlagUpdateResult> SetEnabledFromSysAdminAsync(
         CompanyId companyId,
         string moduleKey,

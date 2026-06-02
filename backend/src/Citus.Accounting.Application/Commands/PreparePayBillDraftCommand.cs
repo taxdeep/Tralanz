@@ -11,7 +11,8 @@ public sealed record PreparePayBillDraftCommand(
     DateOnly PaymentDate,
     Guid? AcceptedFxSnapshotId,
     string? Memo,
-    IReadOnlyList<SettlementDraftLine> Lines);
+    IReadOnlyList<SettlementDraftLine> Lines,
+    Guid? ClientRequestId = null);
 
 public sealed record PreparePayBillDraftCommandResult(
     Guid DocumentId,

@@ -2,7 +2,7 @@
 
 @using Radzen
 @using Radzen.Blazor
-@using Microsoft.AspNetCore.WebUtilities
+@using Citus.Modules.Tasks.Domain.Shared
 
 @inject BusinessShellState ShellState
 @inject VendorClient VendorClient
@@ -45,14 +45,32 @@
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
 }
 
-@if (_copiedFromExpenseId is not null)
+@if (!string.IsNullOrWhiteSpace(_copiedFromExpenseNumber))
 {
-    @* Copy A3 Phase 1: visible confirmation that the form was
-       prefilled from an existing expense. The source expense itself
-       is untouched — this banner just tells the operator that what
-       they see was carried forward, mirroring QBO's "This is a copy." *@
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Revise as needed and save to create a new expense; the original is unchanged." />
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <strong>This is a copy of @_copiedFromExpenseNumber.</strong>
+            <div class="text-fg-muted text-sm mt-1">
+                Review the payee, payment account, date, category lines, tax settings, and memo before saving. The original expense was not changed.
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+}
+
+@if (_costSourceTask is not null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <strong>Cost for @_costSourceTask.TaskNo.</strong>
+            <div class="text-fg-muted text-sm mt-1">
+                This expense line is linked to the task and will feed the task margin report after save.
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
 }
 
 @if (!string.IsNullOrWhiteSpace(_validation))
@@ -68,17 +86,8 @@ else
 {
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Payee + payment</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Payee kind</label>
-                        <select class="citus-form-field__input" value="@_payeeKind" @onchange="OnPayeeKindChanged">
-                            <option value="vendor">Vendor</option>
-                            <option value="employee">Employee</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </div>
+            <AiseFormSection Title="Payee + payment">
+                <AiseFormGrid Columns="3" MinColumnWidth="12rem" Dense>
                     <div>
                         <label class="text-sm font-medium block mb-1">Payee</label>
                         @if (_payeeKind == "vendor")
@@ -164,12 +173,27 @@ else
                             <div class="text-fg-muted text-sm">Cash payments don't need a reference.</div>
                         }
                     </div>
-                </div>
-            </section>
+
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </div>
+
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </div>
+                </AiseFormGrid>
+            </AiseFormSection>
 
             <section class="citus-panel">
                 <header class="citus-panel__header">
-                    <h2 class="citus-panel__title">Lines</h2>
+                    <h2 class="citus-panel__title">Category details</h2>
                     <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
                         <option value="exclusive">Tax exclusive</option>
                         <option value="inclusive">Tax inclusive</option>
@@ -181,14 +205,9 @@ else
                             <th style="width: 3rem">#</th>
                             <th style="width: 16rem">Category</th>
                             <th>Description</th>
-                            @if (ShellState.IsModuleEnabled("task"))
-                            {
-                                <th style="width: 14rem">Task</th>
-                            }
-                            <th style="width: 6rem" class="text-right">Qty</th>
-                            <th style="width: 8rem" class="text-right">Rate</th>
+                            <th style="width: 13rem">Task</th>
                             <th style="width: 9rem">Tax</th>
-                            <th style="width: 8rem" class="text-right">Amount</th>
+                            <th style="width: 10rem" class="text-right">Amount</th>
                             <th style="width: 3rem"></th>
                         </tr>
                     </thead>
@@ -215,25 +234,15 @@ else
                                                 Value="@line.Description"
                                                 ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
                                 </td>
-                                @if (ShellState.IsModuleEnabled("task"))
-                                {
-                                    <td>
-                                        <TaskPicker SelectedId="@line.TaskId"
-                                                    SelectedDisplayText="@line.TaskDisplay"
-                                                    Placeholder="Optional…"
-                                                    OnTaskSelected="@(option => UpdateLine(index, l => l with { TaskId = option.SourceId, TaskDisplay = option.DisplayText }))"
-                                                    OnCleared="@(() => UpdateLine(index, l => l with { TaskId = null, TaskDisplay = string.Empty }))" />
-                                    </td>
-                                }
                                 <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.Quantity"
-                                                   Change="@(v => UpdateLine(index, l => l with { Quantity = v }))"
-                                                   Format="0.##" Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.UnitPrice"
-                                                   Change="@(v => UpdateLine(index, l => l with { UnitPrice = v }))"
-                                                   Format="0.0000" Class="citus-control-full" />
+                                    @if (line.TaskId is { })
+                                    {
+                                        <span class="citus-badge citus-badge--blue">@line.TaskDisplay</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-fg-muted">—</span>
+                                    }
                                 </td>
                                 <td>
                                     <RadzenDropDown TValue="Guid?"
@@ -245,7 +254,11 @@ else
                                                     AllowClear="true"
                                                     Class="citus-control-full" />
                                 </td>
-                                <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.Amount"
+                                                   Change="@(v => UpdateLine(index, l => l with { Amount = v }))"
+                                                   Format="0.00" Class="citus-control-full" />
+                                </td>
                                 <td>
                                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
                                                  OnClick="@(() => RemoveLine(index))">×</CitusButton>
@@ -260,41 +273,19 @@ else
                 </div>
             </section>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Notes</h2>
-                <div class="grid grid-cols-1 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Memo</label>
+            <AiseFormSection Title="Notes">
+                <AiseFormGrid Columns="1">
+                    <AiseFieldGroup Label="Memo">
                         <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the expense record." />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Internal note</label>
+                    </AiseFieldGroup>
+                    <AiseFieldGroup Label="Internal note">
                         <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
-                    </div>
-                </div>
-            </section>
+                    </AiseFieldGroup>
+                </AiseFormGrid>
+            </AiseFormSection>
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Currency</h2>
-                <div class="grid grid-cols-1 gap-3">
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                        <CitusInput TValue="string"
-                                    @bind-Value="_currency"
-                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    </div>
-                    <div>
-                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
-                    </div>
-                </div>
-            </section>
-
             <section class="citus-panel">
                 <h2 class="citus-panel__title">Discount</h2>
                 <div class="flex gap-2">
@@ -326,14 +317,27 @@ else
                 </table>
             </section>
 
-            <div class="flex flex-wrap gap-2">
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
-                    @(_isSaving ? "Saving…" : "Save")
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
-            </div>
         </aside>
     </div>
+
+    <AisePageActionBar>
+        <LeftContent>
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="ClearLines">Clear</CitusButton>
+        </LeftContent>
+        <CenterContent>
+            <span class="text-fg-muted text-sm">Print</span>
+            <span class="text-fg-muted text-sm">Make recurring</span>
+        </CenterContent>
+        <RightContent>
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(false))">
+                @(_isSaving ? "Saving..." : "Save")
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(true))">
+                @(_isSaving ? "Saving..." : "Save and close")
+            </CitusButton>
+        </RightContent>
+    </AisePageActionBar>
 }
 
 @code {
@@ -367,12 +371,14 @@ else
     private bool _isLoading = true;
     private bool _isSaving;
     private string? _validation;
+    private string? _copiedFromExpenseNumber;
+    private TaskRecord? _costSourceTask;
 
-    // Copy A3 Phase 1: source expense id when this page was reached
-    // via the More → Copy flow from a detail page. Drives the
-    // "This is a copy" banner + is sent to the server on Save so the
-    // expense_copied audit_log row records the provenance.
-    private Guid? _copiedFromExpenseId;
+    [SupplyParameterFromQuery(Name = "copyFrom")]
+    public Guid? CopyFromExpenseId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "FromTaskId")]
+    public Guid? FromTaskId { get; set; }
 
     private readonly PageHeaderModel _header = new()
     {
@@ -381,7 +387,7 @@ else
         Subtitle = "Record a payment that has already happened."
     };
 
-    private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
+    private decimal Subtotal => _lines.Sum(l => Math.Round(l.Amount, 4));
     private decimal DiscountAmount =>
         _discountKind == "percent" && _discountValue is { } pct ? Math.Round(Subtotal * pct / 100m, 4)
         : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
@@ -402,136 +408,6 @@ else
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
         await LoadAsync();
-        // Copy A3 Phase 1: if the URL carries ?copyFrom={id}, fetch the
-        // source expense AFTER the dropdowns are loaded so the
-        // hydrated payee/account ids match valid options in the
-        // dropdowns. Failing to find the source is non-fatal — we
-        // surface a friendly validation message and leave the form
-        // blank.
-        await TryHydrateFromCopySourceAsync();
-        // "Add Cost from task" shortcut: if the URL carries ?taskId={id}
-        // (and we didn't already hydrate from a copy source — that's a
-        // different workflow), pre-attach this task to line 1. Resolved
-        // via the same lookup the Bill page uses so the picker shows
-        // "TSK-000123 - Title" instead of a bare guid.
-        if (_copiedFromExpenseId is null)
-        {
-            await TryPrefillTaskFromQueryAsync();
-        }
-    }
-
-    private async Task TryPrefillTaskFromQueryAsync()
-    {
-        var uri = new Uri(Navigation.Uri);
-        var query = QueryHelpers.ParseQuery(uri.Query);
-        if (!query.TryGetValue("taskId", out var raw) ||
-            !Guid.TryParse(raw.ToString(), out var taskId))
-        {
-            return;
-        }
-
-        var labels = await TaskClient.LookupDisplayAsync(new[] { taskId });
-        if (!labels.TryGetValue(taskId, out var label) || string.IsNullOrEmpty(label))
-        {
-            // Task wasn't visible in this company — silently skip the
-            // pre-fill rather than poisoning the form.
-            return;
-        }
-
-        // Ensure there's a first line to attach to. Default ctor of
-        // _lines already includes one, but be defensive in case future
-        // hydration paths empty the list.
-        if (_lines.Count == 0)
-        {
-            _lines.Add(new LineDraft());
-        }
-        _lines[0].TaskId = taskId;
-        _lines[0].TaskDisplay = label;
-    }
-
-    /// <summary>
-    /// When the URL has ?copyFrom={guid}, fetch that expense and
-    /// populate the form fields. Sensible defaults that differ from a
-    /// straight copy:
-    ///   - Payment date  →  today (a copy is a new transaction, the
-    ///                      source's date is wrong by definition)
-    ///   - Cheque # / Ref # → blanked (a new payment needs new IDs;
-    ///                      reusing the source's risks duplicate-payment
-    ///                      reconciliation errors)
-    ///   - FX rate       →  null (let FxRateInline re-resolve for today;
-    ///                      copying the source's stale rate would post
-    ///                      the new expense at an outdated valuation)
-    ///   - Internal note →  blanked (per-occurrence private note;
-    ///                      operators don't want their old triage
-    ///                      comments leaking into a new entry)
-    ///   - Memo          →  copied (typically describes the spend
-    ///                      itself, which IS what's being repeated)
-    ///   - Source PO     →  blanked (the new copy doesn't inherit
-    ///                      provenance — that'd corrupt the source PO's
-    ///                      "fulfilled by" trail)
-    /// </summary>
-    private async Task TryHydrateFromCopySourceAsync()
-    {
-        var uri = new Uri(Navigation.Uri);
-        var query = QueryHelpers.ParseQuery(uri.Query);
-        if (!query.TryGetValue("copyFrom", out var raw) ||
-            !Guid.TryParse(raw.ToString(), out var sourceId))
-        {
-            return;
-        }
-
-        ExpenseRecordDto? source;
-        try
-        {
-            source = await ExpenseClient.GetByIdAsync(sourceId);
-        }
-        catch
-        {
-            // Network / parse error — treat as no-source-found.
-            return;
-        }
-        if (source is null)
-        {
-            _validation = "The expense you copied from is not visible in this company. The form is blank.";
-            return;
-        }
-
-        _copiedFromExpenseId = source.Id;
-        _payeeKind = source.PayeeKind;
-        _payeeId = source.PayeeId;
-        _payeeNameFreeform = source.PayeeNameFreeform ?? string.Empty;
-        _paymentAccountId = source.PaymentAccountId;
-        _paymentMethod = source.PaymentMethod;
-        _chequeNumber = string.Empty; // see XML doc above
-        _refNo = string.Empty;        // see XML doc above
-        _paymentDate = DateTime.Today; // RESET to today, not source date
-        _currency = source.TransactionCurrencyCode;
-        _fxRate = null;                // let FxRateInline re-resolve
-        _taxMode = source.TaxMode;
-        _discountKind = source.DiscountKind;
-        _discountValue = source.DiscountValue;
-        _memo = source.Memo ?? string.Empty;
-        _internalNote = string.Empty;  // see XML doc above
-        _lines = source.Lines
-            .OrderBy(l => l.Sequence)
-            .Select(l => new LineDraft
-            {
-                ExpenseAccountId = l.ExpenseAccountId,
-                Description = l.Description,
-                Quantity = l.Quantity,
-                UnitPrice = l.UnitPrice,
-                TaxCodeId = l.TaxCodeId,
-                // Task back-link intentionally NOT copied — the source
-                // task may be closed / fulfilled, and a new expense
-                // should make that explicit re-assignment if needed.
-                TaskId = null,
-                TaskDisplay = string.Empty
-            })
-            .ToList();
-        if (_lines.Count == 0)
-        {
-            _lines.Add(new LineDraft());
-        }
     }
 
     private async Task LoadAsync()
@@ -563,8 +439,108 @@ else
                 .Select(a => new CategoryOption(a.Id, $"{a.Code}  {a.Name}"))
                 .ToList();
             _taxCodes = taxTask.Result;
+
+            if (CopyFromExpenseId is { } copyFromId && copyFromId != Guid.Empty)
+            {
+                await ApplyCopySourceAsync(copyFromId);
+            }
+            else if (FromTaskId is { } taskId && taskId != Guid.Empty)
+            {
+                await ApplyTaskCostSourceAsync(taskId);
+            }
         }
         finally { _isLoading = false; }
+    }
+
+    private async Task ApplyTaskCostSourceAsync(Guid taskId)
+    {
+        var task = await TaskClient.GetAsync(taskId);
+        if (task is null)
+        {
+            _validation = "The task to cost could not be loaded.";
+            return;
+        }
+
+        _costSourceTask = task;
+        if (task.ServiceDate is { } serviceDate)
+        {
+            _paymentDate = serviceDate.ToDateTime(TimeOnly.MinValue);
+        }
+        if (!string.IsNullOrWhiteSpace(task.CurrencyCode))
+        {
+            _currency = task.CurrencyCode;
+        }
+
+        var taskDisplay = FormatTaskDisplay(task);
+        if (string.IsNullOrWhiteSpace(_memo))
+        {
+            _memo = $"Cost for {taskDisplay}";
+        }
+        if (string.IsNullOrWhiteSpace(_internalNote))
+        {
+            _internalNote = $"Linked to task {task.Id:D}.";
+        }
+
+        _lines =
+        [
+            new LineDraft
+            {
+                ServiceDate = task.ServiceDate,
+                Description = $"Cost for {taskDisplay}",
+                TaskId = task.Id,
+                TaskDisplay = taskDisplay,
+            },
+            new LineDraft()
+        ];
+    }
+
+    private async Task ApplyCopySourceAsync(Guid sourceExpenseId)
+    {
+        var source = await ExpenseClient.GetByIdAsync(sourceExpenseId);
+        if (source is null)
+        {
+            _validation = "The expense to copy could not be loaded.";
+            return;
+        }
+
+        _copiedFromExpenseNumber = source.ExpenseNumber;
+        _payeeKind = source.PayeeKind;
+        _payeeId = source.PayeeKind == "vendor" ? source.PayeeId : null;
+        _payeeNameFreeform = source.PayeeKind == "vendor" ? string.Empty : source.PayeeNameFreeform;
+        _paymentAccountId = source.PaymentAccountId;
+        _paymentMethod = source.PaymentMethod;
+        _chequeNumber = source.ChequeNumber ?? string.Empty;
+        _refNo = source.RefNo ?? string.Empty;
+        _paymentDate = source.PaymentDate.ToDateTime(TimeOnly.MinValue);
+        _currency = source.TransactionCurrencyCode;
+        _fxRate = string.Equals(source.TransactionCurrencyCode, source.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : source.FxRate;
+        _taxMode = string.IsNullOrWhiteSpace(source.TaxMode) ? "exclusive" : source.TaxMode;
+        _discountKind = source.DiscountKind;
+        _discountValue = source.DiscountValue;
+        _memo = source.Memo ?? string.Empty;
+        _internalNote = source.InternalNote ?? string.Empty;
+        _lines = source.Lines
+            .OrderBy(l => l.Sequence)
+            .Select(l => new LineDraft
+            {
+                ExpenseAccountId = l.ExpenseAccountId,
+                ServiceDate = l.ServiceDate,
+                Description = l.Description,
+                Amount = l.LineTotal,
+                TaxCodeId = l.TaxCodeId,
+                TaskId = l.TaskId,
+                TaskDisplay = l.TaskId is { } taskId ? $"Task {taskId.ToString("D")[..8]}" : string.Empty
+            })
+            .ToList();
+
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new LineDraft());
+        }
+
+        EnsureTrailingEmptyLine(_lines.Count - 1);
     }
 
     private static int DetailTypeOrder(string? detailType) => detailType switch
@@ -582,12 +558,6 @@ else
         "credit_card" => "Credit Card",
         _ => detailType ?? "—"
     };
-
-    private void OnPayeeKindChanged(ChangeEventArgs args)
-    {
-        _payeeKind = args.Value?.ToString() ?? "vendor";
-        if (_payeeKind != "vendor") _payeeId = null;
-    }
 
     private void OnPayeeChanged()
     {
@@ -631,12 +601,13 @@ else
         var current = _lines[index];
         var updated = mutate(current);
         current.ExpenseAccountId = updated.ExpenseAccountId;
+        current.ServiceDate = updated.ServiceDate;
         current.Description = updated.Description;
-        current.Quantity = updated.Quantity;
-        current.UnitPrice = updated.UnitPrice;
+        current.Amount = updated.Amount;
         current.TaxCodeId = updated.TaxCodeId;
         current.TaskId = updated.TaskId;
         current.TaskDisplay = updated.TaskDisplay;
+        EnsureTrailingEmptyLine(index);
     }
 
     private void AddLine() => _lines.Add(new LineDraft());
@@ -650,13 +621,28 @@ else
 
     private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
 
-    private async Task SaveAsync()
+    private void EnsureTrailingEmptyLine(int touchedIndex)
+    {
+        if (touchedIndex != _lines.Count - 1) return;
+        if (IsEmpty(_lines[^1])) return;
+        _lines.Add(new LineDraft());
+    }
+
+    private static bool IsEmpty(LineDraft line) =>
+        line.ExpenseAccountId is null &&
+        line.ServiceDate is null &&
+        line.TaskId is null &&
+        string.IsNullOrWhiteSpace(line.Description) &&
+        line.Amount == 0m &&
+        line.TaxCodeId is null;
+
+    private async Task SaveAsync(bool closeAfterSave)
     {
         _validation = null;
 
         if (_payeeKind == "vendor" && _payeeId is null)
         {
-            _validation = "Pick a vendor (or switch payee kind to Other and enter a name).";
+            _validation = "Pick a payee.";
             return;
         }
         if (_payeeKind != "vendor" && string.IsNullOrWhiteSpace(_payeeNameFreeform))
@@ -675,15 +661,20 @@ else
             _validation = "Reference # is required for Wire / Direct Deposit / EFT.";
             return;
         }
-        if (_lines.All(l => l.Quantity == 0 && l.UnitPrice == 0 && string.IsNullOrWhiteSpace(l.Description) && l.ExpenseAccountId is null))
+        if (_lines.All(IsEmpty))
         {
             _validation = "Add at least one line with a category and amount.";
             return;
         }
-        var lineWithoutCategory = _lines.FirstOrDefault(l => (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)) && l.ExpenseAccountId is null);
+        var lineWithoutCategory = _lines.FirstOrDefault(l => !IsEmpty(l) && l.ExpenseAccountId is null);
         if (lineWithoutCategory is not null)
         {
             _validation = "Every active line needs a category.";
+            return;
+        }
+        if (_lines.Any(l => !IsEmpty(l) && l.Amount <= 0m))
+        {
+            _validation = "Every active line needs a positive amount.";
             return;
         }
 
@@ -709,20 +700,18 @@ else
                 Memo: NullIfEmpty(_memo),
                 InternalNote: NullIfEmpty(_internalNote),
                 Lines: _lines
-                    .Where(l => l.ExpenseAccountId is not null && (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)))
+                    .Where(l => !IsEmpty(l))
                     .Select((l, i) => new ExpenseLinePayload(
                         Sequence: i + 1,
-                        ServiceDate: null,
+                        ServiceDate: l.ServiceDate,
                         ItemId: null,
                         ExpenseAccountId: l.ExpenseAccountId!.Value,
                         Description: l.Description ?? string.Empty,
-                        Quantity: l.Quantity,
-                        UnitPrice: l.UnitPrice,
+                        Quantity: 1m,
+                        UnitPrice: l.Amount,
                         TaxCodeId: l.TaxCodeId,
                         TaskId: l.TaskId))
-                    .ToArray(),
-                // Copy A3 Phase 1: server records this in audit_logs.
-                CopiedFromExpenseId: _copiedFromExpenseId);
+                    .ToArray());
 
             var outcome = await ExpenseClient.CreateAsync(payload);
             if (!outcome.Succeeded || outcome.Saved is null)
@@ -732,7 +721,7 @@ else
             }
 
             await Message.SuccessAsync($"Expense {outcome.Saved.ExpenseNumber} recorded.");
-            Navigation.NavigateTo($"expenses/{outcome.Saved.Id:D}");
+            Navigation.NavigateTo(closeAfterSave ? "expenses" : $"expenses/{outcome.Saved.Id:D}");
         }
         finally { _isSaving = false; }
     }
@@ -745,14 +734,16 @@ else
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static string FormatTaskDisplay(TaskRecord task) =>
+        $"{task.TaskNo} - {task.Title}";
+
     private sealed record LineDraft
     {
         public Guid? ExpenseAccountId { get; set; }
+        public DateOnly? ServiceDate { get; set; }
         public string Description { get; set; } = string.Empty;
-        public decimal Quantity { get; set; }
-        public decimal UnitPrice { get; set; }
+        public decimal Amount { get; set; }
         public Guid? TaxCodeId { get; set; }
-        // Optional Task back-link, mirrors the bill page pattern.
         public Guid? TaskId { get; set; }
         public string TaskDisplay { get; set; } = string.Empty;
     }

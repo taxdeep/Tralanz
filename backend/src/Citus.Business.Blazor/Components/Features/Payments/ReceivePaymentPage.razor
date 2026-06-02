@@ -38,9 +38,8 @@
 }
 
 <div class="flex flex-col gap-6">
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Customer & date</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <AiseFormSection Title="Customer & date">
+        <AiseFormGrid Columns="3">
             <div>
                 <label class="citus-form-field__label">Customer *</label>
                 <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
@@ -87,12 +86,11 @@
                     </p>
                 }
             </div>
-        </div>
-    </section>
+        </AiseFormGrid>
+    </AiseFormSection>
 
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Deposit</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <AiseFormSection Title="Deposit">
+        <AiseFormGrid Columns="3">
             <div>
                 <label class="citus-form-field__label">Deposit to (Bank) *</label>
                 <select class="citus-form-field__input"
@@ -139,8 +137,8 @@
                        value="@_memo"
                        @oninput="@(e => _memo = e.Value?.ToString() ?? string.Empty)" />
             </div>
-        </div>
-    </section>
+        </AiseFormGrid>
+    </AiseFormSection>
 
     <section class="citus-panel">
         <header class="citus-panel__header">
@@ -224,14 +222,14 @@
                 is pending in the next release — for now keep Total to Bank ≤ applied total.
             </span>
         </header>
-        <div class="flex items-center justify-end gap-3">
+        <AiseButtonGroup Align="end">
             <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="ResetForm">Reset</CitusButton>
             <CitusButton Variant="CitusButtonVariant.Primary"
                          Disabled="@(_customerId == Guid.Empty || _bankAccountId == Guid.Empty || _appliedTotal <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
                          OnClick="PostAsync">
                 @(_isSubmitting ? "Posting…" : "Post receive payment")
             </CitusButton>
-        </div>
+        </AiseButtonGroup>
     </section>
 </div>
 

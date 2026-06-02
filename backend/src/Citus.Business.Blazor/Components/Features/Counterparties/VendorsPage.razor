@@ -58,11 +58,9 @@ else
             <RadzenDataGrid TItem="VendorRow"
                             Data="@_rows"
                             AllowSorting="true"
-                            AllowFiltering="true"
                             AllowColumnResize="true"
                             AllowPaging="true"
                             PageSize="50"
-                            FilterMode="FilterMode.Simple"
                             class="citus-radzen-grid">
                 <Columns>
                     <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.VendorId)" Title="Vendor ID" Width="180px">

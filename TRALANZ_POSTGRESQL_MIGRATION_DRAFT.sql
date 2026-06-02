@@ -752,6 +752,8 @@ CREATE TABLE invoice_lines (
   line_amount numeric(20,6) NOT NULL,
   tax_code_id uuid REFERENCES tax_codes(id) ON DELETE SET NULL,
   tax_amount numeric(20,6) NOT NULL DEFAULT 0,
+  task_id uuid,
+  task_line_id uuid,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT invoice_lines_quantity_nonnegative_chk CHECK (quantity >= 0),
@@ -831,13 +833,15 @@ CREATE TABLE bills (
   tax_amount numeric(20,6) NOT NULL DEFAULT 0,
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
+  client_request_id uuid,
+  client_request_hash text,
   posted_at timestamptz,
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT bills_status_chk CHECK (
-    status IN ('draft', 'posted', 'partially_paid', 'paid', 'voided', 'reversed')
+    status IN ('draft', 'submitted', 'cancelled', 'posted', 'partially_paid', 'paid', 'voided', 'reversed')
   ),
   CONSTRAINT bills_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT bills_unique_company_bill_number UNIQUE (company_id, bill_number)
@@ -933,6 +937,8 @@ CREATE TABLE receive_payments (
   -- row + ar_open_items row are inserted in the same transaction.
   extra_deposit_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
+  client_request_id uuid,
+  client_request_hash text,
   posted_at timestamptz,
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
@@ -1019,6 +1025,8 @@ CREATE TABLE pay_bills (
   fx_source text NOT NULL DEFAULT 'identity',
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
+  client_request_id uuid,
+  client_request_hash text,
   posted_at timestamptz,
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
@@ -1525,9 +1533,18 @@ CREATE INDEX idx_vendor_credits_company_status_date
 
 CREATE INDEX idx_receive_payments_company_status_date
   ON receive_payments (company_id, status, payment_date DESC);
+CREATE UNIQUE INDEX ux_receive_payments_company_client_request
+  ON receive_payments (company_id, client_request_id)
+  WHERE client_request_id IS NOT NULL;
+CREATE UNIQUE INDEX ux_customer_deposits_company_source_receive_payment
+  ON customer_deposits (company_id, source_receive_payment_id)
+  WHERE source_receive_payment_id IS NOT NULL;
 
 CREATE INDEX idx_pay_bills_company_status_date
   ON pay_bills (company_id, status, payment_date DESC);
+CREATE UNIQUE INDEX ux_pay_bills_company_client_request
+  ON pay_bills (company_id, client_request_id)
+  WHERE client_request_id IS NOT NULL;
 
 CREATE INDEX idx_credit_applications_company_status_date
   ON credit_applications (company_id, status, application_date DESC);

@@ -3,7 +3,7 @@ namespace Citus.Accounting.Infrastructure.Persistence;
 /// <summary>
 /// Idempotent schema bootstrap for the seven V1-pending document write
 /// flows that shipped without their full repositories. The canonical
-/// definitions live in <c>CITUS_POSTGRESQL_MIGRATION_DRAFT.sql</c> at
+/// definitions live in <c>TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql</c> at
 /// the repo root; this class re-asserts them on app startup so dev /
 /// test databases don't have to re-run the full migration script every
 /// time the schema gains a new table.

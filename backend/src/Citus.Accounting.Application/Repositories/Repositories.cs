@@ -40,46 +40,16 @@ public interface IInvoiceDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Returns the distinct non-null <c>task_id</c> values across this
-    /// invoice's lines. Used by the post handler's Step 5 (Task billing
-    /// mark) to discover which tasks the invoice bills without dragging
-    /// task semantics into <see cref="InvoiceDocument"/>. Empty when the
-    /// invoice has no task-linked lines (the common case for direct-create
-    /// invoices).
-    /// </summary>
-    Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
-        CompanyId companyId,
-        Guid invoiceId,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// H6-2: returns the full per-line mapping (invoice_line_id,
-    /// task_id, task_line_id) for lines that carry a task reference.
-    /// The post handler uses this to drive line-level Task billing —
-    /// when every task-linked line has a non-null task_line_id, the
-    /// new <c>MarkLinesAsBilledAsync</c> path runs; when any task-linked
-    /// line has only task_id (legacy data, draft saved before H6-2's
-    /// wire-shape extension), the handler falls back to the header-level
-    /// <c>MarkAsBilledAsync</c> path so nothing breaks.
-    /// </summary>
     Task<IReadOnlyList<InvoiceLineTaskLink>> ListLinkedTaskLineMappingsAsync(
         CompanyId companyId,
         Guid invoiceId,
         CancellationToken cancellationToken);
-}
 
-/// <summary>
-/// One row from
-/// <see cref="IInvoiceDocumentRepository.ListLinkedTaskLineMappingsAsync"/>.
-/// <see cref="TaskLineId"/> is null on rows that pre-date H6-2's wire-
-/// shape extension; the handler treats those as header-level links and
-/// routes them through the legacy <c>MarkAsBilledAsync</c> path.
-/// </summary>
-public sealed record class InvoiceLineTaskLink(
-    Guid InvoiceLineId,
-    Guid TaskId,
-    Guid? TaskLineId);
+    Task<InvoiceDocument?> VoidAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+}
 
 public sealed record InvoiceListItem(
     Guid Id,
@@ -95,6 +65,11 @@ public sealed record InvoiceListItem(
     DateTimeOffset? PostedAt,
     string? CustomerPoNumber = null,
     Guid? SalesOrderId = null);
+
+public sealed record InvoiceLineTaskLink(
+    Guid InvoiceLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 public interface ICreditNoteDocumentRepository
 {
@@ -112,41 +87,11 @@ public interface ICreditNoteDocumentRepository
         CreditNoteDraftSaveModel draft,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Returns the distinct non-null <c>task_id</c> values across this
-    /// credit note's lines. Used by the post handler's Step 2 (Task
-    /// billing rollback) hook to discover which tasks the credit reverses.
-    /// Empty when the credit note has no task-linked lines (the common
-    /// case for standalone customer credits unrelated to a task).
-    /// </summary>
-    Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(
-        CompanyId companyId,
-        Guid creditNoteId,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// H6-3: per-line task back-link lookup. Mirror of the invoice
-    /// repo method. The post handler uses the returned rows to drive
-    /// line-level Task rollback — lines with task_line_id go to the
-    /// new <c>RollbackLinesAsync</c> path; task_id-only rows fall
-    /// back to the legacy whole-task rollback.
-    /// </summary>
     Task<IReadOnlyList<CreditNoteLineTaskLink>> ListLinkedTaskLineMappingsAsync(
         CompanyId companyId,
         Guid creditNoteId,
         CancellationToken cancellationToken);
 }
-
-/// <summary>
-/// Credit-note analog of <see cref="InvoiceLineTaskLink"/>. The post
-/// handler reads these rows and (per row) either releases a specific
-/// task_line via the H6-2 line-level path or whole-task-rollbacks
-/// via the legacy path.
-/// </summary>
-public sealed record class CreditNoteLineTaskLink(
-    Guid CreditNoteLineId,
-    Guid TaskId,
-    Guid? TaskLineId);
 
 // Surfaced as "credit memo" on the frontend even though the GL artifact
 // is a credit_note — same QBO-flavoured operator label split that the
@@ -162,6 +107,11 @@ public sealed record CreditMemoListItem(
     decimal TotalAmount,
     DateTimeOffset? PostedAt,
     string? CustomerPoNumber = null);
+
+public sealed record CreditNoteLineTaskLink(
+    Guid CreditNoteLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 public interface IBillDocumentRepository
 {
@@ -434,15 +384,7 @@ public sealed record InvoiceDraftLineSaveModel(
     Guid? ItemId = null,
     Guid? WarehouseId = null,
     string? UomCode = null,
-    // Per-line back-link to the Task this line bills. Persists into
-    // invoice_lines.task_id; the post handler aggregates distinct
-    // task_ids to flip source tasks Completed -> Billed on post.
     Guid? TaskId = null,
-    // H6-2: when present, the post handler stamps THIS specific
-    // task_line as billed and recomputes the task header status
-    // (Open|Completed -> PartiallyBilled, or -> Billed when this is
-    // the final un-billed line). Null falls back to the legacy
-    // whole-task marking via task_id alone.
     Guid? TaskLineId = null);
 
 public sealed record CreditNoteDraftSaveModel(
@@ -470,14 +412,7 @@ public sealed record CreditNoteDraftLineSaveModel(
     decimal UnitPrice,
     Guid? TaxCodeId,
     decimal TaxAmount,
-    // Per-line back-link to the Task the credit reverses. Persists into
-    // credit_note_lines.task_id; the post handler rolls these tasks
-    // back to Completed.
     Guid? TaskId = null,
-    // H6-3: optional pin to a specific task_lines row that this credit
-    // line releases. When present, the post handler routes through
-    // RollbackLinesAsync (per-line audit). Null falls back to legacy
-    // whole-task rollback via TaskId alone.
     Guid? TaskLineId = null);
 
 public sealed record BillDraftSaveModel(
@@ -941,6 +876,11 @@ public interface IReceivePaymentDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<PostedSettlementPostingResult?> GetPostedResultAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<SettlementOpenItemCandidate>> ListOpenReceivableCandidatesAsync(
         CompanyId companyId,
         Guid customerId,
@@ -948,6 +888,11 @@ public interface IReceivePaymentDocumentRepository
 
     Task<SettlementDraftPreparationResult> PrepareDraftAsync(
         ReceivePaymentDraftPreparation request,
+        CancellationToken cancellationToken);
+
+    Task<CustomerDepositParkingResult?> ParkExtraDepositAsync(
+        ReceivePaymentDocument document,
+        UserId createdByUserId,
         CancellationToken cancellationToken);
 }
 
@@ -962,6 +907,11 @@ public interface ICreditApplicationDocumentRepository
 public interface IPayBillDocumentRepository
 {
     Task<PayBillDocument?> GetForPostingAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<PostedSettlementPostingResult?> GetPostedResultAsync(
         CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken);
@@ -1013,7 +963,8 @@ public sealed record ReceivePaymentDraftPreparation(
     /// row in the same transaction. Default 0 — when the form's Total
     /// to Bank exactly matches Applied total, no deposit is created.
     /// </summary>
-    decimal ExtraDepositAmount = 0m);
+    decimal ExtraDepositAmount = 0m,
+    Guid? ClientRequestId = null);
 
 public sealed record PayBillDraftPreparation(
     CompanyId CompanyId,
@@ -1023,7 +974,8 @@ public sealed record PayBillDraftPreparation(
     DateOnly PaymentDate,
     Guid? AcceptedFxSnapshotId,
     string? Memo,
-    IReadOnlyList<SettlementDraftLine> Lines);
+    IReadOnlyList<SettlementDraftLine> Lines,
+    Guid? ClientRequestId = null);
 
 public sealed record SettlementDraftPreparationResult(
     Guid DocumentId,
@@ -1032,6 +984,17 @@ public sealed record SettlementDraftPreparationResult(
     int PreparedLineCount,
     decimal TotalAmount,
     string Status);
+
+public sealed record PostedSettlementPostingResult(
+    Guid JournalEntryId,
+    string JournalEntryDisplayNumber,
+    DateTimeOffset PostedAt);
+
+public sealed record CustomerDepositParkingResult(
+    Guid CustomerDepositId,
+    string DisplayNumber,
+    decimal AmountTx,
+    decimal AmountBase);
 
 public interface IVendorCreditApplicationDocumentRepository
 {
@@ -1196,6 +1159,8 @@ public sealed record JournalEntryReview(
     string Status,
     string SourceType,
     Guid SourceId,
+    DateOnly? SourceDocumentDate,
+    string SourceMemo,
     string TransactionCurrencyCode,
     string BaseCurrencyCode,
     decimal ExchangeRate,
@@ -2188,29 +2153,11 @@ public interface ISalesReceiptDocumentRepository
         SalesReceiptDraftSaveModel draft,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// H6-2b: per-line task back-link lookup. Mirror of
-    /// <see cref="IInvoiceDocumentRepository.ListLinkedTaskLineMappingsAsync"/>.
-    /// The post handler uses the returned rows to drive line-level
-    /// Task billing (sourceType = "sales_receipt"). Rows missing
-    /// TaskLineId fall back to header-level marking through the
-    /// existing whole-task path.
-    /// </summary>
     Task<IReadOnlyList<SalesReceiptLineTaskLink>> ListLinkedTaskLineMappingsAsync(
         CompanyId companyId,
         Guid salesReceiptId,
         CancellationToken cancellationToken);
 }
-
-/// <summary>
-/// Sales-receipt analog of <see cref="InvoiceLineTaskLink"/>.
-/// Same shape; kept as a distinct type so a future schema divergence
-/// between the two doesn't force one row layout on the other.
-/// </summary>
-public sealed record class SalesReceiptLineTaskLink(
-    Guid SalesReceiptLineId,
-    Guid TaskId,
-    Guid? TaskLineId);
 
 public sealed record SalesReceiptListItem(
     Guid Id,
@@ -2224,6 +2171,11 @@ public sealed record SalesReceiptListItem(
     string PaymentMethod,
     DateTimeOffset? PostedAt,
     string? CustomerPoNumber = null);
+
+public sealed record SalesReceiptLineTaskLink(
+    Guid SalesReceiptLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 public sealed record SalesReceiptDraftSaveModel(
     Guid? DocumentId,
@@ -2253,14 +2205,7 @@ public sealed record SalesReceiptDraftLineSaveModel(
     Guid? TaxCodeId,
     decimal TaxAmount,
     Guid? ItemId = null,
-    // H6-2b: optional Task back-link. When non-null the line persists
-    // into sales_receipt_lines.task_id (column added by the H6-1
-    // migration). Pairs with TaskLineId below to drive the new
-    // line-level billing path; TaskId alone falls back to the legacy
-    // whole-task marking (same dual behavior as invoices in H6-2a).
     Guid? TaskId = null,
-    // H6-2b: pins to a specific task_lines row. Same semantics as
-    // InvoiceDraftLineSaveModel.TaskLineId.
     Guid? TaskLineId = null);
 
 // ========================================================================
@@ -2289,27 +2234,11 @@ public interface IRefundReceiptDocumentRepository
         RefundReceiptDraftSaveModel draft,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// H6-3: per-line task back-link lookup. Refund Receipt is the
-    /// reverse of Sales Receipt; when refund lines carry task_id /
-    /// task_line_id, the post handler releases the corresponding
-    /// task_lines (mirror of the credit-note path for AR invoices).
-    /// </summary>
     Task<IReadOnlyList<RefundReceiptLineTaskLink>> ListLinkedTaskLineMappingsAsync(
         CompanyId companyId,
         Guid refundReceiptId,
         CancellationToken cancellationToken);
 }
-
-/// <summary>
-/// Refund-receipt analog of <see cref="CreditNoteLineTaskLink"/>.
-/// Same shape, distinct type so a future divergence doesn't force
-/// one row layout on the other.
-/// </summary>
-public sealed record class RefundReceiptLineTaskLink(
-    Guid RefundReceiptLineId,
-    Guid TaskId,
-    Guid? TaskLineId);
 
 public sealed record RefundReceiptListItem(
     Guid Id,
@@ -2323,6 +2252,11 @@ public sealed record RefundReceiptListItem(
     string PaymentMethod,
     DateTimeOffset? PostedAt,
     string? CustomerPoNumber = null);
+
+public sealed record RefundReceiptLineTaskLink(
+    Guid RefundReceiptLineId,
+    Guid TaskId,
+    Guid? TaskLineId);
 
 public sealed record RefundReceiptDraftSaveModel(
     Guid? DocumentId,
@@ -2353,10 +2287,6 @@ public sealed record RefundReceiptDraftLineSaveModel(
     Guid? TaxCodeId,
     decimal TaxAmount,
     Guid? ItemId = null,
-    // H6-3 (D8): optional Task back-link. Persists into
-    // refund_receipt_lines.task_id (column added by the H6-1
-    // migration). Mirror of CreditNote's task back-link for AR
-    // invoices — refund receipts reverse sales receipts.
     Guid? TaskId = null,
     Guid? TaskLineId = null);
 

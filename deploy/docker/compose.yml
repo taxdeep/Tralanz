@@ -13,8 +13,10 @@ services:
       - "${CITUS_DB_PORT:-5432}:5432"
     volumes:
       - citus-postgres-data:/var/lib/postgresql/data
-      - ../../CITUS_POSTGRESQL_MIGRATION_DRAFT.sql:/docker-entrypoint-initdb.d/001-citus.sql:ro
+      - ../../TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql:/docker-entrypoint-initdb.d/001-tralanz.sql:ro
       - ./010-demo-seed.sh:/docker-entrypoint-initdb.d/010-demo-seed.sh:ro
+      - ./020-apply-migrations.sh:/docker-entrypoint-initdb.d/020-apply-migrations.sh:ro
+      - ../migrations:/docker-migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -36,6 +38,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      SchemaManagement__ApplyOnStartup: ${CITUS_SCHEMA_APPLY_ON_STARTUP:-true}
       ConnectionStrings__AccountingCore: Host=postgres;Port=5432;Database=${CITUS_DB_NAME:-citus_accounting};Username=${CITUS_DB_USER:-postgres};Password=${CITUS_DB_PASSWORD:-change-me}
     ports:
       - "${CITUS_ACCOUNTING_API_PORT:-5088}:8080"
@@ -57,8 +60,11 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      SchemaManagement__ApplyOnStartup: ${CITUS_SCHEMA_APPLY_ON_STARTUP:-true}
       ConnectionStrings__AccountingCore: Host=postgres;Port=5432;Database=${CITUS_DB_NAME:-citus_accounting};Username=${CITUS_DB_USER:-postgres};Password=${CITUS_DB_PASSWORD:-change-me}
       AppHost__AccountingApiBaseUrl: http://accounting-api:8080/
+      AppHost__SysAdminApiBaseUrl: http://sysadmin-api:8080/
+      AppHost__SysAdminWebBaseUrl: ${CITUS_SYSADMIN_WEB_PUBLIC_URL:-http://localhost:8090/}
       PlatformIdentity__TotpProtectionKey: ${CITUS_TOTP_PROTECTION_KEY:-replace-this-before-production}
     ports:
       - "${CITUS_WEB_PORT:-8080}:8080"

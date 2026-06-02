@@ -178,7 +178,25 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                                false)
                            end as is_tax_recoverable,
                            l.tax_code_id,
-                           tc.recoverable_account_id,
+                           coalesce(
+                             (
+                               select stm.recoverable_account_id
+                                 from sales_tax_code_components tcc
+                            left join sales_tax_components stc
+                                   on stc.company_id = tcc.company_id
+                                  and stc.id = tcc.tax_component_id
+                            left join sales_tax_account_mappings stm
+                                   on stm.company_id = tcc.company_id
+                                  and stm.tax_component_id = tcc.tax_component_id
+                                  and stm.recoverable_account_id is not null
+                                where tcc.company_id = tc.company_id::text
+                                  and tcc.tax_code_id = tc.id
+                                  and coalesce(tcc.applies_to, tc.applies_to) in ('purchase', 'both')
+                                  and coalesce(tcc.recoverability_override, stc.recoverability) = 'recoverable'
+                             order by tcc.sequence, stm.updated_at desc, stm.created_at desc
+                                limit 1
+                             ),
+                             tc.recoverable_account_id) as recoverable_account_id,
                            coalesce(
                              (
                                select sum(

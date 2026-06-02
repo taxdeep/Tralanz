@@ -12,5 +12,7 @@ public sealed record CompanyModuleFlagSummary(
     string DisplayName,
     string Description,
     bool Enabled,
+    DateTimeOffset? AccessExpiresAtUtc,
+    bool IsExpired,
     DateTimeOffset? UpdatedAtUtc,
     UserId? UpdatedByUserId);

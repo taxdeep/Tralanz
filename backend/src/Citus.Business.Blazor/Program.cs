@@ -51,19 +51,18 @@ builder.Services.AddHttpClient<BusinessWriteFlowClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
-// AUDIT_2026-05-25: attach the BusinessSessionHeaderHandler. SwitchActiveCompanyAsync
-// and other authenticated endpoints on this client (profile read/update, switch-active-
-// company) rely on the standard X-Citus-Business-Session-Token header being attached
-// automatically from BusinessShellState. SignInAsync runs anonymously (empty token →
-// handler no-ops), and ResumeSession/SignOut already attach the header manually with
-// the just-captured token, so adding the handler is safe for every method on this client.
 builder.Services.AddHttpClient<BusinessAuthenticationClient>(
-        (serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
-            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
-        })
-    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+    (serviceProvider, client) =>
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+        client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+    });
+builder.Services.AddHttpClient<BusinessSetupStatusClient>(
+    (serviceProvider, client) =>
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+        client.BaseAddress = new Uri(options.SysAdminApiBaseUrl, UriKind.Absolute);
+    });
 builder.Services.AddHttpClient<BusinessSessionClient>(
         (serviceProvider, client) =>
         {
@@ -107,14 +106,6 @@ builder.Services.AddHttpClient<ArAgingClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<ApAgingClient>(
-        (serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
-            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
-        })
-    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
-// H17: AI-generated dashboard suggestions for the operator dashboard.
-builder.Services.AddHttpClient<DashboardSuggestionsClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
@@ -177,7 +168,7 @@ builder.Services.AddHttpClient<TaxCodeClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
-builder.Services.AddHttpClient<AccountClient>(
+builder.Services.AddHttpClient<SalesTaxClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
@@ -185,9 +176,7 @@ builder.Services.AddHttpClient<AccountClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
-// UOM master (read-only V1) — backs the Item edit dropdown + drives the
-// qty input step on Task / Invoice / Bill line grids.
-builder.Services.AddHttpClient<UomClient>(
+builder.Services.AddHttpClient<AccountClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
@@ -307,31 +296,7 @@ builder.Services.AddHttpClient<ItemClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
-// Batch 6: per-company module-flag fetch + Task module HTTP client.
-// Both ride the same business-session header handler so they
-// authenticate as the active company.
-builder.Services.AddHttpClient<ModuleFlagsClient>(
-        (serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
-            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
-        })
-    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
-builder.Services.AddHttpClient<TaskClient>(
-        (serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
-            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
-        })
-    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
-builder.Services.AddHttpClient<TaskMarginReportClient>(
-        (serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
-            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
-        })
-    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
-builder.Services.AddHttpClient<TaskRelatedDocumentsClient>(
+builder.Services.AddHttpClient<UomClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
@@ -340,6 +305,38 @@ builder.Services.AddHttpClient<TaskRelatedDocumentsClient>(
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
 builder.Services.AddHttpClient<InventoryActivationClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+builder.Services.AddHttpClient<ModuleFlagsClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+builder.Services.AddHttpClient<TaskClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+builder.Services.AddHttpClient<TaskMarginReportClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+builder.Services.AddHttpClient<TaskRelatedDocumentsClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
@@ -380,17 +377,6 @@ builder.Services.AddHttpClient<DropShipClearingClient>(
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
 builder.Services.AddHttpClient<AccountingPeriodClient>(
-        (serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
-            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
-        })
-    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
-
-// PR-4F: Owner-only permissions management page consumes this client
-// for all five surfaces (list members, registry, snapshot, grant,
-// revoke).
-builder.Services.AddHttpClient<PermissionManagementClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;

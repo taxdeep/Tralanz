@@ -79,6 +79,34 @@ public sealed class CompanyModuleFlagWorkflow : ICompanyModuleFlagWorkflow
         return enabled;
     }
 
+    public async Task<CompanyModuleFlagAccessStatus> GetAccessStatusAsync(
+        CompanyId companyId,
+        string moduleKey,
+        CancellationToken cancellationToken)
+    {
+        if (companyId.Value is null)
+        {
+            throw new InvalidOperationException("Company context is required to check a module flag.");
+        }
+
+        if (!CompanyModuleFlagCatalog.IsKnown(moduleKey))
+        {
+            return new CompanyModuleFlagAccessStatus(
+                companyId,
+                moduleKey,
+                Enabled: false,
+                AccessExpiresAtUtc: null,
+                IsExpired: false);
+        }
+
+        var normalized = CompanyModuleFlagCatalog.NormalizeKey(moduleKey);
+        return await _store.GetAccessStatusAsync(
+            companyId,
+            normalized,
+            _now(),
+            cancellationToken);
+    }
+
     public async Task<CompanyModuleFlagUpdateResult> SetEnabledFromSysAdminAsync(
         CompanyId companyId,
         string moduleKey,
@@ -104,6 +132,7 @@ public sealed class CompanyModuleFlagWorkflow : ICompanyModuleFlagWorkflow
             normalizedReason,
             actorType: "sysadmin",
             actorUserId: sysAdminAccountId,
+            accessExpiresAtUtc: null,
             forceAuditOnNoChange: false,
             cancellationToken);
 
@@ -132,11 +161,16 @@ public sealed class CompanyModuleFlagWorkflow : ICompanyModuleFlagWorkflow
         {
             throw new InvalidOperationException("Actor user id is required for the business-side toggle.");
         }
+        if (!enabled)
+        {
+            throw new InvalidOperationException("Business-side module access cannot be disabled from the owner toggle.");
+        }
 
         var normalized = CompanyModuleFlagCatalog.NormalizeKey(moduleKey);
         var normalizedReason = string.IsNullOrWhiteSpace(reason)
             ? $"Owner set module '{normalized}' enabled={enabled}."
             : reason.Trim();
+        var accessExpiresAtUtc = _now().AddDays(CompanyModuleFlagCatalog.DefaultSelfServiceAccessDays);
 
         var result = await _store.SetEnabledAsync(
             companyId,
@@ -145,6 +179,7 @@ public sealed class CompanyModuleFlagWorkflow : ICompanyModuleFlagWorkflow
             normalizedReason,
             actorType: "user",
             actorUserId: actorUserId,
+            accessExpiresAtUtc,
             forceAuditOnNoChange: false,
             cancellationToken);
 

@@ -166,11 +166,9 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         Guid? itemId = null,
         Guid? warehouseId = null,
         string? uomCode = null,
-        // Optional Task back-link, surfaced on read so the credit-note
-        // create page can propagate the source line's task_id when
-        // pre-filling from an invoice. Persisted in invoice_lines.task_id;
-        // the posting engine ignores this field.
-        Guid? taskId = null)
+        Guid? taskId = null,
+        Guid? taskLineId = null,
+        Guid? id = null)
     {
         if (lineNumber <= 0)
         {
@@ -215,7 +213,11 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         WarehouseId = warehouseId;
         UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
         TaskId = taskId;
+        TaskLineId = taskLineId;
+        Id = id;
     }
+
+    public Guid? Id { get; }
 
     public int LineNumber { get; }
 
@@ -242,6 +244,8 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
     public string? UomCode { get; }
 
     public Guid? TaskId { get; }
+
+    public Guid? TaskLineId { get; }
 }
 
 public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
@@ -3815,9 +3819,6 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
     /// Stamped on the produced journal_entries.source_type. The
     /// command handler probes for an existing JE with this source_type
     /// + source_id = SalesIssueDocumentId to enforce idempotency.
-    /// P0-2 (C2): the reverse path uses a distinct source_type so the
-    /// forward and reverse JEs coexist on the same sales-issue, each
-    /// idempotent on its own.
     /// </summary>
     public string SourceType => IsReverse ? "sales_issue_cogs_reverse" : "sales_issue_cogs";
 
@@ -3829,14 +3830,6 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
     public IReadOnlyList<SalesIssueCogsPostingDocumentLine> CogsLines { get; }
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
     public decimal TotalAmountBase => CogsLines.Sum(static line => line.AmountBase);
-
-    /// <summary>
-    /// P0-2 (C2): when true the fragment builder posts the compensating
-    /// JE for an invoice-reverse, swapping the forward Dr COGS / Cr
-    /// Inventory into Dr Inventory / Cr COGS at identical per-account
-    /// amounts. Set by <c>ISalesIssueCogsReversePostingRepository</c>;
-    /// the forward command handler always passes false.
-    /// </summary>
     public bool IsReverse { get; }
 
     /// <summary>
@@ -4273,28 +4266,10 @@ public sealed class CustomerDepositPostingDocument : IPostingDocument
 }
 
 /// <summary>
-/// H1: compensating posting document for voiding a posted Expense.
-/// Carries pre-flipped reverse fragments — the repository reads the
-/// original Expense JE's lines and swaps Dr↔Cr (and tx ↔ tx) on each
-/// before building this document. The fragment builder then maps each
-/// line straight to a PostingFragment without further transformation.
-///
-/// Rationale: the forward Expense post is currently hand-rolled SQL
-/// inside PostgreSqlExpenseStore (a broader H-level concern, deferred).
-/// The Void path was previously also hand-rolled SQL (the audit's H1
-/// specific finding) — routing it through the Posting Engine here
-/// gives:
-///   - EnsureJournalInvariants (Dr=Cr in TX and base);
-///   - PostgresJournalEntryWriter's ambient-tx guard (PR #25);
-///   - uniform idempotency via (source_type='expense_void', source_id);
-///   - uniform audit + ledger writer.
-///
-/// The fragments are pre-built (not derived from line semantics) so
-/// the engine treats this document as a self-describing reverse. This
-/// is a pragmatic choice: building from line semantics would require
-/// re-deriving the original expense allocations from a partial reverse
-/// view, and re-deriving is exactly what the audit flagged as
-/// drift-prone in the hand-rolled SQL.
+/// Self-describing reversal document for posted expenses. The repository
+/// reads the original posted journal lines and pre-flips debit/credit so
+/// the posting engine can emit a compensating journal without re-deriving
+/// allocation semantics.
 /// </summary>
 public sealed class ExpenseVoidPostingDocument : IPostingDocument
 {
@@ -4341,14 +4316,7 @@ public sealed class ExpenseVoidPostingDocument : IPostingDocument
     public CompanyId CompanyId { get; }
     public EntityNumber EntityNumber { get; }
     public DocumentNumber DisplayNumber { get; }
-
-    /// <summary>
-    /// Stamped on the produced journal_entries.source_type. The
-    /// repository probes for an existing JE with this source_type +
-    /// source_id = ExpenseId to enforce idempotency on retry.
-    /// </summary>
     public string SourceType => "expense_void";
-
     public string Status => "draft";
     public Guid ExpenseId { get; }
     public string ExpenseNumber { get; }
@@ -4358,22 +4326,9 @@ public sealed class ExpenseVoidPostingDocument : IPostingDocument
     public decimal FxRate { get; }
     public IReadOnlyList<ExpenseVoidPostingDocumentLine> VoidLines { get; }
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
-
-    /// <summary>
-    /// The original Expense never went through an FX snapshot lookup —
-    /// FxRate / FxSource were captured at post-time. The reverse JE
-    /// uses the SAME rate (no fresh FX resolution); identity rate when
-    /// the transaction currency equals base.
-    /// </summary>
     public FxSnapshotRef? FxSnapshot => null;
 }
 
-/// <summary>
-/// One leg of an expense-void compensation JE. Amounts are ALREADY
-/// flipped relative to the forward Expense post — the repository
-/// reads the original journal_entry_lines and constructs each line
-/// with debit/credit swapped (and tx_debit/tx_credit swapped).
-/// </summary>
 public sealed record ExpenseVoidPostingDocumentLine(
     int LineNumber,
     Guid AccountId,

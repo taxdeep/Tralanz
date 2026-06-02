@@ -111,6 +111,8 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
                            je.status,
                            je.source_type,
                            je.source_id,
+                           mj.entry_date as source_document_date,
+                           coalesce(mj.memo, '') as source_memo,
                            je.transaction_currency_code,
                            je.base_currency_code,
                            je.exchange_rate,
@@ -127,6 +129,10 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
                            je.created_by_user_id,
                            count(jel.id)::int as line_count
                          from journal_entries je
+                         left join manual_journal_documents mj
+                           on mj.company_id = je.company_id
+                          and mj.id = je.source_id
+                          and je.source_type = 'manual_journal'
                          left join journal_entry_lines jel
                            on jel.company_id = je.company_id
                           and jel.journal_entry_id = je.id
@@ -140,6 +146,8 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
                            je.status,
                            je.source_type,
                            je.source_id,
+                           mj.entry_date,
+                           mj.memo,
                            je.transaction_currency_code,
                            je.base_currency_code,
                            je.exchange_rate,
@@ -171,6 +179,8 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
                     reader.GetString(reader.GetOrdinal("status")),
                     reader.GetString(reader.GetOrdinal("source_type")),
                     reader.GetGuid(reader.GetOrdinal("source_id")),
+                    reader.IsDBNull(reader.GetOrdinal("source_document_date")) ? null : reader.GetFieldValue<DateOnly>(reader.GetOrdinal("source_document_date")),
+                    reader.GetString(reader.GetOrdinal("source_memo")),
                     reader.GetString(reader.GetOrdinal("transaction_currency_code")),
                     reader.GetString(reader.GetOrdinal("base_currency_code")),
                     reader.GetDecimal(reader.GetOrdinal("exchange_rate")),

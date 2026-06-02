@@ -3,7 +3,6 @@
 
 @using Radzen
 @using Radzen.Blazor
-@using Microsoft.AspNetCore.WebUtilities
 @using Citus.Modules.UnitySearch.Blazor
 @using Citus.Modules.UnitySearch.Domain.Shared
 
@@ -11,9 +10,9 @@
 @inject VendorClient VendorClient
 @inject AccountClient AccountClient
 @inject TaxCodeClient TaxCodeClient
+@inject SalesTaxClient SalesTaxClient
 @inject PaymentTermClient PaymentTermClient
 @inject BillClient BillClient
-@inject TaskClient TaskClient
 @inject ItemClient ItemClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
@@ -44,14 +43,6 @@
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
 }
 
-@if (_copiedFromBillId is not null)
-{
-    @* Copy A3 Phase 2: prefilled from another bill. The source is
-       untouched; this is a fresh draft the operator can revise. *@
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Enter the new supplier invoice number and revise as needed; the original bill is unchanged." />
-}
-
 @if (!string.IsNullOrWhiteSpace(_validation))
 {
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
@@ -63,10 +54,10 @@
 }
 else
 {
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-8 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Supplier</h2>
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6" style="max-width: 72rem;">
+        <div style="display: contents;">
+            <section class="citus-panel lg:col-span-8" style="order: 1;">
+                <h2 class="citus-panel__title">Bill</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label class="text-sm font-medium block mb-1">Supplier</label>
@@ -100,129 +91,6 @@ else
                             <div class="text-fg-muted text-sm">Created directly (no source PO)</div>
                         }
                     </div>
-                </div>
-            </section>
-
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 3rem">#</th>
-                            <th style="width: 14rem">Item / Service</th>
-                            <th style="width: 14rem">Category</th>
-                            <th>Description</th>
-                            @if (ShellState.IsModuleEnabled("task"))
-                            {
-                                <th style="width: 14rem">Task</th>
-                            }
-                            <th style="width: 8rem">Tax</th>
-                            <th class="text-right" style="width: 8rem">Tax amt</th>
-                            <th class="text-right" style="width: 10rem">Amount</th>
-                            <th style="width: 3rem"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @for (var i = 0; i < _lines.Count; i++)
-                        {
-                            var index = i;
-                            var line = _lines[index];
-                            var hasItem = line.ItemId != Guid.Empty;
-                            <tr>
-                                <td>@(index + 1)</td>
-                                <td>
-                                    @* Item / Service picker (optional). On pick we look up
-                                       the item and dispatch its purchase account: stock
-                                       items → DefaultInventoryAssetAccountId; non-stock /
-                                       service → DefaultCogsAccountId (used as expense).
-                                       Picking an item locks the Category column so the
-                                       item stays the single source of truth. Clearing the
-                                       item re-opens Category for manual entry. *@
-                                    <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                       UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                       Context="@SearchScopeContext.BillItemPicker"
-                                                       Placeholder="Optional…"
-                                                       Take="6"
-                                                       SourceRoute="/bills/new"
-                                                       SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
-                                                       SelectedDisplayText="@line.ItemDisplay"
-                                                       OnItemSelected="@(option => OnItemPicked(index, option))"
-                                                       OnCleared="@(() => OnItemCleared(index))" />
-                                </td>
-                                <td>
-                                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                   Context="bill.line.category"
-                                                   Disabled="@hasItem"
-                                                   SelectedId="@line.ExpenseAccountId"
-                                                   SelectedDisplayText="@GetAccountLabel(line.ExpenseAccountId)"
-                                                   Placeholder="@(hasItem ? "From item" : "Pick a category…")"
-                                                   OnAccountSelected="@(acct => UpdateLine(index, l => l with { ExpenseAccountId = acct.Id }))"
-                                                   OnCleared="@(() => UpdateLine(index, l => l with { ExpenseAccountId = null }))" />
-                                </td>
-                                <td>
-                                    <CitusInput TValue="string"
-                                                Value="@line.Description"
-                                                ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
-                                </td>
-                                @if (ShellState.IsModuleEnabled("task"))
-                                {
-                                    <td>
-                                        @* Per-line Task attribution. TaskPicker
-                                           hides itself when the module is off,
-                                           but the column is also gated above
-                                           so the table stays compact. *@
-                                        <TaskPicker SelectedId="@line.TaskId"
-                                                    SelectedDisplayText="@line.TaskDisplay"
-                                                    Placeholder="Optional…"
-                                                    OnTaskSelected="@(option => UpdateLine(index, l => l with { TaskId = option.SourceId, TaskDisplay = option.DisplayText }))"
-                                                    OnCleared="@(() => UpdateLine(index, l => l with { TaskId = null, TaskDisplay = string.Empty }))" />
-                                    </td>
-                                }
-                                <td>
-                                    <RadzenDropDown TValue="Guid?"
-                                                    Data="@_taxCodes"
-                                                    Value="@line.TaxCodeId"
-                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
-                                                    TextProperty="Code"
-                                                    ValueProperty="Id"
-                                                    AllowClear="true"
-                                                    Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.TaxAmount"
-                                                   Change="@(v => UpdateLine(index, l => l with { TaxAmount = v }))"
-                                                   Format="0.00" Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <RadzenNumeric TValue="decimal" Value="@line.LineAmount"
-                                                   Change="@(v => UpdateLine(index, l => l with { LineAmount = v }))"
-                                                   Format="0.00" Class="citus-control-full" />
-                                </td>
-                                <td>
-                                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
-                                                 OnClick="@(() => RemoveLine(index))">×</CitusButton>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                <div class="flex gap-2 mt-3">
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
-                </div>
-            </section>
-
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Memo</h2>
-                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill" />
-            </section>
-        </div>
-
-        <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
-                <div class="grid grid-cols-1 gap-3">
                     @if (!string.IsNullOrWhiteSpace(_billNumberDisplay))
                     {
                         <div>
@@ -270,7 +138,88 @@ else
                 </div>
             </section>
 
-            <section class="citus-panel">
+            <section class="citus-panel bill-lines-panel lg:col-span-12" style="order: 3;">
+                <header class="citus-panel__header">
+                    <div>
+                        <h2 class="citus-panel__title">Lines</h2>
+                        <p class="citus-panel__subtitle">Add each bill line in a focused editor, then review it here.</p>
+                    </div>
+                </header>
+
+                @if (_lines.Count == 0)
+                {
+                    <CitusEmpty Title="No bill lines yet"
+                                Description="Add a line to choose an item or category, tax, and amount." />
+                }
+                else
+                {
+                    <table class="citus-data-table bill-lines-table">
+                        <colgroup>
+                            <col class="bill-lines-table__col-index" />
+                            <col class="bill-lines-table__col-item" />
+                            <col class="bill-lines-table__col-category" />
+                            <col class="bill-lines-table__col-description" />
+                            <col class="bill-lines-table__col-tax" />
+                            <col class="bill-lines-table__col-tax-amount" />
+                            <col class="bill-lines-table__col-amount" />
+                            <col class="bill-lines-table__col-actions" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Item / Service</th>
+                                <th>Category</th>
+                                <th>Description</th>
+                                <th>Tax</th>
+                                <th class="text-right">Tax amt</th>
+                                <th class="text-right">Amount</th>
+                                <th class="text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < _lines.Count; i++)
+                            {
+                                var index = i;
+                                var line = _lines[index];
+                                <tr>
+                                    <td>@(index + 1)</td>
+                                    <td class="bill-lines-table__truncate" title="@LineItemLabel(line)">@LineItemLabel(line)</td>
+                                    <td class="bill-lines-table__truncate" title="@(GetAccountLabel(line.ExpenseAccountId) ?? "-")">@(GetAccountLabel(line.ExpenseAccountId) ?? "-")</td>
+                                    <td class="bill-lines-table__truncate" title="@(string.IsNullOrWhiteSpace(line.Description) ? "-" : line.Description)">@(string.IsNullOrWhiteSpace(line.Description) ? "-" : line.Description)</td>
+                                    <td>@TaxCodeLabel(line.TaxCodeId)</td>
+                                    <td class="text-right">@FormatAmount(line.TaxAmount)</td>
+                                    <td class="text-right">@FormatAmount(line.LineAmount)</td>
+                                    <td class="text-right">
+                                        <div class="bill-lines-table__actions">
+                                            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                                         OnClick="@(async () => await OpenEditLineDrawerAsync(index))">Edit</CitusButton>
+                                            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                                         OnClick="@(() => RemoveLine(index))">Remove</CitusButton>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+
+                }
+                <div class="flex flex-wrap gap-2 mt-4">
+                    <CitusButton Variant="CitusButtonVariant.Primary" Size="CitusButtonSize.Small" OnClick="OpenNewLineDrawerAsync">Add line</CitusButton>
+                    @if (_lines.Count > 0)
+                    {
+                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                    }
+                </div>
+            </section>
+
+            <section class="citus-panel lg:col-span-12" style="order: 4;">
+                <h2 class="citus-panel__title">Memo</h2>
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill..." />
+            </section>
+        </div>
+
+        <aside style="display: contents;">
+            <section class="citus-panel lg:col-span-4" style="order: 2;">
                 <h2 class="citus-panel__title">Totals</h2>
                 <table class="citus-keyvalue">
                     <tbody>
@@ -281,14 +230,94 @@ else
                 </table>
             </section>
 
-            <div class="flex flex-wrap gap-2">
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
-                    @(_isSaving ? "Saving…" : "Save")
-                </CitusButton>
+            <div class="citus-form-actions lg:col-span-12" style="order: 5;">
                 <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
+                <div class="citus-form-actions__primary">
+                    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
+                        @(_isSaving ? "Saving…" : "Save")
+                    </CitusButton>
+                </div>
             </div>
         </aside>
     </div>
+
+    <CitusDrawer @bind-IsOpen="_isLineDrawerOpen"
+                 Title="@LineDrawerTitle"
+                 SaveLabel="Save line"
+                 SaveDisabled="@(!CanSaveLineDraft)"
+                 Width="CitusDrawerWidth.Large"
+                 OnSave="SaveLineDrawerAsync"
+                 OnCancel="CancelLineDrawer">
+        @if (!string.IsNullOrWhiteSpace(_lineValidation))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Error"
+                        Message="@_lineValidation"
+                        ShowIcon="true"
+                        Class="mb-4" />
+        }
+
+        <AiseFormGrid Columns="2">
+            <AiseFieldGroup Label="Item / Service" HelperText="Optional. Picking an item sets the category from item defaults.">
+                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                   Context="@SearchScopeContext.BillItemPicker"
+                                   Placeholder="Optional..."
+                                   Take="8"
+                                   SourceRoute="/bills/new"
+                                   SelectedId="@(_lineDraft.ItemId == Guid.Empty ? null : _lineDraft.ItemId)"
+                                   SelectedDisplayText="@_lineDraft.ItemDisplay"
+                                   OnItemSelected="OnDrawerItemPicked"
+                                   OnCleared="OnDrawerItemCleared" />
+            </AiseFieldGroup>
+
+            <AiseFieldGroup Label="Category" Required="true">
+                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                               Context="bill.line.category"
+                               AllowedRootTypes="expense,asset,cost_of_sales"
+                               Disabled="@(_lineDraft.ItemId != Guid.Empty)"
+                               SelectedId="@_lineDraft.ExpenseAccountId"
+                               SelectedDisplayText="@GetAccountLabel(_lineDraft.ExpenseAccountId)"
+                               Placeholder="@(_lineDraft.ItemId != Guid.Empty ? "From item" : "Pick a category...")"
+                               OnAccountSelected="OnDrawerAccountSelected"
+                               OnCleared="OnDrawerAccountCleared" />
+            </AiseFieldGroup>
+
+            <AiseFieldGroup Label="Description" Class="md:col-span-2">
+                <CitusInput TValue="string"
+                            Value="@_lineDraft.Description"
+                            ValueChanged="@(v => _lineDraft.Description = v ?? string.Empty)" />
+            </AiseFieldGroup>
+
+            <AiseFieldGroup Label="Tax">
+                <RadzenDropDown TValue="Guid?"
+                                Data="@_taxCodes"
+                                Value="@_lineDraft.TaxCodeId"
+                                Change="OnLineTaxCodeChanged"
+                                TextProperty="Code"
+                                ValueProperty="Id"
+                                AllowClear="true"
+                                Class="citus-control-full" />
+            </AiseFieldGroup>
+
+            <AiseFieldGroup Label="Calculated tax">
+                <RadzenNumeric TValue="decimal"
+                               Value="@_lineDraft.TaxAmount"
+                               Format="0.00"
+                               ShowUpDown="false"
+                               Disabled="true"
+                               Class="citus-control-full" />
+            </AiseFieldGroup>
+
+            <AiseFieldGroup Label="Line amount">
+                <RadzenNumeric TValue="decimal"
+                               Value="@_lineDraft.LineAmount"
+                               Change="OnLineAmountChanged"
+                               Format="0.00"
+                               Class="citus-control-full" />
+            </AiseFieldGroup>
+        </AiseFormGrid>
+    </CitusDrawer>
 }
 
 @code {
@@ -319,7 +348,11 @@ else
     private decimal? _fxRate;
     private string _memo = string.Empty;
 
-    private List<LineDraft> _lines = new() { new LineDraft() };
+    private List<LineDraft> _lines = new();
+    private bool _isLineDrawerOpen;
+    private int? _editingLineIndex;
+    private LineDraft _lineDraft = new();
+    private string? _lineValidation;
 
     private bool _isLoading = true;
     private bool _isSaving;
@@ -329,17 +362,18 @@ else
     // back to the server on the next save so the API can reject
     // stale writes with HTTP 409.
     private DateTimeOffset? _expectedUpdatedAt;
-    // Copy A3 Phase 2: source bill id when this page was reached
-    // via the More → Copy flow from a detail page. Drives the
-    // "This is a copy" banner + is sent to the server on Save so the
-    // bill_copied audit_log row records the provenance. Only set in
-    // the /bills/new route — the /bills/{id}/edit route ignores it.
-    private Guid? _copiedFromBillId;
     private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "New bill", Subtitle = "Record a vendor invoice." };
 
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.LineAmount, 6));
     private decimal TaxTotal => _lines.Sum(l => Math.Round(l.TaxAmount, 6));
     private decimal Total => Math.Round(Subtotal + TaxTotal, 6);
+    private string LineDrawerTitle => _editingLineIndex is { } index ? $"Edit line {index + 1}" : "Add bill line";
+    private bool CanSaveLineDraft =>
+        _lineDraft.LineAmount > 0
+        || _lineDraft.TaxAmount > 0
+        || _lineDraft.ExpenseAccountId is not null
+        || _lineDraft.ItemId != Guid.Empty
+        || !string.IsNullOrWhiteSpace(_lineDraft.Description);
 
     /// <summary>
     /// Resting-state label shown inside the AccountPicker control so a
@@ -351,89 +385,16 @@ else
     private string? GetAccountLabel(Guid? id) =>
         id is { } accountId ? _accounts.FirstOrDefault(a => a.Id == accountId)?.Label : null;
 
+    private static bool IsBillCategoryAccount(AccountSummary account)
+    {
+        var rootType = account.RootType.Trim().ToLowerInvariant();
+        return rootType is "expense" or "asset" or "cost_of_sales";
+    }
+
     protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
         await LoadAsync();
-        // Copy A3 Phase 2: handle ?copyFrom={id} after dropdowns/lookups
-        // are loaded so the hydrated vendor / account ids resolve to
-        // valid options. Only fires when BillId is null (the
-        // /bills/new route); the /bills/{id}/edit route ignores
-        // copyFrom because the edit ID takes precedence.
-        if (BillId is null)
-        {
-            await TryHydrateFromCopySourceAsync();
-        }
-    }
-
-    /// <summary>
-    /// When the URL has ?copyFrom={guid}, fetch that bill and populate
-    /// the form. Sensible defaults that differ from a straight copy:
-    ///   - BillNumber    →  blanked (each supplier bill has a unique
-    ///                      vendor-issued #; reusing it would create
-    ///                      duplicate-bill ambiguity for the AP team)
-    ///   - BillDate      →  today (a copy is a new bill received today)
-    ///   - DueDate       →  recomputed from today + payment term
-    ///                      (carrying forward the source's due date
-    ///                      yields a date already in the past)
-    ///   - FxRate        →  null (FxRateInline re-resolves for today)
-    ///   - SourcePO link →  blanked (the new copy doesn't inherit
-    ///                      provenance — that would corrupt the source
-    ///                      PO's "fulfilled by" trail)
-    ///   - Memo          →  copied (describes the bill itself)
-    ///   - Lines         →  copied (account, description, amount,
-    ///                      tax). Task back-links are NOT copied since
-    ///                      the source task may be closed.
-    /// </summary>
-    private async Task TryHydrateFromCopySourceAsync()
-    {
-        var uri = new Uri(Navigation.Uri);
-        var query = QueryHelpers.ParseQuery(uri.Query);
-        if (!query.TryGetValue("copyFrom", out var raw) ||
-            !Guid.TryParse(raw.ToString(), out var sourceId))
-        {
-            return;
-        }
-
-        BillRecordDto? source;
-        try
-        {
-            source = await BillClient.GetByIdAsync(sourceId);
-        }
-        catch
-        {
-            return;
-        }
-        if (source is null)
-        {
-            _validation = "The bill you copied from is not visible in this company. The form is blank.";
-            return;
-        }
-
-        _copiedFromBillId = source.Id;
-        _vendorId = source.VendorId;
-        _paymentTermId = source.PaymentTermId;
-        _sourcePurchaseOrderId = null;       // see XML doc above
-        _sourcePurchaseOrderNumber = null;
-        _billNumber = string.Empty;           // see XML doc above
-        _billDate = DateTime.Today;
-        _dueDate = null;                      // RecomputeDueDate below
-        _currency = source.DocumentCurrencyCode;
-        _fxRate = null;                       // FxRateInline re-resolves
-        _memo = source.Memo ?? string.Empty;
-        _lines = source.Lines.Select(l => new LineDraft
-        {
-            ExpenseAccountId = l.ExpenseAccountId,
-            Description = l.Description,
-            LineAmount = l.LineAmount,
-            TaxCodeId = l.TaxCodeId,
-            TaxAmount = l.TaxAmount,
-            // Task back-link NOT copied — source task may be closed.
-            TaskId = null,
-            TaskDisplay = string.Empty
-        }).ToList();
-        if (_lines.Count == 0) _lines.Add(new LineDraft());
-        RecomputeDueDate();
     }
 
     protected override async Task OnParametersSetAsync()
@@ -460,6 +421,7 @@ else
             _accountsRaw = accountsTask.Result;
             _accounts = _accountsRaw
                 .Where(a => a.IsActive && a.AllowManualPosting)
+                .Where(IsBillCategoryAccount)
                 .Select(a => new AccountOption(a.Id, $"{a.Code}  {a.Name}"))
                 .ToList();
             _taxCodes = taxTask.Result;
@@ -475,13 +437,13 @@ else
                     _validation = "Bill not found.";
                     return;
                 }
-                await ApplyExisting(bill);
+                ApplyExisting(bill);
             }
         }
         finally { _isLoading = false; }
     }
 
-    private async Task ApplyExisting(BillRecordDto bill)
+    private void ApplyExisting(BillRecordDto bill)
     {
         _billNumberDisplay = bill.EntityNumber;
         _status = bill.Status;
@@ -508,35 +470,8 @@ else
             Description = l.Description,
             LineAmount = l.LineAmount,
             TaxCodeId = l.TaxCodeId,
-            TaxAmount = l.TaxAmount,
-            TaskId = l.TaskId,
-            // TaskDisplay is filled in below by a single batch call to
-            // /accounting/tasks/lookup. Start empty and let the lookup
-            // populate "TSK-000123 - Title" labels in one round trip.
-            TaskDisplay = string.Empty,
+            TaxAmount = l.TaxAmount
         }).ToList();
-
-        // Resolve real task display labels for any persisted task_ids
-        // on this bill's lines. Single HTTP call, regardless of line
-        // count. Missing ids (deleted tasks etc.) silently fall back
-        // to an empty label.
-        var distinctTaskIds = _lines
-            .Where(l => l.TaskId.HasValue)
-            .Select(l => l.TaskId!.Value)
-            .Distinct()
-            .ToArray();
-        if (distinctTaskIds.Length > 0)
-        {
-            var labels = await TaskClient.LookupDisplayAsync(distinctTaskIds);
-            foreach (var line in _lines)
-            {
-                if (line.TaskId is { } tid && labels.TryGetValue(tid, out var label))
-                {
-                    line.TaskDisplay = label;
-                }
-            }
-        }
-        if (_lines.Count == 0) _lines.Add(new LineDraft());
     }
 
     private void OnVendorChanged()
@@ -565,33 +500,113 @@ else
         }
     }
 
-    private void UpdateLine(int index, Func<LineDraft, LineDraft> mutate)
+    private async Task OpenNewLineDrawerAsync()
     {
-        if (index < 0 || index >= _lines.Count) return;
-        var current = _lines[index];
-        var updated = mutate(current);
-        current.ItemId = updated.ItemId;
-        current.ItemDisplay = updated.ItemDisplay;
-        current.ExpenseAccountId = updated.ExpenseAccountId;
-        current.Description = updated.Description;
-        current.LineAmount = updated.LineAmount;
-        current.TaxCodeId = updated.TaxCodeId;
-        current.TaxAmount = updated.TaxAmount;
-        current.TaskId = updated.TaskId;
-        current.TaskDisplay = updated.TaskDisplay;
+        _editingLineIndex = null;
+        _lineDraft = new LineDraft();
+        await RefreshLineDraftTaxAsync();
+        _lineValidation = null;
+        _isLineDrawerOpen = true;
     }
 
-    private void OnItemPicked(int index, UnitySearchPickerOption option)
+    private async Task OpenEditLineDrawerAsync(int index)
     {
-        // Bill picker (BillItemPicker policy → 'inventory_stock_item'
-        // projection) surfaces stock + drop-ship items. Auto-fill the
-        // line's account by item kind:
-        //   stock     → DefaultInventoryAssetAccountId (Dr Inventory)
-        //   drop_ship → DefaultDropShipClearingAccountId (Dr Drop-ship Clearing)
-        // Either way the server-side override in PostgresBillDocumentRepository
-        // re-resolves at post time, so a missing per-item default still
-        // posts correctly via the company-level system_role lookup. The
-        // form-fill is a UX nicety, not a correctness requirement.
+        if (index < 0 || index >= _lines.Count) return;
+
+        _editingLineIndex = index;
+        _lineDraft = CloneLine(_lines[index]);
+        await RefreshLineDraftTaxAsync();
+        _lineValidation = null;
+        _isLineDrawerOpen = true;
+    }
+
+    private async Task OnLineTaxCodeChanged(object? value)
+    {
+        _lineDraft.TaxCodeId = value as Guid?;
+        await RefreshLineDraftTaxAsync();
+    }
+
+    private async Task OnLineAmountChanged(decimal value)
+    {
+        _lineDraft.LineAmount = value;
+        await RefreshLineDraftTaxAsync();
+    }
+
+    private async Task RefreshLineDraftTaxAsync()
+    {
+        if (_lineDraft.LineAmount <= 0m || _lineDraft.TaxCodeId is not { } taxCodeId)
+        {
+            _lineDraft.TaxAmount = 0m;
+            return;
+        }
+
+        var amount = Math.Round(_lineDraft.LineAmount, 4);
+        var preview = await SalesTaxClient.CalculatePreviewAsync(new SalesTaxPreviewRequest(
+            DocumentSide: "purchase",
+            DocumentDate: DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date),
+            TaxMode: "exclusive",
+            Amount: amount,
+            TaxCodeId: taxCodeId,
+            CurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency.Trim().ToUpperInvariant()));
+
+        if (_lineDraft.TaxCodeId != taxCodeId || Math.Round(_lineDraft.LineAmount, 4) != amount)
+        {
+            return;
+        }
+
+        _lineDraft.TaxAmount = Math.Round(preview?.TaxAmount ?? 0m, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private async Task SaveLineDrawerAsync()
+    {
+        _lineValidation = null;
+        await RefreshLineDraftTaxAsync();
+
+        if (_lineDraft.ExpenseAccountId is null)
+        {
+            _lineValidation = "Pick a category for this line.";
+            return;
+        }
+
+        var saved = CloneLine(_lineDraft);
+        if (_editingLineIndex is { } index && index >= 0 && index < _lines.Count)
+        {
+            ReplaceLine(_lines[index], saved);
+        }
+        else
+        {
+            _lines.Add(saved);
+        }
+
+        CancelLineDrawer();
+    }
+
+    private void CancelLineDrawer()
+    {
+        _isLineDrawerOpen = false;
+        _editingLineIndex = null;
+        _lineDraft = new LineDraft();
+        _lineValidation = null;
+    }
+
+    private void RemoveLine(int index)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        _lines.RemoveAt(index);
+        if (_editingLineIndex is { } editingIndex && (editingIndex == index || editingIndex >= _lines.Count))
+        {
+            CancelLineDrawer();
+        }
+    }
+
+    private void ClearLines()
+    {
+        _lines.Clear();
+        CancelLineDrawer();
+    }
+
+    private Task OnDrawerItemPicked(UnitySearchPickerOption option)
+    {
         Guid? expenseAccountId = null;
         if (_itemsById.TryGetValue(option.SourceId, out var item))
         {
@@ -599,35 +614,37 @@ else
                 ? item.DefaultDropShipClearingAccountId
                 : item.DefaultInventoryAssetAccountId;
         }
-        UpdateLine(index, l => l with
+
+        _lineDraft.ItemId = option.SourceId;
+        _lineDraft.ItemDisplay = option.DisplayText;
+        _lineDraft.ExpenseAccountId = expenseAccountId;
+        if (string.IsNullOrWhiteSpace(_lineDraft.Description))
         {
-            ItemId = option.SourceId,
-            ItemDisplay = option.DisplayText,
-            ExpenseAccountId = expenseAccountId,
-            Description = string.IsNullOrWhiteSpace(l.Description) ? option.PrimaryText : l.Description,
-        });
+            _lineDraft.Description = option.PrimaryText;
+        }
+
+        return Task.CompletedTask;
     }
 
-    private void OnItemCleared(int index)
+    private Task OnDrawerItemCleared()
     {
-        UpdateLine(index, l => l with
-        {
-            ItemId = Guid.Empty,
-            ItemDisplay = string.Empty,
-            ExpenseAccountId = null,
-        });
+        _lineDraft.ItemId = Guid.Empty;
+        _lineDraft.ItemDisplay = string.Empty;
+        _lineDraft.ExpenseAccountId = null;
+        return Task.CompletedTask;
     }
 
-    private void AddLine() => _lines.Add(new LineDraft());
-
-    private void RemoveLine(int index)
+    private Task OnDrawerAccountSelected(AccountSummary account)
     {
-        if (index < 0 || index >= _lines.Count) return;
-        _lines.RemoveAt(index);
-        if (_lines.Count == 0) _lines.Add(new LineDraft());
+        _lineDraft.ExpenseAccountId = account.Id;
+        return Task.CompletedTask;
     }
 
-    private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
+    private Task OnDrawerAccountCleared()
+    {
+        _lineDraft.ExpenseAccountId = null;
+        return Task.CompletedTask;
+    }
 
     private async Task SaveAsync()
     {
@@ -670,14 +687,9 @@ else
                         Description: l.Description ?? string.Empty,
                         LineAmount: l.LineAmount,
                         TaxCodeId: l.TaxCodeId,
-                        TaxAmount: l.TaxAmount,
-                        TaskId: l.TaskId))
+                        TaxAmount: l.TaxAmount))
                     .ToArray(),
-                ExpectedUpdatedAt: _billId is null ? null : _expectedUpdatedAt,
-                // Copy A3 Phase 2: server writes bill_copied audit_log.
-                // Only sent on CREATE (the field is ignored on UPDATE
-                // path anyway since the bill already exists).
-                CopiedFromBillId: _copiedFromBillId);
+                ExpectedUpdatedAt: _billId is null ? null : _expectedUpdatedAt);
 
             BillMutationOutcome outcome = _billId is null
                 ? await BillClient.CreateAsync(payload)
@@ -715,6 +727,38 @@ else
 
     private void Cancel() => Navigation.NavigateTo(_billId is null ? "bills" : $"bills/{_billId:D}");
 
+    private static LineDraft CloneLine(LineDraft source) => new()
+    {
+        ItemId = source.ItemId,
+        ItemDisplay = source.ItemDisplay,
+        ExpenseAccountId = source.ExpenseAccountId,
+        Description = source.Description,
+        LineAmount = source.LineAmount,
+        TaxCodeId = source.TaxCodeId,
+        TaxAmount = source.TaxAmount
+    };
+
+    private static void ReplaceLine(LineDraft target, LineDraft source)
+    {
+        target.ItemId = source.ItemId;
+        target.ItemDisplay = source.ItemDisplay;
+        target.ExpenseAccountId = source.ExpenseAccountId;
+        target.Description = source.Description;
+        target.LineAmount = source.LineAmount;
+        target.TaxCodeId = source.TaxCodeId;
+        target.TaxAmount = source.TaxAmount;
+    }
+
+    private static string LineItemLabel(LineDraft line) =>
+        line.ItemId == Guid.Empty
+            ? "-"
+            : string.IsNullOrWhiteSpace(line.ItemDisplay)
+                ? line.ItemId.ToString("D")[..8]
+                : line.ItemDisplay;
+
+    private string TaxCodeLabel(Guid? id) =>
+        id is { } taxId ? _taxCodes.FirstOrDefault(t => t.Id == taxId)?.Code ?? "-" : "-";
+
     private static string FormatAmount(decimal value) =>
         value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -733,12 +777,6 @@ else
         public decimal LineAmount { get; set; }
         public Guid? TaxCodeId { get; set; }
         public decimal TaxAmount { get; set; }
-        // Optional Task back-link. Edit-page loads it from
-        // BillLineDto.TaskId; new lines start blank. Display text falls
-        // back to a short GUID on load since we don't fetch task
-        // summaries up-front — re-pick to see the full label.
-        public Guid? TaskId { get; set; }
-        public string TaskDisplay { get; set; } = string.Empty;
     }
 
     private sealed record AccountOption(Guid Id, string Label);

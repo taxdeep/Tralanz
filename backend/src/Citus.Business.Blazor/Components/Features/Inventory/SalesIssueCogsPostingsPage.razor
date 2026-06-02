@@ -47,6 +47,14 @@
 }
 else
 {
+    @if (InventoryExpired)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning"
+                    ShowIcon="true"
+                    Message="@ShellState.ModuleWriteBlockMessage(InventoryModuleKey)"
+                    Class="mb-4" />
+    }
+
     @if (!string.IsNullOrWhiteSpace(_validation))
     {
         <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
@@ -107,7 +115,7 @@ else
                                 {
                                     <CitusButton Variant="CitusButtonVariant.Primary"
                                                  Size="CitusButtonSize.Small"
-                                                 Disabled="@(isPosting || _postingId.HasValue)"
+                                                 Disabled="@(isPosting || _postingId.HasValue || InventoryWritesBlocked)"
                                                  OnClick="@(() => PostAsync(row))">
                                         @(isPosting ? "Posting…" : "Post COGS")
                                     </CitusButton>
@@ -129,6 +137,8 @@ else
 }
 
 @code {
+    private const string InventoryModuleKey = "inventory";
+
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Warehouse",
@@ -141,6 +151,10 @@ else
     private string? _validation;
     private Guid? _postingId;
     private string _baseCurrencyCode = string.Empty;
+
+    private bool InventoryExpired => ShellState.IsModuleExpired(InventoryModuleKey);
+
+    private bool InventoryWritesBlocked => ShellState.AreModuleWritesBlocked(InventoryModuleKey);
 
     protected override async Task OnInitializedAsync()
     {

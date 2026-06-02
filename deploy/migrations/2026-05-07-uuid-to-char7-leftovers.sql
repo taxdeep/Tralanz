@@ -34,68 +34,88 @@ DROP INDEX IF EXISTS uq_unitysearch_pair_stats_scope;
 DROP INDEX IF EXISTS uq_unitysearch_usage_stats_scope;
 
 -- company_id columns
-ALTER TABLE action_center_task_events     ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE action_center_tasks           ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE ai_job_runs                   ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE ai_request_logs               ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE ap_purchase_orders            ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE dashboard_user_widgets        ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE dashboard_widget_suggestions  ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE expenses                      ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE payment_terms                 ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE quotes                        ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE report_usage_events           ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE report_usage_stats            ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE sales_orders                  ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_alias_suggestions ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_decision_traces   ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_events            ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_learning_profiles ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_pair_stats        ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_ranking_hints     ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_recent_queries    ALTER COLUMN company_id TYPE char(7) USING company_id::text;
-ALTER TABLE unitysearch_usage_stats       ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS action_center_task_events     ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS action_center_tasks           ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS ai_job_runs                   ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS ai_request_logs               ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS ap_purchase_orders            ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS dashboard_user_widgets        ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS dashboard_widget_suggestions  ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS expenses                      ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS payment_terms                 ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS quotes                        ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS report_usage_events           ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS report_usage_stats            ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS sales_orders                  ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_alias_suggestions ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_decision_traces   ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_events            ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_learning_profiles ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_pair_stats        ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_ranking_hints     ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_recent_queries    ALTER COLUMN company_id TYPE char(7) USING company_id::text;
+ALTER TABLE IF EXISTS unitysearch_usage_stats       ALTER COLUMN company_id TYPE char(7) USING company_id::text;
 
 -- user_id / *_user_id columns
-ALTER TABLE action_center_task_events     ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE action_center_tasks           ALTER COLUMN assigned_user_id     TYPE char(7) USING assigned_user_id::text;
-ALTER TABLE ai_job_runs                   ALTER COLUMN triggered_by_user_id TYPE char(7) USING triggered_by_user_id::text;
-ALTER TABLE dashboard_user_widgets        ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE dashboard_widget_suggestions  ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE expenses                      ALTER COLUMN created_by_user_id   TYPE char(7) USING created_by_user_id::text;
-ALTER TABLE report_usage_events           ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE report_usage_stats            ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE unitysearch_alias_suggestions ALTER COLUMN approved_by_user_id  TYPE char(7) USING approved_by_user_id::text;
-ALTER TABLE unitysearch_alias_suggestions ALTER COLUMN rejected_by_user_id  TYPE char(7) USING rejected_by_user_id::text;
-ALTER TABLE unitysearch_decision_traces   ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE unitysearch_events            ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE unitysearch_learning_profiles ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE unitysearch_pair_stats        ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE unitysearch_ranking_hints     ALTER COLUMN activated_by_user_id TYPE char(7) USING activated_by_user_id::text;
-ALTER TABLE unitysearch_ranking_hints     ALTER COLUMN rejected_by_user_id  TYPE char(7) USING rejected_by_user_id::text;
-ALTER TABLE unitysearch_ranking_hints     ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE unitysearch_recent_queries    ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE unitysearch_usage_stats       ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
-ALTER TABLE user_profile_overrides        ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS action_center_task_events     ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS action_center_tasks           ALTER COLUMN assigned_user_id     TYPE char(7) USING assigned_user_id::text;
+ALTER TABLE IF EXISTS ai_job_runs                   ALTER COLUMN triggered_by_user_id TYPE char(7) USING triggered_by_user_id::text;
+ALTER TABLE IF EXISTS dashboard_user_widgets        ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS dashboard_widget_suggestions  ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS expenses                      ALTER COLUMN created_by_user_id   TYPE char(7) USING created_by_user_id::text;
+ALTER TABLE IF EXISTS report_usage_events           ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS report_usage_stats            ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS unitysearch_alias_suggestions ALTER COLUMN approved_by_user_id  TYPE char(7) USING approved_by_user_id::text;
+ALTER TABLE IF EXISTS unitysearch_alias_suggestions ALTER COLUMN rejected_by_user_id  TYPE char(7) USING rejected_by_user_id::text;
+ALTER TABLE IF EXISTS unitysearch_decision_traces   ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS unitysearch_events            ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS unitysearch_learning_profiles ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS unitysearch_pair_stats        ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS unitysearch_ranking_hints     ALTER COLUMN activated_by_user_id TYPE char(7) USING activated_by_user_id::text;
+ALTER TABLE IF EXISTS unitysearch_ranking_hints     ALTER COLUMN rejected_by_user_id  TYPE char(7) USING rejected_by_user_id::text;
+ALTER TABLE IF EXISTS unitysearch_ranking_hints     ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS unitysearch_recent_queries    ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS unitysearch_usage_stats       ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
+ALTER TABLE IF EXISTS user_profile_overrides        ALTER COLUMN user_id              TYPE char(7) USING user_id::text;
 
 -- Re-create the unique indexes with a char(7) sentinel for "no user".
 -- '0000000' is intentionally not a valid UserId format (real ones start
 -- with 'U') so it can never collide with an allocator-issued id.
-CREATE UNIQUE INDEX uq_dashboard_user_widgets_scope
-  ON dashboard_user_widgets (company_id, COALESCE(user_id, '0000000'::char(7)), widget_key);
+DO $$
+BEGIN
+  IF to_regclass('public.dashboard_user_widgets') IS NOT NULL THEN
+    CREATE UNIQUE INDEX uq_dashboard_user_widgets_scope
+      ON dashboard_user_widgets (company_id, COALESCE(user_id, '0000000'::char(7)), widget_key);
+  END IF;
+END $$;
 
-CREATE UNIQUE INDEX uq_report_usage_stats_scope
-  ON report_usage_stats (company_id, scope_type, COALESCE(user_id, '0000000'::char(7)), report_key);
+DO $$
+BEGIN
+  IF to_regclass('public.report_usage_stats') IS NOT NULL THEN
+    CREATE UNIQUE INDEX uq_report_usage_stats_scope
+      ON report_usage_stats (company_id, scope_type, COALESCE(user_id, '0000000'::char(7)), report_key);
+  END IF;
+END $$;
 
-CREATE UNIQUE INDEX uq_unitysearch_pair_stats_scope
-  ON unitysearch_pair_stats (
-    company_id, scope_type, COALESCE(user_id, '0000000'::char(7)),
-    source_context, anchor_entity_type, anchor_entity_id,
-    target_context, target_entity_type, target_entity_id);
+DO $$
+BEGIN
+  IF to_regclass('public.unitysearch_pair_stats') IS NOT NULL THEN
+    CREATE UNIQUE INDEX uq_unitysearch_pair_stats_scope
+      ON unitysearch_pair_stats (
+        company_id, scope_type, COALESCE(user_id, '0000000'::char(7)),
+        source_context, anchor_entity_type, anchor_entity_id,
+        target_context, target_entity_type, target_entity_id);
+  END IF;
+END $$;
 
-CREATE UNIQUE INDEX uq_unitysearch_usage_stats_scope
-  ON unitysearch_usage_stats (
-    company_id, scope_type, COALESCE(user_id, '0000000'::char(7)),
-    context, entity_type, entity_id);
+DO $$
+BEGIN
+  IF to_regclass('public.unitysearch_usage_stats') IS NOT NULL THEN
+    CREATE UNIQUE INDEX uq_unitysearch_usage_stats_scope
+      ON unitysearch_usage_stats (
+        company_id, scope_type, COALESCE(user_id, '0000000'::char(7)),
+        context, entity_type, entity_id);
+  END IF;
+END $$;
 
 COMMIT;

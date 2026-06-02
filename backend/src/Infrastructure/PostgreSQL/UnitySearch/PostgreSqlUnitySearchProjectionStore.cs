@@ -683,9 +683,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
         // added drop-ship items because they're billable too (vendor
         // invoices for drop-shipped goods) — the entity_type stays
         // 'inventory_stock_item' so the search policy doesn't fork.
-        // Service / non-stock items are intentionally excluded: their
-        // bill flow goes through a generic expense category, not a
-        // per-item picker.
+        // Service / non-stock items are also included because AP entry
+        // can reference service items tracked in Products & Services.
         await ExecuteCompanyProjectionStepAsync(
             connection,
             transaction,
@@ -717,7 +716,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               'inventory', array['inventory.stock.view']::text[], null, 'company', null
             from inventory_items item
             where item.company_id = @company_id
-              and item.item_kind in ('stock', 'drop_ship');
+              and item.item_kind in ('stock', 'drop_ship', 'non_stock', 'service');
             """,
             cancellationToken);
     }

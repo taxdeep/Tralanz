@@ -2,8 +2,10 @@
 
 @inject BusinessShellState ShellState
 @inject InvoiceClient InvoiceClient
+@inject BusinessWriteFlowClient WriteFlow
 @inject AccountClient AccountClient
 @inject CustomerClient CustomerClient
+@inject CitusToastService Message
 @inject NavigationManager Navigation
 
 @*
@@ -62,44 +64,46 @@ else
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
     </div>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            @* Copy A3 Phase 2: More menu hosts secondary actions
-               (Copy today; Print / Audit history come later). The
-               state-specific primary actions (Receive payment, Issue
-               credit memo) stay as inline buttons because they're
-               the operator's main jobs on a posted invoice. *@
-            <CitusMoreMenu Items="@_moreItems" />
-            @if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
-            {
-                <a class="citus-button citus-button--primary" href="receive-payment">
-                    <CitusIcon Name="IconName.Cash" Size="IconSize.Inline" />
-                    <span>Receive payment</span>
-                </a>
-                @* "Credit invoice" pre-fills the credit-memo create page
-                   with the invoice's customer, currency, and reverse
-                   lines. When any source line carried a task_id, the
-                   credit-note post handler rolls those tasks back to
-                   Completed. *@
-                <a class="citus-button citus-button--ghost" href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")">Issue credit memo</a>
-                <span class="text-fg-muted text-sm">Settlement happens in Receive Payment.</span>
-            }
-            else if (_invoice.Status == "draft")
-            {
-                <span class="text-fg-muted text-sm">Open the editor to finish this draft and post it.</span>
-            }
-            else if (_invoice.Status == "voided" || _invoice.Status == "reversed")
-            {
-                <span class="text-fg-muted text-sm">This invoice has no outstanding balance.</span>
-            }
+    <AiseFormSection Title="Actions" Class="mb-6">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <span class="text-fg-muted text-sm">@ActionHint(_invoice.Status)</span>
+            <AiseButtonGroup Align="end">
+                @if (_invoice.Status == "draft")
+                {
+                    <a class="citus-button citus-button--ghost" href="@($"invoices/{_invoice.Id:D}/edit")">
+                        <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
+                        <span>Edit</span>
+                    </a>
+                    <CitusButton Variant="CitusButtonVariant.Primary"
+                                 LeadingIcon="IconName.Check"
+                                 Disabled="@(_isMutating || ShellState.AreWritesBlocked)"
+                                 Loading="@_isMutating"
+                                 OnClick="PostAsync">
+                        @(_isMutating ? "Posting..." : "Post")
+                    </CitusButton>
+                }
+                else if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
+                {
+                    <a class="citus-button citus-button--primary" href="receive-payment">
+                        <CitusIcon Name="IconName.Cash" Size="IconSize.Inline" />
+                        <span>Receive payment</span>
+                    </a>
+                    <a class="citus-button citus-button--ghost" href="@($"sales-receipts/new")">Issue credit memo</a>
+                }
+                @if (CanVoid(_invoice.Status))
+                {
+                    <AiseConfirmDangerAction Label="Void"
+                                             Disabled="@_isMutating"
+                                             ConfirmMessage="@VoidConfirmMessage(_invoice.Status)"
+                                             OnConfirmed="VoidAsync" />
+                }
+            </AiseButtonGroup>
         </div>
-    </section>
+    </AiseFormSection>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <AiseFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -127,20 +131,18 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_invoice.Memo))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Memo</h2>
+                <AiseFormSection Title="Memo" Class="mt-6">
                     <p class="text-fg-muted text-sm">@_invoice.Memo</p>
-                </section>
+                </AiseFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Document</h2>
+            <AiseFormSection Title="Document">
                 <table class="citus-keyvalue">
                     <tbody>
                         <tr><th>Invoice no.</th><td><span class="citus-inline-code">@_invoice.DisplayNumber</span></td></tr>
@@ -166,10 +168,9 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
+            <AiseFormSection Title="Totals">
                 <table class="citus-keyvalue">
                     <tbody>
                         <tr><th>Subtotal</th><td class="text-right">@_invoice.SubtotalAmount.ToString("N2")</td></tr>
@@ -177,7 +178,7 @@ else
                         <tr><th>Total</th><td class="text-right"><strong>@_invoice.TotalAmount.ToString("N2") @_invoice.TransactionCurrencyCode</strong></td></tr>
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
         </aside>
     </div>
 }
@@ -189,6 +190,7 @@ else
     private string _customerName = "—";
     private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
     private bool _isLoading = true;
+    private bool _isMutating;
     private string? _error;
 
     private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "Invoice", Subtitle = "Invoice detail" };
@@ -253,25 +255,104 @@ else
         return account is null ? accountId.Value.ToString("D") : $"{account.Code}  {account.Name}";
     }
 
-    // Copy A3 Phase 2: Copy is always allowed on an existing invoice
-    // (even on voided/reversed — operator may want to revive the
-    // invoice as a fresh draft with corrections).
-    private void CopyAsync()
+    private async Task PostAsync()
     {
-        if (_invoice is null) return;
-        Navigation.NavigateTo($"invoices/new?copyFrom={_invoice.Id:D}");
+        if (_invoice is null || _isMutating) return;
+        if (_invoice.Status != "draft")
+        {
+            _error = "Only draft invoices can be posted from this action.";
+            await Message.WarningAsync(_error);
+            return;
+        }
+
+        _isMutating = true;
+        _error = null;
+        try
+        {
+            var outcome = await WriteFlow.PostExistingInvoiceAsync(
+                _invoice.Id,
+                ShellState.ActiveCompany.Id,
+                ShellState.User.Id,
+                _invoice.DisplayNumber,
+                _invoice.CustomerId,
+                BuildTaskBillingLinks(_invoice));
+
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.Message;
+                await Message.WarningAsync(_error);
+                return;
+            }
+
+            if (outcome.Message.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                outcome.Message.Contains("could not", StringComparison.OrdinalIgnoreCase))
+            {
+                await Message.WarningAsync(outcome.Message);
+            }
+            else
+            {
+                await Message.SuccessAsync(outcome.Message);
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _isMutating = false;
+        }
     }
 
-    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _invoice is null
-        ? Array.Empty<CitusMoreMenuItem>()
-        : new[]
+    private async Task VoidAsync()
+    {
+        if (_invoice is null || _isMutating) return;
+        _isMutating = true;
+        _error = null;
+        try
         {
-            new CitusMoreMenuItem
+            var outcome = await InvoiceClient.VoidAsync(_invoice.Id, ShellState.ActiveCompany.Id);
+            if (!outcome.Succeeded)
             {
-                Label = "Copy",
-                OnClick = EventCallback.Factory.Create(this, CopyAsync)
+                _error = outcome.ErrorMessage ?? "Void failed.";
+                await Message.WarningAsync(_error);
+                return;
             }
-        };
+
+            _invoice = outcome.Saved;
+            ApplyHeader();
+            await Message.SuccessAsync("Invoice voided.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private static bool CanVoid(string status) => status is "draft" or "posted";
+
+    private static IReadOnlyList<InvoiceTaskBillingLink> BuildTaskBillingLinks(InvoiceRecordDto invoice) =>
+        invoice.Lines
+            .Where(static line => line.TaskId.HasValue && line.TaskLineId.HasValue)
+            .Select(static line => new InvoiceTaskBillingLink(
+                line.TaskId!.Value,
+                line.TaskLineId!.Value,
+                line.Id))
+            .Distinct()
+            .ToArray();
+
+    private static string ActionHint(string status) => status switch
+    {
+        "draft" => "Review the draft, edit if needed, then post it.",
+        "posted" => "Settlement happens in Receive Payment.",
+        "partially_paid" => "Settlement happens in Receive Payment.",
+        "voided" => "This invoice has no outstanding balance.",
+        "reversed" => "This invoice has no outstanding balance.",
+        _ => string.Empty
+    };
+
+    private static string VoidConfirmMessage(string status) =>
+        status == "posted"
+            ? "Void this posted invoice? This inserts a reversing journal entry, voids the AR open item, and cannot be undone from this screen."
+            : "Void this invoice? This keeps the audit trail and cannot be undone from this screen.";
 
     private static string HumanizeStatus(string status) => status switch
     {

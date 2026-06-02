@@ -35,7 +35,7 @@
     <CounterpartyForm Draft="_draft"
                       DraftChanged="@(v => _draft = v)"
                       EntityNumberLabel="Customer #"
-                      EntityNumberPlaceholder="CUS-000001"
+                      EntityNumberPlaceholder="CUS000001"
                       PaymentTerms="_paymentTerms" />
     @* Buttons right-aligned and reordered (Cancel | Primary) so the
        primary action sits at the form's natural visual terminus and
@@ -76,14 +76,14 @@ else
                         <tr>
                             <td><a class="citus-link" href="@($"customers/{c.Id:D}")">@c.DisplayName</a></td>
                             <td>
-                                @* CustomerNumber (CUS-NNNNNN from the
+                                @* CustomerNumber (CUSNNNNNN from the
                                    customer-display numbering scope) is
                                    the operator-facing code. Pre-scope
                                    rows still show EntityNumber via the
                                    ?? fallback so legacy data stays
                                    readable. *@
                                 <a class="citus-link" href="@($"customers/{c.Id:D}")">
-                                    <span class="citus-inline-code">@(c.CustomerNumber ?? c.EntityNumber)</span>
+                                    <span class="citus-inline-code">@DisplayCustomerCode(c)</span>
                                 </a>
                             </td>
                             <td>@c.Email</td>
@@ -113,6 +113,22 @@ else
     private bool _isLoading = true;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+
+    private static string DisplayCustomerCode(CustomerSummary customer) =>
+        NormalizeCustomerNumber(customer.CustomerNumber) ?? customer.EntityNumber;
+
+    private static string? NormalizeCustomerNumber(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.StartsWith("CUS-", StringComparison.OrdinalIgnoreCase)
+            ? string.Concat(trimmed.AsSpan(0, 3), trimmed.AsSpan(4))
+            : trimmed;
+    }
 
     protected override async Task OnInitializedAsync()
     {

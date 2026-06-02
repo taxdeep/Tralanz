@@ -1,0 +1,484 @@
+@page "/operations/server"
+
+@inject AccountingHealthClient AccountingHealthClient
+@inject AppShellState ShellState
+@inject CitusToastService Message
+@inject DatabaseAdminClient DbClient
+@inject IOptions<AppHostOptions> HostOptions
+@inject PlatformCoreClient PlatformCoreClient
+@inject PlatformRuntimeMetricsClient MetricsClient
+@inject SysAdminHealthClient SysAdminHealthClient
+
+<PageTitle>Server Console | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton LeadingIcon="IconName.Refresh" Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCard Label="Services"
+                   Value="@ServiceSummary"
+                   Description="@ServiceSummaryDescription"
+                   Icon="IconName.Activity"
+                   Tone="@ServiceTone" />
+    <CitusStatCard Label="Database"
+                   Value="@DatabaseSummary"
+                   Description="@DatabaseSummaryDescription"
+                   Icon="IconName.Database"
+                   Tone="@DatabaseTone" />
+    <CitusStatCard Label="Latest backup"
+                   Value="@LatestBackupSummary"
+                   Description="@LatestBackupDescription"
+                   Icon="IconName.Download"
+                   Tone="@BackupTone" />
+    <CitusStatCard Label="Last check"
+                   Value="@LastCheckedSummary"
+                   Description="Control plane snapshot time."
+                   Icon="IconName.Clock"
+                   Tone="StatTone.Neutral" />
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Start Service</h2>
+            <CitusBadge Color="@ServiceBadgeColor">@ServiceSummary</CitusBadge>
+        </header>
+
+        <div class="flex flex-col gap-3 mt-3">
+            <div class="flex items-center justify-between gap-3">
+                <div>
+                    <div class="font-medium text-sm">SysAdmin API</div>
+                    <div class="text-fg-muted text-xs">@HostOptions.Value.SysAdminApiBaseUrl</div>
+                </div>
+                <CitusStatusBadge Status="_sysAdminHealth" />
+            </div>
+            <div class="flex items-center justify-between gap-3">
+                <div>
+                    <div class="font-medium text-sm">Accounting API</div>
+                    <div class="text-fg-muted text-xs">@HostOptions.Value.AccountingApiBaseUrl</div>
+                </div>
+                <CitusStatusBadge Status="_accountingHealth" />
+            </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mt-5">
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         LeadingIcon="IconName.CirclePlus"
+                         Disabled="_isStarting"
+                         OnClick="StartPlatformAsync">
+                @(_isStarting ? "Starting..." : "Start platform")
+            </CitusButton>
+            <CitusButton LeadingIcon="IconName.Refresh"
+                         Disabled="_isCheckingServices"
+                         OnClick="CheckServicesAsync">
+                @(_isCheckingServices ? "Checking..." : "Check services")
+            </CitusButton>
+        </div>
+
+        @if (_lastBootstrapReport is not null)
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Success" ShowIcon="true" Class="mt-4">
+                <MessageTemplate>
+                    <span>Core ready: @_lastBootstrapReport.ModulesSeeded modules and @_lastBootstrapReport.EntitiesSeeded entities seeded.</span>
+                </MessageTemplate>
+            </CitusAlert>
+        }
+    </section>
+
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Connect Database</h2>
+            <CitusBadge Color="@DatabaseBadgeColor">@DatabaseSummary</CitusBadge>
+        </header>
+
+        <dl class="grid grid-cols-2 gap-x-4 gap-y-3 mt-3 text-sm">
+            <dt class="text-fg-muted">Reachable</dt>
+            <dd class="text-right font-medium">@(_metrics?.Database.IsReachable == true ? "Yes" : "No")</dd>
+            <dt class="text-fg-muted">Size</dt>
+            <dd class="text-right font-medium">@FormatBytes(_metrics?.Database.SizeBytes)</dd>
+            <dt class="text-fg-muted">Active connections</dt>
+            <dd class="text-right font-medium">@(_metrics?.Database.ActiveConnections?.ToString("N0") ?? "-")</dd>
+            <dt class="text-fg-muted">Sampled</dt>
+            <dd class="text-right font-medium">@(_metrics?.CapturedAt.ToLocalTime().ToString("HH:mm:ss") ?? "-")</dd>
+        </dl>
+
+        @if (!string.IsNullOrWhiteSpace(_metrics?.Database.ErrorMessage))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Warning"
+                        Message="@_metrics.Database.ErrorMessage"
+                        ShowIcon="true"
+                        Class="mt-4" />
+        }
+
+        <div class="flex flex-wrap gap-2 mt-5">
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         LeadingIcon="IconName.Database"
+                         Disabled="_isTestingDatabase"
+                         OnClick="TestDatabaseAsync">
+                @(_isTestingDatabase ? "Testing..." : "Test connection")
+            </CitusButton>
+            <a class="citus-button citus-button--ghost" href="operations/database">Open database page</a>
+        </div>
+    </section>
+
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Back Up Database</h2>
+            <CitusBadge Color="@BackupBadgeColor">@LatestBackupSummary</CitusBadge>
+        </header>
+
+        <div class="flex flex-wrap gap-2 mt-3">
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         LeadingIcon="IconName.Download"
+                         Disabled="_isBackupBusy"
+                         OnClick="StartBackupAsync">
+                @(_isBackupBusy ? "Starting..." : "Start backup")
+            </CitusButton>
+            <CitusButton LeadingIcon="IconName.Refresh"
+                         Disabled="_isBackupBusy"
+                         OnClick="RefreshBackupsAsync">
+                Refresh list
+            </CitusButton>
+        </div>
+
+        @if (_backups.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm mt-4">No backups recorded.</p>
+        }
+        else
+        {
+            <div class="overflow-x-auto mt-4">
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Status</th>
+                            <th class="text-right">Size</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var backup in _backups.Take(5))
+                        {
+                            <tr>
+                                <td>@backup.StartedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                                <td><CitusBadge Color="@StatusColor(backup.Status)">@backup.Status</CitusBadge></td>
+                                <td class="text-right">@FormatBytes(backup.SizeBytes)</td>
+                                <td class="text-right">
+                                    @if (backup.Status == "succeeded")
+                                    {
+                                        <a class="citus-button citus-button--ghost citus-button--sm"
+                                           href="@BuildAbsoluteDownloadUrl(backup.Id)"
+                                           target="_blank"
+                                           rel="noopener">
+                                            Download
+                                        </a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+<section class="citus-panel mt-6">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Server Run State</h2>
+        <span class="text-fg-subtle text-xs">Profile: @ShellState.ActiveCompany.CompanyName</span>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+        <div>
+            <div class="text-fg-muted text-xs uppercase">Core</div>
+            <div class="font-medium">@(_overview?.Name ?? "Not loaded")</div>
+        </div>
+        <div>
+            <div class="text-fg-muted text-xs uppercase">Modules</div>
+            <div class="font-medium">@(_overview?.ModulesRegistered.ToString("N0") ?? "-")</div>
+        </div>
+        <div>
+            <div class="text-fg-muted text-xs uppercase">Entities</div>
+            <div class="font-medium">@(_overview?.EntitiesRegistered.ToString("N0") ?? "-")</div>
+        </div>
+    </div>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Server console",
+        Subtitle = "Service startup, database connection, and backup controls in one operator surface."
+    };
+
+    private bool _isLoading = true;
+    private bool _isStarting;
+    private bool _isCheckingServices;
+    private bool _isTestingDatabase;
+    private bool _isBackupBusy;
+    private string? _error;
+    private ServiceHealthStatus? _sysAdminHealth;
+    private ServiceHealthStatus? _accountingHealth;
+    private PlatformRuntimeMetricsSnapshotDto? _metrics;
+    private PlatformOverviewSummary? _overview;
+    private PlatformBootstrapReportSummary? _lastBootstrapReport;
+    private IReadOnlyList<DatabaseBackupDto> _backups = Array.Empty<DatabaseBackupDto>();
+    private DateTimeOffset? _lastCheckedAt;
+
+    private string ServiceSummary => AreServicesOnline ? "Online" : "Attention";
+
+    private string ServiceSummaryDescription =>
+        AreServicesOnline ? "SysAdmin and Accounting APIs are responding." : "One or more services did not respond.";
+
+    private bool AreServicesOnline =>
+        IsHealthy(_sysAdminHealth) && IsHealthy(_accountingHealth);
+
+    private StatTone ServiceTone => AreServicesOnline ? StatTone.Success : StatTone.Warning;
+
+    private string ServiceBadgeColor => AreServicesOnline ? "green" : "red";
+
+    private string DatabaseSummary =>
+        _metrics?.Database.IsReachable == true ? "Connected" : "Disconnected";
+
+    private string DatabaseSummaryDescription =>
+        _metrics?.Database.IsReachable == true
+            ? $"{FormatBytes(_metrics.Database.SizeBytes)} with {(_metrics.Database.ActiveConnections?.ToString("N0") ?? "-")} active connections."
+            : _metrics?.Database.ErrorMessage ?? "Connection test has not succeeded.";
+
+    private StatTone DatabaseTone =>
+        _metrics?.Database.IsReachable == true ? StatTone.Success : StatTone.Warning;
+
+    private string DatabaseBadgeColor =>
+        _metrics?.Database.IsReachable == true ? "green" : "red";
+
+    private DatabaseBackupDto? LatestBackup => _backups.FirstOrDefault();
+
+    private string LatestBackupSummary => LatestBackup?.Status ?? "None";
+
+    private string LatestBackupDescription =>
+        LatestBackup is null
+            ? "No backup run has been recorded."
+            : $"{LatestBackup.StartedAt.ToLocalTime():MM-dd HH:mm} - {FormatBytes(LatestBackup.SizeBytes)}";
+
+    private StatTone BackupTone => LatestBackup?.Status switch
+    {
+        "succeeded" => StatTone.Success,
+        "running" => StatTone.Info,
+        "failed" => StatTone.Warning,
+        _ => StatTone.Neutral
+    };
+
+    private string BackupBadgeColor => LatestBackup?.Status switch
+    {
+        "succeeded" => "green",
+        "running" => "blue",
+        "failed" => "red",
+        _ => "default"
+    };
+
+    private string LastCheckedSummary => _lastCheckedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "-";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+
+        try
+        {
+            var healthTask = CheckServicesCoreAsync();
+            var databaseTask = TestDatabaseCoreAsync();
+            var overviewTask = PlatformCoreClient.GetOverviewAsync();
+            var backupsTask = DbClient.ListBackupsAsync(10);
+
+            await Task.WhenAll(healthTask, databaseTask, overviewTask, backupsTask);
+
+            _overview = await overviewTask;
+            _backups = await backupsTask;
+            _lastCheckedAt = DateTimeOffset.Now;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task StartPlatformAsync()
+    {
+        if (_isStarting) return;
+
+        _isStarting = true;
+        _error = null;
+
+        try
+        {
+            await CheckServicesCoreAsync();
+            _lastBootstrapReport = await PlatformCoreClient.BootstrapAsync();
+
+            if (_lastBootstrapReport is null)
+            {
+                await Message.WarningAsync("Platform start did not complete. Check service health and database connectivity.");
+                return;
+            }
+
+            await Message.SuccessAsync("Platform core is ready.");
+            _overview = await PlatformCoreClient.GetOverviewAsync();
+            await TestDatabaseCoreAsync();
+            _lastCheckedAt = DateTimeOffset.Now;
+        }
+        finally
+        {
+            _isStarting = false;
+        }
+    }
+
+    private async Task CheckServicesAsync()
+    {
+        if (_isCheckingServices) return;
+
+        _isCheckingServices = true;
+        try
+        {
+            await CheckServicesCoreAsync();
+            _lastCheckedAt = DateTimeOffset.Now;
+            await Message.SuccessAsync(AreServicesOnline ? "Services are online." : "Service check completed with warnings.");
+        }
+        finally
+        {
+            _isCheckingServices = false;
+        }
+    }
+
+    private async Task TestDatabaseAsync()
+    {
+        if (_isTestingDatabase) return;
+
+        _isTestingDatabase = true;
+        try
+        {
+            await TestDatabaseCoreAsync();
+            _lastCheckedAt = DateTimeOffset.Now;
+
+            if (_metrics?.Database.IsReachable == true)
+            {
+                await Message.SuccessAsync("Database connection succeeded.");
+            }
+            else
+            {
+                await Message.WarningAsync(_metrics?.Database.ErrorMessage ?? "Database connection failed.");
+            }
+        }
+        finally
+        {
+            _isTestingDatabase = false;
+        }
+    }
+
+    private async Task StartBackupAsync()
+    {
+        if (_isBackupBusy) return;
+
+        _isBackupBusy = true;
+        _error = null;
+
+        try
+        {
+            var outcome = await DbClient.StartBackupAsync();
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Could not start backup.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+
+            await Message.SuccessAsync("Backup started.");
+            await RefreshBackupsCoreAsync();
+        }
+        finally
+        {
+            _isBackupBusy = false;
+        }
+    }
+
+    private async Task RefreshBackupsAsync()
+    {
+        await RefreshBackupsCoreAsync();
+        await Message.SuccessAsync("Backup list refreshed.");
+    }
+
+    private async Task CheckServicesCoreAsync()
+    {
+        var sysAdminTask = SysAdminHealthClient.GetHealthAsync();
+        var accountingTask = AccountingHealthClient.GetHealthAsync();
+
+        await Task.WhenAll(sysAdminTask, accountingTask);
+
+        _sysAdminHealth = await sysAdminTask;
+        _accountingHealth = await accountingTask;
+    }
+
+    private async Task TestDatabaseCoreAsync()
+    {
+        _metrics = await MetricsClient.GetSnapshotAsync();
+    }
+
+    private async Task RefreshBackupsCoreAsync()
+    {
+        _backups = await DbClient.ListBackupsAsync(10);
+    }
+
+    private string BuildAbsoluteDownloadUrl(Guid backupId)
+    {
+        var baseUrl = HostOptions.Value.SysAdminApiBaseUrl.TrimEnd('/');
+        return $"{baseUrl}/{DbClient.BuildBackupDownloadUrl(backupId)}";
+    }
+
+    private static bool IsHealthy(ServiceHealthStatus? status) =>
+        string.Equals(status?.Status, "ok", StringComparison.OrdinalIgnoreCase);
+
+    private static string StatusColor(string status) => status switch
+    {
+        "succeeded" => "green",
+        "failed" => "red",
+        "running" => "blue",
+        _ => "default"
+    };
+
+    private static string FormatBytes(long? bytes)
+    {
+        if (bytes is null) return "-";
+
+        var size = (double)bytes.Value;
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        var unit = 0;
+
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+
+        return $"{size:0.##} {units[unit]}";
+    }
+}

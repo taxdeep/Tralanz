@@ -1,0 +1,41 @@
+<div class="@CssClass">
+    <div class="citus-document-actionbar__left aise-page-actionbar__left">
+        @LeftContent
+    </div>
+    <div class="citus-document-actionbar__center aise-page-actionbar__center">
+        @CenterContent
+    </div>
+    <div class="citus-document-actionbar__right aise-page-actionbar__right">
+        @RightContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public RenderFragment? LeftContent { get; set; }
+
+    [Parameter] public RenderFragment? CenterContent { get; set; }
+
+    [Parameter] public RenderFragment? RightContent { get; set; }
+
+    [Parameter] public bool Sticky { get; set; } = true;
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-document-actionbar", "aise-page-actionbar" };
+            if (!Sticky)
+            {
+                classes.Add("aise-page-actionbar--static");
+            }
+            if (!string.IsNullOrWhiteSpace(Class))
+            {
+                classes.Add(Class);
+            }
+
+            return string.Join(' ', classes);
+        }
+    }
+}

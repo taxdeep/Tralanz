@@ -32,6 +32,15 @@ public interface IInventoryFoundationStore
         bool isActive,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<CompanyUomSummary>> ListUomsAsync(
+        CompanyId companyId,
+        bool includeInactive,
+        CancellationToken cancellationToken);
+
+    Task<CompanyUomSummary> SaveUomAsync(
+        CompanyUomUpsertRequest request,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// Items list projection for the Items / Services management page.
     /// Includes both stock and non-inventory items (Service / Non-stock).

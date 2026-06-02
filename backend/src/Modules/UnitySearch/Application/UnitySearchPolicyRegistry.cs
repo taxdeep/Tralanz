@@ -179,7 +179,7 @@ public sealed class UnitySearchPolicyRegistry
                 EnforceBusinessEligibility: true),
             [SearchScopeContext.BillItemPicker] = new(
                 SearchScopeContext.BillItemPicker,
-                new[] { SearchDocumentType.InventoryStockItem },
+                new[] { SearchDocumentType.ProductService, SearchDocumentType.InventoryStockItem },
                 EnforceActiveOnly: true,
                 EnforceBusinessEligibility: true),
             [SearchScopeContext.JournalEntryAccountPicker] = new(
@@ -190,6 +190,11 @@ public sealed class UnitySearchPolicyRegistry
             [SearchScopeContext.JournalEntryNamePicker] = new(
                 SearchScopeContext.JournalEntryNamePicker,
                 new[] { SearchDocumentType.Customer, SearchDocumentType.Vendor },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.TaskItemPicker] = new(
+                SearchScopeContext.TaskItemPicker,
+                new[] { SearchDocumentType.ProductService, SearchDocumentType.InventoryItem },
                 EnforceActiveOnly: true,
                 EnforceBusinessEligibility: true)
         };

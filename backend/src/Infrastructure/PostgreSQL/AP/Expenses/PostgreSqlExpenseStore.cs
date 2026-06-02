@@ -567,7 +567,25 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
                            AND COALESCE(tcc.recoverability_override, stc.recoverability) = 'recoverable'),
                        tc.is_recoverable_on_purchase
                        OR tc.recoverability_mode <> 'none') AS is_recoverable_on_purchase,
-                   tc.recoverable_account_id
+                   COALESCE(
+                       (
+                           SELECT stm.recoverable_account_id
+                             FROM sales_tax_code_components tcc
+                        LEFT JOIN sales_tax_components stc
+                               ON stc.company_id = tcc.company_id
+                              AND stc.id = tcc.tax_component_id
+                        LEFT JOIN sales_tax_account_mappings stm
+                               ON stm.company_id = tcc.company_id
+                              AND stm.tax_component_id = tcc.tax_component_id
+                              AND stm.recoverable_account_id IS NOT NULL
+                            WHERE tcc.company_id = tc.company_id::text
+                              AND tcc.tax_code_id = tc.id
+                              AND COALESCE(tcc.applies_to, tc.applies_to) IN ('purchase', 'both')
+                              AND COALESCE(tcc.recoverability_override, stc.recoverability) = 'recoverable'
+                         ORDER BY tcc.sequence, stm.updated_at DESC, stm.created_at DESC
+                            LIMIT 1
+                       ),
+                       tc.recoverable_account_id) AS recoverable_account_id
               FROM tax_codes tc
             LEFT JOIN sales_tax_code_components tcc
                 ON tcc.company_id = tc.company_id::text
@@ -630,17 +648,26 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
             SELECT id
               FROM accounts
              WHERE company_id = @company_id
-               AND root_type = 'asset'
+               AND root_type IN ('asset', 'liability')
                AND detail_type = 'tax'
                AND is_active = TRUE
-             ORDER BY CASE WHEN code = '13700' THEN 0 ELSE 1 END, code
+             ORDER BY
+               CASE
+                 WHEN code = '13700' THEN 0
+                 WHEN root_type = 'asset' THEN 1
+                 WHEN system_key = 'tax:payable' THEN 2
+                 WHEN system_role = 'tax_payable' THEN 3
+                 WHEN code = '25000' THEN 4
+                 ELSE 5
+               END,
+               code
              LIMIT 1;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is Guid id
             ? id
-            : throw new InvalidOperationException("Recoverable purchase tax requires an active asset tax account.");
+            : throw new InvalidOperationException("Recoverable purchase tax requires an active tax account.");
     }
 
     private static async Task<Guid> InsertPostedExpenseJournalAsync(
@@ -1014,6 +1041,8 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
 
             if (hasTax && taxProfile!.IsRecoverableOnPurchase && lineTax > 0m)
             {
+                // Keep purchase tax polarity independent of account root type:
+                // recoverable input tax is always a debit, even when it nets into a liability account.
                 AddAllocation(
                     allocations,
                     line,

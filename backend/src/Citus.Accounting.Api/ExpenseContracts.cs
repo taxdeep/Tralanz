@@ -22,13 +22,7 @@ public sealed record ExpenseUpsertHttpRequest(
     decimal? DiscountValue,
     string? Memo,
     string? InternalNote,
-    IReadOnlyList<ExpenseLineHttpRequest>? Lines,
-    // Copy A3 Phase 1: when set, the client copied the form fields
-    // from an existing expense and wants the server to audit the
-    // provenance. Nullable so the field is optional in the wire format
-    // (existing clients keep working). Not stored on the expense row
-    // itself — recorded only in audit_logs.
-    Guid? CopiedFromExpenseId = null);
+    IReadOnlyList<ExpenseLineHttpRequest>? Lines);
 
 public sealed record ExpenseLineHttpRequest(
     int Sequence,
@@ -39,7 +33,4 @@ public sealed record ExpenseLineHttpRequest(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    // Optional Task this line bills against. Validated server-side via
-    // ITaskLineLinkValidator before insert; persists to expense_lines.task_id
-    // (column added by Batch 8). Feeds the Batch 10 margin report.
     Guid? TaskId = null);

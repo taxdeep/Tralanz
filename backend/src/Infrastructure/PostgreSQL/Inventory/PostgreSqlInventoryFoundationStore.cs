@@ -6,6 +6,18 @@ namespace Infrastructure.PostgreSQL.Inventory;
 
 public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationStore
 {
+    private static readonly DefaultUomDefinition[] DefaultUoms =
+    [
+        new("EA", "Each", "Count", 0),
+        new("SERVICE", "Service", "Service", 0),
+        new("HR", "Hour", "Time", 2),
+        new("DAY", "Day", "Time", 2),
+        new("BOX", "Box", "Count", 0),
+        new("CASE", "Case", "Count", 0),
+        new("KG", "Kilogram", "Weight", 3),
+        new("LB", "Pound", "Weight", 3)
+    ];
+
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
@@ -14,6 +26,8 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
     }
+
+    private sealed record DefaultUomDefinition(string UomCode, string Name, string Category, int DecimalPlaces);
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
@@ -139,19 +153,15 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         var normalizedDescription = string.IsNullOrWhiteSpace(request.Description)
             ? DBNull.Value
             : (object)request.Description.Trim();
-        // Preserve the operator-picked UOM code as-is (trim only). The
-        // legacy convention here was ToUpperInvariant() (back when
-        // stock_uom_code was free-text "EA" / "PCS" style), but the
-        // 2026-05-25 UOM foundation migration introduced a per-company
-        // units_of_measure master with codes seeded in mixed case —
-        // e.g. 'each' / 'hour' / 'kg' / 'm' / 'L'. Forcing upper-case
-        // here would break the new fk_items_uom (company_id,
-        // stock_uom_code) FK because PostgreSQL text comparison on the
-        // FK is case-sensitive ('EACH' would not match the seeded
-        // 'each' row).
-        var normalizedStockUomCode = string.IsNullOrWhiteSpace(request.StockUomCode)
-            ? DBNull.Value
-            : (object)request.StockUomCode.Trim();
+        var normalizedBaseUomCode =
+            NormalizeUomCode(request.BaseUomCode) ??
+            NormalizeUomCode(request.StockUomCode) ??
+            DefaultBaseUomCode(request.ItemKind);
+        var normalizedStockUomCode = request.ItemKind == InventoryItemKind.Stock
+            ? normalizedBaseUomCode
+            : NormalizeUomCode(request.StockUomCode);
+        var normalizedSalesUomCode = NormalizeUomCode(request.SalesUomCode) ?? normalizedBaseUomCode;
+        var normalizedPurchaseUomCode = NormalizeUomCode(request.PurchaseUomCode) ?? normalizedBaseUomCode;
 
         try
         {
@@ -167,6 +177,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                         description = @description,
                         item_kind = @item_kind,
                         stock_uom_code = @stock_uom_code,
+                        base_uom_code = @base_uom_code,
+                        sales_uom_code = @sales_uom_code,
+                        purchase_uom_code = @purchase_uom_code,
                         manage_inventory_method = @manage_inventory_method,
                         default_costing_method = @default_costing_method,
                         backorder_mode = @backorder_mode,
@@ -191,7 +204,10 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 updateCommand.Parameters.AddWithValue("name", normalizedName);
                 updateCommand.Parameters.AddWithValue("description", normalizedDescription);
                 updateCommand.Parameters.AddWithValue("item_kind", FormatItemKind(request.ItemKind));
-                updateCommand.Parameters.AddWithValue("stock_uom_code", normalizedStockUomCode);
+                updateCommand.Parameters.AddWithValue("stock_uom_code", DbText(normalizedStockUomCode));
+                updateCommand.Parameters.AddWithValue("base_uom_code", DbText(normalizedBaseUomCode));
+                updateCommand.Parameters.AddWithValue("sales_uom_code", DbText(normalizedSalesUomCode));
+                updateCommand.Parameters.AddWithValue("purchase_uom_code", DbText(normalizedPurchaseUomCode));
                 updateCommand.Parameters.AddWithValue("manage_inventory_method", FormatManageInventoryMethod(request.ManageInventoryMethod));
                 updateCommand.Parameters.AddWithValue("default_costing_method", FormatCostingMethod(request.DefaultCostingMethod));
                 updateCommand.Parameters.AddWithValue("backorder_mode", FormatBackorderMode(request.BackorderMode));
@@ -249,6 +265,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   description,
                   item_kind,
                   stock_uom_code,
+                  base_uom_code,
+                  sales_uom_code,
+                  purchase_uom_code,
                   manage_inventory_method,
                   default_costing_method,
                   backorder_mode,
@@ -275,6 +294,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   @description,
                   @item_kind,
                   @stock_uom_code,
+                  @base_uom_code,
+                  @sales_uom_code,
+                  @purchase_uom_code,
                   @manage_inventory_method,
                   @default_costing_method,
                   @backorder_mode,
@@ -300,7 +322,10 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             insertCommand.Parameters.AddWithValue("name", normalizedName);
             insertCommand.Parameters.AddWithValue("description", normalizedDescription);
             insertCommand.Parameters.AddWithValue("item_kind", FormatItemKind(request.ItemKind));
-            insertCommand.Parameters.AddWithValue("stock_uom_code", normalizedStockUomCode);
+            insertCommand.Parameters.AddWithValue("stock_uom_code", DbText(normalizedStockUomCode));
+            insertCommand.Parameters.AddWithValue("base_uom_code", DbText(normalizedBaseUomCode));
+            insertCommand.Parameters.AddWithValue("sales_uom_code", DbText(normalizedSalesUomCode));
+            insertCommand.Parameters.AddWithValue("purchase_uom_code", DbText(normalizedPurchaseUomCode));
             insertCommand.Parameters.AddWithValue("manage_inventory_method", FormatManageInventoryMethod(request.ManageInventoryMethod));
             insertCommand.Parameters.AddWithValue("default_costing_method", FormatCostingMethod(request.DefaultCostingMethod));
             insertCommand.Parameters.AddWithValue("backorder_mode", FormatBackorderMode(request.BackorderMode));
@@ -400,6 +425,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               description,
               item_kind,
               stock_uom_code,
+              coalesce(base_uom_code, stock_uom_code, case when item_kind = 'service' then 'SERVICE' else 'EA' end) as base_uom_code,
+              coalesce(sales_uom_code, base_uom_code, stock_uom_code, case when item_kind = 'service' then 'SERVICE' else 'EA' end) as sales_uom_code,
+              coalesce(purchase_uom_code, base_uom_code, stock_uom_code, case when item_kind = 'service' then 'SERVICE' else 'EA' end) as purchase_uom_code,
               manage_inventory_method,
               default_costing_method,
               backorder_mode,
@@ -440,6 +468,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
                 ParseItemKind(reader.GetString(reader.GetOrdinal("item_kind"))),
                 reader.IsDBNull(reader.GetOrdinal("stock_uom_code")) ? null : reader.GetString(reader.GetOrdinal("stock_uom_code")),
+                ReadNullableString(reader, "base_uom_code"),
+                ReadNullableString(reader, "sales_uom_code"),
+                ReadNullableString(reader, "purchase_uom_code"),
                 ParseManageInventoryMethod(reader.GetString(reader.GetOrdinal("manage_inventory_method"))),
                 ParseCostingMethod(reader.GetString(reader.GetOrdinal("default_costing_method"))),
                 ParseBackorderMode(reader.GetString(reader.GetOrdinal("backorder_mode"))),
@@ -459,6 +490,144 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at"))));
         }
         return rows;
+    }
+
+    public async Task<IReadOnlyList<CompanyUomSummary>> ListUomsAsync(
+        CompanyId companyId,
+        bool includeInactive,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
+        await EnsureCompanyExistsAsync(connection, transaction: null, companyId, cancellationToken);
+
+        var rows = DefaultUoms
+            .Select(uom => new CompanyUomSummary(
+                companyId,
+                uom.UomCode,
+                uom.Name,
+                uom.Category,
+                uom.DecimalPlaces,
+                IsActive: true,
+                IsSystem: true))
+            .ToDictionary(row => row.UomCode, StringComparer.OrdinalIgnoreCase);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              uom_code,
+              name,
+              category,
+              decimal_places,
+              is_active
+            from company_uoms
+            where company_id = @company_id
+              and (@include_inactive or is_active = true);
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("include_inactive", includeInactive);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var code = reader.GetString(reader.GetOrdinal("uom_code"));
+            rows[code] = new CompanyUomSummary(
+                companyId,
+                code,
+                reader.GetString(reader.GetOrdinal("name")),
+                reader.GetString(reader.GetOrdinal("category")),
+                reader.GetInt32(reader.GetOrdinal("decimal_places")),
+                reader.GetBoolean(reader.GetOrdinal("is_active")),
+                IsSystem: false);
+        }
+
+        return rows.Values
+            .Where(row => includeInactive || row.IsActive)
+            .OrderBy(row => row.Category)
+            .ThenBy(row => row.UomCode)
+            .ToList();
+    }
+
+    public async Task<CompanyUomSummary> SaveUomAsync(
+        CompanyUomUpsertRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
+        await EnsureCompanyExistsAsync(connection, transaction: null, request.CompanyId, cancellationToken);
+
+        var code = NormalizeUomCode(request.UomCode);
+        if (code is null)
+        {
+            throw new InvalidOperationException("UOM code is required.");
+        }
+
+        if (request.DecimalPlaces is < 0 or > 6)
+        {
+            throw new InvalidOperationException("UOM decimal places must be between 0 and 6.");
+        }
+
+        var name = string.IsNullOrWhiteSpace(request.Name)
+            ? code
+            : request.Name.Trim();
+        var category = string.IsNullOrWhiteSpace(request.Category)
+            ? "Other"
+            : request.Category.Trim();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            insert into company_uoms (
+              company_id,
+              uom_code,
+              name,
+              category,
+              decimal_places,
+              is_active,
+              created_at,
+              updated_at
+            )
+            values (
+              @company_id,
+              @uom_code,
+              @name,
+              @category,
+              @decimal_places,
+              @is_active,
+              now(),
+              now()
+            )
+            on conflict (company_id, uom_code)
+            do update set
+              name = excluded.name,
+              category = excluded.category,
+              decimal_places = excluded.decimal_places,
+              is_active = excluded.is_active,
+              updated_at = excluded.updated_at;
+            """;
+        command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
+        command.Parameters.AddWithValue("uom_code", code);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("category", category);
+        command.Parameters.AddWithValue("decimal_places", request.DecimalPlaces);
+        command.Parameters.AddWithValue("is_active", request.IsActive);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return new CompanyUomSummary(
+            request.CompanyId,
+            code,
+            name,
+            category,
+            request.DecimalPlaces,
+            request.IsActive,
+            IsSystem: false);
+    }
+
+    private static string? ReadNullableString(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
     }
 
     private static Guid? ReadNullableGuid(NpgsqlDataReader reader, string column)
@@ -704,6 +873,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   description text null,
                   item_kind text not null,
                   stock_uom_code text null,
+                  base_uom_code text null,
+                  sales_uom_code text null,
+                  purchase_uom_code text null,
                   manage_inventory_method text not null,
                   default_costing_method text not null,
                   backorder_mode text not null,
@@ -769,6 +941,20 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 -- account when this is null.
                 alter table inventory_items
                   add column if not exists default_drop_ship_clearing_account_id uuid null references accounts(id);
+
+                create table if not exists company_uoms (
+                  company_id char(7) not null references companies(id) on delete cascade,
+                  uom_code text not null,
+                  name text not null,
+                  category text not null,
+                  decimal_places integer not null default 0,
+                  is_active boolean not null default true,
+                  created_at timestamptz not null default now(),
+                  updated_at timestamptz not null default now(),
+                  primary key (company_id, uom_code),
+                  constraint ck_company_uoms_decimal_places
+                    check (decimal_places between 0 and 6)
+                );
 
                 -- M6: extend item_kind enum to include 'drop_ship'. The inline
                 -- check in the create-table block above already lists all four
@@ -852,7 +1038,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       'inventory_adjustment_loss'
                     )),
                   constraint ck_inventory_documents_status
-                    check (status in ('draft', 'submitted', 'posted', 'cancelled', 'shipped', 'received', 'voided', 'reversed')),
+                    check (status in ('draft', 'submitted', 'posted', 'cancelled', 'shipped', 'received')),
                   constraint ck_inventory_documents_movement_direction
                     check (movement_direction in ('inbound', 'outbound', 'internal', 'neutral'))
                 );
@@ -862,12 +1048,6 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 alter table inventory_documents add column if not exists customer_po_number text null;
                 alter table inventory_documents add column if not exists sales_order_id uuid null;
-                -- P0-2 (C2): idempotency marker for invoice-reverse
-                -- inventory compensation. Non-null = this sales-issue has
-                -- already had its outbound subledger effect unwound by an
-                -- invoice reverse run. See
-                -- PostgresInventorySalesIssueReverseStore.
-                alter table inventory_documents add column if not exists reversed_at timestamptz null;
 
                 create index if not exists ix_inventory_documents_company_customer_po
                   on inventory_documents (company_id, customer_po_number)
@@ -875,9 +1055,6 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 create index if not exists ix_inventory_documents_company_sales_order
                   on inventory_documents (company_id, sales_order_id)
                   where sales_order_id is not null;
-                create index if not exists ix_inventory_documents_company_reversed_at
-                  on inventory_documents (company_id, reversed_at)
-                  where reversed_at is not null;
 
                 create table if not exists inventory_document_lines (
                   id uuid primary key default gen_random_uuid(),
@@ -1173,6 +1350,15 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             select
               to_regclass('company_inventory_policies') is not null
               and to_regclass('inventory_items') is not null
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_name = 'inventory_items'
+                  and column_name in ('base_uom_code', 'sales_uom_code', 'purchase_uom_code')
+                group by table_name
+                having count(*) = 3
+              )
+              and to_regclass('company_uoms') is not null
               and to_regclass('inventory_warehouses') is not null
               and to_regclass('item_warehouse_balances') is not null
               and to_regclass('inventory_documents') is not null
@@ -1552,6 +1738,28 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             InventoryCostingMethod.Fifo => "fifo",
             _ => throw new ArgumentOutOfRangeException(nameof(method), method, "Unsupported inventory costing method.")
         };
+
+    private static object DbText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
+
+    private static string? NormalizeUomCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim().ToUpperInvariant();
+        if (normalized.Length > 16)
+        {
+            throw new InvalidOperationException("UOM code cannot be longer than 16 characters.");
+        }
+
+        return normalized;
+    }
+
+    private static string DefaultBaseUomCode(InventoryItemKind kind) =>
+        kind == InventoryItemKind.Service ? "SERVICE" : "EA";
 
     private static string FormatItemKind(InventoryItemKind kind) =>
         kind switch

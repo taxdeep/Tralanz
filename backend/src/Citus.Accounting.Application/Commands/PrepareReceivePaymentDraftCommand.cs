@@ -14,7 +14,8 @@ public sealed record PrepareReceivePaymentDraftCommand(
     IReadOnlyList<SettlementDraftLine> Lines,
     /// <summary>Overpayment slice parked as a Customer Deposit. See
     /// <see cref="ReceivePaymentDraftPreparation.ExtraDepositAmount"/>.</summary>
-    decimal ExtraDepositAmount = 0m);
+    decimal ExtraDepositAmount = 0m,
+    Guid? ClientRequestId = null);
 
 public sealed record PrepareReceivePaymentDraftCommandResult(
     Guid DocumentId,

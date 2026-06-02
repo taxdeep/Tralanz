@@ -4,7 +4,6 @@ using Citus.Accounting.Api.Tasks;
 using static Citus.Accounting.Api.CompanyCurrencyResponseMapper;
 using static Citus.Accounting.Api.InventoryItemRequestMapper;
 using Citus.Accounting.Api.Initialization;
-using Citus.Accounting.Api.Tasks;
 using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.CoaTemplates;
@@ -37,15 +36,11 @@ using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Inventory.Application.Contracts.Pricing;
 using Citus.Modules.Inventory.Application.Pricing;
 using Citus.Modules.Inventory.Domain.Shared;
-using Citus.Modules.Inventory.Domain.Shared.Pricing;
 using Citus.Modules.Tasks.Application;
 using Citus.Modules.Tasks.Application.Contracts;
-using Citus.Modules.Tasks.Domain.Shared;
 using Citus.Modules.Tasks.Domain.Shared.Reports;
-using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Accounts;
-using Infrastructure.PostgreSQL.Uom;
 using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Banking;
 using Infrastructure.PostgreSQL.Company;
@@ -60,7 +55,6 @@ using Modules.AP.Expenses;
 using Modules.AP.PurchaseOrders;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
-using Infrastructure.PostgreSQL.Inventory.Posting;
 using Infrastructure.PostgreSQL.Numbering;
 using Infrastructure.PostgreSQL.Tasks;
 using Infrastructure.PostgreSQL.Tax;
@@ -68,11 +62,8 @@ using Infrastructure.PostgreSQL.UnitySearch;
 using Infrastructure.PostgreSQL.UnityAi;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
-using Citus.Accounting.Api.Authorization;
-using Modules.CompanyAccess.Memberships;
 using Modules.CompanyAccess.SessionContext;
 using Npgsql;
-using Modules.Company.FeatureManagement;
 using Modules.Company.MultiBook;
 using Modules.Company.MultiCurrency;
 using Modules.Company.FeatureManagement;
@@ -125,46 +116,22 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddSingleton(new PostgresConnectionFactory(connectionString));
 builder.Services.AddSingleton(new PostgreSqlConnectionFactory(connectionString));
 builder.Services.AddSingleton<PostgresExecutionContextAccessor>();
+builder.Services.AddSingleton<InventoryReceiptExecutionContextAccessor>();
 builder.Services.AddSingleton(new PlatformPostgresConnectionFactory(connectionString));
 builder.Services.Configure<BusinessSessionOptions>(builder.Configuration.GetSection(BusinessSessionOptions.SectionName));
 builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
 builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySessionContextStore>();
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
-// M4 (AUDIT_2026-05-20 P2-10): inventory receipt UoW + ambient
-// execution-context accessor. The accessor wraps an AsyncLocal so
-// scope is intrinsic to the async flow, not the DI scope —
-// Singleton is correct. The UoW depends on the accessor + factory
-// and is also stateless beyond those.
-builder.Services.AddSingleton<InventoryReceiptExecutionContextAccessor>();
-builder.Services.AddSingleton<IInventoryReceiptUnitOfWork, PostgreSqlInventoryReceiptUnitOfWork>();
 builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
 builder.Services.AddSingleton<IInventoryModuleActivationStore, PostgresInventoryModuleActivationStore>();
 builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
+builder.Services.AddSingleton<IInventoryReceiptUnitOfWork, PostgreSqlInventoryReceiptUnitOfWork>();
 builder.Services.AddSingleton<IReceiptInventoryActivationStore, PostgreSqlReceiptInventoryActivationStore>();
 builder.Services.AddSingleton<IReceiptInventoryValuationStore, PostgreSqlReceiptInventoryValuationStore>();
 builder.Services.AddSingleton<IReceiptInventoryCostLayerEmissionStore, PostgreSqlReceiptInventoryCostLayerEmissionStore>();
 builder.Services.AddSingleton<IReceiptGrIrBridgeStore, PostgreSqlReceiptGrIrBridgeStore>();
 builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
 builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipmentStore>();
-// P0-3b-1 (AUDIT_2026-05-20 C3): inventory adjustment GL handler.
-// PostgreSqlInventoryAdjustmentStore now requires the GL poster so the
-// Adjustment Gain/Loss + Approved Write-off paths can emit their Dr/Cr
-// JE in the same tx as the subledger writes. Sibling Workflow stays
-// unregistered until an API surface lands; the store registration is
-// the integration point for the upcoming PR.
-builder.Services.AddSingleton<IInventoryAdjustmentGlPoster, PostgreSqlInventoryAdjustmentGlPoster>();
-builder.Services.AddSingleton<IInventoryAdjustmentStore, PostgreSqlInventoryAdjustmentStore>();
-// P0-3b-2 (AUDIT_2026-05-20 C3): manufacturing GL handler. Same DI
-// shape as the adjustment poster from P0-3b-1: register both the
-// poster and the store so a future API surface can resolve the chain
-// without further wiring.
-builder.Services.AddSingleton<IInventoryManufacturingGlPoster, PostgreSqlInventoryManufacturingGlPoster>();
-builder.Services.AddSingleton<IInventoryManufacturingStore, PostgreSqlInventoryManufacturingStore>();
-// P0-3b-3 (AUDIT_2026-05-20 C3 final closure): transfer GL handler.
-// Single poster handles both Ship and Receive legs (distinguished by
-// the request's Leg enum, idempotent per leg via distinct source_types).
-builder.Services.AddSingleton<IInventoryTransferGlPoster, PostgreSqlInventoryTransferGlPoster>();
-builder.Services.AddSingleton<IInventoryTransferStore, PostgreSqlInventoryTransferStore>();
 builder.Services.AddSingleton(
     static services => new BusinessSessionDirectory(
         services.GetRequiredService<IOptions<BusinessSessionOptions>>(),
@@ -202,11 +169,6 @@ builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccounti
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
-// H1: Expense Void compensation now flows through the Posting Engine via
-// PostExpenseVoidCommandHandler instead of hand-rolled SQL in
-// PostgreSqlExpenseStore. The repo reads the original Expense JE and
-// builds a pre-flipped ExpenseVoidPostingDocument.
-builder.Services.AddScoped<IExpenseVoidPostingRepository, PostgresExpenseVoidPostingRepository>();
 builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoiceDropShipCogsPostingRepository>();
 builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearingAgingReader>();
 builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
@@ -238,60 +200,17 @@ builder.Services.AddScoped<ICompanyBookPolicyStore, PostgreSqlCompanyBookPolicyS
 builder.Services.AddScoped<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
 builder.Services.AddScoped<ICompanyCurrencyProvisioningStore, PostgreSqlCompanyCurrencyProvisioningStore>();
 builder.Services.AddScoped<ICompanyCurrencyGovernanceWorkflow, CompanyCurrencyGovernanceWorkflow>();
-// Per-company module-flag gate. Singletons because the cache lives
-// across requests; see Citus.SysAdmin.Api/Program.cs for the matching
-// registration that owns the write-side governance UI.
-builder.Services.AddSingleton<Modules.Company.FeatureManagement.ICompanyModuleFlagStore,
-    Infrastructure.PostgreSQL.Company.PostgreSqlCompanyModuleFlagStore>();
-builder.Services.AddSingleton<Modules.Company.FeatureManagement.ICompanyModuleFlagWorkflow,
-    Modules.Company.FeatureManagement.CompanyModuleFlagWorkflow>();
-// Permission-store binding for the schema bootstrap path. The schema
-// init at startup calls EnsureSchemaAsync on this; the SysAdmin API
-// owns the write-side workflow and has its own registration. Without
-// this, Production-mode startups crash with "No service for type ..."
-// when SchemaManagement:ApplyOnStartup is true.
-builder.Services.AddScoped<ICompanyMembershipPermissionStore, PostgreSqlCompanyMembershipPermissionStore>();
-// PR-4A: Tralanz permission model evaluator. Read-only; no consumer
-// endpoints yet (PR-4C wires the first batch). Registered here so
-// host smoke tests + future filters can resolve it from the same DI
-// container as the rest of the CompanyAccess infrastructure.
-builder.Services.AddScoped<Modules.CompanyAccess.Permissions.IPermissionEvaluator,
-    Infrastructure.PostgreSQL.CompanyAccess.PostgreSqlPermissionEvaluator>();
-// PR-4E: grant/revoke write path for the new permission model.
-// Workflow validates via IPermissionEvaluator.CanGrantAsync, store
-// writes to company_user_permissions + audit_logs in one transaction.
-builder.Services.AddScoped<Modules.CompanyAccess.Permissions.IPermissionGrantStore,
-    Infrastructure.PostgreSQL.CompanyAccess.PostgreSqlPermissionGrantStore>();
-builder.Services.AddScoped<Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow,
-    Modules.CompanyAccess.Permissions.PermissionGrantWorkflow>();
-// Inventory item pricing (Batch 4). The store is stateless beyond
-// the connection factory; the resolver is a thin normalizer. Both
-// singletons.
-builder.Services.AddSingleton<IInventoryItemPriceStore,
-    Infrastructure.PostgreSQL.Inventory.PostgreSqlInventoryItemPriceStore>();
+builder.Services.AddSingleton<ICompanyModuleFlagStore, PostgreSqlCompanyModuleFlagStore>();
+builder.Services.AddSingleton<ICompanyModuleFlagWorkflow, CompanyModuleFlagWorkflow>();
+builder.Services.AddSingleton<IInventoryItemPriceStore, PostgreSqlInventoryItemPriceStore>();
 builder.Services.AddSingleton<IItemPriceResolver, ItemPriceResolver>();
-// Tasks module (Batch 5). Singletons — the store is stateless and
-// the workflow only adds state-machine validation.
-builder.Services.AddSingleton<ITaskStore, Infrastructure.PostgreSQL.Tasks.PostgreSqlTaskStore>();
+builder.Services.AddSingleton<ITaskStore, PostgreSqlTaskStore>();
 builder.Services.AddSingleton<ITaskWorkflow, TaskWorkflow>();
-// Batch 8: AR / AP line-link validator + per-table task_id column
-// initializer. Stateless singletons; the schema initializer runs at
-// startup to add the task_id column to every line table.
 builder.Services.AddSingleton<ITaskLineLinkValidator, TaskLineLinkValidator>();
-builder.Services.AddSingleton<Infrastructure.PostgreSQL.Tasks.PostgresTaskLinkSchemaInitializer>();
-// Batch 9: AR invoice <-> Task billing coordinator. Bookkeeping only --
-// AR's draft/post path stays untouched; callers invoke MarkAsBilledAsync
-// after a successful post and RollbackBillingAsync after a void.
+builder.Services.AddSingleton<PostgresTaskLinkSchemaInitializer>();
 builder.Services.AddSingleton<ITaskBillingCoordinator, TaskBillingCoordinator>();
-// Batch 10: Task operational + billed margin read model. Live SQL
-// aggregation over bill_lines + expense_lines; no materialised view.
-builder.Services.AddSingleton<ITaskMarginReportService,
-    Infrastructure.PostgreSQL.Tasks.PostgreSqlTaskMarginReportService>();
-// TaskDetailPage reverse view: per-task rollup of every linked AR /
-// AP document. Single SQL UNION across the 4 *_lines tables Batch 8
-// stamped with task_id.
-builder.Services.AddSingleton<ITaskRelatedDocumentsService,
-    Infrastructure.PostgreSQL.Tasks.PostgreSqlTaskRelatedDocumentsService>();
+builder.Services.AddSingleton<ITaskMarginReportService, PostgreSqlTaskMarginReportService>();
+builder.Services.AddSingleton<ITaskRelatedDocumentsService, PostgreSqlTaskRelatedDocumentsService>();
 builder.Services.AddScoped<IArOpenItemRepository, PostgresArOpenItemRepository>();
 builder.Services.AddScoped<IApOpenItemRepository, PostgresApOpenItemRepository>();
 builder.Services.AddScoped<IOpenItemAdjustmentAccountMappingRepository, PostgresOpenItemAdjustmentAccountMappingRepository>();
@@ -326,14 +245,6 @@ builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
-// H1: orchestrates the Expense Void compensating JE via the Posting Engine.
-builder.Services.AddScoped<PostExpenseVoidCommandHandler>();
-// P0-2 (C2): compensating COGS post on invoice-reverse. Mirror of the
-// forward sales-issue COGS handler with isReverse=true on the posting
-// document. Invoked by PostgresAccountingDocumentReviewRepository
-// .CompleteReverseRequestExecutionAsync as part of the invoice-reverse
-// flow, idempotent at the journal-entry source-type probe.
-builder.Services.AddScoped<PostSalesIssueCogsReverseCommandHandler>();
 builder.Services.AddScoped<PostInvoiceDropShipCogsCommandHandler>();
 builder.Services.AddScoped<WriteOffDropShipClearingCommandHandler>();
 builder.Services.AddScoped<PostCustomerDepositCommandHandler>();
@@ -383,11 +294,6 @@ builder.Services.AddSingleton<ISalesTaxCalculationEngine, ServerAuthoritativeSal
 // is_system rows are protected: update / activate-toggle refuse to
 // modify them so AR/AP/FX control accounts stay stable.
 builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
-
-// Per-company Units of Measure (UOM). Seeded by the 2026-05-25 UOM
-// foundation migration + a companies-after-insert trigger. Read-only
-// in V1; the operator-facing CRUD lands when Settings → UOM is added.
-builder.Services.AddSingleton<IUomStore, PostgreSqlUomStore>();
 
 // Customer master data (per-company). Anchors invoices, receive
 // payments, and AR open-item tracking. Entity numbers are
@@ -513,6 +419,8 @@ builder.Services.AddSingleton<PostgreSqlUnityAiSchemaInitializer>();
 // business write. PostgresPlatformFirstCompanyProvisioningRepository
 // guarantees idempotency via IF NOT EXISTS / ON CONFLICT DO NOTHING.
 builder.Services.AddSingleton<Citus.Platform.Core.Runtime.SysAdminPasswordHasher>();
+builder.Services.AddScoped<Citus.Platform.Core.Abstractions.ISysAdminAuthRepository,
+    Citus.Platform.Infrastructure.Persistence.PostgresSysAdminAuthRepository>();
 builder.Services.AddSingleton<Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformFirstCompanyProvisioningRepository>(static sp =>
     sp.GetRequiredService<Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>());
@@ -605,28 +513,6 @@ builder.Services.AddSingleton<IUnityAiPromptRegistry, UnityAiPromptRegistry>();
 // unitysearch_ranking_hints. Manual trigger lives at
 // /internal/ai/distill-unitysearch?companyId=<uuid>.
 builder.Services.AddSingleton<IUnitysearchHintDistillationService, UnitysearchHintDistillationService>();
-// Plan B: per-company query-intent cache. Read path sits on every
-// search call (single index lookup); write path is off-band via the
-// backfill service + Task.Run enqueuer.
-builder.Services.AddSingleton<IUnitysearchQueryIntentCacheStore,
-    Infrastructure.PostgreSQL.UnitySearch.PostgreSqlUnitysearchQueryIntentCacheStore>();
-builder.Services.AddSingleton<IUnitysearchQueryIntentBackfillService,
-    UnitysearchQueryIntentBackfillService>();
-builder.Services.AddSingleton<IUnitysearchQueryIntentBackfillEnqueuer,
-    UnitysearchQueryIntentBackfillEnqueuer>();
-// Plan C-Population: pgvector embedding provider + per-company
-// doc-embedding back-fill. Embedding provider mirrors the chat-completion
-// adapter (same IPlatformAiProviderRuntimeResolver, same OpenAI-compatible
-// URL pattern, just /v1/embeddings instead of /v1/chat/completions).
-// All three gated independently on UNITYAI_EMBEDDINGS_ENABLED so the
-// operator can opt into vector recall without enabling the rest of the
-// AI gateway, or vice versa.
-builder.Services.AddSingleton<IUnityAiEmbeddingProvider,
-    OpenAiCompatibleEmbeddingProvider>();
-builder.Services.AddSingleton<ISearchDocumentEmbeddingStore,
-    Infrastructure.PostgreSQL.UnitySearch.PostgreSqlSearchDocumentEmbeddingStore>();
-builder.Services.AddSingleton<ISearchDocumentEmbeddingBackfillService,
-    SearchDocumentEmbeddingBackfillService>();
 // Real shape validator. Catches malformed provider responses before
 // the gateway tries to deserialize into TOutput, so a runaway LLM
 // can't poison the structured-output deserialization path.
@@ -693,31 +579,6 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true
             });
     });
-    // P0-5c (C10): rate-limit invoice email send per (user, company) to
-    // prevent an authenticated user from blasting customer mailboxes (or
-    // exhausting the platform's SMTP reputation budget) via the
-    // /document-review/invoice/{id}/send endpoint. The window is generous
-    // for legitimate operator use (one invoice every two minutes is well
-    // above the realistic billing pace) and cuts off abuse fast.
-    options.AddPolicy("invoice-send", httpContext =>
-    {
-        var userId = (string?)httpContext.Request.Headers[BusinessSessionHeaders.UserId]
-            ?? (string?)httpContext.Request.Headers[BusinessSessionHeaderNames.LegacyUserId];
-        var companyId = (string?)httpContext.Request.Headers[BusinessSessionHeaders.ActiveCompanyId]
-            ?? (string?)httpContext.Request.Headers[BusinessSessionHeaderNames.LegacyActiveCompanyId];
-        var partitionKey = string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(companyId)
-            ? (httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous")
-            : $"{companyId}|{userId}";
-        return RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey,
-            _ => new FixedWindowRateLimiterOptions
-            {
-                Window = TimeSpan.FromHours(1),
-                PermitLimit = 30,
-                QueueLimit = 0,
-                AutoReplenishment = true
-            });
-    });
 });
 
 var app = builder.Build();
@@ -767,16 +628,16 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         var invoiceTemplateStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceTemplateStore>();
         var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformSmtpConfigStore>();
         var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
+        var sysAdminAuthRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.ISysAdminAuthRepository>();
         var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
         var businessPasswordResetService = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService>();
         var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
         var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
         var v1WriteFlowSchema = startupScope.ServiceProvider.GetRequiredService<PostgresV1WriteFlowSchemaBootstrap>();
         var companyModuleFlagStore = startupScope.ServiceProvider.GetRequiredService<ICompanyModuleFlagStore>();
-        var companyMembershipPermissionStoreSchema = startupScope.ServiceProvider.GetRequiredService<Modules.CompanyAccess.Memberships.ICompanyMembershipPermissionStore>();
         var inventoryItemPriceStore = startupScope.ServiceProvider.GetRequiredService<IInventoryItemPriceStore>();
         var taskStore = startupScope.ServiceProvider.GetRequiredService<ITaskStore>();
-        var taskLinkSchema = startupScope.ServiceProvider.GetRequiredService<Infrastructure.PostgreSQL.Tasks.PostgresTaskLinkSchemaInitializer>();
+        var taskLinkSchema = startupScope.ServiceProvider.GetRequiredService<PostgresTaskLinkSchemaInitializer>();
         await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
         // Platform tables (currency_catalog, companies, users, company_memberships,
         // company_books, etc.) must exist FIRST because the master entity tables
@@ -784,6 +645,7 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         // On a fresh DB the earlier ordering blew up with 42P01: relation "companies"
         // does not exist.
         await platformSchema.EnsureAsync(CancellationToken.None);
+        await sysAdminAuthRepository.EnsureSchemaAsync(CancellationToken.None);
         // Master entities: must exist before v1WriteFlow which FKs / indexes them.
         await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
         await salesTaxStore.EnsureSchemaAsync(CancellationToken.None);
@@ -836,21 +698,6 @@ if (ShouldApplyRuntimeSchemaManagement(app.Configuration, app.Environment))
         await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
         await businessPasswordResetService.EnsureSchemaAsync(CancellationToken.None);
         await loginLockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
-        // company_module_flags is a small, stateless table; safe to bootstrap
-        // last. The SysAdmin API also runs this same bootstrap, so first-to-boot
-        // wins — both calls are no-ops on subsequent boots.
-        await companyModuleFlagStore.EnsureSchemaAsync(CancellationToken.None);
-        // One-time expansion of legacy coarse permission tokens into
-        // their fine-grained equivalents. Whichever API boots first
-        // performs the rewrite; both calls are then no-ops.
-        await companyMembershipPermissionStoreSchema.EnsureSchemaAsync(CancellationToken.None);
-        await inventoryItemPriceStore.EnsureSchemaAsync(CancellationToken.None);
-        await taskStore.EnsureSchemaAsync(CancellationToken.None);
-        // Batch 8: must come after every AR/AP line-table bootstrap
-        // above so the ALTER lands on tables that already exist. The
-        // initializer uses ALTER TABLE IF EXISTS so missing parents
-        // are silently skipped — re-runs on next boot pick them up.
-        await taskLinkSchema.EnsureSchemaAsync(CancellationToken.None);
     }
 }
 else
@@ -988,69 +835,6 @@ app.MapPost(
         }
 
         return Results.NoContent();
-    });
-
-// M17 (AUDIT_2026-05-20 P2-4): switch the session's active company.
-// Updates business_sessions.active_company_id on the server (so the
-// M17 bind check in BusinessRouteGuard sees the new company) and
-// returns the refreshed session summary. The Blazor client uses the
-// returned summary to update BusinessShellState BEFORE flipping the
-// X-Active-Company-Id header on subsequent requests — order matters
-// because the bind check rejects any mismatch between header and
-// DB-stored active_company_id.
-app.MapPost(
-    "/auth/switch-active-company",
-    async (
-        BusinessSwitchActiveCompanyRequest request,
-        HttpContext httpContext,
-        Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository repository,
-        Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
-        CancellationToken cancellationToken) =>
-    {
-        var token = ReadBusinessSessionToken(httpContext);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return Results.Unauthorized();
-        }
-
-        if (!CompanyId.TryParse(request.ActiveCompanyId, out var requestedCompanyId))
-        {
-            return Results.Json(
-                new { message = "Active company id is missing or malformed." },
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        var result = await repository.SwitchActiveCompanyAsync(token, requestedCompanyId, cancellationToken);
-        if (!result.Succeeded)
-        {
-            // Distinguish "session not bound to this company at all"
-            // (403) from "session invalid / expired" (401). The repo
-            // surfaces both as FailureCode strings.
-            var status = result.FailureCode switch
-            {
-                "company_not_available" => StatusCodes.Status403Forbidden,
-                _ => StatusCodes.Status401Unauthorized
-            };
-            return Results.Json(
-                new { message = string.IsNullOrWhiteSpace(result.FailureMessage)
-                    ? "Active-company switch failed." : result.FailureMessage,
-                    code = result.FailureCode },
-                statusCode: status);
-        }
-
-        var summary = await BuildBusinessSessionSummaryAsync(
-            contextWorkflow,
-            result.UserId,
-            result.ActiveCompanyId,
-            cancellationToken);
-        if (summary is null)
-        {
-            return Results.Json(
-                new { message = "Active company switched but the refreshed company access could not be resolved." },
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
-
-        return Results.Ok(summary);
     });
 
 // ---------------------------------------------------------------------------
@@ -1440,97 +1224,6 @@ accounting.MapGet(
     });
 
 // -----------------------------------------------------------------------
-// Per-company Units of Measure (UOM). Read-only in V1 — the 2026-05-25
-// foundation migration seeds 8 defaults and a companies-after-insert
-// trigger seeds them for every new company. Drives the Item edit UOM
-// picker and the qty input step on Task / Invoice / Bill line grids.
-// -----------------------------------------------------------------------
-accounting.MapGet(
-    "/uom",
-    async (
-        BusinessSessionContextAccessor sessionAccessor,
-        IUomStore store,
-        bool? includeInactive,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
-        return Results.Ok(rows.Select(r => new UomHttpSummary(
-            r.Id, r.CompanyId, r.Code, r.Name, r.DecimalPrecision, r.Category, r.IsActive, r.CreatedAt, r.UpdatedAt)));
-    });
-
-// -----------------------------------------------------------------------
-// Per-company module-flag list for the active company. Returns the full
-// catalog merged with persisted state (Enabled=false when the company
-// has never been switched on). Consumed by the Blazor shell to decide
-// which menus to render and by the Task module pages.
-// -----------------------------------------------------------------------
-accounting.MapGet(
-    "/company/module-flags",
-    async (
-        BusinessSessionContextAccessor sessionAccessor,
-        ICompanyModuleFlagWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        var flags = await workflow.ListAsync(session.ActiveCompanyId, cancellationToken);
-        return Results.Ok(flags);
-    });
-
-// -----------------------------------------------------------------------
-// Business-side module-flag toggle. Owners (and anyone holding the
-// settings.modules.toggle token) can self-serve enable/disable a
-// catalog module for the active company. Same persistence + cache
-// invalidation as the SysAdmin path — only the audit row's actor_type
-// differs ('user' vs 'sysadmin') so governance review can distinguish
-// the two pathways.
-//
-// Why this exists alongside the SysAdmin write surface: previously the
-// SysAdmin was the only operator who could flip module-flags. That
-// meant a small-business Owner who wanted Task tracking had to file a
-// ticket. With self-serve toggling the Owner can enable per-company
-// optional modules from Settings → Modules without SysAdmin
-// intervention.
-// -----------------------------------------------------------------------
-accounting.MapPut(
-    "/company/module-flags/{moduleKey}",
-    async (
-        string moduleKey,
-        CompanyModuleFlagToggleHttpRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ICompanyModuleFlagWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null
-            || string.IsNullOrEmpty(session.ActiveCompanyId.Value)
-            || string.IsNullOrEmpty(session.UserId.Value))
-        {
-            return Results.Unauthorized();
-        }
-
-        try
-        {
-            var result = await workflow.SetEnabledFromOwnerAsync(
-                session.ActiveCompanyId,
-                moduleKey,
-                request.Enabled,
-                request.Reason ?? string.Empty,
-                session.UserId,
-                cancellationToken);
-            return Results.Ok(result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsModulesToggle);
-
-// -----------------------------------------------------------------------
 // Create an additional company (Business shell, "+ New Company").
 //
 // The signed-in user (resolved from BusinessSession) becomes the owner
@@ -1611,6 +1304,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "enable company currencies");
+        if (authority is not null) return authority;
 
         if (string.IsNullOrWhiteSpace(request.CurrencyCode))
         {
@@ -1712,10 +1407,12 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view customers");
+        if (authority is not null) return authority;
 
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerView);
+    });
 
 accounting.MapGet(
     "/customers/{customerId:guid}",
@@ -1727,10 +1424,12 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view customers");
+        if (authority is not null) return authority;
 
         var customer = await store.GetByIdAsync(session.ActiveCompanyId, customerId, cancellationToken);
         return customer is null ? Results.NotFound() : Results.Ok(customer);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerView);
+    });
 
 accounting.MapPost(
     "/customers",
@@ -1744,6 +1443,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "create customers");
+        if (authority is not null) return authority;
 
         if (string.IsNullOrWhiteSpace(request.DisplayName))
         {
@@ -1802,7 +1503,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerCreate);
+    });
 
 accounting.MapPut(
     "/customers/{customerId:guid}",
@@ -1816,6 +1517,8 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "update customers");
+        if (authority is not null) return authority;
 
         if (string.IsNullOrWhiteSpace(request.DisplayName))
         {
@@ -1857,7 +1560,7 @@ accounting.MapPut(
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerEdit);
+    });
 
 // Customer shipping-address history — backs the AddressEditor drawer's
 // "Use a previous shipping address" picker. Distinct shipping_*
@@ -1874,6 +1577,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view customer shipping addresses");
+        if (authority is not null) return authority;
 
         var rows = await store.ListShippingAddressHistoryAsync(
             session.ActiveCompanyId,
@@ -1906,10 +1611,12 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view vendors");
+        if (authority is not null) return authority;
 
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorView);
+    });
 
 accounting.MapGet(
     "/vendors/{vendorId:guid}",
@@ -1921,10 +1628,12 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view vendors");
+        if (authority is not null) return authority;
 
         var vendor = await store.GetByIdAsync(session.ActiveCompanyId, vendorId, cancellationToken);
         return vendor is null ? Results.NotFound() : Results.Ok(vendor);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorView);
+    });
 
 accounting.MapPost(
     "/vendors",
@@ -1933,11 +1642,12 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         IVendorStore store,
         ICompanyCurrencyGovernanceWorkflow currencyWorkflow,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "create vendors");
+        if (authority is not null) return authority;
 
         if (string.IsNullOrWhiteSpace(request.DisplayName))
         {
@@ -1976,11 +1686,6 @@ accounting.MapPost(
                     Notes: request.Notes,
                     PaymentTermId: request.PaymentTermId),
                 cancellationToken);
-            // H15: drop the projection's "last refreshed" timestamp so the
-            // new vendor surfaces in the topbar / vendor pickers on the
-            // next search instead of waiting out the 5-minute refresh
-            // window.
-            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23505")
@@ -1991,7 +1696,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorCreate);
+    });
 
 accounting.MapPut(
     "/vendors/{vendorId:guid}",
@@ -2000,11 +1705,12 @@ accounting.MapPut(
         VendorUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IVendorStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "update vendors");
+        if (authority is not null) return authority;
 
         if (string.IsNullOrWhiteSpace(request.DisplayName))
         {
@@ -2034,20 +1740,13 @@ accounting.MapPut(
                     Notes: request.Notes,
                     PaymentTermId: request.PaymentTermId),
                 cancellationToken);
-            if (saved is not null)
-            {
-                // H15: keep topbar / vendor picker in sync with the rename
-                // / address update without waiting for the projection's
-                // 5-minute refresh window.
-                await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
-            }
             return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23503")
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorEdit);
+    });
 
 // -----------------------------------------------------------------------
 // Inventory items (Products & Services).
@@ -2091,6 +1790,8 @@ accounting.MapPost(
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "activate inventory module");
+        if (authority is not null) return authority;
 
         try
         {
@@ -2120,12 +1821,10 @@ accounting.MapPost(
             // Step 2 — costing method (locks on first inventory document).
             var costingMethod = InventoryActivationRequestParser.ParseCostingMethod(request.CostingMethod);
             await foundationStore.SavePolicyAsync(
-                new InventoryCostingPolicyUpdateRequest(
-                    CompanyId: session.ActiveCompanyId,
-                    UserId: session.UserId,
-                    DefaultCostingMethod: costingMethod,
-                    NegativeStockAllowed: false,
-                    RequireWriteOffApproval: true),
+                InventoryActivationRequestParser.BuildPolicyUpdateRequest(
+                    session.ActiveCompanyId,
+                    session.UserId,
+                    request),
                 cancellationToken);
 
             // Step 3 — default warehouse. SaveWarehouseAsync's INSERT path
@@ -2135,21 +1834,17 @@ accounting.MapPost(
             // this the activation route is single-shot — exactly the
             // opposite of what the wizard's "Re-apply settings" copy
             // promises operators.
-            var warehouseName = string.IsNullOrWhiteSpace(request.WarehouseName)
-                ? "Main Warehouse"
-                : request.WarehouseName.Trim();
+            var warehouseName = InventoryActivationRequestParser.ResolveWarehouseName(request.WarehouseName);
             var existingWarehouses = await foundationStore.ListWarehousesAsync(
                 session.ActiveCompanyId, includeInactive: true, cancellationToken);
             var existingMain = existingWarehouses.FirstOrDefault(w =>
                 string.Equals(w.WarehouseCode, "MAIN", StringComparison.OrdinalIgnoreCase));
             var warehouseId = await foundationStore.SaveWarehouseAsync(
-                new InventoryWarehouseUpsertRequest(
-                    CompanyId: session.ActiveCompanyId,
-                    UserId: session.UserId,
-                    WarehouseId: existingMain?.Id,
-                    WarehouseCode: "MAIN",
-                    Name: warehouseName,
-                    Description: "Default warehouse created by the Inventory activation wizard."),
+                InventoryActivationRequestParser.BuildDefaultWarehouseRequest(
+                    session.ActiveCompanyId,
+                    session.UserId,
+                    existingMain?.Id,
+                    request),
                 cancellationToken);
 
             // Step 4 — flip the companies-table flags. Done last so the
@@ -2174,7 +1869,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsModulesToggle);
+    });
 
 // -----------------------------------------------------------------------
 // Warehouses — list / rename for the Inventory tier's Warehouses page.
@@ -2191,10 +1886,12 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view warehouses");
+        if (authority is not null) return authority;
 
         var rows = await store.ListWarehousesAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryWarehouseView);
+    });
 
 accounting.MapPut(
     "/warehouses/{warehouseId:guid}",
@@ -2203,34 +1900,31 @@ accounting.MapPut(
         WarehouseRenameHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IInventoryFoundationStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "update warehouses");
+        if (authority is not null) return authority;
         if (string.IsNullOrWhiteSpace(request.Name)) return Results.BadRequest(new { message = "Name is required." });
 
         try
         {
             await store.SaveWarehouseAsync(
-                new InventoryWarehouseUpsertRequest(
-                    CompanyId: session.ActiveCompanyId,
-                    UserId: session.UserId,
-                    WarehouseId: warehouseId,
-                    WarehouseCode: (request.WarehouseCode ?? string.Empty).Trim().ToUpperInvariant(),
-                    Name: request.Name.Trim(),
-                    Description: string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim()),
+                WarehouseRequestMapper.BuildWarehouseUpsertRequest(
+                    session.ActiveCompanyId,
+                    session.UserId,
+                    warehouseId,
+                    request),
                 cancellationToken);
-            // H15: refresh warehouse picker projection on rename / upsert.
-            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(new { warehouseId });
         }
         catch (InvalidOperationException ex)
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryWarehouseEdit);
+    });
 
 accounting.MapGet(
     "/inventory/activation-state",
@@ -2241,6 +1935,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view inventory activation state");
+        if (authority is not null) return authority;
 
         var state = await activationStore.GetStateAsync(session.ActiveCompanyId, cancellationToken);
         if (state is null) return Results.NotFound();
@@ -2312,10 +2008,12 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view inventory items");
+        if (authority is not null) return authority;
 
         var rows = await store.ListItemsAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows.Select(MapItemSummary));
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemView);
+    });
 
 accounting.MapPost(
     "/items",
@@ -2323,12 +2021,13 @@ accounting.MapPost(
         InventoryItemUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IInventoryFoundationStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "create inventory items");
+        if (authority is not null) return authority;
 
         var validation = ValidateItemRequest(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -2338,10 +2037,6 @@ accounting.MapPost(
             var itemId = await store.SaveItemAsync(
                 BuildItemUpsertRequest(session.ActiveCompanyId, session.UserId, itemId: null, request),
                 cancellationToken);
-
-            // H15: refresh topbar / item / stock picker projection so the
-            // new item shows up immediately.
-            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
 
             // Re-fetch the saved row so the response carries the same shape
             // as GET /items (including auto-set fields like created_at).
@@ -2353,7 +2048,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemCreate);
+    });
 
 accounting.MapPut(
     "/items/{itemId:guid}",
@@ -2362,12 +2057,13 @@ accounting.MapPut(
         InventoryItemUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IInventoryFoundationStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "update inventory items");
+        if (authority is not null) return authority;
 
         var validation = ValidateItemRequest(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -2378,10 +2074,6 @@ accounting.MapPut(
                 BuildItemUpsertRequest(session.ActiveCompanyId, session.UserId, itemId, request),
                 cancellationToken);
 
-            // H15: keep topbar / item / stock picker in sync with the
-            // rename / re-categorization.
-            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
-
             var rows = await store.ListItemsAsync(session.ActiveCompanyId, includeInactive: true, cancellationToken);
             var saved = rows.FirstOrDefault(r => r.Id == itemId);
             return saved is null ? Results.NoContent() : Results.Ok(MapItemSummary(saved));
@@ -2390,7 +2082,7 @@ accounting.MapPut(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemEdit);
+    });
 
 accounting.MapPost(
     "/items/{itemId:guid}/activate",
@@ -2402,6 +2094,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "activate inventory items");
+        if (authority is not null) return authority;
         try
         {
             await store.SetItemActiveAsync(session.ActiveCompanyId, itemId, isActive: true, cancellationToken);
@@ -2411,7 +2105,7 @@ accounting.MapPost(
         {
             return Results.NotFound(new { message = ex.Message });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemEdit);
+    });
 
 accounting.MapPost(
     "/items/{itemId:guid}/deactivate",
@@ -2423,6 +2117,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "deactivate inventory items");
+        if (authority is not null) return authority;
         try
         {
             await store.SetItemActiveAsync(session.ActiveCompanyId, itemId, isActive: false, cancellationToken);
@@ -2432,604 +2128,7 @@ accounting.MapPost(
         {
             return Results.NotFound(new { message = ex.Message });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryItemEdit);
-
-// ---------------------------------------------------------------------------
-// Inventory item pricing (Batch 4).
-//
-// CRUD + resolve over `inventory_item_prices`. Read paths require
-// `inventory.price.view`; write paths require `inventory.price.edit`.
-// First real consumer of the [HasPermission] decorator pattern
-// introduced in Batch 3 — owners get implicit access via the
-// session-load Union (Batch 3.6).
-//
-// Resolution semantics (see InventoryItemPriceQuery + the SQL in the
-// store): customer-specific > price-list-specific > highest matching
-// quantity tier > most recent effective_from. Caller passes
-// document-date as `asOf` so resolution is deterministic over time.
-// ---------------------------------------------------------------------------
-accounting.MapGet(
-    "/items/{itemId:guid}/prices",
-    async (
-        Guid itemId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IInventoryItemPriceStore priceStore,
-        bool? includeInactive,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        var rows = await priceStore.ListAsync(
-            session.ActiveCompanyId,
-            itemId,
-            includeInactive ?? false,
-            cancellationToken);
-        return Results.Ok(rows);
-    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceView);
-
-accounting.MapPost(
-    "/items/{itemId:guid}/prices",
-    async (
-        Guid itemId,
-        InventoryItemPriceUpsertRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        IInventoryItemPriceStore priceStore,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            // Force create — ignore any Id the caller put on the body
-            // so POST is unambiguously "new row". Updates use PUT.
-            var saved = await priceStore.UpsertAsync(
-                session.ActiveCompanyId,
-                itemId,
-                request with { Id = null },
-                cancellationToken);
-            return Results.Ok(saved);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceEdit);
-
-accounting.MapPut(
-    "/items/{itemId:guid}/prices/{priceId:guid}",
-    async (
-        Guid itemId,
-        Guid priceId,
-        InventoryItemPriceUpsertRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        IInventoryItemPriceStore priceStore,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var saved = await priceStore.UpsertAsync(
-                session.ActiveCompanyId,
-                itemId,
-                request with { Id = priceId },
-                cancellationToken);
-            return Results.Ok(saved);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceEdit);
-
-accounting.MapDelete(
-    "/items/{itemId:guid}/prices/{priceId:guid}",
-    async (
-        Guid itemId,
-        Guid priceId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IInventoryItemPriceStore priceStore,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        var deleted = await priceStore.SoftDeleteAsync(
-            session.ActiveCompanyId,
-            priceId,
-            cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceEdit);
-
-accounting.MapGet(
-    "/items/{itemId:guid}/price/resolve",
-    async (
-        Guid itemId,
-        string? currency,
-        DateOnly? asOf,
-        Guid? customerId,
-        string? priceListCode,
-        decimal? quantity,
-        BusinessSessionContextAccessor sessionAccessor,
-        IItemPriceResolver resolver,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        if (string.IsNullOrWhiteSpace(currency))
-        {
-            return Results.BadRequest(new { message = "currency is required." });
-        }
-
-        try
-        {
-            var resolution = await resolver.ResolveAsync(
-                new InventoryItemPriceQuery
-                {
-                    CompanyId = session.ActiveCompanyId,
-                    ItemId = itemId,
-                    CurrencyCode = currency,
-                    AsOf = asOf ?? DateOnly.FromDateTime(DateTime.UtcNow),
-                    CustomerId = customerId,
-                    PriceListCode = priceListCode,
-                    Quantity = quantity ?? 1m,
-                },
-                cancellationToken);
-
-            // Null = no matching price. Callers fall back to their
-            // own default (e.g. inventory_item.unit_price, manual
-            // entry). 404 keeps the contract honest: a "missing
-            // price" is not an error, it's just absence.
-            return resolution is null ? Results.NotFound() : Results.Ok(resolution);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    }).RequirePermission(CompanyMembershipPermissionCatalog.InventoryPriceView);
-
-// ---------------------------------------------------------------------------
-// Tasks (Batch 5).
-//
-// Service-delivery execution units, per Tralance Task Module Authority
-// Summary. State machine: open → completed → billed (Batch 9 wires
-// the AR → bill transition); open or completed → canceled. Edits are
-// accepted only in open. Caller without `task.view.all` only sees the
-// rows assigned to themselves; owner Union (Batch 3.6) grants the
-// full-view permission automatically.
-//
-// Every endpoint is double-gated: RequireModuleEnabled("task")
-// returns 404 if the company hasn't switched the module on, then
-// RequirePermission(...) returns 403 on permission shortfall. The
-// company-isolation guard already applies via the existing route
-// guard pipeline.
-// ---------------------------------------------------------------------------
-accounting.MapGet(
-    "/tasks",
-    async (
-        TaskStatus? status,
-        Guid? customerId,
-        int? take,
-        int? skip,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        // If the caller can't see-all, narrow the SQL to "assigned to
-        // me" before it ever hits the DB — defence-in-depth on top of
-        // any UI filtering. Owners always pass via the catalog Union.
-        var canSeeAll = session.Roles.Contains(CompanyMembershipPermissionCatalog.TaskViewAll, StringComparer.Ordinal);
-        var query = new TaskQuery
-        {
-            CompanyId = session.ActiveCompanyId,
-            Status = status,
-            CustomerId = customerId,
-            OnlyAssignedToUserId = canSeeAll ? null : session.UserId,
-            Take = take ?? 50,
-            Skip = skip ?? 0,
-        };
-
-        var rows = await workflow.ListAsync(query, cancellationToken);
-        return Results.Ok(rows);
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
-
-accounting.MapGet(
-    "/tasks/{taskId:guid}",
-    async (
-        Guid taskId,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        var record = await workflow.GetAsync(session.ActiveCompanyId, taskId, cancellationToken);
-        if (record is null) return Results.NotFound();
-
-        // Visibility check: if the caller lacks `task.view.all`, they
-        // can only see a task that is assigned to them. Same gate as
-        // the list endpoint — applied here too because direct-URL
-        // access bypasses the list narrowing. Unassigned tasks are
-        // hidden from narrow-scope viewers as well (no implicit
-        // "everyone can see unowned tasks").
-        var canSeeAll = session.Roles.Contains(CompanyMembershipPermissionCatalog.TaskViewAll, StringComparer.Ordinal);
-        if (!canSeeAll && record.AssignedToUserId != session.UserId)
-        {
-            return Results.NotFound();
-        }
-
-        return Results.Ok(record);
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
-
-// Batch display-label resolver for task ids. Used by the bill /
-// expense / credit-memo edit pages so the per-line TaskPicker can
-// render "TSK-000123 -- Title" instead of a short-GUID placeholder
-// when the page first loads with persisted task_ids. Repeated query
-// parameter binding: ?ids=guid1&ids=guid2&...
-accounting.MapGet(
-    "/tasks/lookup",
-    async (
-        Guid[]? ids,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        var rows = await store.LookupDisplayAsync(
-            session.ActiveCompanyId,
-            ids ?? Array.Empty<Guid>(),
-            cancellationToken);
-        return Results.Ok(rows);
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
-
-// Per-task reverse rollup of every linked AR / AP document. Same
-// double-gate (module + permission) as the rest of the surface.
-// Read-only; the page just displays what the line tables already
-// contain (no extra state).
-accounting.MapGet(
-    "/tasks/{taskId:guid}/related-documents",
-    async (
-        Guid taskId,
-        string? baseCurrency,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        ITaskRelatedDocumentsService service,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        // Re-run the same visibility gate the GET /tasks/{id} endpoint
-        // applies. Without this an operator without task.view.all could
-        // browse the related-docs list of a task they aren't assigned
-        // to by guessing its id.
-        var task = await workflow.GetAsync(session.ActiveCompanyId, taskId, cancellationToken);
-        if (task is null) return Results.NotFound();
-
-        var canSeeAll = session.Roles.Contains(CompanyMembershipPermissionCatalog.TaskViewAll, StringComparer.Ordinal);
-        if (!canSeeAll && task.AssignedToUserId != session.UserId)
-        {
-            return Results.NotFound();
-        }
-
-        // Resolve base currency for FX conversion of each related doc's
-        // task_amount. Client passes its ShellState value; default to
-        // the task's own currency if absent so the report stays
-        // numerically honest (each row converts at rate 1 within its
-        // own currency) for legacy callers.
-        var resolvedBase = string.IsNullOrWhiteSpace(baseCurrency)
-            ? task.CurrencyCode
-            : baseCurrency.Trim().ToUpperInvariant();
-        if (resolvedBase.Length != 3)
-        {
-            return Results.BadRequest(new { message = $"baseCurrency must be a 3-letter ISO code; got '{baseCurrency}'." });
-        }
-
-        var rows = await service.ListForTaskAsync(session.ActiveCompanyId, taskId, resolvedBase, cancellationToken);
-        return Results.Ok(rows);
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskView);
-
-accounting.MapPost(
-    "/tasks",
-    async (
-        TaskCreateRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var created = await workflow.CreateAsync(session.ActiveCompanyId, session.UserId, request, cancellationToken);
-            return Results.Created($"/accounting/tasks/{created.Id:D}", created);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskCreate);
-
-accounting.MapPut(
-    "/tasks/{taskId:guid}",
-    async (
-        Guid taskId,
-        TaskUpdateRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var updated = await workflow.UpdateAsync(session.ActiveCompanyId, taskId, session.UserId, request, cancellationToken);
-            return Results.Ok(updated);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskEdit);
-
-accounting.MapPost(
-    "/tasks/{taskId:guid}/lines",
-    async (
-        Guid taskId,
-        TaskLineUpsertRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var updated = await workflow.AddLineAsync(session.ActiveCompanyId, taskId, session.UserId, request, cancellationToken);
-            return Results.Ok(updated);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskEdit);
-
-accounting.MapDelete(
-    "/tasks/{taskId:guid}/lines/{lineId:guid}",
-    async (
-        Guid taskId,
-        Guid lineId,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var updated = await workflow.RemoveLineAsync(session.ActiveCompanyId, taskId, lineId, session.UserId, cancellationToken);
-            return Results.Ok(updated);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskEdit);
-
-accounting.MapPost(
-    "/tasks/{taskId:guid}/complete",
-    async (
-        Guid taskId,
-        TaskStateChangeRequest? request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var updated = await workflow.CompleteAsync(session.ActiveCompanyId, taskId, session.UserId, request?.Reason, cancellationToken);
-            return Results.Ok(updated);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskComplete);
-
-accounting.MapPost(
-    "/tasks/{taskId:guid}/cancel",
-    async (
-        Guid taskId,
-        TaskStateChangeRequest? request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var updated = await workflow.CancelAsync(session.ActiveCompanyId, taskId, session.UserId, request?.Reason, cancellationToken);
-            return Results.Ok(updated);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskCancel);
-
-// Batch 9: Task <-> AR invoice billing bookkeeping. These two
-// endpoints are the only canonical way to flip a task into / out of
-// the `Billed` terminal state. They are invoked by the AR post-success
-// path (mark) and the AR void path (rollback). Neither endpoint
-// touches AR documents -- they exist purely so the Task module knows
-// which tasks are currently locked behind an invoice. Same double-gate
-// pattern as the rest of the surface.
-accounting.MapPost(
-    "/tasks/billing/mark",
-    async (
-        TaskMarkBilledRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskBillingCoordinator coordinator,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var result = await coordinator.MarkAsBilledAsync(
-                session.ActiveCompanyId,
-                request.InvoiceId,
-                request.CustomerId,
-                request.TaskIds,
-                session.UserId,
-                cancellationToken);
-            return Results.Ok(result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskBill);
-
-accounting.MapPost(
-    "/tasks/billing/rollback",
-    async (
-        TaskRollbackBillingRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskBillingCoordinator coordinator,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
-
-        try
-        {
-            var result = await coordinator.RollbackBillingAsync(
-                session.ActiveCompanyId,
-                request.InvoiceId,
-                session.UserId,
-                request.Reason,
-                cancellationToken);
-            return Results.Ok(result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskBill);
-
-// Batch 10: Task gross-margin report. One endpoint, two modes:
-//   mode=operational (default) -> open/completed/billed tasks, filtered by service_date
-//   mode=billed                -> billed-only, filtered by billed_at
-// Filters (from/to/customerId/assigneeId/take/skip) are all optional.
-// The summary in the response always reflects the unpaged filtered set,
-// not just the visible page.
-accounting.MapGet(
-    "/tasks/reports/margin",
-    async (
-        string? mode,
-        DateOnly? from,
-        DateOnly? to,
-        Guid? customerId,
-        string? assigneeId,
-        string? baseCurrency,
-        int? take,
-        int? skip,
-        BusinessSessionContextAccessor sessionAccessor,
-        ITaskMarginReportService reportService,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-
-        TaskMarginReportMode parsedMode;
-        switch ((mode ?? "operational").Trim().ToLowerInvariant())
-        {
-            case "operational":
-                parsedMode = TaskMarginReportMode.Operational;
-                break;
-            case "billed":
-                parsedMode = TaskMarginReportMode.Billed;
-                break;
-            default:
-                return Results.BadRequest(new { message = $"Unknown report mode '{mode}'. Use 'operational' or 'billed'." });
-        }
-
-        // Base currency targets the FX conversion. Client passes its
-        // ShellState.ActiveCompany.BaseCurrencyCode; if absent (legacy
-        // callers) default to USD so the SQL has a valid pair to query.
-        var resolvedBase = string.IsNullOrWhiteSpace(baseCurrency)
-            ? "USD"
-            : baseCurrency.Trim().ToUpperInvariant();
-        if (resolvedBase.Length != 3)
-        {
-            return Results.BadRequest(new { message = $"baseCurrency must be a 3-letter ISO code; got '{baseCurrency}'." });
-        }
-
-        UserId? parsedAssignee = string.IsNullOrWhiteSpace(assigneeId) ? null : UserId.Parse(assigneeId.Trim());
-
-        var query = new TaskMarginReportQuery
-        {
-            CompanyId = session.ActiveCompanyId,
-            BaseCurrencyCode = resolvedBase,
-            Mode = parsedMode,
-            FromDate = from,
-            ToDate = to,
-            CustomerId = customerId,
-            AssignedToUserId = parsedAssignee,
-            Take = take ?? 200,
-            Skip = skip ?? 0,
-        };
-
-        var result = await reportService.GetReportAsync(query, cancellationToken);
-        return Results.Ok(result);
-    })
-    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task)
-    .RequirePermission(CompanyMembershipPermissionCatalog.TaskReportMargin);
+    });
 
 accounting.MapGet(
     "/company/module-flags",
@@ -3334,6 +2433,59 @@ accounting.MapPost(
     })
     .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
 
+accounting.MapPost(
+    "/tasks/billing/mark-lines-billed",
+    async (
+        TaskMarkLinesBilledRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaskBillingCoordinator coordinator,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "bill tasks");
+        if (authority is not null) return authority;
+
+        var sourceType = string.IsNullOrWhiteSpace(request.SourceType)
+            ? "invoice"
+            : request.SourceType.Trim().ToLowerInvariant();
+        if (request.SourceId == Guid.Empty)
+        {
+            return Results.BadRequest(new { message = "Source document id is required." });
+        }
+        if (request.Lines is null || request.Lines.Count == 0)
+        {
+            return Results.BadRequest(new { message = "At least one task line is required." });
+        }
+        if (request.Lines.Any(static line => line.TaskId == Guid.Empty || line.TaskLineId == Guid.Empty))
+        {
+            return Results.BadRequest(new { message = "Task id and task line id are required for every billing link." });
+        }
+
+        try
+        {
+            var result = await coordinator.MarkLinesAsBilledAsync(
+                session.ActiveCompanyId,
+                sourceType,
+                request.SourceId,
+                request.CustomerId,
+                request.Lines
+                    .Select(static line => new TaskLineBillingMapping(
+                        line.TaskId,
+                        line.TaskLineId,
+                        line.SourceLineId))
+                    .ToArray(),
+                session.UserId,
+                cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    })
+    .RequireModuleEnabled(CompanyModuleFlagCatalog.Task);
+
 accounting.MapGet(
     "/tasks/reports/margin",
     async (
@@ -3398,8 +2550,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/company-books",
-    async ([AsParameters] CompanyBookGovernanceLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async ([AsParameters] CompanyBookGovernanceLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view company books");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var results = await workflow.ListBookGovernanceAsync(
             query.CompanyId,
@@ -3476,8 +2635,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/company-books/{bookId:guid}/governance-signals",
-    async (Guid bookId, [AsParameters] CompanyBookGovernanceSignalsLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (Guid bookId, [AsParameters] CompanyBookGovernanceSignalsLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view company-book governance signals");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var result = await workflow.GetGovernanceSignalsAsync(
             query.CompanyId,
@@ -3509,8 +2675,20 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/company-books/{bookId:guid}/governance-signals",
-    async (Guid bookId, CreateCompanyBookGovernanceSignalHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid bookId,
+        CreateCompanyBookGovernanceSignalHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyBookPolicyWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "create company-book governance signals");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.CreateGovernanceSignalAsync(
@@ -3520,7 +2698,7 @@ accounting.MapPost(
                 request.SignalDate,
                 request.ReferenceLabel,
                 request.Notes,
-                request.UserId,
+                actorId,
                 cancellationToken);
 
             return Results.Ok(new
@@ -3565,8 +2743,20 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/company-books/{bookId:guid}/close-periods",
-    async (Guid bookId, RegisterCompanyBookClosedPeriodHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid bookId,
+        RegisterCompanyBookClosedPeriodHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyBookPolicyWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "register company-book closed periods");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.RegisterClosedPeriodAsync(
@@ -3575,7 +2765,7 @@ accounting.MapPost(
                 request.PeriodEndDate,
                 request.ReferenceLabel,
                 request.Notes,
-                request.UserId,
+                actorId,
                 cancellationToken);
 
             return Results.Ok(new
@@ -3620,8 +2810,20 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/company-books/{bookId:guid}/issued-statements",
-    async (Guid bookId, RegisterCompanyBookIssuedStatementHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid bookId,
+        RegisterCompanyBookIssuedStatementHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyBookPolicyWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "register company-book issued statements");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.RegisterIssuedStatementAsync(
@@ -3630,7 +2832,7 @@ accounting.MapPost(
                 request.IssuedOn,
                 request.StatementLabel,
                 request.Notes,
-                request.UserId,
+                actorId,
                 cancellationToken);
 
             return Results.Ok(new
@@ -3675,8 +2877,20 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/company-books/{bookId:guid}/filed-tax",
-    async (Guid bookId, RegisterCompanyBookFiledTaxHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid bookId,
+        RegisterCompanyBookFiledTaxHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyBookPolicyWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "register company-book filed tax");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.RegisterFiledTaxAsync(
@@ -3685,7 +2899,7 @@ accounting.MapPost(
                 request.FiledOn,
                 request.FilingLabel,
                 request.Notes,
-                request.UserId,
+                actorId,
                 cancellationToken);
 
             return Results.Ok(new
@@ -3730,8 +2944,13 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/company-books/governed-change-preview",
-    async (CompanyBookGovernedChangePreviewHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (CompanyBookGovernedChangePreviewHttpRequest request, BusinessSessionContextAccessor sessionAccessor, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "preview company-book governed changes");
+        if (authority is not null) return authority;
+
         try
         {
             var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -3813,14 +3032,25 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/company-books/governed-change-requests/prepare",
-    async (PrepareCompanyBookGovernedChangeRequestHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        PrepareCompanyBookGovernedChangeRequestHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyBookPolicyWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "prepare company-book governed change requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
             var result = await workflow.PrepareGovernedChangeRequestDraftAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 request.BookId,
                 asOfDate,
                 request.EffectiveFrom,
@@ -3911,8 +3141,13 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/company-books/governed-change-requests",
-    async ([AsParameters] CompanyBookGovernedChangeRequestLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async ([AsParameters] CompanyBookGovernedChangeRequestLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view company-book governed change requests");
+        if (authority is not null) return authority;
+
         var results = await workflow.ListGovernedChangeRequestDraftsAsync(query.CompanyId, cancellationToken);
 
         return Results.Ok(new
@@ -3983,14 +3218,26 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/company-books/governed-change-requests/{requestId:guid}/submit",
-    async (Guid requestId, TransitionCompanyBookGovernedChangeRequestHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid requestId,
+        TransitionCompanyBookGovernedChangeRequestHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyBookPolicyWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "submit company-book governed change requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.SubmitGovernedChangeRequestDraftAsync(
                 request.CompanyId,
                 requestId,
-                request.UserId,
+                actorId,
                 cancellationToken);
 
             return Results.Ok(new
@@ -4022,14 +3269,26 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/company-books/governed-change-requests/{requestId:guid}/cancel",
-    async (Guid requestId, TransitionCompanyBookGovernedChangeRequestHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid requestId,
+        TransitionCompanyBookGovernedChangeRequestHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyBookPolicyWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "cancel company-book governed change requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.CancelGovernedChangeRequestDraftAsync(
                 request.CompanyId,
                 requestId,
-                request.UserId,
+                actorId,
                 cancellationToken);
 
             return Results.Ok(new
@@ -4061,8 +3320,13 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/company-books/governed-change-requests/{requestId:guid}/apply-readiness",
-    async (Guid requestId, [AsParameters] CompanyBookGovernedChangeRequestReadinessQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async (Guid requestId, [AsParameters] CompanyBookGovernedChangeRequestReadinessQuery query, BusinessSessionContextAccessor sessionAccessor, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view company-book governed change readiness");
+        if (authority is not null) return authority;
+
         try
         {
             var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -4096,8 +3360,13 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/company-books/remeasurement-policy",
-    async ([AsParameters] CompanyBookPolicyLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    async ([AsParameters] CompanyBookPolicyLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view company-book remeasurement policy");
+        if (authority is not null) return authority;
+
         try
         {
             var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -4196,8 +3465,19 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/reports/trial-balance",
-    async ([AsParameters] TrialBalanceLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] TrialBalanceLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view trial balance");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetTrialBalanceAsync(
             new GetTrialBalanceQuery(
                 query.CompanyId,
@@ -4214,12 +3494,23 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapTrialBalanceReport(report));
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsView);
+    });
 
 accounting.MapGet(
     "/reports/trial-balance/export.csv",
-    async ([AsParameters] TrialBalanceLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] TrialBalanceLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "export trial balance");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetTrialBalanceAsync(
             new GetTrialBalanceQuery(
                 query.CompanyId,
@@ -4237,12 +3528,23 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportTrialBalance(MapTrialBalanceReport(report));
         return ToCsvFileResult(file);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
+    });
 
 accounting.MapGet(
     "/reports/income-statement",
-    async ([AsParameters] IncomeStatementLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] IncomeStatementLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view income statement");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var dateTo = query.DateTo ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var dateFrom = query.DateFrom ?? new DateOnly(dateTo.Year, dateTo.Month, 1);
 
@@ -4271,12 +3573,23 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapIncomeStatementReport(report));
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsView);
+    });
 
 accounting.MapGet(
     "/reports/income-statement/export.csv",
-    async ([AsParameters] IncomeStatementLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] IncomeStatementLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "export income statement");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var dateTo = query.DateTo ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var dateFrom = query.DateFrom ?? new DateOnly(dateTo.Year, dateTo.Month, 1);
 
@@ -4306,12 +3619,23 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportIncomeStatement(MapIncomeStatementReport(report));
         return ToCsvFileResult(file);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
+    });
 
 accounting.MapGet(
     "/reports/balance-sheet",
-    async ([AsParameters] BalanceSheetLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] BalanceSheetLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view balance sheet");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetBalanceSheetAsync(
             new GetBalanceSheetQuery(
                 query.CompanyId,
@@ -4328,12 +3652,23 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapBalanceSheetReport(report));
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsView);
+    });
 
 accounting.MapGet(
     "/reports/balance-sheet/export.csv",
-    async ([AsParameters] BalanceSheetLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] BalanceSheetLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "export balance sheet");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetBalanceSheetAsync(
             new GetBalanceSheetQuery(
                 query.CompanyId,
@@ -4351,12 +3686,23 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportBalanceSheet(MapBalanceSheetReport(report));
         return ToCsvFileResult(file);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
+    });
 
 accounting.MapGet(
     "/reports/ar-aging",
-    async ([AsParameters] ArAgingLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] ArAgingLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view AR aging");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetArAgingAsync(
             new GetArAgingQuery(
                 query.CompanyId,
@@ -4372,12 +3718,23 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapArAgingReport(report));
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArAgingView);
+    });
 
 accounting.MapGet(
     "/reports/ar-aging/export.csv",
-    async ([AsParameters] ArAgingLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] ArAgingLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "export AR aging");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetArAgingAsync(
             new GetArAgingQuery(
                 query.CompanyId,
@@ -4394,12 +3751,23 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportArAging(MapArAgingReport(report));
         return ToCsvFileResult(file);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
+    });
 
 accounting.MapGet(
     "/reports/ap-aging",
-    async ([AsParameters] ApAgingLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] ApAgingLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view AP aging");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetApAgingAsync(
             new GetApAgingQuery(
                 query.CompanyId,
@@ -4415,12 +3783,23 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapApAgingReport(report));
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApAgingView);
+    });
 
 accounting.MapGet(
     "/reports/ap-aging/export.csv",
-    async ([AsParameters] ApAgingLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] ApAgingLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingReportRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "export AP aging");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetApAgingAsync(
             new GetApAgingQuery(
                 query.CompanyId,
@@ -4437,7 +3816,7 @@ accounting.MapGet(
 
         var file = ReportCsvExporter.ExportApAging(MapApAgingReport(report));
         return ToCsvFileResult(file);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
+    });
 
 // ---------------------------------------------------------------------------
 // Sales Overview — Cash Flow band (10 past + current + 3 forecast months)
@@ -4447,8 +3826,15 @@ accounting.MapGet(
 // ---------------------------------------------------------------------------
 accounting.MapGet(
     "/sales/cash-flow",
-    async ([AsParameters] SalesCashFlowLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async ([AsParameters] SalesCashFlowLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view sales cash flow");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetSalesCashFlowAsync(
             new GetSalesCashFlowQuery(
                 query.CompanyId,
@@ -4468,8 +3854,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/sales/income-over-time",
-    async ([AsParameters] IncomeOverTimeLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async ([AsParameters] IncomeOverTimeLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view income over time");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var to = query.ToDate ?? today;
         // Default window: trailing 12 months ending on the as-of month.
@@ -4503,8 +3896,15 @@ accounting.MapGet(
 // ---------------------------------------------------------------------------
 accounting.MapGet(
     "/expense/cash-outflow",
-    async ([AsParameters] ExpenseCashOutflowLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async ([AsParameters] ExpenseCashOutflowLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view expense cash outflow");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var report = await repository.GetExpenseCashOutflowAsync(
             new GetExpenseCashOutflowQuery(
                 query.CompanyId,
@@ -4524,8 +3924,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/expense/over-time",
-    async ([AsParameters] ExpenseOverTimeLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    async ([AsParameters] ExpenseOverTimeLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "reports",
+            "view expense over time");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var to = query.ToDate ?? today;
         var defaultFrom = new DateOnly(to.Year, to.Month, 1).AddMonths(-11);
@@ -4552,8 +3959,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/open-items/ar/{openItemId:guid}",
-    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IArOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ar_payments",
+            "view AR open items");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var item = await openItemRepository.GetDrillDownAsync(
             query.CompanyId,
             openItemId,
@@ -4617,8 +4031,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/open-item-adjustment-account-mappings",
-    async ([AsParameters] OpenItemAdjustmentAccountMappingLookupQuery query, IOpenItemAdjustmentAccountMappingRepository repository, CancellationToken cancellationToken) =>
+    async ([AsParameters] OpenItemAdjustmentAccountMappingLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IOpenItemAdjustmentAccountMappingRepository repository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view open-item adjustment account mappings");
+        if (!readGate.Allowed) return readGate.Response!;
+
         try
         {
             var result = await repository.LookupAsync(
@@ -4657,6 +4078,8 @@ accounting.MapPost(
     "/open-item-adjustment-account-mappings",
     async (SaveOpenItemAdjustmentAccountMappingHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IOpenItemAdjustmentAccountMappingRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
         var authorityBlock = RequireOpenItemAdjustmentAccountMappingManagementAuthority(
             sessionAccessor.Current,
             "save");
@@ -4664,10 +4087,11 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
-            var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
             var result = await repository.SaveAsync(
                 new OpenItemAdjustmentAccountMappingSaveRequest(
                     request.CompanyId,
@@ -4690,6 +4114,8 @@ accounting.MapPost(
     "/open-item-adjustment-account-mappings/{mappingId:guid}/deactivate",
     async (Guid mappingId, DeactivateOpenItemAdjustmentAccountMappingHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IOpenItemAdjustmentAccountMappingRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
         var authorityBlock = RequireOpenItemAdjustmentAccountMappingManagementAuthority(
             sessionAccessor.Current,
             "deactivate");
@@ -4697,8 +4123,9 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
         var result = await repository.DeactivateAsync(
             request.CompanyId,
             mappingId,
@@ -4712,8 +4139,15 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/open-items/ar/{openItemId:guid}/adjustment-preview",
-    async (Guid openItemId, [AsParameters] OpenItemAdjustmentPreviewLookupQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, [AsParameters] OpenItemAdjustmentPreviewLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ar_payments",
+            "preview AR open-item adjustments");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var adjustmentType = string.IsNullOrWhiteSpace(query.AdjustmentType) ? "write_off" : query.AdjustmentType;
         var adjustmentDate = query.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var preview = await openItemRepository.GetAdjustmentPreviewAsync(
@@ -4733,7 +4167,12 @@ accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request",
     async (Guid openItemId, RequestOpenItemAdjustmentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "request AR open-item adjustments");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         var adjustmentDate = request.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var attempt = await openItemRepository.RequestAdjustmentAsync(
             request.CompanyId,
@@ -4752,8 +4191,15 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/open-items/ar/{openItemId:guid}/adjustment-request",
-    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ar_payments",
+            "view AR open-item adjustment requests");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var request = await openItemRepository.GetLatestAdjustmentRequestAsync(
             query.CompanyId,
             openItemId,
@@ -4768,7 +4214,12 @@ accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/submit",
     async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "submit AR open-item adjustment requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         var result = await openItemRepository.SubmitAdjustmentRequestAsync(
             request.CompanyId,
             openItemId,
@@ -4785,7 +4236,12 @@ accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/cancel",
     async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "cancel AR open-item adjustment requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         var result = await openItemRepository.CancelAdjustmentRequestAsync(
             request.CompanyId,
             openItemId,
@@ -4802,7 +4258,9 @@ accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/approve",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = CompanyId.Parse(request.CompanyId.ToString());
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var companyId = request.CompanyId;
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -4822,8 +4280,9 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
         var result = await openItemRepository.ApproveAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -4840,7 +4299,9 @@ accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/reject",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = CompanyId.Parse(request.CompanyId.ToString());
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var companyId = request.CompanyId;
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -4860,8 +4321,9 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
         var result = await openItemRepository.RejectAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -4876,8 +4338,15 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/readiness",
-    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ar_payments",
+            "view AR open-item adjustment readiness");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var readiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
             query.CompanyId,
@@ -4893,8 +4362,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/execution-plan",
-    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ar_payments",
+            "view AR open-item adjustment execution plans");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var plan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
             query.CompanyId,
@@ -4910,13 +4386,14 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/execute",
-    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostArOpenItemAdjustmentCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostArOpenItemAdjustmentCommandHandler handler, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
-        if (!actorId.HasValue)
-        {
-            return Results.BadRequest(new { message = "A user id is required to execute a governed AR open item adjustment." });
-        }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "execute AR open-item adjustments");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
@@ -4925,10 +4402,10 @@ accounting.MapPost(
                     request.CompanyId,
                     openItemId,
                     requestId,
-                    actorId.Value,
+                    actorId,
                     request.AdjustmentAccountId,
                     request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -4941,8 +4418,15 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/open-items/ap/{openItemId:guid}",
-    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IApOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ap_payments",
+            "view AP open items");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var item = await openItemRepository.GetDrillDownAsync(
             query.CompanyId,
             openItemId,
@@ -5006,8 +4490,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/open-items/ap/{openItemId:guid}/adjustment-preview",
-    async (Guid openItemId, [AsParameters] OpenItemAdjustmentPreviewLookupQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, [AsParameters] OpenItemAdjustmentPreviewLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ap_payments",
+            "preview AP open-item adjustments");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var adjustmentType = string.IsNullOrWhiteSpace(query.AdjustmentType) ? "small_balance_adjustment" : query.AdjustmentType;
         var adjustmentDate = query.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var preview = await openItemRepository.GetAdjustmentPreviewAsync(
@@ -5027,7 +4518,12 @@ accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request",
     async (Guid openItemId, RequestOpenItemAdjustmentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ap_payments", "request AP open-item adjustments");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         var adjustmentDate = request.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var attempt = await openItemRepository.RequestAdjustmentAsync(
             request.CompanyId,
@@ -5046,8 +4542,15 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/open-items/ap/{openItemId:guid}/adjustment-request",
-    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ap_payments",
+            "view AP open-item adjustment requests");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var request = await openItemRepository.GetLatestAdjustmentRequestAsync(
             query.CompanyId,
             openItemId,
@@ -5062,7 +4565,12 @@ accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/submit",
     async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ap_payments", "submit AP open-item adjustment requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         var result = await openItemRepository.SubmitAdjustmentRequestAsync(
             request.CompanyId,
             openItemId,
@@ -5079,7 +4587,12 @@ accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/cancel",
     async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ap_payments", "cancel AP open-item adjustment requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         var result = await openItemRepository.CancelAdjustmentRequestAsync(
             request.CompanyId,
             openItemId,
@@ -5096,7 +4609,9 @@ accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/approve",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = CompanyId.Parse(request.CompanyId.ToString());
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var companyId = request.CompanyId;
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -5116,8 +4631,9 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
         var result = await openItemRepository.ApproveAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -5134,7 +4650,9 @@ accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/reject",
     async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
-        var companyId = CompanyId.Parse(request.CompanyId.ToString());
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var companyId = request.CompanyId;
         var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -5154,8 +4672,9 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
         var result = await openItemRepository.RejectAdjustmentRequestAsync(
             companyId,
             openItemId,
@@ -5170,8 +4689,15 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/readiness",
-    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ap_payments",
+            "view AP open-item adjustment readiness");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var readiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
             query.CompanyId,
@@ -5187,8 +4713,15 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/execution-plan",
-    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "ap_payments",
+            "view AP open-item adjustment execution plans");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var plan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
             query.CompanyId,
@@ -5204,13 +4737,14 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/execute",
-    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostApOpenItemAdjustmentCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostApOpenItemAdjustmentCommandHandler handler, CancellationToken cancellationToken) =>
     {
-        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
-        if (!actorId.HasValue)
-        {
-            return Results.BadRequest(new { message = "A user id is required to execute a governed AP open item adjustment." });
-        }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ap_payments", "execute AP open-item adjustments");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
@@ -5219,10 +4753,10 @@ accounting.MapPost(
                     request.CompanyId,
                     openItemId,
                     requestId,
-                    actorId.Value,
+                    actorId,
                     request.AdjustmentAccountId,
                     request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -5237,11 +4771,19 @@ accounting.MapGet(
     "/documents/source",
     async (
         [AsParameters] SourceDocumentBrowserLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         IBillReceiptMatchingRepository billReceiptMatchingRepository,
         IInventoryShipmentStore inventoryShipmentStore,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "browse source documents");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var items = await repository.ListSourceDocumentsAsync(
             query.CompanyId,
             query.SourceType,
@@ -5318,9 +4860,17 @@ accounting.MapGet(
         string sourceType,
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view source document lifecycle");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var preview = await repository.GetLifecyclePreviewAsync(
             query.CompanyId,
             sourceType,
@@ -5372,9 +4922,17 @@ accounting.MapGet(
         Guid documentId,
         string actionCode,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view source document lifecycle actions");
+        if (!readGate.Allowed) return readGate.Response!;
+
         try
         {
             var preview = await repository.GetLifecycleActionPreviewAsync(
@@ -5436,9 +4994,17 @@ accounting.MapPost(
         string sourceType,
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var mutationGate = BusinessEndpointMutationGate.ValidateCompanyScopedMutation(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "void source documents");
+        if (!mutationGate.Allowed) return mutationGate.Response!;
+
         var attempt = await repository.AttemptVoidAsync(
             query.CompanyId,
             sourceType,
@@ -5495,12 +5061,18 @@ accounting.MapPost(
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
-        var actorId = sessionAccessor.Current?.UserId;
+        var mutationGate = BusinessEndpointMutationGate.ValidateCompanyScopedMutation(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "reverse source documents");
+        if (!mutationGate.Allowed) return mutationGate.Response!;
+
         var attempt = await repository.AttemptReverseAsync(
             query.CompanyId,
             sourceType,
             documentId,
-            actorId,
+            mutationGate.ActorId,
             cancellationToken);
 
         if (attempt is null)
@@ -5551,9 +5123,17 @@ accounting.MapGet(
         string sourceType,
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view source document reverse requests");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var request = await repository.GetLatestReverseRequestAsync(
             query.CompanyId,
             sourceType,
@@ -5616,9 +5196,17 @@ accounting.MapGet(
         string sourceType,
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view source document reverse blockers");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var blockers = await repository.ListSubledgerReverseBlockersAsync(
             query.CompanyId,
             sourceType,
@@ -5658,9 +5246,17 @@ accounting.MapGet(
         string sourceType,
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view settlement application reversals");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var reversals = await repository.ListSettlementApplicationReversalsAsync(
             query.CompanyId,
             sourceType,
@@ -5702,13 +5298,19 @@ accounting.MapPost(
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
-        var actorId = sessionAccessor.Current?.UserId;
+        var mutationGate = BusinessEndpointMutationGate.ValidateCompanyScopedMutation(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "submit source document reverse requests");
+        if (!mutationGate.Allowed) return mutationGate.Response!;
+
         var result = await repository.SubmitReverseRequestAsync(
             query.CompanyId,
             sourceType,
             documentId,
             requestId,
-            actorId,
+            mutationGate.ActorId,
             cancellationToken);
 
         if (result is null)
@@ -5776,13 +5378,19 @@ accounting.MapPost(
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
-        var actorId = sessionAccessor.Current?.UserId;
+        var mutationGate = BusinessEndpointMutationGate.ValidateCompanyScopedMutation(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "cancel source document reverse requests");
+        if (!mutationGate.Allowed) return mutationGate.Response!;
+
         var result = await repository.CancelReverseRequestAsync(
             query.CompanyId,
             sourceType,
             documentId,
             requestId,
-            actorId,
+            mutationGate.ActorId,
             cancellationToken);
 
         if (result is null)
@@ -5846,9 +5454,17 @@ accounting.MapGet(
         Guid documentId,
         Guid requestId,
         [AsParameters] DocumentLifecycleRequestReadinessQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view source document reverse readiness");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var readiness = await repository.GetReverseRequestApplyReadinessAsync(
             query.CompanyId,
@@ -5899,136 +5515,24 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         GlIJournalEntryLifecycleWorkflow journalEntryLifecycleWorkflow,
-        IUnitOfWork unitOfWork,
         CancellationToken cancellationToken) =>
     {
+        var mutationGate = BusinessEndpointMutationGate.ValidateCompanyScopedMutation(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "execute source document reverse requests");
+        if (!mutationGate.Allowed) return mutationGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var actorId = sessionAccessor.Current?.UserId;
-
-        // P0-1 (C1): wrap the audit-log mutation
-        // (ExecuteReverseRequestAsync writes the "reverse_execution_requested"
-        // transition) and the cross-table state changes
-        // (CompleteReverseRequestExecutionAsync: settlement unapply +
-        // open-item void + source-doc mark + task billing audit) in a single
-        // IUnitOfWork.ExecuteAsync. Without this wrap, a failure inside
-        // CompleteReverseRequestExecutionAsync — which opens a
-        // PostgresCommandScope but no transaction in connection-only mode —
-        // could half-commit the open-item void while leaving the source
-        // document still flagged as posted. The linked-JE reverse step
-        // (journalEntryLifecycleWorkflow.ReverseAsync) keeps its own short
-        // transaction; on retry its own idempotency
-        // (TryFindExistingCompensationAsync) short-circuits cleanly inside
-        // the new outer UoW.
-        var actorRequired = false;
-        AccountingDocumentLifecycleRequestExecutionResult? result;
-        try
-        {
-            result = await unitOfWork.ExecuteAsync(async ct =>
-            {
-                var step1 = await repository.ExecuteReverseRequestAsync(
-                    query.CompanyId,
-                    sourceType,
-                    documentId,
-                    requestId,
-                    actorId,
-                    asOfDate,
-                    ct);
-
-                if (step1 is null)
-                {
-                    return null;
-                }
-
-                var step1Request = step1.Request;
-                var shouldRunLinkedJournalEntryReverse =
-                    step1Request.JournalEntryId.HasValue &&
-                    string.Equals(step1Request.ExecutionStatus, "execution_requested", StringComparison.Ordinal) &&
-                    step1Request.ExecutionCompletedAt is null;
-
-                if (!shouldRunLinkedJournalEntryReverse)
-                {
-                    return step1;
-                }
-
-                if (!actorId.HasValue)
-                {
-                    // Preserve the original behaviour: step 1's audit row
-                    // stays committed (status flips to "execution_requested"),
-                    // but step 2/3 are skipped and the caller gets BadRequest
-                    // so they can re-issue with a real business session.
-                    actorRequired = true;
-                    return step1;
-                }
-
-                var lifecycleResult = await journalEntryLifecycleWorkflow.ReverseAsync(
-                    query.CompanyId,
-                    step1Request.JournalEntryId!.Value,
-                    actorId.Value,
-                    ct);
-
-                return await repository.CompleteReverseRequestExecutionAsync(
-                        query.CompanyId,
-                        sourceType,
-                        documentId,
-                        requestId,
-                        actorId,
-                        lifecycleResult.CompensationJournalEntryId,
-                        lifecycleResult.CompensationDisplayNumber,
-                        lifecycleResult.CompensationSourceType,
-                        lifecycleResult.LifecycleAt,
-                        ct)
-                    ?? step1;
-            }, cancellationToken);
-        }
-        catch (InvalidOperationException ex)
-        {
-            // The linked-JE reverse rejected the operation (e.g.
-            // JournalEntryLifecycleException). The UoW has rolled back step 1
-            // (audit log row) and step 3 was not reached. Re-read the current
-            // persisted state so the conflict response reflects the actual
-            // post-rollback status, not the in-flight snapshot that just got
-            // undone.
-            var current = await repository.GetReverseRequestAsync(
-                query.CompanyId,
-                sourceType,
-                documentId,
-                requestId,
-                cancellationToken);
-
-            if (current is null)
-            {
-                return Results.NotFound(new
-                {
-                    message = "Reverse request could not be found in the active company context."
-                });
-            }
-
-            return Results.Conflict(new
-            {
-                code = ResolveAccountingOperationErrorCode(ex.Message),
-                current.RequestId,
-                CompanyId = current.CompanyId,
-                current.SourceType,
-                SourceTypeLabel = MapDocumentReviewSourceLabel(current.SourceType),
-                Id = current.DocumentId,
-                current.EntityNumber,
-                current.DisplayNumber,
-                current.Status,
-                current.RequestStatus,
-                current.ExecutionStatus,
-                AsOfDate = asOfDate,
-                ExecutionMode = "governed_execution_orchestration",
-                Message = ex.Message
-            });
-        }
-
-        if (actorRequired)
-        {
-            return Results.BadRequest(new
-            {
-                message = "A business-session user is required before governed reverse execution can reverse the linked journal entry."
-            });
-        }
+        var result = await repository.ExecuteReverseRequestAsync(
+            query.CompanyId,
+            sourceType,
+            documentId,
+            requestId,
+            mutationGate.ActorId,
+            asOfDate,
+            cancellationToken);
 
         if (result is null)
         {
@@ -6039,6 +5543,58 @@ accounting.MapPost(
         }
 
         var request = result.Request;
+        var shouldRunLinkedJournalEntryReverse =
+            request.JournalEntryId.HasValue &&
+            string.Equals(request.ExecutionStatus, "execution_requested", StringComparison.Ordinal) &&
+            request.ExecutionCompletedAt is null;
+
+        if (shouldRunLinkedJournalEntryReverse)
+        {
+            try
+            {
+                var lifecycleResult = await journalEntryLifecycleWorkflow.ReverseAsync(
+                    query.CompanyId,
+                    request.JournalEntryId!.Value,
+                    mutationGate.ActorId,
+                    cancellationToken);
+
+                result = await repository.CompleteReverseRequestExecutionAsync(
+                        query.CompanyId,
+                        sourceType,
+                        documentId,
+                        requestId,
+                        mutationGate.ActorId,
+                        lifecycleResult.CompensationJournalEntryId,
+                        lifecycleResult.CompensationDisplayNumber,
+                        lifecycleResult.CompensationSourceType,
+                        lifecycleResult.LifecycleAt,
+                        cancellationToken)
+                    ?? result;
+
+                request = result.Request;
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new
+                {
+                    code = ResolveAccountingOperationErrorCode(ex.Message),
+                    request.RequestId,
+                    CompanyId = request.CompanyId,
+                    request.SourceType,
+                    SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+                    Id = request.DocumentId,
+                    request.EntityNumber,
+                    request.DisplayNumber,
+                    request.Status,
+                    request.RequestStatus,
+                    request.ExecutionStatus,
+                    AsOfDate = asOfDate,
+                    ExecutionMode = "governed_execution_orchestration",
+                    Message = ex.Message
+                });
+            }
+        }
+
         var payload = new
         {
             request.RequestId,
@@ -6085,9 +5641,17 @@ accounting.MapGet(
         Guid documentId,
         Guid requestId,
         [AsParameters] DocumentLifecycleRequestReadinessQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view source document reverse execution plans");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var plan = await repository.GetReverseRequestExecutionPlanAsync(
             query.CompanyId,
@@ -6141,9 +5705,17 @@ accounting.MapGet(
         string sourceType,
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var readGate = BusinessEndpointReadGate.ValidateCompanyScopedRead(
+            sessionAccessor.Current,
+            query.CompanyId,
+            "accounting",
+            "view source document reviews");
+        if (!readGate.Allowed) return readGate.Response!;
+
         var review = await repository.GetSourceDocumentAsync(
             query.CompanyId,
             sourceType,
@@ -6240,6 +5812,7 @@ accounting.MapGet(
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
         Guid? templateId,
+        BusinessSessionContextAccessor sessionAccessor,
         IAccountingDocumentReviewRepository reviewRepository,
         ICustomerStore customerStore,
         ICompanyProfileQuery companyProfileQuery,
@@ -6247,7 +5820,11 @@ accounting.MapGet(
         IInvoicePdfRenderer renderer,
         CancellationToken cancellationToken) =>
     {
-        var companyId = CompanyId.Parse(query.CompanyId.ToString());
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "download invoice PDFs");
+        if (authority is not null) return authority;
+        var companyId = query.CompanyId;
 
         var review = await reviewRepository.GetSourceDocumentAsync(
             companyId,
@@ -6346,6 +5923,10 @@ accounting.MapPost(
         {
             return Results.Unauthorized();
         }
+        var companyScope = RequireActiveCompanyQuery(session, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "send invoices");
+        if (authority is not null) return authority;
 
         if (string.IsNullOrWhiteSpace(request.ToEmail) ||
             !request.ToEmail.Contains('@', StringComparison.Ordinal))
@@ -6353,7 +5934,7 @@ accounting.MapPost(
             return Results.BadRequest(new { message = "A recipient email is required." });
         }
 
-        var companyId = CompanyId.Parse(query.CompanyId.ToString());
+        var companyId = query.CompanyId;
 
         var review = await reviewRepository.GetSourceDocumentAsync(
             companyId,
@@ -6454,9 +6035,7 @@ accounting.MapPost(
             toEmail = historyRecord.ToEmail,
             subject = historyRecord.Subject,
         });
-    })
-    .RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoiceSend)
-    .RequireRateLimiting("invoice-send");
+    });
 
 // ---------------------------------------------------------------------------
 // Read-only view of the invoice's send history. Powers the "Last sent"
@@ -6468,9 +6047,16 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IInvoiceSendHistoryStore historyStore,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "view invoice send history");
+        if (authority is not null) return authority;
+
         var rows = await historyStore.ListByInvoiceAsync(
             query.CompanyId,
             documentId,
@@ -6505,9 +6091,16 @@ accounting.MapGet(
     "/invoice-templates",
     async (
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IInvoiceTemplateStore store,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view invoice templates");
+        if (authority is not null) return authority;
+
         var templates = await store.ListByCompanyAsync(query.CompanyId, cancellationToken);
         return Results.Ok(templates.Select(MapInvoiceTemplate).ToArray());
     });
@@ -6517,9 +6110,16 @@ accounting.MapGet(
     async (
         Guid templateId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IInvoiceTemplateStore store,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view invoice templates");
+        if (authority is not null) return authority;
+
         var template = await store.GetByIdAsync(query.CompanyId, templateId, cancellationToken);
         return template is null
             ? Results.NotFound(new { message = "Invoice template not found in this company." })
@@ -6531,9 +6131,14 @@ accounting.MapPost(
     async (
         [AsParameters] DocumentReviewLookupQuery query,
         InvoiceTemplateUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IInvoiceTemplateStore store,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "create invoice templates");
+        if (authority is not null) return authority;
+        if (sessionAccessor.Current is null || !string.Equals(query.CompanyId.Value, sessionAccessor.Current.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+
         var (config, validationError) = TryReadInvoiceTemplateConfig(request);
         if (validationError is not null)
         {
@@ -6561,9 +6166,14 @@ accounting.MapPut(
         Guid templateId,
         [AsParameters] DocumentReviewLookupQuery query,
         InvoiceTemplateUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IInvoiceTemplateStore store,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "update invoice templates");
+        if (authority is not null) return authority;
+        if (sessionAccessor.Current is null || !string.Equals(query.CompanyId.Value, sessionAccessor.Current.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+
         var (config, validationError) = TryReadInvoiceTemplateConfig(request);
         if (validationError is not null)
         {
@@ -6591,9 +6201,14 @@ accounting.MapPost(
     async (
         Guid templateId,
         [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IInvoiceTemplateStore store,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "set default invoice templates");
+        if (authority is not null) return authority;
+        if (sessionAccessor.Current is null || !string.Equals(query.CompanyId.Value, sessionAccessor.Current.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+
         var defaulted = await store.SetDefaultAsync(query.CompanyId, templateId, cancellationToken);
         return defaulted is null
             ? Results.NotFound(new { message = "Invoice template not found in this company." })
@@ -6613,10 +6228,17 @@ accounting.MapPost(
     async (
         [AsParameters] DocumentReviewLookupQuery query,
         InvoiceTemplateUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         ICompanyProfileQuery companyProfileQuery,
         IInvoicePdfRenderer renderer,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "preview invoice templates");
+        if (authority is not null) return authority;
+
         var (config, validationError) = TryReadInvoiceTemplateConfig(request);
         if (validationError is not null)
         {
@@ -6640,9 +6262,18 @@ accounting.MapGet(
     "/journal-entries",
     async (
         [AsParameters] JournalEntryListLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IJournalEntryReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view journal entries");
+        if (authority is not null)
+        {
+            return authority;
+        }
+
         var items = await repository.ListRecentAsync(
             query.CompanyId,
             query.Take,
@@ -6657,9 +6288,18 @@ accounting.MapGet(
         string sourceType,
         Guid sourceId,
         [AsParameters] JournalEntryLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IJournalEntryReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view journal entries");
+        if (authority is not null)
+        {
+            return authority;
+        }
+
         var item = await repository.FindBySourceAsync(
             query.CompanyId,
             sourceType,
@@ -6682,9 +6322,18 @@ accounting.MapGet(
     async (
         Guid journalEntryId,
         [AsParameters] JournalEntryLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IJournalEntryReviewRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view journal entries");
+        if (authority is not null)
+        {
+            return authority;
+        }
+
         var review = await repository.GetAsync(
             query.CompanyId,
             journalEntryId,
@@ -6719,6 +6368,12 @@ accounting.MapGet(
             return Results.Unauthorized();
         }
 
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "preview journal entry numbers");
+        if (authority is not null)
+        {
+            return authority;
+        }
+
         var displayNumber = await lookup.GetNextDisplayNumberAsync(
             session.ActiveCompanyId,
             cancellationToken);
@@ -6736,13 +6391,18 @@ accounting.MapPost(
         Guid journalEntryId,
         BusinessSessionContextAccessor sessionAccessor,
         Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow lifecycleWorkflow,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value) || string.IsNullOrEmpty(session.UserId.Value))
         {
             return Results.Unauthorized();
+        }
+
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "void journal entries");
+        if (authority is not null)
+        {
+            return authority;
         }
 
         try
@@ -6752,10 +6412,6 @@ accounting.MapPost(
                 journalEntryId,
                 session.UserId,
                 cancellationToken);
-            // H15-b: JE status flipped posted → voided. Projection's
-            // is_voided / status filter must refresh so the voided JE
-            // disappears from topbar search results.
-            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(new
             {
                 originalJournalEntryId = result.OriginalJournalEntryId,
@@ -6771,7 +6427,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalVoid);
+    });
 
 accounting.MapGet(
     "/unity-search",
@@ -6781,27 +6437,23 @@ accounting.MapGet(
         IUnitySearchEngine engine,
         CancellationToken cancellationToken) =>
     {
-        // Permission tokens flow from the current business session into
-        // the query so the SQL gate can hide rows whose
-        // required_permissions[] don't overlap with what the caller
-        // actually holds. Callers without a session (rare — most paths
-        // require auth) get an empty list, which means they see only
-        // static / public rows.
-        var permissions = sessionAccessor.Current?.Roles ?? Array.Empty<string>();
+        var session = sessionAccessor.Current;
+        var companyScope = RequireActiveCompanyQuery(session, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var activeSession = session!;
 
         var result = await engine.SearchAsync(
             new UnitySearchQuery
             {
                 CompanyId = query.CompanyId,
-                UserId = query.UserId ?? sessionAccessor.Current?.UserId,
+                UserId = activeSession.UserId,
                 Context = string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
                 SearchText = query.Query ?? string.Empty,
-                Take = query.Take ?? 10,
-                Permissions = permissions
+                Take = query.Take ?? 10
             },
             cancellationToken);
 
-        return Results.Ok(result);
+        return Results.Ok(UnitySearchPermissionFilter.Filter(result, activeSession));
     });
 
 accounting.MapGet(
@@ -6812,15 +6464,14 @@ accounting.MapGet(
         IUnitySearchEngine engine,
         CancellationToken cancellationToken) =>
     {
-        var userId = query.UserId ?? sessionAccessor.Current?.UserId;
-        if (!userId.HasValue || string.IsNullOrEmpty(userId.Value.Value))
-        {
-            return Results.Ok(Array.Empty<UnitySearchRecentQueryRecord>());
-        }
+        var session = sessionAccessor.Current;
+        var companyScope = RequireActiveCompanyQuery(session, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var activeSession = session!;
 
         var results = await engine.ListRecentQueriesAsync(
             query.CompanyId,
-            userId.Value,
+            activeSession.UserId,
             string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
             query.Take ?? 10,
             cancellationToken);
@@ -6836,20 +6487,19 @@ accounting.MapGet(
         IUnitySearchEngine engine,
         CancellationToken cancellationToken) =>
     {
-        var userId = query.UserId ?? sessionAccessor.Current?.UserId;
-        if (!userId.HasValue || string.IsNullOrEmpty(userId.Value.Value))
-        {
-            return Results.Ok(Array.Empty<UnitySearchRecentSelectionRecord>());
-        }
+        var session = sessionAccessor.Current;
+        var companyScope = RequireActiveCompanyQuery(session, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var activeSession = session!;
 
         var results = await engine.ListRecentSelectionsAsync(
             query.CompanyId,
-            userId.Value,
+            activeSession.UserId,
             string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
             query.Take ?? 8,
             cancellationToken);
 
-        return Results.Ok(results);
+        return Results.Ok(UnitySearchPermissionFilter.FilterRecentSelections(results, activeSession));
     });
 
 accounting.MapPost(
@@ -6860,17 +6510,19 @@ accounting.MapPost(
         IUnitySearchEngine engine,
         CancellationToken cancellationToken) =>
     {
-        var userId = !string.IsNullOrEmpty(request.UserId.Value)
-            ? (UserId?)request.UserId
-            : sessionAccessor.Current?.UserId;
-        if (!userId.HasValue || string.IsNullOrEmpty(userId.Value.Value))
+        var session = sessionAccessor.Current;
+        var companyScope = RequireActiveCompanyQuery(session, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var activeSession = session!;
+
+        if (!UnitySearchPermissionFilter.CanAccess(request.EntityType, navigationHref: null, activeSession))
         {
-            return Results.Accepted();
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
         await engine.RecordClickAsync(
             request.CompanyId,
-            userId.Value,
+            activeSession.UserId,
             string.IsNullOrWhiteSpace(request.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : request.Context.Trim(),
             request.EntityType,
             request.SourceId,
@@ -6980,6 +6632,8 @@ accounting.MapGet(
         {
             return Results.Unauthorized();
         }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view tax codes");
+        if (authority is not null) return authority;
 
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         if (!string.IsNullOrWhiteSpace(appliesTo))
@@ -7003,7 +6657,6 @@ accounting.MapPost(
         TaxCodeUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ITaxCodeStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -7011,6 +6664,8 @@ accounting.MapPost(
         {
             return Results.Unauthorized();
         }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "create tax codes");
+        if (authority is not null) return authority;
 
         var validation = ValidateTaxCodeInput(request);
         if (validation is not null)
@@ -7030,9 +6685,6 @@ accounting.MapPost(
                     RegistrationNumber: request.RegistrationNumber,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
-            // H15: refresh tax-code picker projection so the new code shows
-            // up in line-level pickers immediately.
-            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(record);
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
@@ -7040,7 +6692,7 @@ accounting.MapPost(
             // Unique violation — most likely (company_id, code) clash.
             return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+    });
 
 accounting.MapPut(
     "/tax-codes/{id:guid}",
@@ -7049,7 +6701,6 @@ accounting.MapPut(
         TaxCodeUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ITaxCodeStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -7057,6 +6708,8 @@ accounting.MapPut(
         {
             return Results.Unauthorized();
         }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "update tax codes");
+        if (authority is not null) return authority;
 
         var validation = ValidateTaxCodeInput(request);
         if (validation is not null)
@@ -7077,19 +6730,13 @@ accounting.MapPut(
                     RegistrationNumber: request.RegistrationNumber,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
-            if (updated is not null)
-            {
-                // H15: keep tax-code picker in sync with the rate / display
-                // name update.
-                await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
-            }
             return updated is null ? Results.NotFound() : Results.Ok(updated);
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
         {
             return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+    });
 
 accounting.MapPost(
     "/tax-codes/{id:guid}/activate",
@@ -7101,9 +6748,11 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "activate tax codes");
+        if (authority is not null) return authority;
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+    });
 
 accounting.MapPost(
     "/tax-codes/{id:guid}/deactivate",
@@ -7115,9 +6764,11 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "deactivate tax codes");
+        if (authority is not null) return authority;
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
+    });
 
 // ===========================================================================
 // Sales Tax module
@@ -7127,6 +6778,100 @@ accounting.MapPost(
 // while the new component/rate/snapshot tables prepare posting, reporting,
 // and future tax API adapters without mutating historical documents.
 // ===========================================================================
+
+accounting.MapGet(
+    "/sales-tax/rules",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view sales tax");
+        if (authority is not null) return authority;
+
+        var rows = await store.ListTaxRulesAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/sales-tax/rules",
+    async (
+        SalesTaxRuleUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "create sales tax");
+        if (authority is not null) return authority;
+
+        var validation = ValidateSalesTaxRuleInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var saved = await store.CreateTaxRuleAsync(
+                session.ActiveCompanyId,
+                ToSalesTaxRuleInput(request),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Sales tax rule '{request.Code}' already exists for this company." });
+        }
+    });
+
+accounting.MapPut(
+    "/sales-tax/rules/{id:guid}",
+    async (
+        Guid id,
+        SalesTaxRuleUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesTaxStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+        {
+            return Results.Unauthorized();
+        }
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "update sales tax");
+        if (authority is not null) return authority;
+
+        var validation = ValidateSalesTaxRuleInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var saved = await store.UpdateTaxRuleAsync(
+                session.ActiveCompanyId,
+                id,
+                ToSalesTaxRuleInput(request),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Sales tax rule '{request.Code}' already exists for this company." });
+        }
+    });
 
 accounting.MapGet(
     "/sales-tax/codes",
@@ -7182,6 +6927,10 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = $"Sales tax code '{request.Code}' already exists for this company." });
         }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
     });
 
 accounting.MapPut(
@@ -7219,6 +6968,10 @@ accounting.MapPut(
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
         {
             return Results.BadRequest(new { message = $"Sales tax code '{request.Code}' already exists for this company." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
     });
 
@@ -7297,6 +7050,94 @@ accounting.MapGet(
         return Results.Ok(rows);
     });
 
+static string? ValidateSalesTaxRuleInput(SalesTaxRuleUpsertHttpRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.Code)) return "Tax rule is required.";
+    if (request.Code.Length > 32) return "Tax rule must be 32 characters or fewer.";
+    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
+    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
+    if (request.RatePercent is null || request.RatePercent < 0m) return "Rate must be 0 or greater.";
+    if (request.RatePercent > 100m) return "Rate must be 100 or lower.";
+    if (string.IsNullOrWhiteSpace(request.AppliesTo) || !TaxCodeAppliesTo.IsValid(request.AppliesTo.Trim().ToLowerInvariant()))
+    {
+        return "Applies to is invalid.";
+    }
+
+    var treatment = NormalizeSalesTaxTreatment(request.Treatment);
+    if (treatment is null)
+    {
+        return "Treatment is invalid.";
+    }
+
+    var recoverability = NormalizeSalesTaxRecoverability(request.Recoverability);
+    if (recoverability is null)
+    {
+        return "Recoverability is invalid.";
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.TaxType) && request.TaxType.Length > 32)
+    {
+        return "Tax type must be 32 characters or fewer.";
+    }
+
+    if (request.RatePercent > 0m && request.PayableAccountId is null)
+    {
+        return "Tax account is required.";
+    }
+
+    if (recoverability == SalesTaxRecoverability.Recoverable && request.RatePercent > 0m && request.RecoverableAccountId is null)
+    {
+        return "Recoverable tax account is required.";
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.RegistrationNumber) && request.RegistrationNumber.Length > 64)
+    {
+        return "Tax registration number must be 64 characters or fewer.";
+    }
+
+    return null;
+}
+
+static SalesTaxRuleUpsertInput ToSalesTaxRuleInput(SalesTaxRuleUpsertHttpRequest request) =>
+    new(
+        Code: request.Code!.Trim(),
+        Name: request.Name!.Trim(),
+        TaxType: string.IsNullOrWhiteSpace(request.TaxType) ? "sales_tax" : request.TaxType.Trim().ToLowerInvariant(),
+        AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
+        Treatment: NormalizeSalesTaxTreatment(request.Treatment)!,
+        Recoverability: NormalizeSalesTaxRecoverability(request.Recoverability)!,
+        RatePercent: request.RatePercent ?? 0m,
+        PayableAccountId: request.PayableAccountId,
+        RecoverableAccountId: request.RecoverableAccountId,
+        RegistrationNumber: string.IsNullOrWhiteSpace(request.RegistrationNumber) ? null : request.RegistrationNumber.Trim(),
+        IsActive: request.IsActive ?? true);
+
+static string? NormalizeSalesTaxTreatment(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value)) return SalesTaxTreatment.Taxable;
+    var normalized = value.Trim().ToLowerInvariant();
+    return normalized is SalesTaxTreatment.Taxable
+        or SalesTaxTreatment.ZeroRated
+        or SalesTaxTreatment.Exempt
+        or SalesTaxTreatment.OutOfScope
+        or SalesTaxTreatment.ReverseCharge
+        or SalesTaxTreatment.ImportTax
+        ? normalized
+        : null;
+}
+
+static string? NormalizeSalesTaxRecoverability(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value)) return SalesTaxRecoverability.Recoverable;
+    var normalized = value.Trim().ToLowerInvariant();
+    return normalized is SalesTaxRecoverability.Recoverable
+        or SalesTaxRecoverability.PartiallyRecoverable
+        or SalesTaxRecoverability.NonRecoverable
+        or SalesTaxRecoverability.NotApplicable
+        ? normalized
+        : null;
+}
+
 static string? ValidateSalesTaxCodeInput(SalesTaxCodeUpsertHttpRequest request)
 {
     if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
@@ -7312,7 +7153,7 @@ static string? ValidateSalesTaxCodeInput(SalesTaxCodeUpsertHttpRequest request)
     {
         var component = components[i];
         var lineNumber = i + 1;
-        if (component.RatePercent is null || component.RatePercent < 0m)
+        if (component.TaxRuleId is null && (component.RatePercent is null || component.RatePercent < 0m))
         {
             return $"Line {lineNumber}: rate must be 0 or greater.";
         }
@@ -7320,11 +7161,12 @@ static string? ValidateSalesTaxCodeInput(SalesTaxCodeUpsertHttpRequest request)
         {
             return $"Line {lineNumber}: rate must be 100 or lower.";
         }
-        if (string.IsNullOrWhiteSpace(component.TaxType) || component.TaxType.Length > 32)
+        if (component.TaxRuleId is null && (string.IsNullOrWhiteSpace(component.TaxType) || component.TaxType.Length > 32))
         {
             return $"Line {lineNumber}: tax type is required.";
         }
-        if (component.Recoverability is not SalesTaxRecoverability.Recoverable and not SalesTaxRecoverability.NonRecoverable)
+        if (component.TaxRuleId is null &&
+            component.Recoverability is not SalesTaxRecoverability.Recoverable and not SalesTaxRecoverability.NonRecoverable)
         {
             return $"Line {lineNumber}: recoverability must be recoverable or non-recoverable.";
         }
@@ -7347,10 +7189,11 @@ static SalesTaxCodeUpsertInput ToSalesTaxCodeInput(SalesTaxCodeUpsertHttpRequest
     var components = (request.Components ?? Array.Empty<SalesTaxCodeComponentUpsertHttpRequest>())
         .Select(component => new SalesTaxCodeComponentUpsertInput(
             RatePercent: component.RatePercent ?? 0m,
-            TaxType: component.TaxType!.Trim().ToLowerInvariant(),
-            Recoverability: component.Recoverability!,
+            TaxType: string.IsNullOrWhiteSpace(component.TaxType) ? "sales_tax" : component.TaxType.Trim().ToLowerInvariant(),
+            Recoverability: string.IsNullOrWhiteSpace(component.Recoverability) ? SalesTaxRecoverability.Recoverable : component.Recoverability,
             AppliesTo: component.AppliesTo!.Trim().ToLowerInvariant(),
-            RegistrationNumber: component.RegistrationNumber))
+            RegistrationNumber: component.RegistrationNumber,
+            TaxRuleId: component.TaxRuleId))
         .ToArray();
 
     return new SalesTaxCodeUpsertInput(
@@ -7413,6 +7256,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view payment terms");
+        if (authority is not null) return authority;
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
     });
@@ -7427,6 +7272,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "create payment terms");
+        if (authority is not null) return authority;
 
         var validation = ValidatePaymentTermInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -7460,6 +7307,8 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "update payment terms");
+        if (authority is not null) return authority;
 
         var validation = ValidatePaymentTermInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -7493,6 +7342,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "activate payment terms");
+        if (authority is not null) return authority;
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
@@ -7507,6 +7358,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "deactivate payment terms");
+        if (authority is not null) return authority;
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
@@ -7544,6 +7397,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view quotes");
+        if (authority is not null) return authority;
 
         var filter = new QuoteListFilter(
             IncludeDrafts: includeDrafts ?? true,
@@ -7565,6 +7420,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view quotes");
+        if (authority is not null) return authority;
 
         var quote = await store.GetByIdAsync(session.ActiveCompanyId, quoteId, cancellationToken);
         return quote is null ? Results.NotFound() : Results.Ok(quote);
@@ -7580,6 +7437,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "create quotes");
+        if (authority is not null) return authority;
 
         var validation = ValidateQuoteInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -7609,6 +7468,8 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "update quotes");
+        if (authority is not null) return authority;
 
         var validation = ValidateQuoteInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -7647,6 +7508,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "update quote status");
+        if (authority is not null) return authority;
 
         var newStatus = request.Status?.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(newStatus) || !QuoteStatus.IsValid(newStatus))
@@ -7680,6 +7543,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "convert quotes to sales orders");
+        if (authority is not null) return authority;
 
         var quote = await quotes.GetByIdAsync(session.ActiveCompanyId, quoteId, cancellationToken);
         if (quote is null) return Results.NotFound();
@@ -7750,6 +7615,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view sales orders");
+        if (authority is not null) return authority;
 
         var filter = new SalesOrderListFilter(
             Status: string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToLowerInvariant(),
@@ -7770,6 +7637,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view sales orders");
+        if (authority is not null) return authority;
 
         var so = await store.GetByIdAsync(session.ActiveCompanyId, salesOrderId, cancellationToken);
         return so is null ? Results.NotFound() : Results.Ok(so);
@@ -7785,6 +7654,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "create sales orders");
+        if (authority is not null) return authority;
 
         var validation = ValidateSalesOrderInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -7814,6 +7685,8 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "update sales orders");
+        if (authority is not null) return authority;
 
         var validation = ValidateSalesOrderInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -7852,6 +7725,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "update sales order status");
+        if (authority is not null) return authority;
 
         var newStatus = request.Status?.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(newStatus) || !SalesOrderStatus.IsValid(newStatus))
@@ -7885,6 +7760,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "mark sales orders invoiced");
+        if (authority is not null) return authority;
 
         if (string.IsNullOrWhiteSpace(request.InvoiceNumber))
         {
@@ -7915,6 +7792,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "confirm sales orders");
+        if (authority is not null) return authority;
 
         try
         {
@@ -7941,6 +7820,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "view sales order deposits");
+        if (authority is not null) return authority;
         var summary = await reader.GetForSalesOrderAsync(session.ActiveCompanyId, salesOrderId, cancellationToken);
         return Results.Ok(summary);
     });
@@ -7960,6 +7841,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "cancel sales orders");
+        if (authority is not null) return authority;
 
         try
         {
@@ -7990,11 +7873,12 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         ISalesOrderStore salesOrderStore,
         PostCustomerDepositCommandHandler handler,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "collect sales order deposits");
+        if (authority is not null) return authority;
 
         if (request.AmountTx <= 0m) return Results.BadRequest(new { message = "Deposit amount must be positive." });
         if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { message = "Deposit-to (bank) account is required." });
@@ -8016,7 +7900,7 @@ accounting.MapPost(
                     AmountTx: request.AmountTx,
                     DocumentDate: request.DocumentDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
                     Memo: request.Memo,
-                    IdempotencyKey: ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    IdempotencyKey: request.IdempotencyKey),
                 cancellationToken);
             return Results.Ok(result);
         }
@@ -8140,6 +8024,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view drop-ship clearing aging");
+        if (authority is not null) return authority;
 
         var rows = await reader.ListAsync(
             session.ActiveCompanyId,
@@ -8160,12 +8046,13 @@ accounting.MapPost(
         DropShipClearingWriteOffHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         WriteOffDropShipClearingCommandHandler handler,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (request is null) return Results.BadRequest(new { message = "Request body is required." });
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "write off drop-ship clearing");
+        if (authority is not null) return authority;
 
         try
         {
@@ -8176,7 +8063,7 @@ accounting.MapPost(
                     ItemId: itemId,
                     ExpectedNetClearingBase: request.ExpectedNetClearingBase,
                     Memo: request.Memo,
-                    IdempotencyKey: ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    IdempotencyKey: request.IdempotencyKey),
                 cancellationToken);
             return Results.Ok(result);
         }
@@ -8458,6 +8345,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view legacy AP bills");
+        if (authority is not null) return authority;
 
         var filter = new BillListFilter(
             IncludeDrafts: includeDrafts ?? true,
@@ -8479,6 +8368,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view legacy AP bills");
+        if (authority is not null) return authority;
 
         var bill = await store.GetByIdAsync(session.ActiveCompanyId, billId, cancellationToken);
         return bill is null ? Results.NotFound() : Results.Ok(bill);
@@ -8490,37 +8381,25 @@ accounting.MapPost(
         BillUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IBillStore store,
-        ITaskLineLinkValidator taskLinkValidator,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "create legacy AP bills");
+        if (authority is not null) return authority;
 
         var validation = ValidateBillInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
 
         try
         {
-            // Validate task links before insert. Rejects billed /
-            // canceled / cross-company tasks so the link can never
-            // settle on a non-attributable target.
-            await ValidateBillExpenseTaskLinksAsync(
-                taskLinkValidator,
-                session.ActiveCompanyId,
-                (request.Lines ?? Array.Empty<BillLineHttpRequest>()).Select(l => l.TaskId),
-                cancellationToken);
-
             var saved = await store.CreateAsync(
                 session.ActiveCompanyId,
                 session.UserId,
                 MapBillInput(request),
                 cancellationToken);
             return Results.Ok(saved);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
         }
         catch (PostgresException ex) when (ex.SqlState == "23505")
         {
@@ -8539,23 +8418,18 @@ accounting.MapPut(
         BillUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IBillStore store,
-        ITaskLineLinkValidator taskLinkValidator,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "update legacy AP bills");
+        if (authority is not null) return authority;
 
         var validation = ValidateBillInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
 
         try
         {
-            await ValidateBillExpenseTaskLinksAsync(
-                taskLinkValidator,
-                session.ActiveCompanyId,
-                (request.Lines ?? Array.Empty<BillLineHttpRequest>()).Select(l => l.TaskId),
-                cancellationToken);
-
             var saved = await store.UpdateAsync(
                 session.ActiveCompanyId,
                 billId,
@@ -8650,6 +8524,12 @@ accounting.MapPost(
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
 
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "void legacy bills");
+        if (authority is not null)
+        {
+            return authority;
+        }
+
         try
         {
             var saved = await store.VoidAsync(session.ActiveCompanyId, billId, cancellationToken);
@@ -8680,30 +8560,6 @@ static string? ValidateBillInput(BillUpsertHttpRequest request)
     return null;
 }
 
-/// <summary>
-/// Runs <see cref="ITaskLineLinkValidator"/> against the distinct
-/// non-null Task ids on a bill / expense upsert. No-ops when no lines
-/// carry a task. Throws <see cref="InvalidOperationException"/> on
-/// the first invalid link — the route catches it and returns 400 with
-/// the validator's user-facing message.
-/// </summary>
-static async Task ValidateBillExpenseTaskLinksAsync(
-    ITaskLineLinkValidator validator,
-    CompanyId companyId,
-    IEnumerable<Guid?> lineTaskIds,
-    CancellationToken cancellationToken)
-{
-    var distinct = lineTaskIds
-        .Where(static id => id.HasValue && id.Value != Guid.Empty)
-        .Select(static id => id!.Value)
-        .Distinct()
-        .ToArray();
-    foreach (var taskId in distinct)
-    {
-        await validator.ValidateAsync(companyId, taskId, cancellationToken);
-    }
-}
-
 static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
     new(
         BillNumber: request.BillNumber,
@@ -8723,13 +8579,9 @@ static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
                 Description: l.Description ?? string.Empty,
                 LineAmount: l.LineAmount,
                 TaxCodeId: l.TaxCodeId,
-                TaxAmount: l.TaxAmount ?? 0m,
-                TaskId: l.TaskId))
+                TaxAmount: l.TaxAmount ?? 0m))
             .ToArray(),
-        ExpectedUpdatedAt: request.ExpectedUpdatedAt,
-        // Copy A3 Phase 2: thread the source bill id through so the
-        // store writes the bill_copied audit_log row.
-        CopiedFromBillId: request.CopiedFromBillId);
+        ExpectedUpdatedAt: request.ExpectedUpdatedAt);
 
 // ===========================================================================
 // Purchase Orders (AP-side, /ap/purchase-orders) — pre-bill commitments.
@@ -8758,6 +8610,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view AP purchase orders");
+        if (authority is not null) return authority;
 
         var filter = new PurchaseOrderListFilter(
             IncludeDrafts: includeDrafts ?? true,
@@ -8779,6 +8633,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view AP purchase orders");
+        if (authority is not null) return authority;
 
         var po = await store.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
         return po is null ? Results.NotFound() : Results.Ok(po);
@@ -8794,6 +8650,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "create AP purchase orders");
+        if (authority is not null) return authority;
 
         var validation = ValidatePurchaseOrderInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -8823,6 +8681,8 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "update AP purchase orders");
+        if (authority is not null) return authority;
 
         var validation = ValidatePurchaseOrderInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -8861,6 +8721,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "update AP purchase order status");
+        if (authority is not null) return authority;
 
         var newStatus = request.Status?.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(newStatus) || !PurchaseOrderStatus.IsValid(newStatus))
@@ -8891,6 +8753,8 @@ accounting.MapPost(
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "convert AP purchase orders to bills");
+        if (authority is not null) return authority;
 
         var po = await poStore.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
         if (po is null) return Results.NotFound();
@@ -9032,6 +8896,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "view AP expenses");
+        if (authority is not null) return authority;
 
         var filter = new ExpenseListFilter(
             Status: string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToLowerInvariant(),
@@ -9052,6 +8918,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "view AP expenses");
+        if (authority is not null) return authority;
 
         var expense = await store.GetByIdAsync(session.ActiveCompanyId, expenseId, cancellationToken);
         return expense is null ? Results.NotFound() : Results.Ok(expense);
@@ -9063,24 +8931,19 @@ accounting.MapPost(
         ExpenseUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IExpenseStore store,
-        ITaskLineLinkValidator taskLinkValidator,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "create AP expenses");
+        if (authority is not null) return authority;
 
         var validation = ValidateExpenseInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
 
         try
         {
-            await ValidateBillExpenseTaskLinksAsync(
-                taskLinkValidator,
-                session.ActiveCompanyId,
-                (request.Lines ?? Array.Empty<ExpenseLineHttpRequest>()).Select(l => l.TaskId),
-                cancellationToken);
-
             var saved = await store.CreateAsync(
                 session.ActiveCompanyId,
                 session.UserId,
@@ -9103,28 +8966,20 @@ accounting.MapPost(
     async (
         Guid expenseId,
         BusinessSessionContextAccessor sessionAccessor,
-        PostExpenseVoidCommandHandler voidHandler,
         IExpenseStore store,
         CancellationToken cancellationToken) =>
     {
-        // H1: route the compensating Dr Payment / Cr Expense JE through the
-        // Posting Engine first (idempotent via source_type='expense_void' +
-        // source_id probe). Only after the JE is committed do we flip the
-        // expense row to 'voided'. Two transactions, but the handler is safe
-        // to retry: a repeat returns AlreadyVoided=true without re-posting.
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "void expenses");
+        if (authority is not null)
+        {
+            return authority;
+        }
 
         try
         {
-            await voidHandler.HandleAsync(
-                new PostExpenseVoidCommand(
-                    session.ActiveCompanyId,
-                    session.UserId,
-                    expenseId),
-                cancellationToken);
-
             var saved = await store.VoidAsync(session.ActiveCompanyId, expenseId, cancellationToken);
             return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
@@ -9151,6 +9006,8 @@ accounting.MapPost(
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "convert AP purchase orders to expenses");
+        if (authority is not null) return authority;
 
         var po = await poStore.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
         if (po is null) return Results.NotFound();
@@ -9276,10 +9133,7 @@ static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => n
             UnitPrice: l.UnitPrice,
             TaxCodeId: l.TaxCodeId,
             TaskId: l.TaskId))
-        .ToArray(),
-    // Copy A3 Phase 1: thread through to the store so it writes the
-    // expense_copied audit_log row alongside the regular CREATE.
-    CopiedFromExpenseId: request.CopiedFromExpenseId);
+        .ToArray());
 
 // ===========================================================================
 // Bank Reconciliation
@@ -9384,429 +9238,6 @@ static string? ValidateBankReconciliationRequest(BankReconciliationCompleteHttpR
     return null;
 }
 
-static string? ValidateBankReconciliationDraftOpen(BankReconciliationDraftOpenHttpRequest request)
-{
-    if (request.BankAccountId == Guid.Empty) return "Statement account is required.";
-    if (request.StatementDate == default) return "Statement date is required.";
-    return null;
-}
-
-// ===========================================================================
-// R-1: Bank reconciliation DRAFT lifecycle endpoints.
-//
-// See BANKING_RECONCILE_PLAN.md Sections 7 (state machine) and 10 (API
-// surface). Each endpoint is gated by RequireBankReconciliationAuthority,
-// matching the existing /reconciliation/ledger + /reconciliation/complete
-// endpoints. The legacy two endpoints above remain functional so the
-// current /reconciliation page keeps working until R-3 replaces it.
-// ===========================================================================
-
-accounting.MapPost(
-    "/reconciliation/draft",
-    async (
-        BankReconciliationDraftOpenHttpRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "open_draft");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        var validation = ValidateBankReconciliationDraftOpen(request);
-        if (validation is not null)
-        {
-            return Results.BadRequest(new { message = validation });
-        }
-
-        try
-        {
-            var draft = await store.OpenDraftAsync(
-                session.ActiveCompanyId,
-                session.UserId,
-                new BankReconciliationDraftOpenInput(
-                    request.BankAccountId,
-                    request.StatementDate,
-                    request.OpeningBalance,
-                    request.EndingBalance,
-                    request.Notes),
-                cancellationToken);
-            return Results.Ok(draft);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    });
-
-accounting.MapGet(
-    "/reconciliation/draft",
-    async (
-        Guid? accountId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        if (accountId is null || accountId == Guid.Empty)
-        {
-            return Results.BadRequest(new { message = "accountId query parameter is required." });
-        }
-
-        var draft = await store.FindOpenDraftForAccountAsync(
-            session.ActiveCompanyId,
-            accountId.Value,
-            cancellationToken);
-        return draft is null ? Results.NoContent() : Results.Ok(draft);
-    });
-
-accounting.MapGet(
-    "/reconciliation/draft/{draftId:guid}",
-    async (
-        Guid draftId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        var draft = await store.LoadDraftAsync(session.ActiveCompanyId, draftId, cancellationToken);
-        return draft is null
-            ? Results.NotFound(new { message = $"Reconciliation draft '{draftId:D}' was not found." })
-            : Results.Ok(draft);
-    });
-
-accounting.MapGet(
-    "/reconciliation/draft/{draftId:guid}/candidates",
-    async (
-        Guid draftId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        try
-        {
-            var candidates = await store.ListDraftCandidatesAsync(
-                session.ActiveCompanyId,
-                draftId,
-                cancellationToken);
-            return Results.Ok(new BankReconciliationDraftCandidatesResponse(draftId, candidates));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.NotFound(new { message = ex.Message });
-        }
-    });
-
-accounting.MapPut(
-    "/reconciliation/draft/{draftId:guid}/cleared",
-    async (
-        Guid draftId,
-        BankReconciliationDraftToggleHttpRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "edit_draft");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        if (request.LedgerEntryId == Guid.Empty)
-        {
-            return Results.BadRequest(new { message = "ledgerEntryId is required." });
-        }
-
-        try
-        {
-            var draft = await store.ToggleLineAsync(
-                session.ActiveCompanyId,
-                draftId,
-                request.LedgerEntryId,
-                request.Cleared,
-                cancellationToken);
-            return Results.Ok(draft);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    });
-
-accounting.MapMethods(
-    "/reconciliation/draft/{draftId:guid}",
-    new[] { HttpMethods.Patch },
-    async (
-        Guid draftId,
-        BankReconciliationDraftPatchHttpRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "edit_draft");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        try
-        {
-            var draft = await store.PatchStatementInfoAsync(
-                session.ActiveCompanyId,
-                draftId,
-                new BankReconciliationDraftPatchInput(
-                    request.OpeningBalance,
-                    request.EndingBalance,
-                    request.StatementDate,
-                    request.Notes),
-                cancellationToken);
-            return Results.Ok(draft);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    });
-
-accounting.MapDelete(
-    "/reconciliation/draft/{draftId:guid}",
-    async (
-        Guid draftId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "abandon_draft");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        try
-        {
-            await store.AbandonDraftAsync(session.ActiveCompanyId, session.UserId, draftId, cancellationToken);
-            return Results.NoContent();
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    });
-
-accounting.MapPost(
-    "/reconciliation/draft/{draftId:guid}/complete",
-    async (
-        Guid draftId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "complete");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        try
-        {
-            var summary = await store.CompleteDraftAsync(
-                session.ActiveCompanyId,
-                session.UserId,
-                draftId,
-                cancellationToken);
-            return Results.Ok(summary);
-        }
-        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23505")
-        {
-            return Results.Conflict(new
-            {
-                message = "This statement or one of its ledger entries has already been reconciled.",
-                constraint = ex.ConstraintName
-            });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    });
-
-accounting.MapPost(
-    "/reconciliation/{reconciliationId:guid}/undo",
-    async (
-        Guid reconciliationId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "undo");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        try
-        {
-            await store.UndoCompletedAsync(
-                session.ActiveCompanyId,
-                session.UserId,
-                reconciliationId,
-                cancellationToken);
-            return Results.NoContent();
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    });
-
-// ===========================================================================
-// R-4: carry-forward + report endpoints.
-//
-//   GET /reconciliation/last-completed?accountId=...
-//     Returns the most-recent completed reconciliation summary used to
-//     prefill the beginning balance + statement date on the next Start
-//     form. 204 when the account has never been reconciled.
-//
-//   GET /reconciliation/{id}
-//     Full report payload for a completed (or undone-and-abandoned)
-//     reconciliation: header + frozen line snapshot. Drives the
-//     /banking/reconciliation/{id}/report page added in R-3+R-4.
-// ===========================================================================
-
-accounting.MapGet(
-    "/reconciliation/last-completed",
-    async (
-        Guid? accountId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-        if (accountId is null || accountId == Guid.Empty)
-        {
-            return Results.BadRequest(new { message = "accountId query parameter is required." });
-        }
-
-        var summary = await store.GetLastCompletedAsync(
-            session.ActiveCompanyId,
-            accountId.Value,
-            cancellationToken);
-        return summary is null ? Results.NoContent() : Results.Ok(summary);
-    });
-
-accounting.MapGet(
-    "/reconciliation/{reconciliationId:guid}",
-    async (
-        Guid reconciliationId,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-
-        var report = await store.LoadReconciliationReportAsync(
-            session.ActiveCompanyId,
-            reconciliationId,
-            cancellationToken);
-        return report is null
-            ? Results.NotFound(new { message = $"Reconciliation '{reconciliationId:D}' was not found or is still in progress." })
-            : Results.Ok(report);
-    });
-
-// ===========================================================================
-// R-2: Bank Register endpoint. Read-only view of every posted ledger entry
-// on a bank / cash / credit-card account, with cleared/uncleared status and
-// (when cleared) a pointer back to the reconciliation that locked it. Used
-// by the Bank Register Blazor page in /banking/register/{accountId}.
-//
-// Pagination: simple LIMIT @take in V1. Cursor pagination + virtual scroll
-// land in R-5 along with the rest of the perf hardening.
-// ===========================================================================
-
-accounting.MapGet(
-    "/bank-register/{accountId:guid}",
-    async (
-        Guid accountId,
-        int? take,
-        BusinessSessionContextAccessor sessionAccessor,
-        IBankReconciliationStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var authorityBlock = RequireBankReconciliationAuthority(session, "view");
-        if (authorityBlock is not null)
-        {
-            return authorityBlock;
-        }
-        if (accountId == Guid.Empty)
-        {
-            return Results.BadRequest(new { message = "Bank account id is required." });
-        }
-
-        try
-        {
-            var entries = await store.ListBankRegisterAsync(
-                session.ActiveCompanyId,
-                accountId,
-                take ?? 200,
-                cancellationToken);
-            return Results.Ok(new BankRegisterResponse(accountId, entries));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-    });
-
 static IResult? RequireBankReconciliationAuthority(
     BusinessSessionContext? session,
     string transitionCode)
@@ -9881,11 +9312,12 @@ accounting.MapPost(
         AccountUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IAccountStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "create accounts");
+        if (authority is not null) return authority;
 
         var validation = ValidateAccountInput(request);
         if (validation is not null)
@@ -9913,12 +9345,8 @@ accounting.MapPost(
                     DetailType: request.DetailType?.Trim(),
                     CurrencyCode: requestedCurrency,
                     AllowManualPosting: request.AllowManualPosting ?? true,
-                    IsActive: request.IsActive ?? true,
-                    ParentAccountId: request.ParentAccountId), // Batch C
+                    IsActive: request.IsActive ?? true),
                 cancellationToken);
-            // H15: refresh the topbar / account picker projection so the
-            // new account shows up immediately.
-            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(record);
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
@@ -9943,7 +9371,7 @@ accounting.MapPost(
                 constraint = constraint
             });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
+    });
 
 accounting.MapPut(
     "/accounts/{id:guid}",
@@ -9952,11 +9380,12 @@ accounting.MapPut(
         AccountUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         IAccountStore store,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "update accounts");
+        if (authority is not null) return authority;
 
         var validation = ValidateAccountInput(request);
         if (validation is not null)
@@ -9982,26 +9411,14 @@ accounting.MapPut(
                     DetailType: request.DetailType?.Trim(),
                     CurrencyCode: requestedCurrency,
                     AllowManualPosting: request.AllowManualPosting ?? true,
-                    IsActive: request.IsActive ?? true,
-                    ParentAccountId: request.ParentAccountId), // Batch C
+                    IsActive: request.IsActive ?? true),
                 cancellationToken);
-            if (updated is not null)
-            {
-                // H15: keep topbar / account picker in sync with the rename
-                // / re-categorization.
-                await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
-            }
             // Update returns null when the row is missing OR when is_system
             // blocked the WHERE clause. The maintenance UI hides edit on
             // system rows so a 404 here is the right honest response.
             return updated is null
                 ? Results.NotFound(new { message = "Account not found, or it is a system control account that cannot be edited from this surface." })
                 : Results.Ok(updated);
-        }
-        catch (InvalidOperationException ex)
-        {
-            // Batch D: lock predicate ("Account X is locked. Unlock it ...").
-            return Results.BadRequest(new { message = ex.Message });
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
         {
@@ -10021,31 +9438,7 @@ accounting.MapPut(
                 constraint = constraint
             });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
-
-// Batch D: lock / unlock toggle. Uses the existing GlAccountEdit
-// permission — no separate "Lock" permission for V1 (consistent
-// with QBO; an operator with edit rights can choose to lock).
-accounting.MapPost(
-    "/accounts/{id:guid}/lock",
-    async (
-        Guid id,
-        AccountLockHttpRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        IAccountStore store,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var updated = await store.SetLockAsync(
-            session.ActiveCompanyId,
-            id,
-            new AccountLockInput(request.Lock, session.UserId),
-            cancellationToken);
-        return updated is null
-            ? Results.NotFound(new { message = "Account not found or system-protected." })
-            : Results.Ok(updated);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
+    });
 
 accounting.MapPost(
     "/accounts/{id:guid}/activate",
@@ -10057,11 +9450,13 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "activate accounts");
+        if (authority is not null) return authority;
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
         return updated is null
             ? Results.NotFound(new { message = "Account not found or system-protected." })
             : Results.Ok(updated);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
+    });
 
 accounting.MapPost(
     "/accounts/{id:guid}/deactivate",
@@ -10073,11 +9468,13 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "deactivate accounts");
+        if (authority is not null) return authority;
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
         return updated is null
             ? Results.NotFound(new { message = "Account not found or system-protected." })
             : Results.Ok(updated);
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
+    });
 
 static string? ValidateAccountInput(AccountUpsertHttpRequest request)
 {
@@ -10116,6 +9513,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "view chart of accounts templates");
+        if (authority is not null) return authority;
 
         return Results.Ok(registry.List().Select(t => new
         {
@@ -10149,6 +9548,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "apply chart of accounts templates");
+        if (authority is not null) return authority;
 
         try
         {
@@ -10164,7 +9565,7 @@ accounting.MapPost(
             // Chart of accounts already seeded — re-applying is forbidden.
             return Results.Conflict(new { message = ex.Message });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
+    });
 
 accounting.MapPost(
     "/unitysearch/usage",
@@ -10201,35 +9602,22 @@ accounting.MapPost(
             return Results.Ok(new { ok = true, learning = "disabled" });
         }
 
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
         var companyId = session.ActiveCompanyId;
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
         var now = DateTimeOffset.UtcNow;
-        var normalizedQuery = string.IsNullOrWhiteSpace(request.Query) ? null : request.Query.Trim().ToLowerInvariant();
+        var normalizedQuery = UnityAiHttpRequestMapper.NormalizeSearchQuery(request.Query);
 
         try
         {
-            await eventStore.RecordEventAsync(new UnitysearchEventInput(
-                CompanyId: companyId,
-                UserId: userId,
-                SessionId: request.SessionId,
-                Context: request.Context.Trim(),
-                EntityType: request.EntityType.Trim(),
-                Query: request.Query,
-                NormalizedQuery: normalizedQuery,
-                EventType: request.EventType.Trim(),
-                SelectedEntityId: request.SelectedEntityId,
-                RankPosition: request.RankPosition,
-                ResultCount: request.ResultCount,
-                SourceRoute: request.SourceRoute,
-                AnchorContext: request.AnchorContext,
-                AnchorEntityType: request.AnchorEntityType,
-                AnchorEntityId: request.AnchorEntityId,
-                MetadataJson: request.MetadataJson), cancellationToken);
+            await eventStore.RecordEventAsync(
+                UnityAiHttpRequestMapper.BuildUnitysearchEventInput(companyId, actorId, request),
+                cancellationToken);
 
             if (string.Equals(request.EventType, UnitysearchEventType.Select, StringComparison.OrdinalIgnoreCase) && request.SelectedEntityId.HasValue)
             {
                 await usageStore.UpsertOnSelectAsync(
-                    companyId, userId, request.Context, request.EntityType, request.SelectedEntityId.Value,
+                    companyId, actorId, request.Context, request.EntityType, request.SelectedEntityId.Value,
                     request.RankPosition, request.Query, now, cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(request.AnchorContext) &&
@@ -10237,7 +9625,7 @@ accounting.MapPost(
                     request.AnchorEntityId.HasValue)
                 {
                     await pairStore.UpsertOnSelectAsync(
-                        companyId, userId,
+                        companyId, actorId,
                         request.AnchorContext!, request.AnchorEntityType!, request.AnchorEntityId.Value,
                         request.Context, request.EntityType, request.SelectedEntityId.Value,
                         now, cancellationToken);
@@ -10246,7 +9634,7 @@ accounting.MapPost(
                 if (!string.IsNullOrWhiteSpace(request.Query) && !string.IsNullOrWhiteSpace(normalizedQuery))
                 {
                     await recentQueries.RecordAsync(
-                        companyId, userId, request.Context, request.Query, normalizedQuery,
+                        companyId, actorId, request.Context, request.Query, normalizedQuery,
                         resultClicked: true,
                         clickedEntityType: request.EntityType,
                         clickedEntityId: request.SelectedEntityId,
@@ -10258,16 +9646,13 @@ accounting.MapPost(
                 // Per-user query-class prior for the next search ranker.
                 // Skips empty/text classes inside the store; numeric/code
                 // selections are what move the needle.
-                if (userId.HasValue)
-                {
-                    var classification = Citus.Modules.UnitySearch.Application.UnitySearchQueryClassifier.Classify(normalizedQuery);
-                    await queryClassPriors.RecordSelectAsync(
-                        companyId,
-                        userId.Value,
-                        classification.Tag,
-                        request.EntityType.Trim(),
-                        cancellationToken);
-                }
+                var classification = Citus.Modules.UnitySearch.Application.UnitySearchQueryClassifier.Classify(normalizedQuery);
+                await queryClassPriors.RecordSelectAsync(
+                    companyId,
+                    actorId,
+                    classification.Tag,
+                    request.EntityType.Trim(),
+                    cancellationToken);
             }
 
             return Results.Ok(new { ok = true });
@@ -10307,17 +9692,10 @@ accounting.MapPost(
             return Results.Ok(new { ok = true, learning = "disabled" });
         }
 
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
         var companyId = session.ActiveCompanyId;
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
-        var input = new ReportUsageEventInput(
-            CompanyId: companyId,
-            UserId: userId,
-            ReportKey: request.ReportKey.Trim(),
-            EventType: request.EventType.Trim(),
-            DateRangeKey: request.DateRangeKey,
-            FiltersJson: request.FiltersJson,
-            SourceRoute: request.SourceRoute,
-            MetadataJson: request.MetadataJson);
+        var input = UnityAiHttpRequestMapper.BuildReportUsageEventInput(companyId, actorId, request);
 
         try
         {
@@ -10342,8 +9720,9 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
-        var items = await store.GetForUserAsync(session.ActiveCompanyId, userId, status, cancellationToken);
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+        var items = await store.GetForUserAsync(session.ActiveCompanyId, actorId, status, cancellationToken);
         return Results.Ok(items);
     });
 
@@ -10356,9 +9735,10 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
         var now = DateTimeOffset.UtcNow;
-        var result = await service.GenerateAsync(session.ActiveCompanyId, userId, now.AddDays(-30), now, cancellationToken);
+        var result = await service.GenerateAsync(session.ActiveCompanyId, actorId, now.AddDays(-30), now, cancellationToken);
         return Results.Ok(result);
     });
 
@@ -10373,9 +9753,12 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         var existing = await store.GetByIdAsync(session.ActiveCompanyId, id, cancellationToken);
         if (existing is null) return Results.NotFound();
+        if (existing.UserId.HasValue && !existing.UserId.Value.Equals(actorId)) return Results.Forbid();
 
         var now = DateTimeOffset.UtcNow;
         await store.UpdateStatusAsync(id, DashboardSuggestionStatus.Accepted, now, null, null, cancellationToken);
@@ -10383,7 +9766,7 @@ accounting.MapPost(
         await widgetStore.UpsertAsync(new DashboardUserWidgetRecord(
             Id: Guid.NewGuid(),
             CompanyId: existing.CompanyId,
-            UserId: existing.UserId,
+            UserId: actorId,
             WidgetKey: existing.WidgetKey,
             Title: existing.Title,
             ConfigJson: null,
@@ -10406,9 +9789,12 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         var existing = await store.GetByIdAsync(session.ActiveCompanyId, id, cancellationToken);
         if (existing is null) return Results.NotFound();
+        if (existing.UserId.HasValue && !existing.UserId.Value.Equals(actorId)) return Results.Forbid();
 
         await store.UpdateStatusAsync(id, DashboardSuggestionStatus.Dismissed, null, DateTimeOffset.UtcNow, null, cancellationToken);
         return Results.Ok(new { ok = true });
@@ -10425,9 +9811,12 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         var existing = await store.GetByIdAsync(session.ActiveCompanyId, id, cancellationToken);
         if (existing is null) return Results.NotFound();
+        if (existing.UserId.HasValue && !existing.UserId.Value.Equals(actorId)) return Results.Forbid();
 
         var until = request.SnoozedUntil ?? DateTimeOffset.UtcNow.AddDays(7);
         await store.UpdateStatusAsync(id, DashboardSuggestionStatus.Snoozed, null, null, until, cancellationToken);
@@ -10444,9 +9833,10 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
         var statusFilter = string.IsNullOrWhiteSpace(status) ? null : status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var tasks = await service.GetTasksAsync(session.ActiveCompanyId, userId, statusFilter, cancellationToken);
+        var tasks = await service.GetTasksAsync(session.ActiveCompanyId, actorId, statusFilter, cancellationToken);
         return Results.Ok(tasks);
     });
 
@@ -10459,8 +9849,12 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
-        var result = await service.RegenerateAsync(session.ActiveCompanyId, userId, cancellationToken);
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "regenerate action-center tasks");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
+        var result = await service.RegenerateAsync(session.ActiveCompanyId, actorId, cancellationToken);
         return Results.Ok(result);
     });
 
@@ -10470,8 +9864,12 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
-        var updated = await service.StartAsync(session.ActiveCompanyId, id, userId, cancellationToken);
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "start action-center tasks");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
+        var updated = await service.StartAsync(session.ActiveCompanyId, id, actorId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
@@ -10481,8 +9879,12 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
-        var updated = await service.CompleteAsync(session.ActiveCompanyId, id, userId, cancellationToken);
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "complete action-center tasks");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
+        var updated = await service.CompleteAsync(session.ActiveCompanyId, id, actorId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
@@ -10492,8 +9894,12 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
-        var updated = await service.DismissAsync(session.ActiveCompanyId, id, userId, cancellationToken);
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "dismiss action-center tasks");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
+        var updated = await service.DismissAsync(session.ActiveCompanyId, id, actorId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
@@ -10508,22 +9914,33 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
-        var userId = string.IsNullOrEmpty(session.UserId.Value) ? (UserId?)null : session.UserId;
+        var authority = RequireBusinessOperationAuthority(session, "tasks", "snooze action-center tasks");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         var until = request.SnoozedUntil ?? DateTimeOffset.UtcNow.AddDays(1);
-        var updated = await service.SnoozeAsync(session.ActiveCompanyId, id, userId, until, cancellationToken);
+        var updated = await service.SnoozeAsync(session.ActiveCompanyId, id, actorId, until, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
 accounting.MapPost(
     "/fx-revaluation-batches/prepare",
-    async (PrepareFxRevaluationBatchHttpRequest request, PrepareFxRevaluationBatchCommandHandler handler, CancellationToken cancellationToken) =>
+    async (PrepareFxRevaluationBatchHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PrepareFxRevaluationBatchCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "prepare FX revaluation batches");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PrepareFxRevaluationBatchCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.BookId,
                     request.RevaluationDate,
                     new(request.TransactionCurrencyCode),
@@ -10546,15 +9963,22 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/fx-revaluation-batches/{documentId:guid}/prepare-next-period-unwind",
-    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, PrepareFxRevaluationUnwindBatchCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PrepareFxRevaluationUnwindBatchCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "prepare FX revaluation next-period unwinds");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PrepareFxRevaluationUnwindBatchCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.UnwindDate,
                     request.Memo),
                 cancellationToken);
@@ -10572,8 +9996,13 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/fx-revaluation-batches/{documentId:guid}/cascade-unwind-plan",
-    async (Guid documentId, [AsParameters] FxRevaluationCascadeUnwindPlanQuery query, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] FxRevaluationCascadeUnwindPlanQuery query, BusinessSessionContextAccessor sessionAccessor, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view FX revaluation cascade unwind plans");
+        if (authority is not null) return authority;
+
         try
         {
             var plan = await repository.GetCascadeUnwindPlanAsync(
@@ -10611,15 +10040,22 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/fx-revaluation-batches/{documentId:guid}/prepare-cascade-unwind",
-    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, PrepareFxRevaluationCascadeUnwindBatchCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PrepareFxRevaluationCascadeUnwindBatchCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "prepare FX revaluation cascade unwinds");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PrepareFxRevaluationCascadeUnwindBatchCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.UnwindDate,
                     request.Memo),
                 cancellationToken);
@@ -10637,18 +10073,25 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/fx-revaluation-batches/{documentId:guid}/auto-post-cascade-unwind",
-    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, PostFxRevaluationCascadeUnwindCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PrepareFxRevaluationUnwindBatchHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostFxRevaluationCascadeUnwindCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "post FX revaluation cascade unwinds");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostFxRevaluationCascadeUnwindCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.UnwindDate,
                     request.Memo,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -10660,12 +10103,17 @@ accounting.MapPost(
                 message = ex.Message
             });
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
+    });
 
 accounting.MapGet(
     "/fx-revaluation-batches",
-    async ([AsParameters] FxRevaluationBatchListQuery query, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
+    async ([AsParameters] FxRevaluationBatchListQuery query, BusinessSessionContextAccessor sessionAccessor, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view FX revaluation batches");
+        if (authority is not null) return authority;
+
         var batches = await repository.ListRecentAsync(
             query.CompanyId,
             query.Take ?? 50,
@@ -10701,8 +10149,13 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/fx-revaluation-batches/{documentId:guid}",
-    async (Guid documentId, [AsParameters] FxRevaluationBatchLookupQuery query, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] FxRevaluationBatchLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view FX revaluation batches");
+        if (authority is not null) return authority;
+
         try
         {
             var document = await repository.GetForPostingAsync(
@@ -10775,17 +10228,24 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/fx-revaluation-batches/{documentId:guid}/post",
-    async (Guid documentId, PostFxRevaluationBatchHttpRequest request, PostFxRevaluationBatchCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostFxRevaluationBatchHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostFxRevaluationBatchCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "post FX revaluation batches");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostFxRevaluationBatchCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -10794,12 +10254,17 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
+    });
 
 accounting.MapGet(
     "/manual-journals/{documentId:guid}",
-    async (Guid documentId, [AsParameters] ManualJournalLookupQuery query, IManualJournalDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] ManualJournalLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IManualJournalDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view manual journals");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -10837,28 +10302,33 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/manual-journals/{documentId:guid}/post",
-    async (Guid documentId, PostManualJournalHttpRequest request, PostManualJournalCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostManualJournalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostManualJournalCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "post manual journals");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostManualJournalCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
-            // H15-b: manual journal status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
+    });
 
 // Single-shot save + post for the New Journal Entry form. Builds a
 // JournalEntryDraft from the wire payload, looks up each line's account
@@ -10879,7 +10349,6 @@ accounting.MapPost(
         BusinessSessionContextAccessor sessionAccessor,
         IAccountStore accountStore,
         Modules.GL.JournalEntry.IJournalEntryWorkflow workflow,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -10887,6 +10356,9 @@ accounting.MapPost(
         {
             return Results.Unauthorized();
         }
+
+        var authority = RequireBusinessOperationAuthority(session, "accounting", "save and post manual journals");
+        if (authority is not null) return authority;
 
         if (request.Lines is null || request.Lines.Count == 0)
         {
@@ -10971,12 +10443,6 @@ accounting.MapPost(
         try
         {
             var result = await workflow.PostDraftAsync(draft, session.UserId, cancellationToken);
-
-            // H15-c: composite save-and-post created a new manual journal in
-            // 'posted' status — drop the UnitySearch projection so the journal
-            // shows up in topbar search + GL pickers without the 5-min wait.
-            await unitySearchProjectionStore.InvalidateAsync(companyId, cancellationToken);
-
             return Results.Ok(new
             {
                 documentId = result.DocumentId,
@@ -10993,12 +10459,18 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
+    });
 
 accounting.MapGet(
     "/invoices/drafts/{documentId:guid}",
-    async (Guid documentId, [AsParameters] InvoiceLookupQuery query, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] InvoiceLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view invoice drafts");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -11023,8 +10495,11 @@ accounting.MapGet(
                 FxEffectiveDate = document.FxSnapshot?.EffectiveDate,
                 FxSource = document.FxSnapshot?.SourceSemantics,
                 document.Memo,
+                document.CustomerPoNumber,
+                document.SalesOrderId,
                 Lines = document.InvoiceLines.Select(line => new
                 {
+                    line.Id,
                     line.LineNumber,
                     line.RevenueAccountId,
                     line.Description,
@@ -11035,22 +10510,40 @@ accounting.MapGet(
                     line.TaxAmount,
                     line.ItemId,
                     line.WarehouseId,
-                    line.UomCode
+                    line.UomCode,
+                    line.TaskId,
+                    line.TaskLineId
                 })
             });
     });
 
 accounting.MapPost(
     "/invoices/drafts",
-    async (SaveInvoiceDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        SaveInvoiceDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInvoiceDocumentRepository repository,
+        ITaskLineLinkValidator taskLineLinkValidator,
+        ISalesTaxCalculationEngine salesTaxEngine,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "create invoice drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
+            await ValidateInvoiceTaskLinksAsync(request, taskLineLinkValidator, cancellationToken);
+            var invoiceLines = await BuildInvoiceDraftLinesAsync(request, salesTaxEngine, cancellationToken);
+
             var result = await repository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.InvoiceDate,
                     request.DueDate,
@@ -11061,19 +10554,7 @@ accounting.MapPost(
                     request.FxEffectiveDate,
                     request.FxSource,
                     request.Memo,
-                    request.Lines.Select(static line => new InvoiceDraftLineSaveModel(
-                        line.LineNumber,
-                        line.RevenueAccountId,
-                        line.Description,
-                        line.Quantity,
-                        line.UnitPrice,
-                        line.TaxCodeId,
-                        line.TaxAmount,
-                        line.ItemId,
-                        line.WarehouseId,
-                        line.UomCode,
-                        line.TaskId,
-                        line.TaskLineId)).ToArray(),
+                    invoiceLines,
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
                     request.SalesOrderId),
                 cancellationToken);
@@ -11088,15 +10569,32 @@ accounting.MapPost(
 
 accounting.MapPut(
     "/invoices/drafts/{documentId:guid}",
-    async (Guid documentId, SaveInvoiceDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SaveInvoiceDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInvoiceDocumentRepository repository,
+        ITaskLineLinkValidator taskLineLinkValidator,
+        ISalesTaxCalculationEngine salesTaxEngine,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "update invoice drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
+            await ValidateInvoiceTaskLinksAsync(request, taskLineLinkValidator, cancellationToken);
+            var invoiceLines = await BuildInvoiceDraftLinesAsync(request, salesTaxEngine, cancellationToken);
+
             var result = await repository.SaveDraftAsync(
                 new InvoiceDraftSaveModel(
                     documentId,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.InvoiceDate,
                     request.DueDate,
@@ -11107,19 +10605,7 @@ accounting.MapPut(
                     request.FxEffectiveDate,
                     request.FxSource,
                     request.Memo,
-                    request.Lines.Select(static line => new InvoiceDraftLineSaveModel(
-                        line.LineNumber,
-                        line.RevenueAccountId,
-                        line.Description,
-                        line.Quantity,
-                        line.UnitPrice,
-                        line.TaxCodeId,
-                        line.TaxAmount,
-                        line.ItemId,
-                        line.WarehouseId,
-                        line.UomCode,
-                        line.TaskId,
-                        line.TaskLineId)).ToArray(),
+                    invoiceLines,
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
                     request.SalesOrderId,
                     request.ExpectedUpdatedAt),
@@ -11147,13 +10633,25 @@ accounting.MapPut(
 
 accounting.MapPost(
     "/invoices/drafts/{documentId:guid}/submit",
-    async (Guid documentId, SubmitBillDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SubmitBillDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInvoiceDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "submit invoice drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SubmitDraftAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -11165,10 +10663,76 @@ accounting.MapPost(
         }
     });
 
+static async Task ValidateInvoiceTaskLinksAsync(
+    SaveInvoiceDraftHttpRequest request,
+    ITaskLineLinkValidator taskLineLinkValidator,
+    CancellationToken cancellationToken)
+{
+    var taskIds = request.Lines
+        .Where(static line => line.TaskId.HasValue)
+        .Select(static line => line.TaskId!.Value)
+        .Where(static taskId => taskId != Guid.Empty)
+        .Distinct()
+        .ToArray();
+
+    foreach (var taskId in taskIds)
+    {
+        await taskLineLinkValidator.ValidateAsync(request.CompanyId, taskId, cancellationToken);
+    }
+}
+
+static async Task<InvoiceDraftLineSaveModel[]> BuildInvoiceDraftLinesAsync(
+    SaveInvoiceDraftHttpRequest request,
+    ISalesTaxCalculationEngine salesTaxEngine,
+    CancellationToken cancellationToken)
+{
+    var currency = string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)
+        ? request.BaseCurrencyCode
+        : request.TransactionCurrencyCode;
+
+    var lines = new List<InvoiceDraftLineSaveModel>(request.Lines.Count);
+    foreach (var line in request.Lines)
+    {
+        var lineAmount = Math.Round(line.Quantity * line.UnitPrice, 6);
+        var taxPreview = await salesTaxEngine.CalculateAsync(
+            request.CompanyId,
+            new SalesTaxPreviewRequest(
+                DocumentSide: SalesTaxDocumentSide.Sales,
+                DocumentDate: request.InvoiceDate,
+                TaxMode: "exclusive",
+                Amount: lineAmount,
+                TaxCodeId: line.TaxCodeId,
+                CurrencyCode: currency),
+            cancellationToken);
+
+        lines.Add(new InvoiceDraftLineSaveModel(
+            line.LineNumber,
+            line.RevenueAccountId,
+            line.Description,
+            line.Quantity,
+            line.UnitPrice,
+            line.TaxCodeId,
+            Math.Round(taxPreview.TaxAmount, 6),
+            line.ItemId,
+            line.WarehouseId,
+            line.UomCode,
+            line.TaskId,
+            line.TaskLineId));
+    }
+
+    return lines.ToArray();
+}
+
 accounting.MapGet(
     "/invoices/{documentId:guid}",
-    async (Guid documentId, [AsParameters] InvoiceLookupQuery query, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] InvoiceLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view invoices");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -11182,80 +10746,90 @@ accounting.MapGet(
             });
         }
 
-        return Results.Ok(new
-        {
-            document.Id,
-            CompanyId = document.CompanyId,
-            EntityNumber = document.EntityNumber.Value,
-            DisplayNumber = document.DisplayNumber.Value,
-            document.Status,
-            document.DocumentDate,
-            document.DueDate,
-            CustomerId = document.PartyId,
-            ReceivableAccountId = document.ReceivableAccountId,
-            TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
-            BaseCurrencyCode = document.BaseCurrencyCode.Value,
-            document.SubtotalAmount,
-            document.TaxAmount,
-            document.TotalAmount,
-            document.Memo,
-            document.CustomerPoNumber,
-            document.SalesOrderId,
-            Lines = document.InvoiceLines.Select(line => new
-            {
-                line.LineNumber,
-                line.RevenueAccountId,
-                line.Description,
-                line.Quantity,
-                line.UnitPrice,
-                line.LineAmount,
-                line.TaxAmount,
-                line.PayableTaxAccountId,
-                line.TaskId
-            })
-        });
+        return Results.Ok(MapInvoiceDocumentResponse(document));
     });
 
 accounting.MapPost(
     "/invoices/{documentId:guid}/post",
-    async (Guid documentId, PostInvoiceHttpRequest request, PostInvoiceCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostInvoiceHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostInvoiceCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "post invoices");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostInvoiceCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
-            // H15-b: invoice status flipped draft → posted; the projection's
-            // status filter needs to refresh so the invoice surfaces in the
-            // topbar search + AR pickers without the 5-min refresh wait.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
+    });
+
+accounting.MapPost(
+    "/invoices/{documentId:guid}/void",
+    async (Guid documentId, VoidInvoiceHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "void invoices");
+        if (authority is not null) return authority;
+
+        try
+        {
+            var document = await repository.VoidAsync(
+                request.CompanyId,
+                documentId,
+                cancellationToken);
+
+            return document is null
+                ? Results.NotFound(new { message = "Invoice document was not found in the active company context." })
+                : Results.Ok(MapInvoiceDocumentResponse(document));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
+    });
 
 accounting.MapGet(
     "/invoices",
-    async (CompanyId companyId, bool? includeDrafts, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(companyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view invoices");
+        if (authority is not null) return authority;
+
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/credit-notes/drafts/{documentId:guid}",
-    async (Guid documentId, [AsParameters] CreditNoteLookupQuery query, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] CreditNoteLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view credit-note drafts");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         return document is null || document.Status != "draft"
             ? Results.NotFound(new { message = "Credit note draft was not found in the active company context." })
@@ -11292,15 +10866,26 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/credit-notes/drafts",
-    async (SaveCreditNoteDraftHttpRequest request, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        SaveCreditNoteDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICreditNoteDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "create credit-note drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.CreditNoteDate,
                     request.DueDate,
@@ -11318,9 +10903,7 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount,
-                        line.TaskId,
-                        line.TaskLineId)).ToArray()),
+                        line.TaxAmount)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -11333,15 +10916,27 @@ accounting.MapPost(
 
 accounting.MapPut(
     "/credit-notes/drafts/{documentId:guid}",
-    async (Guid documentId, SaveCreditNoteDraftHttpRequest request, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SaveCreditNoteDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICreditNoteDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "update credit-note drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new CreditNoteDraftSaveModel(
                     documentId,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.CreditNoteDate,
                     request.DueDate,
@@ -11359,9 +10954,7 @@ accounting.MapPut(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount,
-                        line.TaskId,
-                        line.TaskLineId)).ToArray()),
+                        line.TaxAmount)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -11374,8 +10967,14 @@ accounting.MapPut(
 
 accounting.MapGet(
     "/credit-notes/{documentId:guid}",
-    async (Guid documentId, [AsParameters] CreditNoteLookupQuery query, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] CreditNoteLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view credit notes");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -11422,21 +11021,26 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/credit-notes/{documentId:guid}/post",
-    async (Guid documentId, PostCreditNoteHttpRequest request, PostCreditNoteCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostCreditNoteHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostCreditNoteCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "post credit notes");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostCreditNoteCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
-            // H15-b: credit-note status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
@@ -11447,8 +11051,14 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/bills/drafts/{documentId:guid}",
-    async (Guid documentId, [AsParameters] BillLookupQuery query, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] BillLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view bill drafts");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         return document is null || (document.Status != "draft" && document.Status != "submitted")
             ? Results.NotFound(new { message = "Bill draft or submitted bill was not found in the active company context." })
@@ -11491,15 +11101,26 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/bills/drafts",
-    async (SaveBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        SaveBillDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "create bill drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.BillDate,
                     request.DueDate,
@@ -11537,15 +11158,27 @@ accounting.MapPost(
 
 accounting.MapPut(
     "/bills/drafts/{documentId:guid}",
-    async (Guid documentId, SaveBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SaveBillDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "update bill drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new BillDraftSaveModel(
                     documentId,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.BillDate,
                     request.DueDate,
@@ -11583,13 +11216,25 @@ accounting.MapPut(
 
 accounting.MapPost(
     "/bills/drafts/{documentId:guid}/submit",
-    async (Guid documentId, SubmitBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SubmitBillDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "submit bill drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SubmitDraftAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -11603,13 +11248,25 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/bills/drafts/{documentId:guid}/cancel",
-    async (Guid documentId, SubmitBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SubmitBillDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "cancel submitted bill drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.CancelSubmittedAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -11626,10 +11283,17 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] BillLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IBillDocumentRepository repository,
         IReceiptGrIrApSettlementControlStore grIrSettlementStore,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view bills");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -11732,8 +11396,14 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/bills/{documentId:guid}/receipt-matching",
-    async (Guid documentId, [AsParameters] BillLookupQuery query, IBillReceiptMatchingRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] BillLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IBillReceiptMatchingRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view bill receipt matching");
+        if (authority is not null) return authority;
+
         var summary = await repository.GetBillLaneSummaryAsync(
             query.CompanyId,
             documentId,
@@ -11803,36 +11473,48 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/bills/{documentId:guid}/post",
-    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostBillHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostBillCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "post bills");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostBillCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
-            // H15-b: bill status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApBillPost);
+    });
 
 accounting.MapGet(
     "/purchase-orders",
     async (
         [AsParameters] PurchaseOrderListQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view purchase orders");
+        if (authority is not null) return authority;
+
         var documents = await repository.ListAsync(query.CompanyId, query.Take ?? 50, cancellationToken);
         var summaries = await repository.GetThreeQuantitySummariesAsync(
             query.CompanyId,
@@ -11874,9 +11556,16 @@ accounting.MapGet(
     "/purchase-orders/approval-requests",
     async (
         [AsParameters] PurchaseOrderApprovalRequestListQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view purchase order approval requests");
+        if (authority is not null) return authority;
+
         var requests = await repository.ListApprovalRequestsAsync(
             query.CompanyId,
             query.Take ?? 50,
@@ -11891,9 +11580,16 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] PurchaseOrderLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view purchase orders");
+        if (authority is not null) return authority;
+
         var document = await repository.GetAsync(query.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -11946,9 +11642,16 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] PurchaseOrderLifecycleAuditQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view purchase order lifecycle audit");
+        if (authority is not null) return authority;
+
         var document = await repository.GetAsync(query.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -11969,9 +11672,16 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] PurchaseOrderLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view purchase order approval requests");
+        if (authority is not null) return authority;
+
         var request = await repository.GetLatestApprovalRequestAsync(query.CompanyId, documentId, cancellationToken);
         return request is null
             ? Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." })
@@ -11983,14 +11693,23 @@ accounting.MapPost(
     async (
         Guid documentId,
         RequestPurchaseOrderApprovalHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "request purchase order approval");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.RequestApprovalAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 request.Reason,
                 cancellationToken);
@@ -12009,14 +11728,23 @@ accounting.MapPost(
         Guid documentId,
         Guid requestId,
         SubmitPurchaseOrderApprovalRequestHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "submit purchase order approval requests");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SubmitApprovalRequestAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 requestId,
                 cancellationToken);
@@ -12041,6 +11769,10 @@ accounting.MapPost(
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+
         var current = await repository.GetLatestApprovalRequestAsync(request.CompanyId, documentId, cancellationToken);
         if (current is null || current.RequestId != requestId)
         {
@@ -12048,19 +11780,21 @@ accounting.MapPost(
         }
 
         var authorityBlock = RequirePurchaseOrderApprovalAuthority(
-            sessionAccessor.Current,
+            session,
             "reject_approval_request",
             current.EstimatedAmount);
         if (authorityBlock is not null)
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await repository.RejectApprovalRequestAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 requestId,
                 cancellationToken);
@@ -12077,15 +11811,23 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/purchase-orders/drafts",
-    async (SavePurchaseOrderDraftHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (SavePurchaseOrderDraftHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "create purchase order drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.OrderDate,
                     request.ExpectedDate,
@@ -12110,15 +11852,23 @@ accounting.MapPost(
 
 accounting.MapPut(
     "/purchase-orders/drafts/{documentId:guid}",
-    async (Guid documentId, SavePurchaseOrderDraftHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, SavePurchaseOrderDraftHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "update purchase order drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     documentId,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.OrderDate,
                     request.ExpectedDate,
@@ -12145,6 +11895,10 @@ accounting.MapPost(
     "/purchase-orders/{documentId:guid}/approve",
     async (Guid documentId, ApprovePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+
         var document = await repository.GetAsync(request.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -12152,19 +11906,21 @@ accounting.MapPost(
         }
 
         var authorityBlock = RequirePurchaseOrderApprovalAuthority(
-            sessionAccessor.Current,
+            session,
             "approve",
             CalculatePurchaseOrderDocumentEstimatedAmount(document));
         if (authorityBlock is not null)
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await repository.ApproveAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12185,19 +11941,25 @@ accounting.MapPost(
         IPurchaseOrderDocumentRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+
         var authorityBlock = RequirePurchaseOrderApprovalReversalAuthority(
-            sessionAccessor.Current,
+            session,
             "reverse_approval");
         if (authorityBlock is not null)
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await repository.ReverseApprovalAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12213,17 +11975,22 @@ accounting.MapPost(
     "/purchase-orders/{documentId:guid}/issue",
     async (Guid documentId, IssuePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        var authorityBlock = RequirePurchaseOrderReleaseAuthority(sessionAccessor.Current, "release");
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authorityBlock = RequirePurchaseOrderReleaseAuthority(session, "release");
         if (authorityBlock is not null)
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await repository.IssueAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12239,17 +12006,22 @@ accounting.MapPost(
     "/purchase-orders/{documentId:guid}/reopen-for-amendment",
     async (Guid documentId, ReopenPurchaseOrderForAmendmentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        var authorityBlock = RequirePurchaseOrderAmendmentAuthority(sessionAccessor.Current, "reopen_for_amendment");
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authorityBlock = RequirePurchaseOrderAmendmentAuthority(session, "reopen_for_amendment");
         if (authorityBlock is not null)
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await repository.ReopenForAmendmentAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12265,17 +12037,22 @@ accounting.MapPost(
     "/purchase-orders/{documentId:guid}/close",
     async (Guid documentId, ClosePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        var authorityBlock = RequirePurchaseOrderCloseAuthority(sessionAccessor.Current, "close");
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authorityBlock = RequirePurchaseOrderCloseAuthority(session, "close");
         if (authorityBlock is not null)
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await repository.CloseAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12291,17 +12068,22 @@ accounting.MapPost(
     "/purchase-orders/{documentId:guid}/cancel",
     async (Guid documentId, CancelPurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        var authorityBlock = RequirePurchaseOrderCancelAuthority(sessionAccessor.Current, "cancel");
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authorityBlock = RequirePurchaseOrderCancelAuthority(session, "cancel");
         if (authorityBlock is not null)
         {
             return authorityBlock;
         }
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await repository.CancelAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12315,13 +12097,21 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/purchase-orders/{documentId:guid}/quantity-discrepancies/refresh",
-    async (Guid documentId, RefreshPurchaseOrderQuantityDiscrepanciesHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, RefreshPurchaseOrderQuantityDiscrepanciesHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "refresh purchase order quantity discrepancies");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var summary = await repository.RefreshQuantityDiscrepanciesAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12337,13 +12127,21 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/purchase-orders/{documentId:guid}/quantity-discrepancies/review",
-    async (Guid documentId, ReviewPurchaseOrderQuantityDiscrepancyHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, ReviewPurchaseOrderQuantityDiscrepancyHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(request.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "review purchase order quantity discrepancies");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(session, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var summary = await repository.ReviewQuantityDiscrepancyAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 request.PurchaseOrderLineNumber,
                 request.DiscrepancyType,
@@ -12369,6 +12167,7 @@ accounting.MapGet(
     "/receipts",
     async (
         [AsParameters] ReceiptListQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IReceiptDocumentRepository repository,
         IReceiptInventoryActivationStore activationStore,
         IReceiptInventoryValuationStore valuationStore,
@@ -12377,6 +12176,12 @@ accounting.MapGet(
         IReceiptGrIrApSettlementControlStore grIrSettlementStore,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view receipts");
+        if (authority is not null) return authority;
+
         var documents = await repository.ListAsync(
             query.CompanyId,
             query.Take ?? 50,
@@ -12552,9 +12357,16 @@ accounting.MapGet(
     "/receipts/grir-clearing-account-policy",
     async (
         [AsParameters] ReceiptLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IReceiptGrIrClearingAccountPolicyRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view GR/IR clearing account policy");
+        if (authority is not null) return authority;
+
         var accountId = await repository.GetDefaultGrIrClearingAccountIdAsync(
             query.CompanyId,
             cancellationToken);
@@ -12581,12 +12393,16 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             await repository.SaveDefaultGrIrClearingAccountAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 request.GrIrClearingAccountId,
                 cancellationToken);
 
@@ -12607,6 +12423,7 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] ReceiptLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IReceiptDocumentRepository repository,
         IReceiptInventoryActivationStore activationStore,
         IReceiptInventoryValuationStore valuationStore,
@@ -12615,6 +12432,12 @@ accounting.MapGet(
         IReceiptGrIrApSettlementControlStore grIrSettlementStore,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view receipts");
+        if (authority is not null) return authority;
+
         var document = await repository.GetAsync(
             query.CompanyId,
             documentId,
@@ -12798,15 +12621,26 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/receipts/drafts",
-    async (SaveReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        SaveReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "inventory", "create receipt drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new ReceiptDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.WarehouseId,
                     request.ReceiptDate,
@@ -12833,15 +12667,27 @@ accounting.MapPost(
 
 accounting.MapPut(
     "/receipts/drafts/{documentId:guid}",
-    async (Guid documentId, SaveReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SaveReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "inventory", "update receipt drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new ReceiptDraftSaveModel(
                     documentId,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.WarehouseId,
                     request.ReceiptDate,
@@ -12868,13 +12714,25 @@ accounting.MapPut(
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/post",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, PostReceiptWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        PostReceiptWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "inventory", "post receipts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.PostAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12884,17 +12742,29 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
+    });
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/inventory-activation/retry",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, PostReceiptWorkflow workflow, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        PostReceiptWorkflow workflow,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "inventory", "retry receipt inventory activation");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await workflow.PostAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12904,17 +12774,29 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
+    });
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/inventory-valuation/refresh",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptInventoryValuationStore valuationStore, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptInventoryValuationStore valuationStore,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "inventory", "refresh receipt inventory valuation");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await valuationStore.RefreshReceiptValuationAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12924,17 +12806,29 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
+    });
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/inventory-cost-layer-emission/emit",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptInventoryCostLayerEmissionStore emissionStore, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptInventoryCostLayerEmissionStore emissionStore,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "inventory", "emit receipt inventory cost layers");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await emissionStore.EmitReceiptCostLayersAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12944,17 +12838,29 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
+    });
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-bridge/refresh",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrBridgeStore grIrBridgeStore, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptGrIrBridgeStore grIrBridgeStore,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "inventory", "refresh receipt GR/IR bridge");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12964,17 +12870,34 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
+    });
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-settlement/refresh",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "refresh");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await grIrSettlementStore.RefreshReceiptSettlementControlAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -12988,13 +12911,30 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-settlement/journal-reconciliation/refresh",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "refresh journal reconciliation");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await grIrSettlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -13008,13 +12948,30 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-settlement/purchase-variance/refresh",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "refresh purchase variance");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await grIrSettlementStore.RefreshReceiptSettlementVarianceControlAsync(
                 request.CompanyId,
-                request.UserId,
+                actorId,
                 documentId,
                 cancellationToken);
 
@@ -13031,9 +12988,16 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] ReceiptLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IReceiptGrIrApSettlementControlStore grIrSettlementStore,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view receipt purchase variance lines");
+        if (authority is not null) return authority;
+
         var result = await grIrSettlementStore.ListReceiptPurchaseVarianceLinesAsync(
             query.CompanyId,
             documentId,
@@ -13047,9 +13011,16 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] ReceiptLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
         IReceiptGrIrApSettlementControlStore grIrSettlementStore,
         CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view receipt settlement batches");
+        if (authority is not null) return authority;
+
         var result = await grIrSettlementStore.ListReceiptSettlementBatchesAsync(
             query.CompanyId,
             documentId,
@@ -13065,7 +13036,6 @@ accounting.MapPost(
         ExecuteReceiptGrIrSettlementHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ExecuteReceiptGrIrSettlementCommandHandler handler,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var authorityBlock = RequireGrIrSettlementExecutionAuthority(
@@ -13075,16 +13045,20 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await handler.HandleAsync(
                 new ExecuteReceiptGrIrSettlementCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     documentId,
                     request.SettlementAmountBase,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -13103,7 +13077,6 @@ accounting.MapPost(
         PostReceiptGrIrSettlementJournalHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         PostReceiptGrIrSettlementJournalCommandHandler handler,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var authorityBlock = RequireGrIrSettlementExecutionAuthority(
@@ -13113,16 +13086,20 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await handler.HandleAsync(
                 new PostReceiptGrIrSettlementJournalCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     documentId,
                     settlementBatchId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -13150,13 +13127,17 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await handler.HandleAsync(
                 new ClearReceiptGrIrSettlementOpenItemCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     documentId,
                     settlementBatchId),
                 cancellationToken);
@@ -13186,13 +13167,17 @@ accounting.MapPost(
         {
             return authorityBlock;
         }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
 
         try
         {
             var result = await handler.HandleAsync(
                 new ReverseReceiptGrIrSettlementOpenItemClearingCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     documentId,
                     settlementBatchId),
                 cancellationToken);
@@ -13207,17 +13192,34 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-bridge/post",
-    async (Guid documentId, PostReceiptGrIrBridgeHttpRequest request, PostReceiptGrIrCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        PostReceiptGrIrBridgeHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        PostReceiptGrIrCommandHandler handler,
+        CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "post GR/IR bridge");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostReceiptGrIrCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     documentId,
                     request.GrIrClearingAccountId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -13253,6 +13255,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "view sales issue COGS status");
+        if (authority is not null) return authority;
 
         var rows = await reader.ListAsync(session.ActiveCompanyId, take ?? 100, cancellationToken);
         return Results.Ok(rows);
@@ -13269,6 +13273,8 @@ accounting.MapPost(
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
         if (string.IsNullOrEmpty(session.UserId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "inventory", "post sales issue COGS");
+        if (authority is not null) return authority;
 
         try
         {
@@ -13288,8 +13294,14 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/vendor-credits/drafts/{documentId:guid}",
-    async (Guid documentId, [AsParameters] VendorCreditLookupQuery query, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] VendorCreditLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view vendor-credit drafts");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         return document is null || document.Status != "draft"
             ? Results.NotFound(new { message = "Vendor credit draft was not found in the active company context." })
@@ -13325,15 +13337,26 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/vendor-credits/drafts",
-    async (SaveVendorCreditDraftHttpRequest request, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        SaveVendorCreditDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorCreditDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "create vendor-credit drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new VendorCreditDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.VendorCreditDate,
                     request.DueDate,
@@ -13364,15 +13387,27 @@ accounting.MapPost(
 
 accounting.MapPut(
     "/vendor-credits/drafts/{documentId:guid}",
-    async (Guid documentId, SaveVendorCreditDraftHttpRequest request, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        SaveVendorCreditDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorCreditDocumentRepository repository,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "update vendor-credit drafts");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await repository.SaveDraftAsync(
                 new VendorCreditDraftSaveModel(
                     documentId,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.VendorCreditDate,
                     request.DueDate,
@@ -13403,8 +13438,14 @@ accounting.MapPut(
 
 accounting.MapGet(
     "/vendor-credits/{documentId:guid}",
-    async (Guid documentId, [AsParameters] VendorCreditLookupQuery query, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] VendorCreditLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view vendor credits");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -13450,33 +13491,44 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/vendor-credits/{documentId:guid}/post",
-    async (Guid documentId, PostVendorCreditHttpRequest request, PostVendorCreditCommandHandler handler, IUnitySearchProjectionStore unitySearchProjectionStore, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostVendorCreditHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostVendorCreditCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "post vendor credits");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostVendorCreditCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
-            // H15-b: vendor-credit status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
             return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorCreditPost);
+    });
 
 accounting.MapGet(
     "/receive-payments/{documentId:guid}",
-    async (Guid documentId, [AsParameters] ReceivePaymentLookupQuery query, IReceivePaymentDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] ReceivePaymentLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IReceivePaymentDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "view receive payments");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -13521,14 +13573,25 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/receive-payments/prepare",
-    async (PrepareReceivePaymentDraftHttpRequest request, PrepareReceivePaymentDraftCommandHandler handler, CancellationToken cancellationToken) =>
+    async (
+        PrepareReceivePaymentDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        PrepareReceivePaymentDraftCommandHandler handler,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "prepare receive payments");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PrepareReceivePaymentDraftCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.BankAccountId,
                     request.PaymentDate,
@@ -13565,6 +13628,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "view customer financial summary");
+        if (authority is not null) return authority;
 
         var summary = await queries.GetFinancialSummaryAsync(session.ActiveCompanyId, customerId, cancellationToken);
         return Results.Ok(summary);
@@ -13591,6 +13656,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view customer transactions");
+        if (authority is not null) return authority;
 
         var rows = await queries.ListTransactionsAsync(
             session.ActiveCompanyId,
@@ -13617,6 +13684,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "view customer shipping addresses");
+        if (authority is not null) return authority;
 
         var rows = await store.ListAsync(session.ActiveCompanyId, customerId, cancellationToken);
         return Results.Ok(rows);
@@ -13633,6 +13702,9 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "create customer shipping addresses");
+        if (authority is not null) return authority;
+
         if (string.IsNullOrWhiteSpace(request.AddressLine) &&
             string.IsNullOrWhiteSpace(request.City) &&
             string.IsNullOrWhiteSpace(request.PostalCode))
@@ -13667,6 +13739,8 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "update customer shipping addresses");
+        if (authority is not null) return authority;
 
         var updated = await store.UpdateAsync(
             session.ActiveCompanyId,
@@ -13695,6 +13769,8 @@ accounting.MapDelete(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "delete customer shipping addresses");
+        if (authority is not null) return authority;
 
         var removed = await store.DeleteAsync(session.ActiveCompanyId, customerId, addressId, cancellationToken);
         return removed ? Results.NoContent() : Results.NotFound();
@@ -13711,6 +13787,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "sales", "set default customer shipping addresses");
+        if (authority is not null) return authority;
 
         var updated = await store.SetDefaultAsync(session.ActiveCompanyId, customerId, addressId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
@@ -13718,8 +13796,14 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/customers/{customerId:guid}/open-receivables",
-    async (Guid customerId, [AsParameters] OpenReceivablesLookupQuery query, IReceivePaymentDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid customerId, [AsParameters] OpenReceivablesLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IReceivePaymentDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "view open receivables");
+        if (authority is not null) return authority;
+
         var candidates = await repository.ListOpenReceivableCandidatesAsync(
             query.CompanyId,
             customerId,
@@ -13745,17 +13829,24 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/receive-payments/{documentId:guid}/post",
-    async (Guid documentId, PostReceivePaymentHttpRequest request, PostReceivePaymentCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostReceivePaymentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostReceivePaymentCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "post receive payments");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostReceivePaymentCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -13764,12 +13855,18 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArReceiptApply);
+    });
 
 accounting.MapGet(
     "/credit-applications/{documentId:guid}",
-    async (Guid documentId, [AsParameters] CreditApplicationLookupQuery query, ICreditApplicationDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] CreditApplicationLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ICreditApplicationDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "ar_payments", "view credit applications");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -13815,16 +13912,23 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/credit-applications/{documentId:guid}/post",
-    async (Guid documentId, PostCreditApplicationHttpRequest request, PostCreditApplicationCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostCreditApplicationHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostCreditApplicationCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "post credit applications");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostCreditApplicationCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    actorId,
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -13837,14 +13941,25 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/pay-bills/prepare",
-    async (PreparePayBillDraftHttpRequest request, PreparePayBillDraftCommandHandler handler, CancellationToken cancellationToken) =>
+    async (
+        PreparePayBillDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        PreparePayBillDraftCommandHandler handler,
+        CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ap_payments", "prepare pay bills");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PreparePayBillDraftCommand(
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.BankAccountId,
                     request.PaymentDate,
@@ -13881,6 +13996,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "view vendor financial summary");
+        if (authority is not null) return authority;
 
         var summary = await queries.GetFinancialSummaryAsync(session.ActiveCompanyId, vendorId, cancellationToken);
         return Results.Ok(summary);
@@ -13900,6 +14017,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view vendor transactions");
+        if (authority is not null) return authority;
 
         var rows = await queries.ListTransactionsAsync(
             session.ActiveCompanyId,
@@ -13920,6 +14039,8 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "view vendor shipping addresses");
+        if (authority is not null) return authority;
 
         var rows = await store.ListAsync(session.ActiveCompanyId, vendorId, cancellationToken);
         return Results.Ok(rows);
@@ -13936,6 +14057,9 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "create vendor shipping addresses");
+        if (authority is not null) return authority;
+
         if (string.IsNullOrWhiteSpace(request.AddressLine) &&
             string.IsNullOrWhiteSpace(request.City) &&
             string.IsNullOrWhiteSpace(request.PostalCode))
@@ -13970,6 +14094,8 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "update vendor shipping addresses");
+        if (authority is not null) return authority;
 
         var updated = await store.UpdateAsync(
             session.ActiveCompanyId,
@@ -13998,6 +14124,8 @@ accounting.MapDelete(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "delete vendor shipping addresses");
+        if (authority is not null) return authority;
 
         var removed = await store.DeleteAsync(session.ActiveCompanyId, vendorId, addressId, cancellationToken);
         return removed ? Results.NoContent() : Results.NotFound();
@@ -14014,6 +14142,8 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        var authority = RequireBusinessOperationAuthority(session, "purchases", "set default vendor shipping addresses");
+        if (authority is not null) return authority;
 
         var updated = await store.SetDefaultAsync(session.ActiveCompanyId, vendorId, addressId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
@@ -14021,8 +14151,14 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/vendors/{vendorId:guid}/open-payables",
-    async (Guid vendorId, [AsParameters] OpenPayablesLookupQuery query, IPayBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid vendorId, [AsParameters] OpenPayablesLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IPayBillDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "view open payables");
+        if (authority is not null) return authority;
+
         var candidates = await repository.ListOpenPayableCandidatesAsync(
             query.CompanyId,
             vendorId,
@@ -14048,8 +14184,14 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/pay-bills/{documentId:guid}",
-    async (Guid documentId, [AsParameters] PayBillLookupQuery query, IPayBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] PayBillLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IPayBillDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "view pay bills");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -14094,17 +14236,24 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/pay-bills/{documentId:guid}/post",
-    async (Guid documentId, PostPayBillHttpRequest request, PostPayBillCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostPayBillHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostPayBillCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ap_payments", "post pay bills");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostPayBillCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -14113,12 +14262,18 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApPaymentApply);
+    });
 
 accounting.MapGet(
     "/vendor-credit-applications/{documentId:guid}",
-    async (Guid documentId, [AsParameters] VendorCreditApplicationLookupQuery query, IVendorCreditApplicationDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] VendorCreditApplicationLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IVendorCreditApplicationDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var session = sessionAccessor.Current;
+        if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value)) return Results.Unauthorized();
+        if (!string.Equals(query.CompanyId.Value, session.ActiveCompanyId.Value, StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+        var authority = RequireBusinessOperationAuthority(session, "ap_payments", "view vendor credit applications");
+        if (authority is not null) return authority;
+
         var document = await repository.GetForPostingAsync(
             query.CompanyId,
             documentId,
@@ -14164,16 +14319,23 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/vendor-credit-applications/{documentId:guid}/post",
-    async (Guid documentId, PostVendorCreditApplicationHttpRequest request, PostVendorCreditApplicationCommandHandler handler, HttpContext httpContext, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostVendorCreditApplicationHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostVendorCreditApplicationCommandHandler handler, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ap_payments", "post vendor credit applications");
+        if (authority is not null) return authority;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
+
         try
         {
             var result = await handler.HandleAsync(
                 new PostVendorCreditApplicationCommand(
                     request.CompanyId,
                     documentId,
-                    request.UserId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    actorId,
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -14187,25 +14349,11 @@ accounting.MapPost(
 // ============================================================================
 // Internal admin trigger: run UnitySearch hint distillation for one company.
 //
-// This is the manual-fire endpoint while we wait for a hosted scheduler.
-// Before P0-6 (C12) it had no auth on purpose and expected to be reached
-// only from inside the trusted network — but anyone able to hit the API
-// on that network could distill against ANY companyId, consuming the
-// configured AI gateway budget against arbitrary tenants and writing
-// per-company state into unitysearch_ranking_hints + ai_job_runs.
-//
-// Current gate (P0-6): a bootstrap token configured at
-// `UnityAi:ManualTriggerBootstrapToken` (env var
-// `UnityAi__ManualTriggerBootstrapToken`). The request must present it
-// as `Authorization: Bearer <token>`. If the token is not configured the
-// endpoint refuses 503 — fail closed. This is a temporary gate; the
-// final state is migrating the endpoint to the SysAdmin API where the
-// existing SysAdmin session filter covers it (tracked as P1 follow-up).
+// This control-plane endpoint requires a valid SysAdmin session header and
+// records that SysAdmin account as the AI job trigger.
 //
 // Usage:
-//   curl -X POST \
-//     -H "Authorization: Bearer ${UNITYAI_MANUAL_TOKEN}" \
-//     'http://localhost:5xxx/internal/ai/distill-unitysearch?companyId=<uuid>'
+//   curl -X POST 'http://localhost:5xxx/internal/ai/distill-unitysearch?companyId=<uuid>'
 //
 // Response:
 //   { "jobRunId": "<uuid>", "candidateBuckets": 3, "gatewayCalls": 3,
@@ -14216,51 +14364,32 @@ app.MapPost(
     "/internal/ai/distill-unitysearch",
     async (
         CompanyId companyId,
-        IUnitysearchHintDistillationService distillation,
-        IConfiguration configuration,
         HttpContext httpContext,
+        ISysAdminAuthRepository sysAdminAuthRepository,
+        IUnitysearchHintDistillationService distillation,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken) =>
     {
         var logger = loggerFactory.CreateLogger("ai.distill.unitysearch");
-
-        // P0-6 (C12): bootstrap-token gate.
-        var configuredToken = configuration["UnityAi:ManualTriggerBootstrapToken"];
-        if (string.IsNullOrWhiteSpace(configuredToken))
-        {
-            return Results.Problem(
-                detail: "Manual distillation is disabled because UnityAi:ManualTriggerBootstrapToken is not configured. Set the bootstrap token via env or appsettings before invoking this endpoint.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-        if (!httpContext.Request.Headers.TryGetValue("Authorization", out var authValues) ||
-            authValues.Count == 0)
-        {
-            return Results.Unauthorized();
-        }
-        var providedAuth = authValues.ToString();
-        if (!providedAuth.StartsWith("Bearer ", StringComparison.Ordinal))
-        {
-            return Results.Unauthorized();
-        }
-        var providedToken = providedAuth.AsSpan("Bearer ".Length).Trim().ToString();
-        var providedBytes = System.Text.Encoding.UTF8.GetBytes(providedToken);
-        var configuredBytes = System.Text.Encoding.UTF8.GetBytes(configuredToken);
-        if (providedBytes.Length != configuredBytes.Length ||
-            !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes))
-        {
-            return Results.Unauthorized();
-        }
-
         if (companyId.Value is null)
         {
             return Results.BadRequest(new { message = "companyId query parameter is required." });
+        }
+
+        var sysAdminGate = await SysAdminControlPlaneGate.ValidateAsync(
+            httpContext,
+            sysAdminAuthRepository,
+            cancellationToken).ConfigureAwait(false);
+        if (!sysAdminGate.Allowed)
+        {
+            return sysAdminGate.Response!;
         }
 
         try
         {
             var result = await distillation.DistillForCompanyAsync(
                 companyId: companyId,
-                triggeredByUserId: null,
+                triggeredByUserId: sysAdminGate.SysAdminAccountId,
                 triggerType: AiJobRunTriggerType.Manual,
                 cancellationToken).ConfigureAwait(false);
             return Results.Ok(result);
@@ -14268,79 +14397,6 @@ app.MapPost(
         catch (Exception ex)
         {
             logger.LogError(ex, "Distillation trigger failed for {CompanyId}", companyId);
-            return Results.Problem(detail: ex.Message, statusCode: 500);
-        }
-    });
-
-// ============================================================================
-// Manual trigger for the per-company search-document embedding back-fill
-// (Plan C-Population). Same bootstrap-token gate as the distillation
-// trigger above. Reads up to maxBatches × 64 rows with embedding IS NULL,
-// embeds each batch via the configured provider (text-embedding-3-small
-// by default), writes pgvector data back into search_documents.embedding.
-//
-// Idempotent: repeated calls only pick up rows still NULL — already-
-// embedded rows are skipped by the partial index predicate.
-//
-// Example:
-//   curl -s -X POST -H 'Authorization: Bearer <token>' \
-//     'http://localhost:5088/internal/ai/backfill-search-doc-embeddings?companyId=<uuid>&maxBatches=4'
-// ============================================================================
-app.MapPost(
-    "/internal/ai/backfill-search-doc-embeddings",
-    async (
-        CompanyId companyId,
-        int? maxBatches,
-        ISearchDocumentEmbeddingBackfillService backfill,
-        IConfiguration configuration,
-        HttpContext httpContext,
-        ILoggerFactory loggerFactory,
-        CancellationToken cancellationToken) =>
-    {
-        var logger = loggerFactory.CreateLogger("ai.embed.unitysearch.docs");
-
-        var configuredToken = configuration["UnityAi:ManualTriggerBootstrapToken"];
-        if (string.IsNullOrWhiteSpace(configuredToken))
-        {
-            return Results.Problem(
-                detail: "Manual embedding back-fill is disabled because UnityAi:ManualTriggerBootstrapToken is not configured.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-        if (!httpContext.Request.Headers.TryGetValue("Authorization", out var authValues)
-            || authValues.Count == 0)
-        {
-            return Results.Unauthorized();
-        }
-        var providedAuth = authValues.ToString();
-        if (!providedAuth.StartsWith("Bearer ", StringComparison.Ordinal))
-        {
-            return Results.Unauthorized();
-        }
-        var providedToken = providedAuth.AsSpan("Bearer ".Length).Trim().ToString();
-        var providedBytes = System.Text.Encoding.UTF8.GetBytes(providedToken);
-        var configuredBytes = System.Text.Encoding.UTF8.GetBytes(configuredToken);
-        if (providedBytes.Length != configuredBytes.Length
-            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes))
-        {
-            return Results.Unauthorized();
-        }
-
-        if (companyId.Value is null)
-        {
-            return Results.BadRequest(new { message = "companyId query parameter is required." });
-        }
-
-        try
-        {
-            var result = await backfill.BackfillForCompanyAsync(
-                companyId: companyId,
-                maxBatches: maxBatches ?? 4,
-                cancellationToken).ConfigureAwait(false);
-            return Results.Ok(result);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Doc-embedding back-fill trigger failed for {CompanyId}", companyId);
             return Results.Problem(detail: ex.Message, statusCode: 500);
         }
     });
@@ -14367,16 +14423,21 @@ accounting.MapPost(
     "/sales-receipts/save-and-post",
     async (
         SalesReceiptSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         ISalesReceiptDocumentRepository repository,
         PostSalesReceiptCommandHandler postHandler,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "save and post sales receipts");
+        if (authority is not null) return authority;
+
         // 1. Validate the wire shape. Frontend already does its own
         //    pass; this is the authoritative server-side gate.
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { error = "depositToAccountId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
@@ -14399,7 +14460,7 @@ accounting.MapPost(
                 new SalesReceiptDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.DepositToAccountId,
                     request.PaymentMethod,
@@ -14419,10 +14480,7 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount,
-                        ItemId: null,
-                        TaskId: line.TaskId,
-                        TaskLineId: line.TaskLineId)).ToArray(),
+                        line.TaxAmount)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
@@ -14432,14 +14490,10 @@ accounting.MapPost(
                 new PostSalesReceiptCommand(
                     request.CompanyId,
                     saveResult.DocumentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
-
-            // H15-c: sales receipt status flipped draft → posted; refresh the
-            // projection so the receipt surfaces in topbar search immediately.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
@@ -14457,20 +14511,25 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
+    });
 
 accounting.MapPost(
     "/refund-receipts/save-and-post",
     async (
         RefundReceiptSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IRefundReceiptDocumentRepository repository,
         PostRefundReceiptCommandHandler postHandler,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "save and post refund receipts");
+        if (authority is not null) return authority;
+
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.RefundFromAccountId == Guid.Empty) return Results.BadRequest(new { error = "refundFromAccountId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
@@ -14492,7 +14551,7 @@ accounting.MapPost(
                 new RefundReceiptDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.RefundFromAccountId,
                     request.PaymentMethod,
@@ -14513,10 +14572,7 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount,
-                        ItemId: null,
-                        TaskId: line.TaskId,
-                        TaskLineId: line.TaskLineId)).ToArray(),
+                        line.TaxAmount)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
@@ -14524,13 +14580,10 @@ accounting.MapPost(
                 new PostRefundReceiptCommand(
                     request.CompanyId,
                     saveResult.DocumentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
-
-            // H15-c: refund receipt status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
@@ -14548,18 +14601,20 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArInvoicePost);
+    });
 
 accounting.MapPost(
     "/credit-memos/save-and-post",
     async (
         CreditMemoSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         ICreditNoteDocumentRepository repository,
         PostCreditNoteCommandHandler postHandler,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "save and post credit memos");
+        if (authority is not null) return authority;
+
         // CreditMemo reuses the existing credit_notes infrastructure
         // (table + repository + posting fragment). The frontend uses
         // the term "credit memo" because that's the QBO-flavoured
@@ -14571,7 +14626,10 @@ accounting.MapPost(
         // credit listed alongside the invoice in the open-item
         // picker — that path already exists.
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
         foreach (var line in request.Lines)
@@ -14592,7 +14650,7 @@ accounting.MapPost(
                 new CreditNoteDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.CustomerId,
                     request.DocumentDate,
                     // Credit memos don't carry a "due date" the way
@@ -14615,9 +14673,7 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount,
-                        line.TaskId,
-                        line.TaskLineId)).ToArray(),
+                        line.TaxAmount)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
@@ -14625,13 +14681,10 @@ accounting.MapPost(
                 new PostCreditNoteCommand(
                     request.CompanyId,
                     saveResult.DocumentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
-
-            // H15-c: credit memo status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
@@ -14650,7 +14703,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCreditNotePost);
+    });
 
 // Combine the operator's free-text Reason + Memo + AppliedTo hint into
 // one persistent memo line on the credit_notes row. Future iteration
@@ -14669,19 +14722,24 @@ accounting.MapPost(
     "/vendor-credits/save-and-post",
     async (
         VendorCreditSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IVendorCreditDocumentRepository repository,
         PostVendorCreditCommandHandler postHandler,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "save and post vendor credits");
+        if (authority is not null) return authority;
+
         // Sister to /credit-memos/save-and-post on the AP side. The
         // vendor_credits table + repository + posting fragment +
         // AP open-item handler all already exist; this endpoint is
         // pure adapter work mapping the V1-pending wire shape to the
         // existing draft-save-model.
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         if (request.VendorId == Guid.Empty) return Results.BadRequest(new { error = "vendorId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
         foreach (var line in request.Lines)
@@ -14702,7 +14760,7 @@ accounting.MapPost(
                 new VendorCreditDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.VendorId,
                     request.DocumentDate,
                     // VendorCredit row schema requires due_date; for a
@@ -14736,13 +14794,10 @@ accounting.MapPost(
                 new PostVendorCreditCommand(
                     request.CompanyId,
                     saveResult.DocumentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
-
-            // H15-c: vendor credit status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
@@ -14761,7 +14816,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorCreditPost);
+    });
 
 static string? BuildVendorCreditMemo(VendorCreditSaveAndPostHttpRequest request)
 {
@@ -14776,14 +14831,19 @@ accounting.MapPost(
     "/bank-transfers/save-and-post",
     async (
         BankTransferSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IBankTransferDocumentRepository repository,
         PostBankTransferCommandHandler postHandler,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "banking", "save and post bank transfers");
+        if (authority is not null) return authority;
+
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         if (request.FromAccountId == Guid.Empty) return Results.BadRequest(new { error = "fromAccountId required" });
         if (request.ToAccountId == Guid.Empty) return Results.BadRequest(new { error = "toAccountId required" });
         if (request.FromAccountId == request.ToAccountId) return Results.BadRequest(new { error = "from and to must be different accounts" });
@@ -14798,7 +14858,7 @@ accounting.MapPost(
                 new BankTransferDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.DocumentDate,
                     request.FromAccountId,
                     request.FromCurrencyCode,
@@ -14817,13 +14877,10 @@ accounting.MapPost(
                 new PostBankTransferCommand(
                     request.CompanyId,
                     saveResult.DocumentId,
-                    request.UserId,
+                    actorId,
                     request.AcceptedFxSnapshotId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
-
-            // H15-c: bank transfer status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
@@ -14841,20 +14898,25 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
+    });
 
 accounting.MapPost(
     "/bank-deposits/save-and-post",
     async (
         BankDepositSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IBankDepositDocumentRepository repository,
         PostBankDepositCommandHandler postHandler,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "banking", "save and post bank deposits");
+        if (authority is not null) return authority;
+
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { error = "depositToAccountId required" });
         if (request.Items.Count == 0) return Results.BadRequest(new { error = "at least one item required" });
         if (request.Items.Any(i => string.IsNullOrWhiteSpace(i.SourceItemDisplayNumber))) return Results.BadRequest(new { error = "every item needs a sourceItemDisplayNumber" });
@@ -14866,7 +14928,7 @@ accounting.MapPost(
                 new BankDepositDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.DocumentDate,
                     request.DepositToAccountId,
                     string.IsNullOrWhiteSpace(request.TransactionCurrencyCode) ? "USD" : request.TransactionCurrencyCode,
@@ -14892,13 +14954,10 @@ accounting.MapPost(
                 new PostBankDepositCommand(
                     request.CompanyId,
                     saveResult.DocumentId,
-                    request.UserId,
+                    actorId,
                     null,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    request.IdempotencyKey),
                 cancellationToken);
-
-            // H15-c: bank deposit status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
@@ -14916,20 +14975,25 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
+    });
 
 accounting.MapPost(
     "/tax-returns/save-and-post",
     async (
         TaxReturnSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         ITaxReturnDocumentRepository repository,
         PostTaxReturnCommandHandler postHandler,
-        IUnitySearchProjectionStore unitySearchProjectionStore,
-        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "save and post tax returns");
+        if (authority is not null) return authority;
+
         if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, request.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var actorGate = RequireBusinessSessionActor(sessionAccessor.Current, out var actorId);
+        if (actorGate is not null) return actorGate;
         if (request.PeriodEnd < request.PeriodStart) return Results.BadRequest(new { error = "periodEnd must be on or after periodStart" });
         if (string.IsNullOrWhiteSpace(request.TaxRegime)) return Results.BadRequest(new { error = "taxRegime required" });
         if (string.IsNullOrWhiteSpace(request.FilingFrequency)) return Results.BadRequest(new { error = "filingFrequency required" });
@@ -14947,7 +15011,7 @@ accounting.MapPost(
                 new TaxReturnDraftSaveModel(
                     null,
                     request.CompanyId,
-                    request.UserId,
+                    actorId,
                     request.TaxRegime,
                     request.FilingFrequency,
                     request.PeriodStart,
@@ -14965,12 +15029,9 @@ accounting.MapPost(
                 new PostTaxReturnCommand(
                     request.CompanyId,
                     saveResult.DocumentId,
-                    request.UserId,
-                    ResolveIdempotencyKey(httpContext, request.IdempotencyKey)),
+                    actorId,
+                    request.IdempotencyKey),
                 cancellationToken);
-
-            // H15-c: tax return status flipped draft → posted.
-            await unitySearchProjectionStore.InvalidateAsync(request.CompanyId, cancellationToken);
 
             return Results.Ok(new
             {
@@ -14988,7 +15049,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlJournalPost);
+    });
 
 // ============================================================================
 // V1 list endpoints for the 7 doc types that now post end-to-end.
@@ -14999,63 +15060,91 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/sales-receipts",
-    async (CompanyId companyId, bool? includeDrafts, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, companyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "view sales receipts");
+        if (authority is not null) return authority;
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/refund-receipts",
-    async (CompanyId companyId, bool? includeDrafts, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, companyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "view refund receipts");
+        if (authority is not null) return authority;
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/credit-memos",
-    async (CompanyId companyId, bool? includeDrafts, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, companyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "sales", "view credit memos");
+        if (authority is not null) return authority;
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/vendor-credits",
-    async (CompanyId companyId, bool? includeDrafts, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, companyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "purchases", "view vendor credits");
+        if (authority is not null) return authority;
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/bank-transfers",
-    async (CompanyId companyId, bool? includeDrafts, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, companyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "banking", "view bank transfers");
+        if (authority is not null) return authority;
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/bank-deposits",
-    async (CompanyId companyId, bool? includeDrafts, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, companyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "banking", "view bank deposits");
+        if (authority is not null) return authority;
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/tax-returns",
-    async (CompanyId companyId, bool? includeDrafts, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, BusinessSessionContextAccessor sessionAccessor, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, companyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view tax returns");
+        if (authority is not null) return authority;
         var rows = await repository.ListAsync(companyId, includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
@@ -15069,8 +15158,12 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/sales-receipts/{documentId:guid}",
-    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "view sales receipts");
+        if (authority is not null) return authority;
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -15113,8 +15206,12 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/refund-receipts/{documentId:guid}",
-    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "ar_payments", "view refund receipts");
+        if (authority is not null) return authority;
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -15158,8 +15255,12 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/bank-transfers/{documentId:guid}",
-    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "banking", "view bank transfers");
+        if (authority is not null) return authority;
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -15186,8 +15287,12 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/bank-deposits/{documentId:guid}",
-    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, BusinessSessionContextAccessor sessionAccessor, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "banking", "view bank deposits");
+        if (authority is not null) return authority;
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -15223,8 +15328,12 @@ accounting.MapGet(
 
 accounting.MapGet(
     "/tax-returns/{documentId:guid}",
-    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, BusinessSessionContextAccessor sessionAccessor, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var companyScope = RequireActiveCompanyQuery(sessionAccessor.Current, query.CompanyId);
+        if (companyScope is not null) return companyScope;
+        var authority = RequireBusinessOperationAuthority(sessionAccessor.Current, "accounting", "view tax returns");
+        if (authority is not null) return authority;
         var document = await repository.GetForPostingAsync(query.CompanyId, documentId, cancellationToken);
         if (document is null)
         {
@@ -15256,286 +15365,46 @@ accounting.MapGet(
 // vendor_credits detail endpoints which already shipped in main.
 // Frontend's CreditMemoClient / VendorCreditClient just call those.
 
-// =====================================================================
-// PR-4E: Permission management endpoints.
-//
-// Three endpoints for the Tralanz permission model write path:
-//   GET    /accounting/memberships/{userId}/permissions  — snapshot
-//   POST   /accounting/memberships/{userId}/permissions/grant
-//   POST   /accounting/memberships/{userId}/permissions/revoke
-//
-// All three accept the target user_id (char(7), e.g. "U000001") in
-// the URL. Company context comes from the request body's CompanyId
-// (validated by BusinessRequestContractGuard against the session
-// active company). Actor comes from BusinessSessionContextAccessor.
-//
-// Authorization:
-//   * GET:  caller must be the Owner of this company OR the target
-//           user themselves. Anything else is 403. Non-Owner users
-//           who want to inspect someone else's grants must ask Owner.
-//   * POST: workflow validates via IPermissionEvaluator.CanGrantAsync
-//           which encodes all eight hard rules (target not Owner,
-//           not self-grant, token assignable, actor has authority,
-//           etc.). Returns 403 on denial with the precise rejection
-//           code; UI can render the reason verbatim.
-//
-// Audit: every successful grant/revoke writes an audit_logs row with
-// actor_type='business_user', action='permission_granted' /
-// 'permission_revoked', and the full triple in payload.
-// =====================================================================
-
-// =====================================================================
-// PR-4F: Owner-only read endpoints powering the permission management UI.
-// =====================================================================
-
-accounting.MapGet(
-    "/memberships",
-    async (
-        [AsParameters] V1PendingLookupQuery query,
-        BusinessSessionContextAccessor sessionAccessor,
-        Modules.CompanyAccess.Permissions.IPermissionEvaluator evaluator,
-        PostgreSqlConnectionFactory connections,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null) return Results.Unauthorized();
-
-        // Owner-only for v1. Non-Owners managing permissions of others
-        // is a follow-up once delegated grant-authority UX lands.
-        if (!await evaluator.IsOwnerAsync(query.CompanyId, session.UserId, cancellationToken))
-        {
-            return Results.Problem(
-                title: "Forbidden.",
-                detail: "Only the company owner can list company members.",
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
-        var rows = new List<object>();
-        await using var connection = await connections.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            select m.user_id, m.is_owner, m.is_active, m.status,
-                   u.email, coalesce(u.display_name, '') as display_name,
-                   coalesce(u.username, '') as username
-              from company_memberships m
-              join users u on u.id = m.user_id
-             where m.company_id = @company_id
-             order by m.is_owner desc, u.display_name asc, u.email asc;
-            """;
-        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            rows.Add(new
-            {
-                UserId = reader.GetString(0),
-                IsOwner = reader.GetBoolean(1),
-                IsActive = reader.GetBoolean(2),
-                Status = reader.GetString(3),
-                Email = reader.GetString(4),
-                DisplayName = reader.GetString(5),
-                Username = reader.GetString(6),
-            });
-        }
-        return Results.Ok(rows);
-    });
-
-accounting.MapGet(
-    "/permissions/registry",
-    async (
-        BusinessSessionContextAccessor sessionAccessor,
-        PostgreSqlConnectionFactory connections,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null) return Results.Unauthorized();
-
-        // Registry is shared across companies — no company filter
-        // needed. Any active session can read it (the UI uses it to
-        // render token labels even on read-only screens).
-        var rows = new List<object>();
-        await using var connection = await connections.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            select permission_token, module_key, group_key, action_key,
-                   description, is_high_risk, is_assignable
-              from permission_registry
-             where is_assignable = true
-             order by module_key asc, group_key asc, action_key asc;
-            """;
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            rows.Add(new
-            {
-                PermissionToken = reader.GetString(0),
-                ModuleKey = reader.GetString(1),
-                GroupKey = reader.GetString(2),
-                ActionKey = reader.GetString(3),
-                Description = reader.GetString(4),
-                IsHighRisk = reader.GetBoolean(5),
-                IsAssignable = reader.GetBoolean(6),
-            });
-        }
-        return Results.Ok(rows);
-    });
-
-accounting.MapGet(
-    "/memberships/{userId}/permissions",
-    async (
-        string userId,
-        [AsParameters] V1PendingLookupQuery query,
-        BusinessSessionContextAccessor sessionAccessor,
-        Modules.CompanyAccess.Permissions.IPermissionEvaluator evaluator,
-        Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null) return Results.Unauthorized();
-
-        if (!UserId.TryParse(userId, out var targetId))
-        {
-            return Results.BadRequest(new { message = "Invalid user id." });
-        }
-
-        // Caller can read their own permissions; Owner can read
-        // anyone's. Non-Owner reading someone else's grants is 403.
-        var isSelf = string.Equals(session.UserId.Value, targetId.Value, StringComparison.Ordinal);
-        var isOwner = await evaluator.IsOwnerAsync(query.CompanyId, session.UserId, cancellationToken);
-        if (!isSelf && !isOwner)
-        {
-            return Results.Problem(
-                title: "Forbidden.",
-                detail: "Only the company owner or the user themselves can read this permission snapshot.",
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
-        var snapshot = await workflow.GetUserPermissionsAsync(query.CompanyId, targetId, cancellationToken);
-        return Results.Ok(new
-        {
-            CompanyId = snapshot.CompanyId,
-            UserId = snapshot.UserId,
-            snapshot.IsOwner,
-            ActiveGrants = snapshot.ActiveGrants.Select(g => new
-            {
-                g.PermissionToken,
-                GrantedByUserId = g.GrantedByUserId,
-                g.GrantedAtUtc,
-                g.IsActive,
-            }),
-            ActiveGrantAuthorities = snapshot.ActiveGrantAuthorities.Select(a => new
-            {
-                a.GrantablePermissionToken,
-                a.CanGrant,
-                a.CanRevoke,
-                GrantedByOwnerUserId = a.GrantedByOwnerUserId,
-                a.GrantedAtUtc,
-                a.IsActive,
-            }),
-        });
-    });
-
-accounting.MapPost(
-    "/memberships/{userId}/permissions/grant",
-    async (
-        string userId,
-        PermissionMutationHttpRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null) return Results.Unauthorized();
-
-        if (!UserId.TryParse(userId, out var targetId))
-        {
-            return Results.BadRequest(new { message = "Invalid user id." });
-        }
-
-        var result = await workflow.GrantAsync(
-            request.CompanyId,
-            session.UserId,
-            targetId,
-            request.PermissionToken,
-            cancellationToken);
-
-        if (result.ResultCode != Modules.CompanyAccess.Permissions.GrantAuthorityResult.Allowed)
-        {
-            return Results.Problem(
-                title: "Permission grant rejected.",
-                detail: result.ResultMessage,
-                statusCode: StatusCodes.Status403Forbidden,
-                extensions: new Dictionary<string, object?>
-                {
-                    ["resultCode"] = result.ResultCode.ToString(),
-                });
-        }
-
-        return Results.Ok(new
-        {
-            CompanyId = result.CompanyId,
-            ActorUserId = result.ActorUserId,
-            TargetUserId = result.TargetUserId,
-            result.PermissionToken,
-            result.Action,
-            result.Applied,
-            ResultCode = result.ResultCode.ToString(),
-            result.ResultMessage,
-        });
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsPermissionsAssign);
-
-accounting.MapPost(
-    "/memberships/{userId}/permissions/revoke",
-    async (
-        string userId,
-        PermissionMutationHttpRequest request,
-        BusinessSessionContextAccessor sessionAccessor,
-        Modules.CompanyAccess.Permissions.IPermissionGrantWorkflow workflow,
-        CancellationToken cancellationToken) =>
-    {
-        var session = sessionAccessor.Current;
-        if (session is null) return Results.Unauthorized();
-
-        if (!UserId.TryParse(userId, out var targetId))
-        {
-            return Results.BadRequest(new { message = "Invalid user id." });
-        }
-
-        var result = await workflow.RevokeAsync(
-            request.CompanyId,
-            session.UserId,
-            targetId,
-            request.PermissionToken,
-            cancellationToken);
-
-        if (result.ResultCode != Modules.CompanyAccess.Permissions.GrantAuthorityResult.Allowed)
-        {
-            return Results.Problem(
-                title: "Permission revoke rejected.",
-                detail: result.ResultMessage,
-                statusCode: StatusCodes.Status403Forbidden,
-                extensions: new Dictionary<string, object?>
-                {
-                    ["resultCode"] = result.ResultCode.ToString(),
-                });
-        }
-
-        return Results.Ok(new
-        {
-            CompanyId = result.CompanyId,
-            ActorUserId = result.ActorUserId,
-            TargetUserId = result.TargetUserId,
-            result.PermissionToken,
-            result.Action,
-            result.Applied,
-            ResultCode = result.ResultCode.ToString(),
-            result.ResultMessage,
-        });
-    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsPermissionsAssign);
-
 app.Run();
+
+static object MapInvoiceDocumentResponse(InvoiceDocument document) => new
+{
+    document.Id,
+    CompanyId = document.CompanyId,
+    EntityNumber = document.EntityNumber.Value,
+    DisplayNumber = document.DisplayNumber.Value,
+    document.Status,
+    document.DocumentDate,
+    document.DueDate,
+    CustomerId = document.PartyId,
+    ReceivableAccountId = document.ReceivableAccountId,
+    TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+    BaseCurrencyCode = document.BaseCurrencyCode.Value,
+    document.SubtotalAmount,
+    document.TaxAmount,
+    document.TotalAmount,
+    document.Memo,
+    document.CustomerPoNumber,
+    document.SalesOrderId,
+    Lines = document.InvoiceLines.Select(line => new
+    {
+        line.Id,
+        line.LineNumber,
+        line.RevenueAccountId,
+        line.Description,
+        line.Quantity,
+        line.UnitPrice,
+        line.LineAmount,
+        line.TaxCodeId,
+        line.TaxAmount,
+        line.PayableTaxAccountId,
+        line.ItemId,
+        line.WarehouseId,
+        line.UomCode,
+        line.TaskId,
+        line.TaskLineId
+    })
+};
 
 static IResult AccountingOperationBadRequest(InvalidOperationException exception)
 {
@@ -15545,34 +15414,6 @@ static IResult AccountingOperationBadRequest(InvalidOperationException exception
         code,
         message = exception.Message
     });
-}
-
-/// <summary>
-/// H3: resolves the idempotency key from the `Idempotency-Key` HTTP
-/// header first, falling back to the request body's IdempotencyKey
-/// field for transitional compatibility. The header is the long-term
-/// home (aligned with the P0-5 inventory POST pattern and with the
-/// HTTP idempotency draft RFC) — the body field stays accepted for
-/// one release while clients migrate, then becomes deprecated.
-///
-/// When both are present the header wins; the body field is ignored.
-/// When neither is present the call falls back to the downstream
-/// handler's default key derivation (typically
-/// `"&lt;source-type&gt;:&lt;companyId&gt;:&lt;documentId&gt;"`).
-/// </summary>
-static string? ResolveIdempotencyKey(HttpContext httpContext, string? bodyFallback)
-{
-    if (httpContext.Request.Headers.TryGetValue("Idempotency-Key", out var headerValues)
-        && headerValues.Count > 0)
-    {
-        var headerKey = headerValues.ToString();
-        if (!string.IsNullOrWhiteSpace(headerKey))
-        {
-            return headerKey.Trim();
-        }
-    }
-
-    return bodyFallback;
 }
 
 static string ResolveAccountingOperationErrorCode(string message)
@@ -16383,8 +16224,6 @@ internal sealed record class UnitySearchHttpQuery
 {
     public CompanyId CompanyId { get; init; }
 
-    public UserId? UserId { get; init; }
-
     public string? Context { get; init; }
 
     public string? Query { get; init; }
@@ -16396,8 +16235,6 @@ internal sealed record class UnitySearchRecentHttpQuery
 {
     public CompanyId CompanyId { get; init; }
 
-    public UserId? UserId { get; init; }
-
     public string? Context { get; init; }
 
     public int? Take { get; init; }
@@ -16406,8 +16243,6 @@ internal sealed record class UnitySearchRecentHttpQuery
 internal sealed record class UnitySearchClickHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-
-    public UserId UserId { get; init; }
 
     public string Context { get; init; } = string.Empty;
 
@@ -16461,7 +16296,6 @@ internal sealed record AccountingPeriodTransitionHttpRequest(string TargetStatus
 internal sealed record class SalesReceiptSaveAndPostHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -16487,17 +16321,11 @@ internal sealed record class SalesReceiptLineHttpRequest
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
-    // H6-2b: optional Task back-link. Same semantics as the invoice
-    // line wire shape — TaskId alone falls back to legacy whole-task
-    // marking, TaskLineId pins to a specific line for partial billing.
-    public Guid? TaskId { get; init; }
-    public Guid? TaskLineId { get; init; }
 }
 
 internal sealed record class RefundReceiptSaveAndPostHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -16524,17 +16352,11 @@ internal sealed record class RefundReceiptLineHttpRequest
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
-    // H6-3 (D8): optional task back-link. Refund receipt is the
-    // reverse of Sales Receipt — when set, the post handler releases
-    // the linked task_lines via RollbackLinesAsync.
-    public Guid? TaskId { get; init; }
-    public Guid? TaskLineId { get; init; }
 }
 
 internal sealed record class CreditMemoSaveAndPostHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -16558,22 +16380,11 @@ internal sealed record class CreditMemoLineHttpRequest
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
-    // Optional Task back-link. Propagated by "Credit invoice" pre-fill
-    // from the source invoice line's task_id; surfaces on the wire and
-    // gets persisted into credit_note_lines.task_id so the post handler
-    // can roll the linked tasks back to Completed.
-    public Guid? TaskId { get; init; }
-    // H6-3: optional pin to a specific task_lines row that this credit
-    // releases. When present, the post handler routes through the new
-    // line-level RollbackLinesAsync path. Null falls back to the
-    // legacy whole-task rollback (matches pre-H6-3 behavior).
-    public Guid? TaskLineId { get; init; }
 }
 
 internal sealed record class VendorCreditSaveAndPostHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid VendorId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -16600,7 +16411,6 @@ internal sealed record class VendorCreditLineHttpRequest
 internal sealed record class BankTransferSaveAndPostHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid FromAccountId { get; init; }
     public string FromAccountCode { get; init; } = string.Empty;
@@ -16619,7 +16429,6 @@ internal sealed record class BankTransferSaveAndPostHttpRequest
 internal sealed record class BankDepositSaveAndPostHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid DepositToAccountId { get; init; }
     public string DepositToAccountCode { get; init; } = string.Empty;
@@ -16643,7 +16452,6 @@ internal sealed record class BankDepositItemHttpRequest
 internal sealed record class TaxReturnSaveAndPostHttpRequest
 {
     public CompanyId CompanyId { get; init; }
-    public UserId UserId { get; init; }
     public DateOnly PeriodStart { get; init; }
     public DateOnly PeriodEnd { get; init; }
     public string TaxRegime { get; init; } = string.Empty;

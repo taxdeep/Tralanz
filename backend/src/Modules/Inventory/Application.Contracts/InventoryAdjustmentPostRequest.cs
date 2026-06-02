@@ -9,4 +9,5 @@ public sealed record class InventoryAdjustmentPostRequest(
     Guid WarehouseId,
     DateOnly PostingDate,
     string? Memo,
-    IReadOnlyList<InventoryAdjustmentLineInput> Lines);
+    IReadOnlyList<InventoryAdjustmentLineInput> Lines,
+    Guid? ClientRequestId = null);

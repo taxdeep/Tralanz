@@ -1,0 +1,40 @@
+<div class="@CssClass">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Align { get; set; } = "start";
+
+    [Parameter] public bool Wrap { get; set; } = true;
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "aise-button-group", $"aise-button-group--{NormalizeAlign(Align)}" };
+            if (Wrap)
+            {
+                classes.Add("aise-button-group--wrap");
+            }
+            if (!string.IsNullOrWhiteSpace(Class))
+            {
+                classes.Add(Class);
+            }
+
+            return string.Join(' ', classes);
+        }
+    }
+
+    private static string NormalizeAlign(string? align) =>
+        align?.Trim().ToLowerInvariant() switch
+        {
+            "center" => "center",
+            "end" or "right" => "end",
+            "between" or "space-between" => "between",
+            _ => "start",
+        };
+}

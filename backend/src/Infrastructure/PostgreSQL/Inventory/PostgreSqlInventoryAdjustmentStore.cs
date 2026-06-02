@@ -1,7 +1,11 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Inventory.Domain.Shared;
-using Infrastructure.PostgreSQL.Inventory.Posting;
+using Infrastructure.PostgreSQL.Numbering;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Infrastructure.PostgreSQL.Inventory;
 
@@ -9,18 +13,15 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 {
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
-    private readonly IInventoryAdjustmentGlPoster _glPoster;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlInventoryAdjustmentStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore,
-        IInventoryAdjustmentGlPoster glPoster)
+        IInventoryFoundationStore foundationStore)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
-        _glPoster = glPoster ?? throw new ArgumentNullException(nameof(glPoster));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -59,18 +60,6 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // P0-3b-1 (AUDIT_2026-05-20 C3 closure): the subledger writes
-        // below (qty + cost layers + balances + ledger entries) commit
-        // together with the matching Dr/Cr GL journal entry on the
-        // SAME tx so the sub-ledger × unit-cost product reconciles to
-        // the GL Inventory Asset balance after every adjustment. The
-        // GL poster (Posting/PostgreSqlInventoryAdjustmentGlPoster)
-        // runs at the bottom of the try-block, before commit; its
-        // failure cascades to the outer catch and rolls back every
-        // write made here. Per Q2=A:
-        //   Gain      → Dr Inventory Asset / Cr Inventory Adjustment
-        //   Loss      → Dr Inventory Adjustment / Cr Inventory Asset
-        //   WriteOff  → same as Loss.
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -80,6 +69,37 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         try
         {
             var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, transaction, request.CompanyId, cancellationToken);
+            await EnsurePostingPeriodOpenAsync(connection, transaction, request.CompanyId, request.PostingDate, cancellationToken);
+
+            var clientRequestHash = request.ClientRequestId.HasValue
+                ? BuildPostRequestHash(request)
+                : null;
+
+            if (request.ClientRequestId.HasValue)
+            {
+                await AcquireInventoryDocumentMutationLockAsync(
+                    connection,
+                    transaction,
+                    request.CompanyId,
+                    request.ClientRequestId.Value,
+                    cancellationToken);
+
+                var existing = await TryLoadIdempotentAdjustmentAsync(
+                    connection,
+                    transaction,
+                    request.CompanyId,
+                    request.ClientRequestId.Value,
+                    request.AdjustmentKind,
+                    requiredStatus: "posted",
+                    expectedClientRequestHash: clientRequestHash,
+                    cancellationToken);
+                if (existing is not null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return existing;
+                }
+            }
+
             var warehouse = await LoadWarehouseAsync(connection, transaction, request.CompanyId, request.WarehouseId, cancellationToken)
                 ?? throw new InvalidOperationException("Adjustment warehouse must be active in this company.");
             var itemMap = await LoadItemMapAsync(
@@ -119,11 +139,12 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             }
 
             var now = DateTimeOffset.UtcNow;
-            var documentId = Guid.NewGuid();
+            var documentId = request.ClientRequestId ?? Guid.NewGuid();
             var documentType = ToDocumentType(request.AdjustmentKind);
             var documentNumber = BuildDocumentNumber(request.AdjustmentKind, request.PostingDate);
             var totalQuantity = 0m;
             var totalCostBase = 0m;
+            var journalCandidates = new List<InventoryAdjustmentJournalCandidate>();
 
             await using (var insertDocumentCommand = connection.CreateCommand())
             {
@@ -131,18 +152,20 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 insertDocumentCommand.CommandText =
                     """
                     insert into inventory_documents (
-                      id, company_id, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, counterparty_id, memo, created_by_user_id, created_at, posted_at
+                      id, company_id, document_number, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, counterparty_id, memo, client_request_hash, created_by_user_id, created_at, posted_at
                     )
                     values (
-                      @id, @company_id, @document_type, 'posted', 'neutral', @posting_date, 'inventory_adjustment', null, @source_document_number, null, @memo, @created_by_user_id, @created_at, @posted_at
+                      @id, @company_id, @document_number, @document_type, 'posted', 'neutral', @posting_date, 'inventory_adjustment', null, @source_document_number, null, @memo, @client_request_hash, @created_by_user_id, @created_at, @posted_at
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
                 insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
+                insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("document_type", documentType);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
+                insertDocumentCommand.Parameters.AddWithValue("client_request_hash", ToDbValue(clientRequestHash));
                 insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", now);
@@ -162,6 +185,19 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                     {
                         var unitCostBase = decimal.Round(line.UnitCostBase ?? 0m, 6, MidpointRounding.AwayFromZero);
                         var extendedCostBase = decimal.Round(baseQuantity * unitCostBase, 6, MidpointRounding.AwayFromZero);
+                        var inventoryAssetAccountId = await ResolveInventoryAssetAccountIdAsync(
+                            connection,
+                            transaction,
+                            request.CompanyId,
+                            item,
+                            cancellationToken);
+                        var adjustmentAccountId = await ResolveInventoryAdjustmentAccountIdAsync(
+                            connection,
+                            transaction,
+                            request.CompanyId,
+                            item,
+                            preferItemWriteOffAccount: false,
+                            cancellationToken);
                         var balance = await LoadCurrentBalanceAsync(connection, transaction, request.CompanyId, line.ItemId, request.WarehouseId, cancellationToken);
                         var costBalance = await LoadCurrentCostBalanceAsync(connection, transaction, request.CompanyId, line.ItemId, request.WarehouseId, cancellationToken);
                         var quantityAfter = decimal.Round(balance.OnHandQty + baseQuantity, 6, MidpointRounding.AwayFromZero);
@@ -171,6 +207,13 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                         await AdjustOnHandAsync(connection, transaction, request.CompanyId, line.ItemId, request.WarehouseId, baseQuantity, cancellationToken);
                         await InsertLedgerEntryAsync(connection, transaction, ledgerEntryId, request.CompanyId, line.ItemId, request.WarehouseId, documentId, lineDocumentId, documentType, request.PostingDate, baseQuantity, quantityAfter, extendedCostBase, costAfter, BuildLedgerMemo(documentNumber, line.LineNo), now, cancellationToken);
                         await InsertCostLayerAsync(connection, transaction, request.CompanyId, line.ItemId, request.WarehouseId, ledgerEntryId, documentId, request.PostingDate, baseQuantity, unitCostBase, extendedCostBase, now, cancellationToken);
+
+                        journalCandidates.Add(new InventoryAdjustmentJournalCandidate(
+                            line.LineNo,
+                            item.ItemCode,
+                            inventoryAssetAccountId,
+                            adjustmentAccountId,
+                            extendedCostBase));
 
                         totalQuantity = decimal.Round(totalQuantity + baseQuantity, 6, MidpointRounding.AwayFromZero);
                         totalCostBase = decimal.Round(totalCostBase + extendedCostBase, 6, MidpointRounding.AwayFromZero);
@@ -186,6 +229,19 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                             throw new InvalidOperationException($"Adjustment cannot post because '{item.Name}' only has {availableQuantity} available in the selected warehouse.");
                         }
 
+                        var inventoryAssetAccountId = await ResolveInventoryAssetAccountIdAsync(
+                            connection,
+                            transaction,
+                            request.CompanyId,
+                            item,
+                            cancellationToken);
+                        var adjustmentAccountId = await ResolveInventoryAdjustmentAccountIdAsync(
+                            connection,
+                            transaction,
+                            request.CompanyId,
+                            item,
+                            preferItemWriteOffAccount: request.AdjustmentKind == InventoryAdjustmentKind.WriteOff,
+                            cancellationToken);
                         var costLayers = await LoadOpenCostLayersAsync(connection, transaction, request.CompanyId, line.ItemId, request.WarehouseId, cancellationToken);
                         var consumptionResult = item.DefaultCostingMethod switch
                         {
@@ -209,6 +265,13 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                             await InsertLayerConsumptionAsync(connection, transaction, request.CompanyId, ledgerEntryId, consumption, now, cancellationToken);
                         }
 
+                        journalCandidates.Add(new InventoryAdjustmentJournalCandidate(
+                            line.LineNo,
+                            item.ItemCode,
+                            inventoryAssetAccountId,
+                            adjustmentAccountId,
+                            consumptionResult.TotalCostBase));
+
                         totalQuantity = decimal.Round(totalQuantity + baseQuantity, 6, MidpointRounding.AwayFromZero);
                         totalCostBase = decimal.Round(totalCostBase + consumptionResult.TotalCostBase, 6, MidpointRounding.AwayFromZero);
                         break;
@@ -218,25 +281,32 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 }
             }
 
-            // GL leg — Q2=A. Runs on the same connection/tx as the
-            // subledger writes above; if it throws (e.g. SystemRole
-            // account not pinned, closed period), the outer catch
-            // block rolls everything back. totalCostBase is the sum
-            // of cost_delta_base on the inventory_ledger_entries rows
-            // we just inserted, so the GL amount matches the subledger
-            // by construction.
-            await _glPoster.AppendAsync(
+            var journalEntryId = await InsertInventoryAdjustmentJournalAsync(
                 connection,
                 transaction,
-                new InventoryAdjustmentGlPostingRequest(
-                    CompanyId: request.CompanyId,
-                    UserId: request.UserId,
-                    InventoryDocumentId: documentId,
-                    InventoryDocumentNumber: documentNumber,
-                    PostingDate: request.PostingDate,
-                    BaseCurrencyCode: baseCurrencyCode,
-                    Kind: ToGlKind(request.AdjustmentKind),
-                    TotalCostBase: totalCostBase),
+                request.CompanyId,
+                request.UserId,
+                documentId,
+                documentType,
+                documentNumber,
+                request.AdjustmentKind,
+                request.PostingDate,
+                baseCurrencyCode,
+                journalCandidates,
+                cancellationToken);
+            await InsertInventoryAdjustmentAuditAsync(
+                connection,
+                transaction,
+                request.CompanyId,
+                request.UserId,
+                documentId,
+                "inventory_adjustment_posted",
+                documentType,
+                documentNumber,
+                request.PostingDate,
+                totalQuantity,
+                totalCostBase,
+                journalEntryId,
                 cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -266,14 +336,6 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         }
     }
 
-    private static InventoryAdjustmentGlKind ToGlKind(InventoryAdjustmentKind kind) => kind switch
-    {
-        InventoryAdjustmentKind.Gain => InventoryAdjustmentGlKind.Gain,
-        InventoryAdjustmentKind.Loss => InventoryAdjustmentGlKind.Loss,
-        InventoryAdjustmentKind.WriteOff => InventoryAdjustmentGlKind.WriteOff,
-        _ => throw new InvalidOperationException($"Unsupported inventory adjustment kind '{kind}'.")
-    };
-
     public async Task<InventoryAdjustmentSummary> RequestWriteOffAsync(
         InventoryWriteOffRequestPostRequest request,
         CancellationToken cancellationToken)
@@ -289,6 +351,35 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, transaction, request.CompanyId, cancellationToken);
             var warehouse = await LoadWarehouseAsync(connection, transaction, request.CompanyId, request.WarehouseId, cancellationToken)
                 ?? throw new InvalidOperationException("Write-off request warehouse must be active in this company.");
+            var clientRequestHash = request.ClientRequestId.HasValue
+                ? BuildWriteOffRequestHash(request)
+                : null;
+
+            if (request.ClientRequestId.HasValue)
+            {
+                await AcquireInventoryDocumentMutationLockAsync(
+                    connection,
+                    transaction,
+                    request.CompanyId,
+                    request.ClientRequestId.Value,
+                    cancellationToken);
+
+                var existing = await TryLoadIdempotentAdjustmentAsync(
+                    connection,
+                    transaction,
+                    request.CompanyId,
+                    request.ClientRequestId.Value,
+                    InventoryAdjustmentKind.WriteOff,
+                    requiredStatus: null,
+                    expectedClientRequestHash: clientRequestHash,
+                    cancellationToken);
+                if (existing is not null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return existing;
+                }
+            }
+
             var itemMap = await LoadItemMapAsync(
                 connection,
                 transaction,
@@ -302,7 +393,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             }
 
             var now = DateTimeOffset.UtcNow;
-            var documentId = Guid.NewGuid();
+            var documentId = request.ClientRequestId ?? Guid.NewGuid();
             var documentNumber = BuildDocumentNumber(InventoryAdjustmentKind.WriteOff, request.PostingDate);
 
             await using (var insertDocumentCommand = connection.CreateCommand())
@@ -311,17 +402,19 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 insertDocumentCommand.CommandText =
                     """
                     insert into inventory_documents (
-                      id, company_id, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, counterparty_id, memo, created_by_user_id, created_at, posted_at
+                      id, company_id, document_number, document_type, status, movement_direction, posting_date, source_module, source_document_id, source_document_number, counterparty_id, memo, client_request_hash, created_by_user_id, created_at, posted_at
                     )
                     values (
-                      @id, @company_id, 'inventory_write_off', 'submitted', 'neutral', @posting_date, 'inventory_adjustment', null, @source_document_number, null, @memo, @created_by_user_id, @created_at, null
+                      @id, @company_id, @document_number, 'inventory_write_off', 'submitted', 'neutral', @posting_date, 'inventory_adjustment', null, @source_document_number, null, @memo, @client_request_hash, @created_by_user_id, @created_at, null
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
                 insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
+                insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
+                insertDocumentCommand.Parameters.AddWithValue("client_request_hash", ToDbValue(clientRequestHash));
                 insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -382,7 +475,9 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
             if (document.ApprovedAt.HasValue)
             {
-                throw new InvalidOperationException("This write-off request is already approved.");
+                await transaction.CommitAsync(cancellationToken);
+                return await LoadAdjustmentSummaryAsync(connection, null, request.CompanyId, request.DocumentId, cancellationToken)
+                    ?? throw new InvalidOperationException("Approved write-off request could not be reloaded.");
             }
 
             await using var command = connection.CreateCommand();
@@ -419,13 +514,6 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // P0-3b-1 (AUDIT_2026-05-20 C3 closure): same atomicity story as
-        // PostAsync above — qty + cost layers + balances mutate
-        // together with a Dr Inventory Adjustment / Cr Inventory Asset
-        // GL entry on the same tx. The GL poster runs at the bottom
-        // of the try-block, before commit; failure rolls back every
-        // subledger write made here. Approved write-off uses the same
-        // JE shape as Adjustment Loss per Q2=A.
         var foundationSummary = await _foundationStore.GetSummaryAsync(request.CompanyId, cancellationToken);
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -442,6 +530,13 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 throw new InvalidOperationException("Only write-off requests can be posted through this lane.");
             }
 
+            if (string.Equals(document.StoredStatus, "posted", StringComparison.OrdinalIgnoreCase))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return await LoadAdjustmentSummaryAsync(connection, null, request.CompanyId, request.DocumentId, cancellationToken)
+                    ?? throw new InvalidOperationException("Posted write-off could not be reloaded.");
+            }
+
             if (!string.Equals(document.StoredStatus, "submitted", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("Only submitted write-off requests can be posted.");
@@ -452,6 +547,9 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             {
                 throw new InvalidOperationException("Write-off must be approved before posting under the current company policy.");
             }
+
+            var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(connection, transaction, request.CompanyId, cancellationToken);
+            await EnsurePostingPeriodOpenAsync(connection, transaction, request.CompanyId, document.PostingDate, cancellationToken);
 
             var lines = await LoadPendingWriteOffLinesAsync(connection, transaction, request.CompanyId, request.DocumentId, cancellationToken);
             if (lines.Count == 0)
@@ -469,6 +567,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             var totalQuantity = 0m;
             var totalCostBase = 0m;
             var now = DateTimeOffset.UtcNow;
+            var journalCandidates = new List<InventoryAdjustmentJournalCandidate>();
 
             foreach (var line in lines.OrderBy(line => line.LineNo))
             {
@@ -479,6 +578,19 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
                 ValidateWarehouseManagedStockLine(itemMap, line.ToAdjustmentLineInput(), "Write-off post");
 
+                var inventoryAssetAccountId = await ResolveInventoryAssetAccountIdAsync(
+                    connection,
+                    transaction,
+                    request.CompanyId,
+                    item,
+                    cancellationToken);
+                var adjustmentAccountId = await ResolveInventoryAdjustmentAccountIdAsync(
+                    connection,
+                    transaction,
+                    request.CompanyId,
+                    item,
+                    preferItemWriteOffAccount: true,
+                    cancellationToken);
                 var balance = await LoadCurrentBalanceAsync(connection, transaction, request.CompanyId, line.ItemId, line.WarehouseId, cancellationToken);
                 var availableQuantity = decimal.Round(balance.OnHandQty - balance.ReservedQty, 6, MidpointRounding.AwayFromZero);
                 if (foundationSummary.CostingPolicy?.NegativeStockAllowed != true && availableQuantity < line.BaseQuantity)
@@ -534,6 +646,13 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                     await InsertLayerConsumptionAsync(connection, transaction, request.CompanyId, ledgerEntryId, consumption, now, cancellationToken);
                 }
 
+                journalCandidates.Add(new InventoryAdjustmentJournalCandidate(
+                    line.LineNo,
+                    item.ItemCode,
+                    inventoryAssetAccountId,
+                    adjustmentAccountId,
+                    consumptionResult.TotalCostBase));
+
                 totalQuantity = decimal.Round(totalQuantity + line.BaseQuantity, 6, MidpointRounding.AwayFromZero);
                 totalCostBase = decimal.Round(totalCostBase + consumptionResult.TotalCostBase, 6, MidpointRounding.AwayFromZero);
             }
@@ -557,26 +676,32 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            // GL leg — Q2=A: Approved Write-off → Dr Inventory Adjustment / Cr Inventory Asset.
-            // Same atomicity story as PostAsync: the poster runs on the
-            // inventory tx, so a GL failure rolls back qty + cost +
-            // balances + document-status writes together. totalCostBase
-            // is the sum of cost_delta_base on the inventory_ledger_entries
-            // rows we just inserted.
-            var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(
-                connection, transaction, request.CompanyId, cancellationToken);
-            await _glPoster.AppendAsync(
+            var journalEntryId = await InsertInventoryAdjustmentJournalAsync(
                 connection,
                 transaction,
-                new InventoryAdjustmentGlPostingRequest(
-                    CompanyId: request.CompanyId,
-                    UserId: request.UserId,
-                    InventoryDocumentId: request.DocumentId,
-                    InventoryDocumentNumber: document.DocumentNumber,
-                    PostingDate: document.PostingDate,
-                    BaseCurrencyCode: baseCurrencyCode,
-                    Kind: InventoryAdjustmentGlKind.WriteOff,
-                    TotalCostBase: totalCostBase),
+                request.CompanyId,
+                request.UserId,
+                request.DocumentId,
+                "inventory_write_off",
+                document.DocumentNumber,
+                InventoryAdjustmentKind.WriteOff,
+                document.PostingDate,
+                baseCurrencyCode,
+                journalCandidates,
+                cancellationToken);
+            await InsertInventoryAdjustmentAuditAsync(
+                connection,
+                transaction,
+                request.CompanyId,
+                request.UserId,
+                request.DocumentId,
+                "inventory_write_off_posted",
+                "inventory_write_off",
+                document.DocumentNumber,
+                document.PostingDate,
+                totalQuantity,
+                totalCostBase,
+                journalEntryId,
                 cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -884,7 +1009,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             select
               d.id as document_id,
               d.company_id,
-              coalesce(d.source_document_number, 'UNNUMBERED') as document_number,
+              coalesce(d.document_number, d.source_document_number, 'UNNUMBERED') as document_number,
               d.document_type,
               case
                 when d.status = 'submitted' and d.approved_at is not null then 'approved'
@@ -911,6 +1036,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             group by
               d.id,
               d.company_id,
+              d.document_number,
               d.source_document_number,
               d.document_type,
               d.status,
@@ -919,6 +1045,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
               w.warehouse_code,
               w.name,
               d.created_at,
+              d.approved_at,
               d.posted_at,
               d.memo
             order by d.created_at desc
@@ -972,7 +1099,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             select
               d.id as document_id,
               d.company_id,
-              coalesce(d.source_document_number, 'UNNUMBERED') as document_number,
+              coalesce(d.document_number, d.source_document_number, 'UNNUMBERED') as document_number,
               d.document_type,
               case
                 when d.status = 'submitted' and d.approved_at is not null then 'approved'
@@ -999,6 +1126,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             group by
               d.id,
               d.company_id,
+              d.document_number,
               d.source_document_number,
               d.document_type,
               d.status,
@@ -1045,6 +1173,101 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 : reader.GetString(reader.GetOrdinal("memo")));
     }
 
+    private static async Task<InventoryAdjustmentSummary?> TryLoadIdempotentAdjustmentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        InventoryAdjustmentKind expectedAdjustmentKind,
+        string? requiredStatus,
+        string? expectedClientRequestHash,
+        CancellationToken cancellationToken)
+    {
+        var existing = await LoadAdjustmentSummaryAsync(
+            connection,
+            transaction,
+            companyId,
+            documentId,
+            cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        if (existing.AdjustmentKind != expectedAdjustmentKind)
+        {
+            throw new InvalidOperationException(
+                "Client request id already belongs to a different inventory adjustment kind.");
+        }
+
+        var existingClientRequestHash = await LoadClientRequestHashAsync(
+            connection,
+            transaction,
+            companyId,
+            documentId,
+            cancellationToken);
+        if (!string.IsNullOrWhiteSpace(existingClientRequestHash) &&
+            !string.IsNullOrWhiteSpace(expectedClientRequestHash) &&
+            !string.Equals(existingClientRequestHash, expectedClientRequestHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Client request id already belongs to a different inventory request payload.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(requiredStatus) &&
+            !string.Equals(existing.Status, requiredStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Client request id already belongs to an inventory adjustment in status '{existing.Status}'.");
+        }
+
+        return existing;
+    }
+
+    private static async Task<string?> LoadClientRequestHashAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select client_request_hash
+            from inventory_documents
+            where company_id = @company_id
+              and id = @document_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static async Task AcquireInventoryDocumentMutationLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select pg_advisory_xact_lock(
+              hashtext(@company_id),
+              hashtext(@document_id)
+            );
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId.ToString("D"));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<AdjustmentDocumentSnapshot?> LoadAdjustmentDocumentForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -1059,7 +1282,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             select
               id,
               company_id,
-              coalesce(source_document_number, 'UNNUMBERED') as document_number,
+              coalesce(document_number, source_document_number, 'UNNUMBERED') as document_number,
               document_type,
               status,
               posting_date,
@@ -1154,9 +1377,6 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        // P0-4 (C4): FOR UPDATE serializes concurrent adjustment posts so
-        // two write-offs against the same balance cannot both pass the
-        // negative-stock guard before either UPSERT-decrements.
         command.CommandText =
             """
             select
@@ -1165,8 +1385,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
             from item_warehouse_balances
             where company_id = @company_id
               and item_id = @item_id
-              and warehouse_id = @warehouse_id
-            for update;
+              and warehouse_id = @warehouse_id;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -1489,6 +1708,556 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task<Guid?> InsertInventoryAdjustmentJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        string sourceType,
+        string documentNumber,
+        InventoryAdjustmentKind adjustmentKind,
+        DateOnly postingDate,
+        string baseCurrencyCode,
+        IReadOnlyList<InventoryAdjustmentJournalCandidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        var lines = InventoryAdjustmentJournalPlan.Build(adjustmentKind, documentNumber, candidates);
+        if (lines.Count == 0)
+        {
+            return null;
+        }
+
+        var journalEntryId = Guid.NewGuid();
+        var totalDebit = Round6(lines.Sum(static line => line.Debit));
+        var totalCredit = Round6(lines.Sum(static line => line.Credit));
+        if (totalDebit != totalCredit)
+        {
+            throw new InvalidOperationException("Inventory adjustment journal entry is not balanced.");
+        }
+
+        var postedAt = DateTimeOffset.UtcNow;
+        var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, companyId, cancellationToken);
+        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, companyId, postingDate.Year, cancellationToken);
+        var idempotencyKey = $"{sourceType}:{documentId:D}";
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                insert into journal_entries (
+                  id, company_id, entity_number, display_number, status,
+                  source_type, source_id,
+                  transaction_currency_code, base_currency_code,
+                  exchange_rate, exchange_rate_date, exchange_rate_source,
+                  fx_rate_snapshot_id,
+                  total_tx_debit, total_tx_credit, total_debit, total_credit,
+                  posting_run_id, idempotency_key, posted_at, created_by_user_id, created_at
+                )
+                values (
+                  @id, @company_id, @entity_number, @display_number, 'posted',
+                  @source_type, @source_id,
+                  @base_currency_code, @base_currency_code,
+                  1, @posting_date, 'identity',
+                  null,
+                  @total_debit, @total_credit, @total_debit, @total_credit,
+                  @posting_run_id, @idempotency_key, @posted_at, @created_by_user_id, now()
+                )
+                on conflict (company_id, idempotency_key) do nothing;
+                """;
+            command.Parameters.AddWithValue("id", journalEntryId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
+            command.Parameters.AddWithValue("entity_number", entityNumber);
+            command.Parameters.AddWithValue("display_number", journalDisplayNumber);
+            command.Parameters.AddWithValue("source_type", sourceType);
+            command.Parameters.AddWithValue("source_id", documentId);
+            command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+            command.Parameters.Add(new NpgsqlParameter("posting_date", NpgsqlDbType.Date) { Value = postingDate });
+            command.Parameters.AddWithValue("total_debit", totalDebit);
+            command.Parameters.AddWithValue("total_credit", totalCredit);
+            command.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
+            command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+            command.Parameters.AddWithValue("posted_at", postedAt);
+            command.Parameters.AddWithValue("created_by_user_id", userId.Value);
+
+            var insertedRows = await command.ExecuteNonQueryAsync(cancellationToken);
+            if (insertedRows != 1)
+            {
+                return await ReadExistingJournalEntryIdAsync(connection, transaction, companyId, idempotencyKey, cancellationToken);
+            }
+        }
+
+        var lineNumber = 1;
+        foreach (var line in lines)
+        {
+            await InsertJournalAndLedgerLineAsync(
+                connection,
+                transaction,
+                companyId,
+                journalEntryId,
+                lineNumber++,
+                line.AccountId,
+                line.Description,
+                baseCurrencyCode,
+                line.TxDebit,
+                line.TxCredit,
+                line.Debit,
+                line.Credit,
+                postingDate,
+                line.PostingRole,
+                line.SourceLineNumber,
+                cancellationToken);
+        }
+
+        return journalEntryId;
+    }
+
+    private static async Task InsertJournalAndLedgerLineAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        int lineNumber,
+        Guid accountId,
+        string description,
+        string transactionCurrencyCode,
+        decimal txDebit,
+        decimal txCredit,
+        decimal debit,
+        decimal credit,
+        DateOnly postingDate,
+        string postingRole,
+        int sourceLineNumber,
+        CancellationToken cancellationToken)
+    {
+        var journalEntryLineId = Guid.NewGuid();
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                insert into journal_entry_lines (
+                  id, company_id, journal_entry_id, line_number,
+                  account_id, description, party_type, party_id,
+                  tx_debit, tx_credit, debit, credit,
+                  tax_component_type, control_role, posting_role, source_line_number,
+                  created_at
+                )
+                values (
+                  @id, @company_id, @journal_entry_id, @line_number,
+                  @account_id, @description, null, null,
+                  @tx_debit, @tx_credit, @debit, @credit,
+                  null, null, @posting_role, @source_line_number,
+                  now()
+                );
+                """;
+            command.Parameters.AddWithValue("id", journalEntryLineId);
+            command.Parameters.AddWithValue("company_id", companyId.Value);
+            command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+            command.Parameters.AddWithValue("line_number", lineNumber);
+            command.Parameters.AddWithValue("account_id", accountId);
+            command.Parameters.AddWithValue("description", description);
+            command.Parameters.AddWithValue("tx_debit", Round6(txDebit));
+            command.Parameters.AddWithValue("tx_credit", Round6(txCredit));
+            command.Parameters.AddWithValue("debit", Round6(debit));
+            command.Parameters.AddWithValue("credit", Round6(credit));
+            command.Parameters.AddWithValue("posting_role", postingRole);
+            command.Parameters.AddWithValue("source_line_number", sourceLineNumber);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var ledgerCommand = connection.CreateCommand();
+        ledgerCommand.Transaction = transaction;
+        ledgerCommand.CommandText =
+            """
+            insert into ledger_entries (
+              id, company_id, journal_entry_id, journal_entry_line_id,
+              posting_date, account_id, debit, credit,
+              transaction_currency_code, tx_debit, tx_credit,
+              created_at
+            )
+            values (
+              @id, @company_id, @journal_entry_id, @journal_entry_line_id,
+              @posting_date, @account_id, @debit, @credit,
+              @transaction_currency_code, @tx_debit, @tx_credit,
+              now()
+            );
+            """;
+        ledgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+        ledgerCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        ledgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+        ledgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
+        ledgerCommand.Parameters.Add(new NpgsqlParameter("posting_date", NpgsqlDbType.Date) { Value = postingDate });
+        ledgerCommand.Parameters.AddWithValue("account_id", accountId);
+        ledgerCommand.Parameters.AddWithValue("debit", Round6(debit));
+        ledgerCommand.Parameters.AddWithValue("credit", Round6(credit));
+        ledgerCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        ledgerCommand.Parameters.AddWithValue("tx_debit", Round6(txDebit));
+        ledgerCommand.Parameters.AddWithValue("tx_credit", Round6(txCredit));
+        await ledgerCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<Guid> ResolveInventoryAssetAccountIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        InventoryManagedItemSummary item,
+        CancellationToken cancellationToken)
+    {
+        return await ResolveActiveAccountIdAsync(
+            connection,
+            transaction,
+            companyId,
+            item.DefaultInventoryAssetAccountId,
+            "inventory asset",
+            cancellationToken,
+            InventoryAdjustmentAccountPolicy.InventoryAssetRootTypes,
+            "inventory_asset",
+            "inventory:asset");
+    }
+
+    private static async Task<Guid> ResolveInventoryAdjustmentAccountIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        InventoryManagedItemSummary item,
+        bool preferItemWriteOffAccount,
+        CancellationToken cancellationToken)
+    {
+        return await ResolveActiveAccountIdAsync(
+            connection,
+            transaction,
+            companyId,
+            preferItemWriteOffAccount ? item.DefaultWriteOffAccountId : null,
+            preferItemWriteOffAccount ? "inventory write-off" : "inventory adjustment",
+            cancellationToken,
+            InventoryAdjustmentAccountPolicy.AdjustmentOffsetRootTypes,
+            "inventory_adjustment",
+            "inventory:adjustment");
+    }
+
+    private static async Task<Guid> ResolveActiveAccountIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid? preferredAccountId,
+        string accountLabel,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string> allowedRootTypes,
+        params string[] systemMarkers)
+    {
+        if (preferredAccountId.HasValue)
+        {
+            var preferredAccount = await LoadActiveAccountAsync(
+                connection,
+                transaction,
+                companyId,
+                preferredAccountId.Value,
+                cancellationToken);
+            if (preferredAccount is null)
+            {
+                throw new InvalidOperationException(
+                    $"The configured {accountLabel} account is not active in this company.");
+            }
+
+            if (InventoryAdjustmentAccountPolicy.AllowsRootType(preferredAccount.RootType, allowedRootTypes))
+            {
+                return preferredAccountId.Value;
+            }
+
+            throw new InvalidOperationException(
+                $"The configured {accountLabel} account '{preferredAccount.Code} - {preferredAccount.Name}' has root type '{preferredAccount.RootType}', but inventory adjustment posting requires {InventoryAdjustmentAccountPolicy.FormatAllowedRootTypes(allowedRootTypes)}.");
+        }
+
+        var fallback = await TryResolveSystemAccountIdAsync(
+            connection,
+            transaction,
+            companyId,
+            cancellationToken,
+            allowedRootTypes,
+            systemMarkers);
+        if (fallback.HasValue)
+        {
+            return fallback.Value;
+        }
+
+        throw new InvalidOperationException(
+            $"Inventory adjustment posting requires an active {accountLabel} account with root type {InventoryAdjustmentAccountPolicy.FormatAllowedRootTypes(allowedRootTypes)}. Configure an item default or a company account with system role/key '{string.Join("' or '", systemMarkers)}'.");
+    }
+
+    private static async Task<InventoryAdjustmentAccountSnapshot?> LoadActiveAccountAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id, code, name, root_type
+            from accounts
+            where company_id = @company_id
+              and id = @account_id
+              and is_active = true;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("account_id", accountId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new InventoryAdjustmentAccountSnapshot(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("code")),
+            reader.GetString(reader.GetOrdinal("name")),
+            reader.GetString(reader.GetOrdinal("root_type")));
+    }
+
+    private static async Task<Guid?> TryResolveSystemAccountIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string> allowedRootTypes,
+        params string[] markers)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id
+            from accounts
+            where company_id = @company_id
+              and is_active = true
+              and root_type = any(@allowed_root_types)
+              and (
+                system_role = any(@markers)
+                or system_key = any(@markers)
+              )
+            order by
+              case
+                when system_role = any(@markers) then 0
+                when system_key = any(@markers) then 1
+                else 2
+              end,
+              code
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("allowed_root_types", NpgsqlDbType.Array | NpgsqlDbType.Text, allowedRootTypes.ToArray());
+        command.Parameters.AddWithValue("markers", NpgsqlDbType.Array | NpgsqlDbType.Text, markers);
+
+        var resolved = await command.ExecuteScalarAsync(cancellationToken);
+        return resolved is Guid accountId ? accountId : null;
+    }
+
+    private sealed record InventoryAdjustmentAccountSnapshot(
+        Guid Id,
+        string Code,
+        string Name,
+        string RootType);
+
+    private static async Task InsertInventoryAdjustmentAuditAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        string action,
+        string documentType,
+        string documentNumber,
+        DateOnly postingDate,
+        decimal totalQuantity,
+        decimal totalCostBase,
+        Guid? journalEntryId,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "audit_logs", cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            insert into audit_logs (
+              company_id, actor_type, actor_id, entity_type, entity_id, action, payload
+            )
+            values (
+              @company_id, 'user', @actor_id, 'inventory_document', @entity_id, @action,
+              jsonb_build_object(
+                'documentType', @document_type,
+                'documentNumber', @document_number,
+                'postingDate', @posting_date::text,
+                'totalQuantity', @total_quantity,
+                'totalCostBase', @total_cost_base,
+                'journalEntryId', @journal_entry_id
+              )
+            );
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("actor_id", userId.Value);
+        command.Parameters.AddWithValue("entity_id", documentId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("document_type", documentType);
+        command.Parameters.AddWithValue("document_number", documentNumber);
+        command.Parameters.Add(new NpgsqlParameter("posting_date", NpgsqlDbType.Date) { Value = postingDate });
+        command.Parameters.AddWithValue("total_quantity", Round6(totalQuantity));
+        command.Parameters.AddWithValue("total_cost_base", Round6(totalCostBase));
+        command.Parameters.AddWithValue("journal_entry_id", journalEntryId.HasValue ? journalEntryId.Value.ToString("D") : DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsurePostingPeriodOpenAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        DateOnly postingDate,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "company_books", cancellationToken) ||
+            !await TableExistsAsync(connection, transaction, "company_book_governance_signals", cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              s.signal_date,
+              s.reference_label
+            from company_books b
+            inner join company_book_governance_signals s
+              on s.company_id = b.company_id
+             and s.company_book_id = b.id
+             and s.signal_type = 'closed_period'
+             and s.signal_date >= @posting_date
+            where b.company_id = @company_id
+              and b.is_active = true
+              and b.is_primary = true
+              and b.effective_from <= @posting_date
+            order by s.signal_date asc, s.created_at asc, s.id asc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.Add(new NpgsqlParameter("posting_date", NpgsqlDbType.Date) { Value = postingDate });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return;
+        }
+
+        var closedThrough = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("signal_date"));
+        var referenceLabel = reader.IsDBNull(reader.GetOrdinal("reference_label"))
+            ? "closed period"
+            : reader.GetString(reader.GetOrdinal("reference_label"));
+        throw new InvalidOperationException(
+            $"Posting date {postingDate:yyyy-MM-dd} is locked by {referenceLabel} through {closedThrough:yyyy-MM-dd}.");
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select to_regclass(@table_name) is not null;";
+        command.Parameters.AddWithValue("table_name", tableName);
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<Guid> ReadExistingJournalEntryIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id
+            from journal_entries
+            where company_id = @company_id
+              and idempotency_key = @idempotency_key
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+        return (Guid)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Inventory adjustment journal entry could not be resolved."));
+    }
+
+    private static async Task<string> ReserveJournalDisplayNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var seedCommand = connection.CreateCommand();
+        seedCommand.Transaction = transaction;
+        seedCommand.CommandText =
+            """
+            select coalesce(
+                max(
+                    case
+                        when display_number ~ '^JE-[0-9]+$'
+                        then substring(display_number from 4)::bigint
+                        else null
+                    end),
+                0) + 1
+            from journal_entries
+            where company_id = @company_id;
+            """;
+        seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        var seedNumber = Convert.ToInt64(await seedCommand.ExecuteScalarAsync(cancellationToken) ?? 1L);
+
+        return await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "journal-entry-display",
+            "JE-",
+            6,
+            seedNumber,
+            cancellationToken);
+    }
+
+    private static async Task<string> ReserveEntityNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        int year,
+        CancellationToken cancellationToken)
+    {
+        return await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            $"entity-number:all:{year}",
+            $"EN{year}",
+            5,
+            1,
+            cancellationToken);
+    }
+
+    private static decimal Round6(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
+
     private static IssueCostComputation ConsumeFifo(
         IReadOnlyList<OpenCostLayer> layers,
         decimal issueQuantity,
@@ -1705,6 +2474,99 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         }
     }
 
+    private static string BuildPostRequestHash(InventoryAdjustmentPostRequest request)
+    {
+        var builder = CreateClientRequestHashBuilder("inventory-adjustment-post:v1");
+        AppendCommonRequestParts(
+            builder,
+            request.CompanyId,
+            request.UserId,
+            request.AdjustmentKind.ToString(),
+            request.WarehouseId,
+            request.PostingDate,
+            request.Memo);
+
+        foreach (var line in request.Lines.OrderBy(line => line.LineNo))
+        {
+            AppendLine(builder, line);
+        }
+
+        return ComputeClientRequestHash(builder);
+    }
+
+    private static string BuildWriteOffRequestHash(InventoryWriteOffRequestPostRequest request)
+    {
+        var builder = CreateClientRequestHashBuilder("inventory-write-off-request:v1");
+        AppendCommonRequestParts(
+            builder,
+            request.CompanyId,
+            request.UserId,
+            InventoryAdjustmentKind.WriteOff.ToString(),
+            request.WarehouseId,
+            request.PostingDate,
+            request.Memo);
+
+        foreach (var line in request.Lines.OrderBy(line => line.LineNo))
+        {
+            AppendLine(builder, line);
+        }
+
+        return ComputeClientRequestHash(builder);
+    }
+
+    private static StringBuilder CreateClientRequestHashBuilder(string version)
+    {
+        var builder = new StringBuilder();
+        builder.Append(version).Append('\n');
+        return builder;
+    }
+
+    private static void AppendCommonRequestParts(
+        StringBuilder builder,
+        CompanyId companyId,
+        UserId userId,
+        string adjustmentKind,
+        Guid warehouseId,
+        DateOnly postingDate,
+        string? memo)
+    {
+        builder
+            .Append("company=").Append(companyId.Value).Append('\n')
+            .Append("user=").Append(userId.Value).Append('\n')
+            .Append("kind=").Append(adjustmentKind).Append('\n')
+            .Append("warehouse=").Append(warehouseId.ToString("D")).Append('\n')
+            .Append("postingDate=").Append(postingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append('\n')
+            .Append("memo=").Append(NormalizeNullableText(memo)).Append('\n');
+    }
+
+    private static void AppendLine(StringBuilder builder, InventoryAdjustmentLineInput line)
+    {
+        builder
+            .Append("line=").Append(line.LineNo.ToString(CultureInfo.InvariantCulture))
+            .Append("|item=").Append(line.ItemId.ToString("D"))
+            .Append("|uom=").Append(NormalizeText(line.UomCode).ToUpperInvariant())
+            .Append("|qty=").Append(FormatDecimal(line.Quantity))
+            .Append("|unitCost=").Append(line.UnitCostBase.HasValue ? FormatDecimal(line.UnitCostBase.Value) : string.Empty)
+            .Append("|reason=").Append(NormalizeNullableText(line.ReasonCode))
+            .Append("|memo=").Append(NormalizeNullableText(line.Memo))
+            .Append('\n');
+    }
+
+    private static string ComputeClientRequestHash(StringBuilder builder)
+    {
+        var bytes = Encoding.UTF8.GetBytes(builder.ToString());
+        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    }
+
+    private static string FormatDecimal(decimal value) =>
+        decimal.Round(value, 6, MidpointRounding.AwayFromZero).ToString("0.######", CultureInfo.InvariantCulture);
+
+    private static string NormalizeNullableText(string? value) =>
+        value is null ? string.Empty : NormalizeText(value);
+
+    private static string NormalizeText(string value) =>
+        value.Trim();
+
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken,
@@ -1754,6 +2616,12 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                   add column if not exists posted_by_user_id char(7) null;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
+            if (!await CoreSchemaExistsAsync(connection, cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "Inventory adjustment schema has not been installed. Apply database migrations before using inventory adjustments.");
+            }
+
             _schemaEnsured = true;
         }
         finally
@@ -1776,6 +2644,12 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 from information_schema.columns
                 where table_schema = current_schema()
                   and table_name = 'inventory_documents'
+                  and column_name = 'document_number')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
                   and column_name = 'approved_at')
               and exists (
                 select 1
@@ -1788,7 +2662,13 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                 from information_schema.columns
                 where table_schema = current_schema()
                   and table_name = 'inventory_documents'
-                  and column_name = 'posted_by_user_id');
+                  and column_name = 'posted_by_user_id')
+              and exists (
+                select 1
+                from information_schema.columns
+                where table_schema = current_schema()
+                  and table_name = 'inventory_documents'
+                  and column_name = 'client_request_hash');
             """;
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is true;
@@ -1840,4 +2720,96 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private sealed record IssueCostComputation(
         decimal TotalCostBase,
         IReadOnlyList<IssueLayerConsumption> Consumptions);
+
+    private sealed record InventoryAdjustmentJournalCandidate(
+        int SourceLineNumber,
+        string ItemCode,
+        Guid InventoryAssetAccountId,
+        Guid AdjustmentAccountId,
+        decimal AmountBase);
+
+    private sealed record InventoryAdjustmentJournalLine(
+        Guid AccountId,
+        string Description,
+        decimal TxDebit,
+        decimal TxCredit,
+        decimal Debit,
+        decimal Credit,
+        string PostingRole,
+        int SourceLineNumber);
+
+    private static class InventoryAdjustmentJournalPlan
+    {
+        public static IReadOnlyList<InventoryAdjustmentJournalLine> Build(
+            InventoryAdjustmentKind adjustmentKind,
+            string documentNumber,
+            IReadOnlyList<InventoryAdjustmentJournalCandidate> candidates)
+        {
+            var lines = new List<InventoryAdjustmentJournalLine>();
+            foreach (var candidate in candidates.OrderBy(static candidate => candidate.SourceLineNumber))
+            {
+                var amount = Round6(candidate.AmountBase);
+                if (amount <= 0m)
+                {
+                    continue;
+                }
+
+                var itemCode = string.IsNullOrWhiteSpace(candidate.ItemCode)
+                    ? "item"
+                    : candidate.ItemCode.Trim();
+                var description = $"{documentNumber} line {candidate.SourceLineNumber}: {itemCode}";
+
+                switch (adjustmentKind)
+                {
+                    case InventoryAdjustmentKind.Gain:
+                        lines.Add(new InventoryAdjustmentJournalLine(
+                            candidate.InventoryAssetAccountId,
+                            description,
+                            amount,
+                            0m,
+                            amount,
+                            0m,
+                            "inventory_asset",
+                            candidate.SourceLineNumber));
+                        lines.Add(new InventoryAdjustmentJournalLine(
+                            candidate.AdjustmentAccountId,
+                            description,
+                            0m,
+                            amount,
+                            0m,
+                            amount,
+                            "inventory_adjustment",
+                            candidate.SourceLineNumber));
+                        break;
+
+                    case InventoryAdjustmentKind.Loss:
+                    case InventoryAdjustmentKind.WriteOff:
+                        lines.Add(new InventoryAdjustmentJournalLine(
+                            candidate.AdjustmentAccountId,
+                            description,
+                            amount,
+                            0m,
+                            amount,
+                            0m,
+                            "inventory_adjustment",
+                            candidate.SourceLineNumber));
+                        lines.Add(new InventoryAdjustmentJournalLine(
+                            candidate.InventoryAssetAccountId,
+                            description,
+                            0m,
+                            amount,
+                            0m,
+                            amount,
+                            "inventory_asset",
+                            candidate.SourceLineNumber));
+                        break;
+
+                    default:
+                        throw new InvalidOperationException($"Unsupported inventory adjustment kind '{adjustmentKind}'.");
+                }
+            }
+
+            return lines;
+        }
+    }
 }

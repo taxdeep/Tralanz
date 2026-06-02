@@ -1,39 +1,41 @@
+@page "/settings/sales-tax"
 @page "/settings/tax-rates"
 
 @inject BusinessShellState ShellState
-@inject TaxCodeClient TaxCodeClient
+@inject SalesTaxClient SalesTaxClient
 @inject CitusToastService Message
 
 @*
-    Tax Rates — per-company tax-code catalog. Lists, creates, edits and
-    activate-toggles entries in the tax_codes table. The Settings → Tax
-    Rates link in the nav menu points here.
-
-    V1 surfaces the fields the journal-entry / invoice / bill UIs need
-    today: code, name, rate, applies-to scope, active flag. The full
-    migration-draft schema (recoverability_mode, account refs) stays
-    server-side with safe defaults; advanced editing lands in a later
-    batch when the Posting Engine wiring needs it.
+    Sales Tax - Tax Rule is one reusable indirect-tax rule. Tax Code is a
+    transaction-facing bundle of one or more Tax Rules.
 *@
 
-<PageTitle>Tax Rates | Tralanz Books</PageTitle>
+<PageTitle>Sales Tax | Tralanz Books</PageTitle>
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <CitusButton LeadingIcon="IconName.Plus"
-                     Variant="CitusButtonVariant.Primary"
-                     Size="CitusButtonSize.Small"
-                     Disabled="@_isLoading"
-                     OnClick="StartCreating">
-            New tax code
-        </CitusButton>
+        <AiseButtonGroup>
+            <CitusButton LeadingIcon="IconName.Plus"
+                         Variant="CitusButtonVariant.Default"
+                         Size="CitusButtonSize.Small"
+                         Disabled="@_isLoading"
+                         OnClick="StartCreatingRule">
+                New tax rule
+            </CitusButton>
+            <CitusButton LeadingIcon="IconName.Plus"
+                         Variant="CitusButtonVariant.Primary"
+                         Size="CitusButtonSize.Small"
+                         Disabled="@_isLoading"
+                         OnClick="StartCreatingCode">
+                New tax code
+            </CitusButton>
+        </AiseButtonGroup>
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Tax codes</h2>
-        <div class="flex items-center gap-3">
+<AiseFormSection Title="Tax rules">
+    <Actions>
+        <AiseButtonGroup>
             <label class="inline-flex items-center gap-2 text-sm">
                 <input type="checkbox"
                        checked="@_includeInactive"
@@ -43,207 +45,504 @@
             <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
                 @ShellState.ActiveCompany.CompanyName
             </CitusBadge>
-        </div>
-    </header>
-
-    @if (_isLoading)
-    {
-        <CitusLoadingBar />
-    }
-    else if (_rows.Count == 0)
-    {
-        <div class="citus-empty">
-            <p class="text-fg-muted text-sm">
-                No tax codes yet. Click <strong>New tax code</strong> to create your first one.
-            </p>
-        </div>
-    }
-    else
-    {
-        <table class="citus-data-table">
-            <thead>
-                <tr>
-                    <th style="width: 8rem">Code</th>
-                    <th>Name</th>
-                    <th class="text-right" style="width: 6rem">Rate</th>
-                    <th style="width: 8rem">Applies to</th>
-                    <th style="width: 12rem">Registration #</th>
-                    <th style="width: 6rem">Status</th>
-                    <th style="width: 9rem"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _rows)
-                {
-                    <tr class="@(row.IsActive ? null : "citus-data-table__row--muted")">
-                        <td><span class="citus-inline-code">@row.Code</span></td>
-                        <td>@row.Name</td>
-                        <td class="text-right">@FormatRate(row.RatePercent)</td>
-                        <td>@HumanizeAppliesTo(row.AppliesTo)</td>
-                        <td>
-                            @if (!string.IsNullOrWhiteSpace(row.RegistrationNumber))
-                            {
-                                <span class="citus-inline-code">@row.RegistrationNumber</span>
-                            }
-                            else
-                            {
-                                <span class="text-fg-subtle text-xs">—</span>
-                            }
-                        </td>
-                        <td>
-                            <CitusBadge Color="@(row.IsActive ? "green" : "default")">
-                                @(row.IsActive ? "Active" : "Inactive")
-                            </CitusBadge>
-                        </td>
-                        <td>
-                            <div class="flex items-center gap-2">
-                                <CitusButton Variant="CitusButtonVariant.Ghost"
-                                             Size="CitusButtonSize.Small"
-                                             Disabled="@_isMutating"
-                                             OnClick="@(() => StartEditing(row))">
-                                    Edit
-                                </CitusButton>
-                                <CitusButton Variant="CitusButtonVariant.Ghost"
-                                             Size="CitusButtonSize.Small"
-                                             Disabled="@_isMutating"
-                                             OnClick="@(() => ToggleActiveAsync(row))">
-                                    @(row.IsActive ? "Deactivate" : "Activate")
-                                </CitusButton>
-                            </div>
-                        </td>
+        </AiseButtonGroup>
+    </Actions>
+    <ChildContent>
+        @if (_isLoading)
+        {
+            <CitusLoadingBar />
+        }
+        else if (_rules.Count == 0)
+        {
+            <div class="citus-empty">
+                <p class="text-fg-muted text-sm">
+                    No tax rules yet. Create GST, PST, HST, or other single-rule taxes first, then combine them into Tax Codes.
+                </p>
+            </div>
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 10rem">Rule</th>
+                        <th>Name</th>
+                        <th class="text-right" style="width: 7rem">Rate</th>
+                        <th style="width: 10rem">Applies to</th>
+                        <th style="width: 12rem">Recoverability</th>
+                        <th style="width: 12rem">Registration #</th>
+                        <th style="width: 6rem">Status</th>
+                        <th style="width: 9rem"></th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    }
-</section>
+                </thead>
+                <tbody>
+                    @foreach (var rule in _rules)
+                    {
+                        <tr class="@(rule.IsActive ? null : "citus-data-table__row--muted")">
+                            <td><span class="citus-inline-code">@rule.Code</span></td>
+                            <td>@rule.Name</td>
+                            <td class="text-right">@FormatRate(rule.CurrentRatePercent)</td>
+                            <td>@HumanizeAppliesTo(rule.AppliesTo)</td>
+                            <td>@HumanizeRecoverability(rule.Recoverability)</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(rule.RegistrationNumber))
+                                {
+                                    <span class="citus-inline-code">@rule.RegistrationNumber</span>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-subtle text-xs">-</span>
+                                }
+                            </td>
+                            <td>
+                                <CitusBadge Color="@(rule.IsActive ? "green" : "default")">
+                                    @(rule.IsActive ? "Active" : "Inactive")
+                                </CitusBadge>
+                            </td>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => StartEditingRule(rule))">
+                                        Edit
+                                    </CitusButton>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => ToggleRuleActiveAsync(rule))">
+                                        @(rule.IsActive ? "Deactivate" : "Activate")
+                                    </CitusButton>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </ChildContent>
+</AiseFormSection>
 
-@if (_isFormOpen)
+@if (_isRuleFormOpen)
 {
-    <section class="citus-panel mt-6">
-        <header class="citus-panel__header">
-            <h2 class="citus-panel__title">@(_editingId is null ? "New tax code" : "Edit tax code")</h2>
-        </header>
-
-        <form class="grid grid-cols-1 md:grid-cols-2 gap-4"
-              @onsubmit="OnSaveAsync"
+    <AiseFormSection Title="@(_editingRuleId is null ? "New tax rule" : "Edit tax rule")" Class="mt-6">
+        <form class="space-y-4"
+              @onsubmit="OnSaveRuleAsync"
               @onsubmit:preventDefault>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Code</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formCode"
-                       @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="32"
-                       placeholder="HST_ON, GST, PST_BC, …"
-                       disabled="@_isMutating" />
-            </label>
-
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Name</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formName"
-                       @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="120"
-                       placeholder="Ontario HST 13%"
-                       disabled="@_isMutating" />
-            </label>
-
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Rate (%)</span>
-                @* RadzenNumeric with two-way @bind-Value works reliably across
-                   browsers; the previous raw <input type="number"> with a manual
-                   oninput handler intermittently rejected keystrokes when the
-                   initial value attribute was set. *@
-                <RadzenNumeric TValue="decimal?"
-                               @bind-Value="_formRate"
-                               Min="0"
-                               Max="100"
-                               Step="0.01m"
-                               Format="0.######"
-                               ShowUpDown="false"
-                               Class="citus-control-full"
-                               Disabled="@_isMutating" />
-            </label>
-
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Applies to</span>
-                <select class="citus-form-field__input"
-                        value="@_formAppliesTo"
-                        @onchange="@(e => _formAppliesTo = e.Value?.ToString() ?? "both")"
-                        disabled="@_isMutating">
-                    <option value="sales">Sales only</option>
-                    <option value="purchase">Purchases only</option>
-                    <option value="both">Sales and purchases</option>
-                </select>
-            </label>
-
-            <label class="citus-form-field md:col-span-2">
-                <span class="citus-form-field__label">
-                    Tax registration number <span class="text-error">*</span>
-                </span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formRegistrationNumber"
-                       @oninput="@(e => _formRegistrationNumber = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="64"
-                       placeholder="e.g. GST/HST # 123456789RT0001"
-                       disabled="@_isMutating" />
-                <span class="text-fg-subtle text-xs mt-1">
-                    Issued by the taxing authority (GST/HST #, VAT #, EIN, etc.).
-                    Invoices and tax returns surface this number on documents that use this code.
-                </span>
-            </label>
-
-            <label class="citus-form-field md:col-span-2">
-                <span class="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox"
-                           checked="@_formIsActive"
-                           @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
+            <AiseFormGrid Columns="3" MinColumnWidth="12rem" Dense>
+                <AiseFieldGroup Label="Tax Rule">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_ruleFormCode"
+                           @oninput="@(e => _ruleFormCode = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="32"
+                           placeholder="GST, PST_BC, HST_ON"
                            disabled="@_isMutating" />
-                    Active (available for selection on new documents)
-                </span>
-            </label>
+                </AiseFieldGroup>
 
-            <div class="md:col-span-2 flex items-center gap-3">
+                <AiseFieldGroup Label="Name">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_ruleFormName"
+                           @oninput="@(e => _ruleFormName = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="120"
+                           placeholder="BC PST"
+                           disabled="@_isMutating" />
+                </AiseFieldGroup>
+
+                <AiseFieldGroup Label="Rate">
+                    <RadzenNumeric TValue="decimal"
+                                   Value="@_ruleFormRatePercent"
+                                   Change="@(value => _ruleFormRatePercent = value)"
+                                   Min="0"
+                                   Max="100"
+                                   Step="0.01m"
+                                   Format="0.######"
+                                   ShowUpDown="false"
+                                   Class="citus-control-full"
+                                   Disabled="@_isMutating" />
+                </AiseFieldGroup>
+            </AiseFormGrid>
+
+            <AiseFormGrid Columns="3" MinColumnWidth="10rem" Dense>
+                <AiseFieldGroup Label="Applies to">
+                    <select class="citus-form-field__input"
+                            value="@_ruleFormAppliesTo"
+                            @onchange="@(e => _ruleFormAppliesTo = e.Value?.ToString() ?? "both")"
+                            disabled="@_isMutating">
+                        <option value="sales">Sales only</option>
+                        <option value="purchase">Purchases only</option>
+                        <option value="both">Sales and purchases</option>
+                    </select>
+                </AiseFieldGroup>
+
+                <AiseFieldGroup Label="Type">
+                    <select class="citus-form-field__input"
+                            value="@_ruleFormRecoverability"
+                            @onchange="OnRuleRecoverabilityChanged"
+                            disabled="@_isMutating">
+                        <option value="recoverable">Recoverable</option>
+                        <option value="non_recoverable">Non-recoverable</option>
+                    </select>
+                </AiseFieldGroup>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Status</span>
+                    <span class="inline-flex items-center gap-2 text-sm">
+                        <input type="checkbox"
+                               checked="@_ruleFormIsActive"
+                               @onchange="@(e => _ruleFormIsActive = (bool)(e.Value ?? false))"
+                               disabled="@_isMutating" />
+                        Active
+                    </span>
+                </label>
+            </AiseFormGrid>
+
+            @if (_ruleFormRecoverability == "recoverable")
+            {
+                <AiseFormGrid Columns="2" MinColumnWidth="16rem" Dense>
+                    <AiseFieldGroup Label="Tax payable account">
+                        <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                       SelectedId="@_ruleFormPayableAccountId"
+                                       Placeholder="Select liability tax account..."
+                                       AllowedRootTypes="liability"
+                                       DefaultCreateRootType="liability"
+                                       DefaultCreateDetailType="tax"
+                                       OnAccountSelected="SetRulePayableAccount"
+                                       OnCleared="ClearRulePayableAccount"
+                                       Disabled="@_isMutating" />
+                        <span class="text-fg-subtle text-xs mt-1 block">Used when this tax is collected on sales.</span>
+                    </AiseFieldGroup>
+
+                    <AiseFieldGroup Label="Recoverable tax account">
+                        <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                       SelectedId="@_ruleFormRecoverableAccountId"
+                                       Placeholder="Select tax account..."
+                                       AllowedRootTypes="asset,liability"
+                                       DefaultCreateRootType="asset"
+                                       DefaultCreateDetailType="tax"
+                                       OnAccountSelected="SetRuleRecoverableAccount"
+                                       OnCleared="ClearRuleRecoverableAccount"
+                                       Disabled="@_isMutating" />
+                        <span class="text-fg-subtle text-xs mt-1 block">Used for recoverable input tax on purchases. It can be the same account as Tax payable.</span>
+                    </AiseFieldGroup>
+                </AiseFormGrid>
+            }
+            else
+            {
+                <AiseFormGrid Columns="1" MinColumnWidth="16rem" Dense>
+                    <AiseFieldGroup Label="Tax account">
+                        <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                       SelectedId="@_ruleFormPayableAccountId"
+                                       Placeholder="Select liability tax account..."
+                                       AllowedRootTypes="liability"
+                                       DefaultCreateRootType="liability"
+                                       DefaultCreateDetailType="tax"
+                                       OnAccountSelected="SetRulePayableAccount"
+                                       OnCleared="ClearRulePayableAccount"
+                                       Disabled="@_isMutating" />
+                        <span class="text-fg-subtle text-xs mt-1 block">Non-recoverable purchase tax stays on the expense line; this account handles collected tax when the rule is used on sales.</span>
+                    </AiseFieldGroup>
+                </AiseFormGrid>
+            }
+
+            <AiseFormGrid Columns="1" MinColumnWidth="16rem" Dense>
+                <AiseFieldGroup Label="Tax registration number">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_ruleFormRegistrationNumber"
+                           @oninput="@(e => _ruleFormRegistrationNumber = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="64"
+                           placeholder="e.g. 123456789RT0001"
+                           disabled="@_isMutating" />
+                </AiseFieldGroup>
+            </AiseFormGrid>
+
+            <AiseButtonGroup>
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              HtmlType="@("submit")"
-                             Disabled="@_isMutating"
-                             OnClick="OnSaveAsync">
-                    @(_isMutating ? "Saving…" : "Save")
+                             Disabled="@_isMutating">
+                    @(_isMutating ? "Saving..." : "Save rule")
                 </CitusButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost"
                              Disabled="@_isMutating"
-                             OnClick="CancelForm">
+                             OnClick="CancelRuleForm">
                     Cancel
                 </CitusButton>
-            </div>
+            </AiseButtonGroup>
         </form>
-    </section>
+    </AiseFormSection>
+}
+
+<AiseFormSection Title="Tax codes" Class="mt-6">
+    <ChildContent>
+        @if (_isLoading)
+        {
+            <CitusLoadingBar />
+        }
+        else if (_codes.Count == 0)
+        {
+            <div class="citus-empty">
+                <p class="text-fg-muted text-sm">
+                    No tax codes yet. A Tax Code is what invoices, bills, and expenses select; it can contain one or more Tax Rules.
+                </p>
+            </div>
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 10rem">Code</th>
+                        <th>Name</th>
+                        <th class="text-right" style="width: 7rem">Sales</th>
+                        <th class="text-right" style="width: 8rem">Purchases</th>
+                        <th style="width: 7rem">Rules</th>
+                        <th style="width: 12rem">Registration #</th>
+                        <th style="width: 6rem">Status</th>
+                        <th style="width: 9rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var taxCode in _codes)
+                    {
+                        <tr class="@(taxCode.IsActive ? null : "citus-data-table__row--muted")">
+                            <td>
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             OnClick="@(() => ToggleExpanded(taxCode.Id))">
+                                    @(IsExpanded(taxCode.Id) ? "v" : ">")
+                                </CitusButton>
+                                <span class="citus-inline-code">@taxCode.Code</span>
+                            </td>
+                            <td>@taxCode.Name</td>
+                            <td class="text-right">@FormatRate(taxCode.SalesRatePercent)</td>
+                            <td class="text-right">@FormatRate(taxCode.PurchaseRatePercent)</td>
+                            <td>@taxCode.Components.Count</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(taxCode.RegistrationNumber))
+                                {
+                                    <span class="citus-inline-code">@taxCode.RegistrationNumber</span>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-subtle text-xs">-</span>
+                                }
+                            </td>
+                            <td>
+                                <CitusBadge Color="@(taxCode.IsActive ? "green" : "default")">
+                                    @(taxCode.IsActive ? "Active" : "Inactive")
+                                </CitusBadge>
+                            </td>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => StartEditingCode(taxCode))">
+                                        Edit
+                                    </CitusButton>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => ToggleCodeActiveAsync(taxCode))">
+                                        @(taxCode.IsActive ? "Deactivate" : "Activate")
+                                    </CitusButton>
+                                </div>
+                            </td>
+                        </tr>
+
+                        @if (IsExpanded(taxCode.Id))
+                        {
+                            <tr class="citus-data-table__row--muted">
+                                <td></td>
+                                <td colspan="7">
+                                    <table class="citus-data-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 10rem">Rule</th>
+                                                <th>Name</th>
+                                                <th class="text-right" style="width: 7rem">Rate</th>
+                                                <th style="width: 8rem">Applies to</th>
+                                                <th style="width: 12rem">Recoverability</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var component in taxCode.Components.OrderBy(c => c.Sequence))
+                                            {
+                                                <tr>
+                                                    <td><span class="citus-inline-code">@component.Code</span></td>
+                                                    <td>@component.Name</td>
+                                                    <td class="text-right">@FormatRate(component.RatePercent)</td>
+                                                    <td>@HumanizeAppliesTo(component.AppliesTo)</td>
+                                                    <td>@HumanizeRecoverability(component.Recoverability)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+    </ChildContent>
+</AiseFormSection>
+
+@if (_isCodeFormOpen)
+{
+    <AiseFormSection Title="@(_editingCodeId is null ? "New tax code" : "Edit tax code")" Class="mt-6">
+        <form class="space-y-4"
+              @onsubmit="OnSaveCodeAsync"
+              @onsubmit:preventDefault>
+            <AiseFormGrid Columns="3" MinColumnWidth="12rem" Dense>
+                <AiseFieldGroup Label="Code">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_codeFormCode"
+                           @oninput="@(e => _codeFormCode = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="32"
+                           placeholder="GP, GST_PST_BC"
+                           disabled="@_isMutating" />
+                </AiseFieldGroup>
+
+                <AiseFieldGroup Label="Name">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_codeFormName"
+                           @oninput="@(e => _codeFormName = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="120"
+                           placeholder="GST and BC PST"
+                           disabled="@_isMutating" />
+                </AiseFieldGroup>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Status</span>
+                    <span class="inline-flex items-center gap-2 text-sm">
+                        <input type="checkbox"
+                               checked="@_codeFormIsActive"
+                               @onchange="@(e => _codeFormIsActive = (bool)(e.Value ?? false))"
+                               disabled="@_isMutating" />
+                        Active
+                    </span>
+                </label>
+            </AiseFormGrid>
+
+            <div class="citus-form-field">
+                <div class="mb-2 flex items-center justify-between gap-3">
+                    <span class="citus-form-field__label">Included tax rules</span>
+                    <CitusButton LeadingIcon="IconName.Plus"
+                                 Variant="CitusButtonVariant.Default"
+                                 Size="CitusButtonSize.Small"
+                                 Disabled="@(_isMutating || _rules.Count == 0)"
+                                 OnClick="AddCodeLine">
+                        Add rule
+                    </CitusButton>
+                </div>
+
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Tax rule</th>
+                            <th class="text-right" style="width: 7rem">Rate</th>
+                            <th style="width: 12rem">Applies to</th>
+                            <th style="width: 12rem">Recoverability</th>
+                            <th style="width: 6rem"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < _codeFormLines.Count; i++)
+                        {
+                            var line = _codeFormLines[i];
+                            var index = i;
+                            var selectedRule = FindRule(line.TaxRuleId);
+                            <tr>
+                                <td>
+                                    <select class="citus-form-field__input"
+                                            value="@FormatGuid(line.TaxRuleId)"
+                                            @onchange="@(e => SetLineRule(line, e.Value?.ToString()))"
+                                            disabled="@_isMutating">
+                                        <option value="">Select tax rule...</option>
+                                        @foreach (var rule in AvailableRulesForLine(line))
+                                        {
+                                            <option value="@rule.Id.ToString("D")">@rule.Code - @rule.Name</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td class="text-right">@FormatRate(selectedRule?.CurrentRatePercent ?? 0m)</td>
+                                <td>@(selectedRule is null ? "-" : HumanizeAppliesTo(selectedRule.AppliesTo))</td>
+                                <td>@(selectedRule is null ? "-" : HumanizeRecoverability(selectedRule.Recoverability))</td>
+                                <td>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@(_isMutating || _codeFormLines.Count == 1)"
+                                                 OnClick="@(() => RemoveCodeLine(index))">
+                                        Remove
+                                    </CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                <span class="text-fg-subtle text-xs mt-2 block">
+                    A Tax Code is selected on documents. It stores the combination order; rate, applicability, recoverability, accounts, and registration come from the referenced Tax Rules.
+                </span>
+            </div>
+
+            <AiseButtonGroup>
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             HtmlType="@("submit")"
+                             Disabled="@_isMutating">
+                    @(_isMutating ? "Saving..." : "Save code")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             Disabled="@_isMutating"
+                             OnClick="CancelCodeForm">
+                    Cancel
+                </CitusButton>
+            </AiseButtonGroup>
+        </form>
+    </AiseFormSection>
 }
 
 @code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Settings",
-        Title = "Tax rates",
-        Subtitle = "Per-company tax-code catalog. Used by journal entry, invoice, and bill surfaces."
+        Title = "Sales Tax",
+        Subtitle = "Build single Tax Rules first, then combine them into transaction-facing Tax Codes."
     };
 
     private bool _isLoading = true;
     private bool _isMutating;
-    private bool _isFormOpen;
     private bool _includeInactive;
-    private Guid? _editingId;
-    private string _formCode = string.Empty;
-    private string _formName = string.Empty;
-    private decimal? _formRate = 0m;
-    private string _formAppliesTo = "both";
-    private string _formRegistrationNumber = string.Empty;
-    private bool _formIsActive = true;
+    private Guid? _expandedId;
 
-    private List<TaxCodeSummary> _rows = new();
+    private bool _isRuleFormOpen;
+    private Guid? _editingRuleId;
+    private string _ruleFormCode = string.Empty;
+    private string _ruleFormName = string.Empty;
+    private string _ruleFormTaxType = "sales_tax";
+    private string _ruleFormAppliesTo = "both";
+    private string _ruleFormTreatment = "taxable";
+    private string _ruleFormRecoverability = "recoverable";
+    private decimal _ruleFormRatePercent;
+    private Guid? _ruleFormPayableAccountId;
+    private Guid? _ruleFormRecoverableAccountId;
+    private string _ruleFormRegistrationNumber = string.Empty;
+    private bool _ruleFormIsActive = true;
+
+    private bool _isCodeFormOpen;
+    private Guid? _editingCodeId;
+    private string _codeFormCode = string.Empty;
+    private string _codeFormName = string.Empty;
+    private bool _codeFormIsActive = true;
+    private List<SalesTaxCodeLineFormModel> _codeFormLines = new();
+
+    private List<SalesTaxRuleSummary> _rules = new();
+    private List<SalesTaxCodeSummary> _codes = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -255,8 +554,17 @@
         _isLoading = true;
         try
         {
-            var rows = await TaxCodeClient.ListAsync(includeInactive: _includeInactive);
-            _rows = rows.OrderByDescending(r => r.IsActive).ThenBy(r => r.Code).ToList();
+            var rulesTask = SalesTaxClient.ListRulesAsync(includeInactive: _includeInactive);
+            var codesTask = SalesTaxClient.ListCodesAsync(includeInactive: _includeInactive);
+            await Task.WhenAll(rulesTask, codesTask);
+            _rules = rulesTask.Result
+                .OrderByDescending(rule => rule.IsActive)
+                .ThenBy(rule => rule.Code)
+                .ToList();
+            _codes = codesTask.Result
+                .OrderByDescending(code => code.IsActive)
+                .ThenBy(code => code.Code)
+                .ToList();
         }
         finally
         {
@@ -270,90 +578,139 @@
         await LoadAsync();
     }
 
-    private void StartCreating()
+    private void StartCreatingRule()
     {
-        _editingId = null;
-        _formCode = string.Empty;
-        _formName = string.Empty;
-        _formRate = 0m;
-        _formAppliesTo = "both";
-        _formRegistrationNumber = string.Empty;
-        _formIsActive = true;
-        _isFormOpen = true;
+        _isCodeFormOpen = false;
+        _editingRuleId = null;
+        _ruleFormCode = string.Empty;
+        _ruleFormName = string.Empty;
+        _ruleFormTaxType = "sales_tax";
+        _ruleFormAppliesTo = "both";
+        _ruleFormTreatment = "taxable";
+        _ruleFormRecoverability = "recoverable";
+        _ruleFormRatePercent = 0m;
+        _ruleFormPayableAccountId = null;
+        _ruleFormRecoverableAccountId = null;
+        _ruleFormRegistrationNumber = string.Empty;
+        _ruleFormIsActive = true;
+        _isRuleFormOpen = true;
     }
 
-    private void StartEditing(TaxCodeSummary row)
+    private void StartEditingRule(SalesTaxRuleSummary rule)
     {
-        _editingId = row.Id;
-        _formCode = row.Code;
-        _formName = row.Name;
-        _formRate = row.RatePercent;
-        _formAppliesTo = row.AppliesTo;
-        _formRegistrationNumber = row.RegistrationNumber ?? string.Empty;
-        _formIsActive = row.IsActive;
-        _isFormOpen = true;
+        _isCodeFormOpen = false;
+        _editingRuleId = rule.Id;
+        _ruleFormCode = rule.Code;
+        _ruleFormName = rule.Name;
+        _ruleFormTaxType = rule.TaxType;
+        _ruleFormAppliesTo = rule.AppliesTo;
+        _ruleFormTreatment = rule.Treatment;
+        _ruleFormRecoverability = rule.Recoverability == "recoverable" ? "recoverable" : "non_recoverable";
+        _ruleFormRatePercent = rule.CurrentRatePercent;
+        _ruleFormPayableAccountId = rule.PayableAccountId;
+        _ruleFormRecoverableAccountId = rule.RecoverableAccountId;
+        _ruleFormRegistrationNumber = rule.RegistrationNumber ?? string.Empty;
+        _ruleFormIsActive = rule.IsActive;
+        _isRuleFormOpen = true;
     }
 
-    private void CancelForm()
+    private void CancelRuleForm()
     {
-        _isFormOpen = false;
-        _editingId = null;
+        _isRuleFormOpen = false;
+        _editingRuleId = null;
     }
 
-    private async Task OnSaveAsync()
+    private void OnRuleRecoverabilityChanged(ChangeEventArgs args)
+    {
+        _ruleFormRecoverability = args.Value?.ToString() ?? "recoverable";
+        if (_ruleFormRecoverability != "recoverable")
+        {
+            _ruleFormRecoverableAccountId = null;
+        }
+    }
+
+    private Task SetRulePayableAccount(AccountSummary account)
+    {
+        _ruleFormPayableAccountId = account.Id;
+        return Task.CompletedTask;
+    }
+
+    private Task ClearRulePayableAccount()
+    {
+        _ruleFormPayableAccountId = null;
+        return Task.CompletedTask;
+    }
+
+    private Task SetRuleRecoverableAccount(AccountSummary account)
+    {
+        _ruleFormRecoverableAccountId = account.Id;
+        return Task.CompletedTask;
+    }
+
+    private Task ClearRuleRecoverableAccount()
+    {
+        _ruleFormRecoverableAccountId = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnSaveRuleAsync()
     {
         if (_isMutating) return;
-
-        if (string.IsNullOrWhiteSpace(_formCode))
+        if (string.IsNullOrWhiteSpace(_ruleFormCode))
         {
-            await Message.WarningAsync("Code is required.");
+            await Message.WarningAsync("Tax rule is required.");
             return;
         }
-        if (string.IsNullOrWhiteSpace(_formName))
+        if (string.IsNullOrWhiteSpace(_ruleFormName))
         {
-            await Message.WarningAsync("Name is required.");
+            await Message.WarningAsync("Rule name is required.");
             return;
         }
-        var rate = _formRate ?? 0m;
-        if (rate < 0m || rate > 100m)
+        if (_ruleFormRatePercent < 0m || _ruleFormRatePercent > 100m)
         {
-            await Message.WarningAsync("Rate must be between 0 and 100.");
+            await Message.WarningAsync("Rule rate must be between 0 and 100.");
             return;
         }
-        if (string.IsNullOrWhiteSpace(_formRegistrationNumber))
+        if (_ruleFormRatePercent > 0m && _ruleFormPayableAccountId is null)
         {
-            await Message.WarningAsync("Tax registration number is required.");
+            await Message.WarningAsync("Tax account is required.");
+            return;
+        }
+        if (_ruleFormRecoverability == "recoverable" && _ruleFormRatePercent > 0m && _ruleFormRecoverableAccountId is null)
+        {
+            await Message.WarningAsync("Recoverable tax account is required.");
             return;
         }
 
         _isMutating = true;
         try
         {
-            var registration = _formRegistrationNumber.Trim();
-            var payload = new TaxCodeUpsertPayload(
-                Code: _formCode.Trim(),
-                Name: _formName.Trim(),
-                RatePercent: rate,
-                AppliesTo: _formAppliesTo,
-                RegistrationNumber: registration,
-                IsActive: _formIsActive);
+            var payload = new SalesTaxRuleUpsertPayload(
+                Code: _ruleFormCode.Trim(),
+                Name: _ruleFormName.Trim(),
+                RatePercent: _ruleFormRatePercent,
+                TaxType: string.IsNullOrWhiteSpace(_ruleFormTaxType) ? "sales_tax" : _ruleFormTaxType.Trim(),
+                AppliesTo: _ruleFormAppliesTo,
+                Treatment: _ruleFormTreatment,
+                Recoverability: _ruleFormRecoverability,
+                PayableAccountId: _ruleFormPayableAccountId,
+                RecoverableAccountId: _ruleFormRecoverability == "recoverable" ? _ruleFormRecoverableAccountId : null,
+                RegistrationNumber: string.IsNullOrWhiteSpace(_ruleFormRegistrationNumber) ? null : _ruleFormRegistrationNumber.Trim(),
+                IsActive: _ruleFormIsActive);
 
-            TaxCodeMutationOutcome outcome = _editingId is null
-                ? await TaxCodeClient.CreateAsync(payload)
-                : await TaxCodeClient.UpdateAsync(_editingId.Value, payload);
-
+            var outcome = _editingRuleId is null
+                ? await SalesTaxClient.CreateRuleAsync(payload)
+                : await SalesTaxClient.UpdateRuleAsync(_editingRuleId.Value, payload);
             if (!outcome.Succeeded)
             {
-                await Message.WarningAsync(string.IsNullOrWhiteSpace(outcome.ErrorMessage)
-                    ? "Unable to save tax code."
-                    : outcome.ErrorMessage);
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to save tax rule.");
                 return;
             }
 
-            _isFormOpen = false;
-            _editingId = null;
+            _isRuleFormOpen = false;
+            _editingRuleId = null;
             await LoadAsync();
-            await Message.SuccessAsync(_editingId is null ? "Tax code created." : "Tax code updated.");
+            await Message.SuccessAsync("Tax rule saved.");
         }
         finally
         {
@@ -361,26 +718,226 @@
         }
     }
 
-    private async Task ToggleActiveAsync(TaxCodeSummary row)
+    private async Task ToggleRuleActiveAsync(SalesTaxRuleSummary rule)
     {
         if (_isMutating) return;
         _isMutating = true;
         try
         {
-            var outcome = await TaxCodeClient.SetActiveAsync(row.Id, !row.IsActive);
+            var payload = new SalesTaxRuleUpsertPayload(
+                Code: rule.Code,
+                Name: rule.Name,
+                RatePercent: rule.CurrentRatePercent,
+                TaxType: rule.TaxType,
+                AppliesTo: rule.AppliesTo,
+                Treatment: rule.Treatment,
+                Recoverability: rule.Recoverability,
+                PayableAccountId: rule.PayableAccountId,
+                RecoverableAccountId: rule.RecoverableAccountId,
+                RegistrationNumber: rule.RegistrationNumber,
+                IsActive: !rule.IsActive);
+            var outcome = await SalesTaxClient.UpdateRuleAsync(rule.Id, payload);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to update tax rule status.");
+                return;
+            }
+
+            await LoadAsync();
+            await Message.SuccessAsync(rule.IsActive ? "Tax rule deactivated." : "Tax rule activated.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private void StartCreatingCode()
+    {
+        _isRuleFormOpen = false;
+        _editingCodeId = null;
+        _codeFormCode = string.Empty;
+        _codeFormName = string.Empty;
+        _codeFormIsActive = true;
+        _codeFormLines = new List<SalesTaxCodeLineFormModel> { CreateDefaultCodeLine() };
+        _isCodeFormOpen = true;
+    }
+
+    private void StartEditingCode(SalesTaxCodeSummary code)
+    {
+        _isRuleFormOpen = false;
+        _editingCodeId = code.Id;
+        _codeFormCode = code.Code;
+        _codeFormName = code.Name;
+        _codeFormIsActive = code.IsActive;
+        _codeFormLines = code.Components.Count == 0
+            ? new List<SalesTaxCodeLineFormModel> { CreateDefaultCodeLine() }
+            : code.Components
+                .OrderBy(component => component.Sequence)
+                .Select(component => new SalesTaxCodeLineFormModel
+                {
+                    TaxRuleId = component.TaxComponentId,
+                    AppliesTo = component.AppliesTo,
+                    RegistrationNumber = component.RegistrationNumber ?? code.RegistrationNumber ?? string.Empty,
+                })
+                .ToList();
+        _isCodeFormOpen = true;
+    }
+
+    private void CancelCodeForm()
+    {
+        _isCodeFormOpen = false;
+        _editingCodeId = null;
+    }
+
+    private void AddCodeLine()
+    {
+        _codeFormLines.Add(CreateDefaultCodeLine());
+    }
+
+    private void RemoveCodeLine(int index)
+    {
+        if (_codeFormLines.Count <= 1 || index < 0 || index >= _codeFormLines.Count)
+        {
+            return;
+        }
+
+        _codeFormLines.RemoveAt(index);
+    }
+
+    private async Task OnSaveCodeAsync()
+    {
+        if (_isMutating) return;
+        if (string.IsNullOrWhiteSpace(_codeFormCode))
+        {
+            await Message.WarningAsync("Tax code is required.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_codeFormName))
+        {
+            await Message.WarningAsync("Tax code name is required.");
+            return;
+        }
+        if (_codeFormLines.Count == 0 || _codeFormLines.Any(line => line.TaxRuleId is null))
+        {
+            await Message.WarningAsync("Every tax code line must select a tax rule.");
+            return;
+        }
+        if (_codeFormLines.GroupBy(line => line.TaxRuleId).Any(group => group.Count() > 1))
+        {
+            await Message.WarningAsync("A tax code cannot include the same tax rule more than once.");
+            return;
+        }
+
+        _isMutating = true;
+        try
+        {
+            var payload = new SalesTaxCodeUpsertPayload(
+                Code: _codeFormCode.Trim(),
+                Name: _codeFormName.Trim(),
+                IsActive: _codeFormIsActive,
+                Components: _codeFormLines.Select(ToCodeComponentPayload).ToArray());
+
+            var outcome = _editingCodeId is null
+                ? await SalesTaxClient.CreateCodeAsync(payload)
+                : await SalesTaxClient.UpdateCodeAsync(_editingCodeId.Value, payload);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to save tax code.");
+                return;
+            }
+
+            _isCodeFormOpen = false;
+            _editingCodeId = null;
+            await LoadAsync();
+            await Message.SuccessAsync("Tax code saved.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private async Task ToggleCodeActiveAsync(SalesTaxCodeSummary code)
+    {
+        if (_isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var payload = BuildCodePayload(code, !code.IsActive);
+            var outcome = await SalesTaxClient.UpdateCodeAsync(code.Id, payload);
             if (!outcome.Succeeded)
             {
                 await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to update tax code status.");
                 return;
             }
+
             await LoadAsync();
-            await Message.SuccessAsync(row.IsActive ? "Tax code deactivated." : "Tax code activated.");
+            await Message.SuccessAsync(code.IsActive ? "Tax code deactivated." : "Tax code activated.");
         }
         finally
         {
             _isMutating = false;
         }
     }
+
+    private SalesTaxCodeUpsertPayload BuildCodePayload(SalesTaxCodeSummary code, bool isActive) =>
+        new(
+            Code: code.Code,
+            Name: code.Name,
+            IsActive: isActive,
+            Components: code.Components
+                .OrderBy(component => component.Sequence)
+                .Select(component => new SalesTaxCodeComponentUpsertPayload(
+                    RatePercent: component.RatePercent,
+                    TaxType: component.TaxType,
+                    Recoverability: component.Recoverability,
+                    AppliesTo: component.AppliesTo,
+                    RegistrationNumber: component.RegistrationNumber,
+                    TaxRuleId: component.TaxComponentId))
+                .ToArray());
+
+    private SalesTaxCodeComponentUpsertPayload ToCodeComponentPayload(SalesTaxCodeLineFormModel line)
+    {
+        var rule = FindRule(line.TaxRuleId)
+            ?? throw new InvalidOperationException("Tax rule selection is invalid.");
+        return new SalesTaxCodeComponentUpsertPayload(
+            RatePercent: rule.CurrentRatePercent,
+            TaxType: rule.TaxType,
+            Recoverability: rule.Recoverability,
+            AppliesTo: rule.AppliesTo,
+            RegistrationNumber: rule.RegistrationNumber,
+            TaxRuleId: rule.Id);
+    }
+
+    private SalesTaxCodeLineFormModel CreateDefaultCodeLine()
+    {
+        var rule = _rules.FirstOrDefault(row => row.IsActive) ?? _rules.FirstOrDefault();
+        return new SalesTaxCodeLineFormModel
+        {
+            TaxRuleId = rule?.Id,
+            AppliesTo = "both"
+        };
+    }
+
+    private IEnumerable<SalesTaxRuleSummary> AvailableRulesForLine(SalesTaxCodeLineFormModel line) =>
+        _rules.Where(rule => rule.IsActive || rule.Id == line.TaxRuleId);
+
+    private SalesTaxRuleSummary? FindRule(Guid? id) =>
+        id is Guid value ? _rules.FirstOrDefault(rule => rule.Id == value) : null;
+
+    private static void SetLineRule(SalesTaxCodeLineFormModel line, string? value)
+    {
+        line.TaxRuleId = Guid.TryParse(value, out var id) ? id : null;
+    }
+
+    private void ToggleExpanded(Guid id) =>
+        _expandedId = _expandedId == id ? null : id;
+
+    private bool IsExpanded(Guid id) => _expandedId == id;
+
+    private static string FormatGuid(Guid? value) =>
+        value?.ToString("D") ?? string.Empty;
 
     private static string FormatRate(decimal ratePercent) =>
         ratePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
@@ -392,4 +949,31 @@
         "both" => "Sales + purchases",
         _ => appliesTo,
     };
+
+    private static string HumanizeTreatment(string treatment) => treatment switch
+    {
+        "taxable" => "Taxable",
+        "zero_rated" => "Zero-rated",
+        "exempt" => "Exempt",
+        "out_of_scope" => "Out of scope",
+        "reverse_charge" => "Reverse charge",
+        "import_tax" => "Import tax",
+        _ => treatment,
+    };
+
+    private static string HumanizeRecoverability(string recoverability) => recoverability switch
+    {
+        "recoverable" => "Recoverable",
+        "partially_recoverable" => "Partially recoverable",
+        "non_recoverable" => "Non-recoverable",
+        "not_applicable" => "Not applicable",
+        _ => recoverability,
+    };
+
+    private sealed class SalesTaxCodeLineFormModel
+    {
+        public Guid? TaxRuleId { get; set; }
+        public string AppliesTo { get; set; } = "both";
+        public string RegistrationNumber { get; set; } = string.Empty;
+    }
 }

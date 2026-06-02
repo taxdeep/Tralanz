@@ -36,11 +36,9 @@
         <RadzenDataGrid TItem="BillRow"
                         Data="@_rows"
                         AllowSorting="true"
-                        AllowFiltering="true"
                         AllowColumnResize="true"
                         AllowPaging="true"
                         PageSize="50"
-                        FilterMode="FilterMode.Simple"
                         class="citus-radzen-grid">
             <Columns>
                 <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.BillNumber)" Title="Bill #" Width="180px">

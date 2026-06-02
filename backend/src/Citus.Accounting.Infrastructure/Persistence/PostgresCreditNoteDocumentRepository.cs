@@ -156,7 +156,43 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                            l.line_amount,
                            l.tax_amount,
                            l.tax_code_id,
-                           tc.payable_account_id
+                           case
+                             when l.tax_amount > 0 then coalesce(
+                               (
+                                 select stm.payable_account_id
+                                   from sales_tax_code_components tcc
+                              left join sales_tax_account_mappings stm
+                                     on stm.company_id = tcc.company_id
+                                    and stm.tax_component_id = tcc.tax_component_id
+                                    and stm.applies_to in ('sales', 'both')
+                                    and stm.payable_account_id is not null
+                                  where tcc.company_id = l.company_id::text
+                                    and tcc.tax_code_id = l.tax_code_id
+                                    and coalesce(tcc.applies_to, tc.applies_to, 'both') in ('sales', 'both')
+                               order by tcc.sequence, stm.updated_at desc, stm.created_at desc
+                                  limit 1
+                               ),
+                               tc.payable_account_id,
+                               (
+                                 select a.id
+                                   from accounts a
+                                  where a.company_id = l.company_id
+                                    and a.root_type = 'liability'
+                                    and a.detail_type = 'tax'
+                                    and a.is_active = true
+                               order by
+                                    case
+                                      when a.system_key = 'tax:payable' then 0
+                                      when a.system_role = 'tax_payable' then 1
+                                      when a.code = '25000' then 2
+                                      when a.name ilike '%Sales Tax Payable%' then 3
+                                      else 4
+                                    end,
+                                    a.code
+                                  limit 1
+                               ))
+                             else tc.payable_account_id
+                           end as payable_account_id
                          from credit_note_lines l
                          left join tax_codes tc
                            on tc.id = l.tax_code_id

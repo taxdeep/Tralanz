@@ -90,7 +90,7 @@
         else
         {
             @* SPIKE: Radzen DataGrid replaces the plain HTML table for the
-               Trial Balance. Goal — evaluate sort / filter / paging /
+               Trial Balance. Goal — evaluate sort / paging /
                column resize / virtualization quality on a real report
                that ships in Citus, before deciding whether to broaden
                Radzen's footprint. The rest of the page (P&L, Balance
@@ -99,11 +99,9 @@
             <RadzenDataGrid TItem="TrialBalanceAccountSummary"
                             Data="@_trialBalance.Rows"
                             AllowSorting="true"
-                            AllowFiltering="true"
                             AllowColumnResize="true"
                             AllowPaging="true"
                             PageSize="50"
-                            FilterMode="FilterMode.Simple"
                             class="citus-radzen-grid">
                 <Columns>
                     <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
@@ -132,8 +130,7 @@
                     <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
                                           Title="Status"
                                           Width="120px"
-                                          Sortable="false"
-                                          Filterable="false">
+                                          Sortable="false">
                         <Template Context="row">
                             @(row.IsActive ? "Active" : "Inactive")
                             @if (row.IsSystem)
@@ -399,11 +396,9 @@
                 <RadzenDataGrid TItem="ArAgingCustomerSummary"
                                 Data="@_arAging.CustomerRows"
                                 AllowSorting="true"
-                                AllowFiltering="true"
                                 AllowColumnResize="true"
                                 AllowPaging="true"
                                 PageSize="50"
-                                FilterMode="FilterMode.Simple"
                                 class="citus-radzen-grid">
                     <Columns>
                         <RadzenDataGridColumn TItem="ArAgingCustomerSummary"
@@ -452,11 +447,9 @@
                 <RadzenDataGrid TItem="ArAgingOpenItemSummary"
                                 Data="@_arAging.DetailRows"
                                 AllowSorting="true"
-                                AllowFiltering="true"
                                 AllowColumnResize="true"
                                 AllowPaging="true"
                                 PageSize="100"
-                                FilterMode="FilterMode.Simple"
                                 class="citus-radzen-grid">
                     <Columns>
                         <RadzenDataGridColumn TItem="ArAgingOpenItemSummary" Property="@nameof(ArAgingOpenItemSummary.CustomerDisplayName)" Title="Customer">
@@ -576,11 +569,9 @@
                 <RadzenDataGrid TItem="ApAgingVendorSummary"
                                 Data="@_apAging.VendorRows"
                                 AllowSorting="true"
-                                AllowFiltering="true"
                                 AllowColumnResize="true"
                                 AllowPaging="true"
                                 PageSize="50"
-                                FilterMode="FilterMode.Simple"
                                 class="citus-radzen-grid">
                     <Columns>
                         <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.VendorDisplayName)" Title="Vendor">
@@ -625,11 +616,9 @@
                 <RadzenDataGrid TItem="ApAgingOpenItemSummary"
                                 Data="@_apAging.DetailRows"
                                 AllowSorting="true"
-                                AllowFiltering="true"
                                 AllowColumnResize="true"
                                 AllowPaging="true"
                                 PageSize="100"
-                                FilterMode="FilterMode.Simple"
                                 class="citus-radzen-grid">
                     <Columns>
                         <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.VendorDisplayName)" Title="Vendor">

@@ -1,0 +1,182 @@
+<Window x:Class="Aiseworks.DesktopShell.ConnectionSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Connection Settings"
+        Width="560"
+        Height="620"
+        MinWidth="520"
+        MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
+    <Window.Resources>
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#1F2937" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="BorderBrush" Value="#CBD5E1" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="MinWidth" Value="92" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="14,0" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Background="#F8FAFC">
+        <Border DockPanel.Dock="Top"
+                Background="#FFFFFF"
+                BorderBrush="#E5E7EB"
+                BorderThickness="0,0,0,1"
+                Padding="18,16">
+            <StackPanel>
+                <TextBlock FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="#111827"
+                           Text="Connection Settings" />
+                <TextBlock x:Name="PermissionTextBlock"
+                           Margin="0,6,0,0"
+                           Foreground="#64748B"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom"
+                Background="#FFFFFF"
+                BorderBrush="#E5E7EB"
+                BorderThickness="0,1,0,0"
+                Padding="18,12">
+            <DockPanel>
+                <TextBlock x:Name="ValidationTextBlock"
+                           DockPanel.Dock="Left"
+                           VerticalAlignment="Center"
+                           Foreground="#B91C1C"
+                           TextWrapping="Wrap" />
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right">
+                    <Button x:Name="CancelButton"
+                            Margin="0,0,8,0"
+                            Click="CancelButton_Click"
+                            Content="Close" />
+                    <Button x:Name="SaveButton"
+                            Background="#2563EB"
+                            BorderBrush="#2563EB"
+                            Foreground="#FFFFFF"
+                            Click="SaveButton_Click"
+                            Content="Save" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="18">
+                <Border Background="#FFFFFF"
+                        BorderBrush="#E5E7EB"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="140" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   Grid.ColumnSpan="3"
+                                   Style="{StaticResource FieldLabelStyle}"
+                                   Text="Server IP / Host" />
+                        <TextBox x:Name="HostTextBox"
+                                 Grid.Row="1"
+                                 Grid.Column="0"
+                                 Grid.ColumnSpan="3" />
+
+                        <TextBlock Grid.Row="3"
+                                   Grid.Column="0"
+                                   Style="{StaticResource FieldLabelStyle}"
+                                   Text="Business UI port" />
+                        <TextBlock Grid.Row="3"
+                                   Grid.Column="2"
+                                   Style="{StaticResource FieldLabelStyle}"
+                                   Text="Accounting API" />
+                        <TextBox x:Name="BusinessPortTextBox"
+                                 Grid.Row="4"
+                                 Grid.Column="0" />
+                        <TextBox x:Name="AccountingApiPortTextBox"
+                                 Grid.Row="4"
+                                 Grid.Column="2" />
+
+                        <TextBlock Grid.Row="6"
+                                   Grid.Column="0"
+                                   Style="{StaticResource FieldLabelStyle}"
+                                   Text="SysAdmin UI port" />
+                        <TextBlock Grid.Row="6"
+                                   Grid.Column="2"
+                                   Style="{StaticResource FieldLabelStyle}"
+                                   Text="SysAdmin API" />
+                        <TextBox x:Name="SysAdminPortTextBox"
+                                 Grid.Row="7"
+                                 Grid.Column="0" />
+                        <TextBox x:Name="SysAdminApiPortTextBox"
+                                 Grid.Row="7"
+                                 Grid.Column="2" />
+
+                        <TextBlock Grid.Row="9"
+                                   Grid.Column="0"
+                                   Style="{StaticResource FieldLabelStyle}"
+                                   Text="Postgres port" />
+                        <TextBox x:Name="PostgresPortTextBox"
+                                 Grid.Row="10"
+                                 Grid.Column="0" />
+
+                        <TextBlock Grid.Row="12"
+                                   Grid.Column="0"
+                                   Grid.ColumnSpan="3"
+                                   Style="{StaticResource FieldLabelStyle}"
+                                   Text="Derived endpoints" />
+                        <TextBlock x:Name="DerivedEndpointsTextBlock"
+                                   Grid.Row="13"
+                                   Grid.Column="0"
+                                   Grid.ColumnSpan="3"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   Foreground="#475569"
+                                   TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+
+                <TextBox x:Name="DetailsTextBox"
+                         Margin="0,14,0,0"
+                         MinHeight="140"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         IsReadOnly="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

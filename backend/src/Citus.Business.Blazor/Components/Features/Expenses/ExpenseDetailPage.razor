@@ -3,6 +3,7 @@
 @inject BusinessShellState ShellState
 @inject ExpenseClient ExpenseClient
 @inject AccountClient AccountClient
+@inject TaxCodeClient TaxCodeClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
@@ -14,6 +15,13 @@
             <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
             <span>Back to expenses</span>
         </a>
+        @if (_expense is not null)
+        {
+            <a class="citus-button citus-button--ghost" href="@($"expenses/new?copyFrom={_expense.Id:D}")">
+                <CitusIcon Name="IconName.FileText" Size="IconSize.Inline" />
+                <span>Copy</span>
+            </a>
+        }
     </Actions>
 </CitusPageHeader>
 
@@ -47,37 +55,40 @@ else
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
     </div>
 
-    <section class="citus-panel mb-6">
-        <h2 class="citus-panel__title">Actions</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-            @* Copy A3 Phase 1: secondary actions collapse into the More
-               menu. Copy is always available (even on voided expenses —
-               you may want to revive the spend with corrections); Void
-               only available on posted (server still re-checks). The
-               Void label intentionally NOT promoted to a top-level
-               button so the action bar stays single-row uncluttered. *@
-            <CitusMoreMenu Items="@_moreItems" />
+    <AiseFormSection Title="Actions" Class="mb-6">
+        <AiseButtonGroup>
+            @if (_expense.Status == "posted")
+            {
+                <a class="citus-button citus-button--ghost" href="@($"expenses/new?copyFrom={_expense.Id:D}")">
+                    <CitusIcon Name="IconName.FileText" Size="IconSize.Inline" />
+                    <span>Copy</span>
+                </a>
+                <AiseConfirmDangerAction Label="Void"
+                                         Disabled="@_isMutating"
+                                         ConfirmMessage="Void this expense? This keeps the audit trail and cannot be undone from this screen."
+                                         OnConfirmed="VoidAsync" />
+            }
+            else
+            {
+                <span class="text-fg-muted text-sm">This expense is voided. No further actions.</span>
+            }
             @if (_expense.SourcePurchaseOrderId is { } poId)
             {
                 <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{poId:D}")">View source PO</a>
             }
-            @if (_expense.Status != "posted")
-            {
-                <span class="text-fg-muted text-sm">This expense is voided.</span>
-            }
-        </div>
-    </section>
+        </AiseButtonGroup>
+    </AiseFormSection>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Lines</h2>
+            <AiseFormSection Title="Lines">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
                             <th style="width: 3rem">#</th>
                             <th>Category</th>
                             <th>Description</th>
+                            <th style="width: 7rem">Tax</th>
                             <th class="text-right" style="width: 5rem">Qty</th>
                             <th class="text-right" style="width: 7rem">Rate</th>
                             <th class="text-right" style="width: 8rem">Amount</th>
@@ -90,6 +101,7 @@ else
                                 <td>@line.Sequence</td>
                                 <td>@ResolveAccountLabel(line.ExpenseAccountId)</td>
                                 <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td>@ResolveTaxCodeLabel(line.TaxCodeId)</td>
                                 <td class="text-right">@line.Quantity.ToString("0.##")</td>
                                 <td class="text-right">@line.UnitPrice.ToString("0.0000")</td>
                                 <td class="text-right">@line.LineTotal.ToString("N2")</td>
@@ -97,12 +109,11 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
 
             @if (!string.IsNullOrWhiteSpace(_expense.Memo) || !string.IsNullOrWhiteSpace(_expense.InternalNote))
             {
-                <section class="citus-panel mt-6">
-                    <h2 class="citus-panel__title">Notes</h2>
+                <AiseFormSection Title="Notes" Class="mt-6">
                     <table class="citus-keyvalue">
                         <tbody>
                             @if (!string.IsNullOrWhiteSpace(_expense.Memo))
@@ -115,13 +126,12 @@ else
                             }
                         </tbody>
                     </table>
-                </section>
+                </AiseFormSection>
             }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Payment</h2>
+            <AiseFormSection Title="Payment">
                 <table class="citus-keyvalue">
                     <tbody>
                         <tr><th>Payee</th><td>@(string.IsNullOrEmpty(_expense.PayeeNameFreeform) ? "—" : _expense.PayeeNameFreeform)</td></tr>
@@ -142,10 +152,9 @@ else
                         <tr><th>Source PO</th><td>@(string.IsNullOrEmpty(_expense.SourcePurchaseOrderNumber) ? "—" : _expense.SourcePurchaseOrderNumber)</td></tr>
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
 
-            <section class="citus-panel">
-                <h2 class="citus-panel__title">Totals</h2>
+            <AiseFormSection Title="Totals">
                 <table class="citus-keyvalue">
                     <tbody>
                         <tr><th>Subtotal</th><td class="text-right">@_expense.SubtotalAmount.ToString("N2")</td></tr>
@@ -158,7 +167,7 @@ else
                         }
                     </tbody>
                 </table>
-            </section>
+            </AiseFormSection>
         </aside>
     </div>
 }
@@ -168,6 +177,7 @@ else
 
     private ExpenseRecordDto? _expense;
     private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
+    private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
     private bool _isLoading = true;
     private bool _isMutating;
     private string? _error;
@@ -193,9 +203,11 @@ else
         {
             var expenseTask = ExpenseClient.GetByIdAsync(ExpenseId);
             var accountsTask = AccountClient.ListAsync();
-            await Task.WhenAll(expenseTask, accountsTask);
+            var taxCodesTask = TaxCodeClient.ListAsync(appliesTo: "purchase", includeInactive: true);
+            await Task.WhenAll(expenseTask, accountsTask, taxCodesTask);
             _expense = expenseTask.Result;
             _accounts = accountsTask.Result;
+            _taxCodes = taxCodesTask.Result;
             ApplyHeader();
         }
         finally { _isLoading = false; }
@@ -224,6 +236,17 @@ else
         return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
     }
 
+    private string ResolveTaxCodeLabel(Guid? taxCodeId)
+    {
+        if (taxCodeId is not { } id)
+        {
+            return "-";
+        }
+
+        var taxCode = _taxCodes.FirstOrDefault(t => t.Id == id);
+        return taxCode is null ? id.ToString("D")[..8] : taxCode.Code;
+    }
+
     private async Task VoidAsync()
     {
         if (_expense is null || _isMutating) return;
@@ -243,37 +266,6 @@ else
         }
         finally { _isMutating = false; }
     }
-
-    // Copy A3 Phase 1: navigate to the Create page with the source id
-    // as a query param. The Create page hydrates its form fields from
-    // the source's ExpenseRecordDto and resets the payment date to
-    // today. We deliberately don't gate Copy on the status — copying a
-    // voided expense is a valid workflow ("re-issue with corrections")
-    // and the new entity is independent of the source's state.
-    private void CopyAsync()
-    {
-        if (_expense is null) return;
-        Navigation.NavigateTo($"expenses/new?copyFrom={_expense.Id:D}");
-    }
-
-    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _expense is null
-        ? Array.Empty<CitusMoreMenuItem>()
-        : new[]
-        {
-            new CitusMoreMenuItem
-            {
-                Label = "Copy",
-                OnClick = EventCallback.Factory.Create(this, CopyAsync),
-                Disabled = _isMutating
-            },
-            new CitusMoreMenuItem
-            {
-                Label = "Void",
-                Danger = true,
-                Disabled = _expense.Status != "posted" || _isMutating,
-                OnClick = EventCallback.Factory.Create(this, VoidAsync)
-            }
-        };
 
     private static string HumanizeStatus(string status) => status switch
     {

@@ -4821,8 +4821,23 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     border: 1px solid var(--citus-color-border);
 }
 
+.aise-invoice-table-wrap:focus-within {
+    overflow: visible;
+    position: relative;
+    z-index: 20;
+}
+
 .aise-invoice-table {
     min-width: 72rem;
+}
+
+.aise-invoice-table .citus-tax-picker:focus-within,
+.aise-invoice-table .unity-picker:focus-within {
+    z-index: 120;
+}
+
+.aise-invoice-table .citus-tax-picker__panel {
+    min-width: 16rem;
 }
 
 .aise-invoice-line-actions {

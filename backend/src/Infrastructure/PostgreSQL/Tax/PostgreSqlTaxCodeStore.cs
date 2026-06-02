@@ -10,7 +10,7 @@ namespace Infrastructure.PostgreSQL.Tax;
 ///
 /// Schema compatibility: <c>EnsureSchemaAsync</c> uses CREATE TABLE
 /// IF NOT EXISTS with the full migration-draft column set, so a deploy
-/// that already loaded CITUS_POSTGRESQL_MIGRATION_DRAFT.sql sees a
+/// that already loaded TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql sees a
 /// no-op and a fresh dev database gets the same shape. Inserts supply
 /// safe defaults for the columns the V1 UI does not yet expose
 /// (entity_number, recoverability_mode, is_recoverable_on_purchase,

@@ -15,6 +15,9 @@ public sealed record InventoryItemUpsertHttpRequest(
     string? Description,
     string ItemKind,
     string? StockUomCode,
+    string? BaseUomCode,
+    string? SalesUomCode,
+    string? PurchaseUomCode,
     string? ManageInventoryMethod,
     string? DefaultCostingMethod,
     string? BackorderMode,
@@ -29,6 +32,13 @@ public sealed record InventoryItemUpsertHttpRequest(
     decimal? DefaultPurchasePrice,
     Guid? DefaultSalesTaxCodeId,
     Guid? DefaultPurchaseTaxCodeId);
+
+public sealed record CompanyUomUpsertHttpRequest(
+    string UomCode,
+    string Name,
+    string? Category,
+    int DecimalPlaces,
+    bool IsActive);
 
 internal static class InventoryItemRequestMapper
 {
@@ -77,6 +87,9 @@ internal static class InventoryItemRequestMapper
             Description: request.Description,
             ItemKind: kind,
             StockUomCode: request.StockUomCode,
+            BaseUomCode: request.BaseUomCode,
+            SalesUomCode: request.SalesUomCode,
+            PurchaseUomCode: request.PurchaseUomCode,
             ManageInventoryMethod: manageMethod,
             DefaultCostingMethod: costingMethod,
             BackorderMode: backorder,
@@ -170,6 +183,9 @@ internal static class InventoryItemRequestMapper
         row.Description,
         ItemKind = FormatItemKind(row.ItemKind),
         row.StockUomCode,
+        row.BaseUomCode,
+        row.SalesUomCode,
+        row.PurchaseUomCode,
         ManageInventoryMethod = FormatManageInventoryMethod(row.ManageInventoryMethod),
         DefaultCostingMethod = FormatCostingMethod(row.DefaultCostingMethod),
         BackorderMode = FormatBackorderMode(row.BackorderMode),

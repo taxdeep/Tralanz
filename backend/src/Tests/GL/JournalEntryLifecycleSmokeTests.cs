@@ -14,6 +14,8 @@ public sealed class JournalEntryLifecycleSmokeTests
 {
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly UserId UserId = UserId.FromOrdinal(1);
+    private static readonly Guid SmokeDebitAccountId = Guid.Parse("93000000-0000-0000-0000-000000000001");
+    private static readonly Guid SmokeCreditAccountId = Guid.Parse("93000000-0000-0000-0000-000000000002");
 
     [Fact]
     public async Task VoidAsync_CreatesCompensationJournalAndMarksOriginalVoided()
@@ -354,6 +356,7 @@ public sealed class JournalEntryLifecycleSmokeTests
         var sourceReviewStore = new PostgreSqlManualJournalSourceReviewStore(connectionFactory);
 
         var companyCurrency = await companyCurrencyWorkflow.EnableCurrencyAsync(CompanyId, "CNY", UserId, CancellationToken.None);
+        await EnsureManualPostingAccountsAsync(connectionFactory, CancellationToken.None);
         var accounts = await accountCatalog.ListManualPostingAccountsAsync(CompanyId, CancellationToken.None);
         Assert.True(accounts.Count >= 2, "Expected at least two manual-posting accounts in the demo company.");
 
@@ -648,6 +651,71 @@ public sealed class JournalEntryLifecycleSmokeTests
     private static string GetConnectionString() =>
         Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
         ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+
+    private static async Task EnsureManualPostingAccountsAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            insert into accounts (
+              id,
+              company_id,
+              entity_number,
+              code,
+              name,
+              root_type,
+              detail_type,
+              is_active,
+              is_system,
+              is_system_default,
+              allow_manual_posting,
+              created_at,
+              updated_at
+            )
+            values
+              (
+                @debit_id,
+                @company_id,
+                'EN2026GL001',
+                'GLSMK-DR',
+                'Lifecycle Smoke Debit',
+                'asset',
+                'cash',
+                true,
+                false,
+                false,
+                true,
+                now(),
+                now()
+              ),
+              (
+                @credit_id,
+                @company_id,
+                'EN2026GL002',
+                'GLSMK-CR',
+                'Lifecycle Smoke Credit',
+                'revenue',
+                'revenue',
+                true,
+                false,
+                false,
+                true,
+                now(),
+                now()
+              )
+            on conflict (id) do update
+            set is_active = true,
+                allow_manual_posting = true,
+                updated_at = now();
+            """;
+        command.Parameters.AddWithValue("debit_id", SmokeDebitAccountId);
+        command.Parameters.AddWithValue("credit_id", SmokeCreditAccountId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static async Task<DateOnly> ReserveUniqueJournalDateAsync(
         PostgreSqlConnectionFactory connectionFactory,

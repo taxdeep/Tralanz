@@ -40,6 +40,9 @@ begin
     alter table inventory_documents
       add column if not exists posted_by_user_id char(7) null;
 
+    alter table inventory_documents
+      add column if not exists client_request_hash text null;
+
     create unique index if not exists ux_inventory_documents_company_document_number
       on inventory_documents (company_id, lower(document_number))
       where document_number is not null;

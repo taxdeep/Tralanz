@@ -37,11 +37,9 @@
         <RadzenDataGrid TItem="QuoteRow"
                         Data="@_rows"
                         AllowSorting="true"
-                        AllowFiltering="true"
                         AllowColumnResize="true"
                         AllowPaging="true"
                         PageSize="50"
-                        FilterMode="FilterMode.Simple"
                         class="citus-radzen-grid">
             <Columns>
                 <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.QuoteNumber)" Title="Quote ID" Width="200px">

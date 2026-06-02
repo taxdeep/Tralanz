@@ -2,8 +2,8 @@
 
 @inject BusinessShellState ShellState
 @inject ItemClient ItemClient
-@inject TaxCodeClient TaxCodeClient
 @inject UomClient UomClient
+@inject TaxCodeClient TaxCodeClient
 @inject CitusToastService Message
 @inject IOptions<FeatureFlagsOptions> FeatureFlags
 
@@ -13,9 +13,18 @@
     <Actions>
         <CitusButton Variant="CitusButtonVariant.Primary"
                      LeadingIcon="IconName.Plus"
+                     Disabled="@InventoryWritesBlocked"
                      OnClick="StartCreate">New item</CitusButton>
     </Actions>
 </CitusPageHeader>
+
+@if (InventoryExpired)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                ShowIcon="true"
+                Message="@ShellState.ModuleWriteBlockMessage(InventoryModuleKey)"
+                Class="mb-4" />
+}
 
 @if (_lastResult is not null)
 {
@@ -58,7 +67,8 @@
                    editable (no data lock-out) but new stock items can't
                    be created until the company enables Inventory. *@
                 <select class="citus-form-field__input"
-                        @bind="_draft.ItemKind">
+                        value="@_draft.ItemKind"
+                        @onchange="OnKindChanged">
                     <option value="service">Service</option>
                     <option value="non_stock">Non-stock</option>
                     <option value="drop_ship">Drop-ship</option>
@@ -90,31 +100,15 @@
                     <p class="text-fg-subtle text-xs mt-1">@KindHint(_draft.ItemKind)</p>
                 }
             </div>
-            @* UOM applies to every item kind, not just stock: service items
-               also need a UOM (hour / day / each) so Task line grids can
-               pick the right qty step. Dropdown sources from /accounting/uom
-               (per-company; seeded by the 2026-05-25 UOM foundation migration). *@
             <div>
-                <label class="text-sm font-medium block mb-1">Unit of measure</label>
-                <select class="citus-form-field__input"
-                        value="@_draft.StockUomCode"
-                        @onchange="@(e => _draft.StockUomCode = e.Value?.ToString() ?? string.Empty)">
-                    <option value="">— None —</option>
+                <label class="text-sm font-medium block mb-1">UOM</label>
+                <select class="citus-form-field__input" @bind="_draft.UomCode">
                     @foreach (var uom in _uoms)
                     {
-                        <option value="@uom.Code">
-                            @($"{uom.Code} — {uom.Name}{(uom.DecimalPrecision == 0 ? " (integer)" : "")}")
-                        </option>
+                        <option value="@uom.Code">@UomLabel(uom)</option>
                     }
                 </select>
-                @if (!string.IsNullOrWhiteSpace(_draft.StockUomCode) && _uoms.FirstOrDefault(u => u.Code == _draft.StockUomCode) is { } picked)
-                {
-                    <p class="text-fg-subtle text-xs mt-1">
-                        @(picked.DecimalPrecision == 0
-                            ? "Qty on lines will be limited to integers."
-                            : $"Qty on lines allows up to {picked.DecimalPrecision} decimal places.")
-                    </p>
-                }
+                <p class="text-fg-subtle text-xs mt-1">Used as the default unit on invoice, bill, and inventory lines.</p>
             </div>
         </div>
     </section>
@@ -299,7 +293,7 @@
     }
 
     <div class="flex gap-2 mt-4">
-        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@(_isSubmitting || InventoryWritesBlocked)" OnClick="SaveAsync">
             @(_isSubmitting ? "Saving…" : (_draft.Id == Guid.Empty ? "Save item" : "Update item"))
         </CitusButton>
         <CitusButton OnClick="CancelCreate">Cancel</CitusButton>
@@ -319,6 +313,7 @@ else
                         <th>Code</th>
                         <th>Name</th>
                         <th>Kind</th>
+                        <th>UOM</th>
                         <th class="text-right">Sales price</th>
                         <th class="text-right">Purchase price</th>
                         <th>Status</th>
@@ -332,6 +327,7 @@ else
                             <td><span class="citus-inline-code">@item.ItemCode</span></td>
                             <td>@item.Name</td>
                             <td><CitusBadge Color="@KindBadge(item.ItemKind)">@KindLabel(item.ItemKind)</CitusBadge></td>
+                            <td>@DisplayUom(item)</td>
                             <td class="text-right">@(item.DefaultSalesPrice?.ToString("N2") ?? "—")</td>
                             <td class="text-right">@(item.DefaultPurchasePrice?.ToString("N2") ?? "—")</td>
                             <td>
@@ -347,6 +343,7 @@ else
                             <td class="text-right">
                                 <CitusButton Variant="CitusButtonVariant.Ghost"
                                              Size="CitusButtonSize.Small"
+                                             Disabled="@InventoryWritesBlocked"
                                              OnClick="@(() => StartEdit(item))">Edit</CitusButton>
                             </td>
                         </tr>
@@ -358,6 +355,8 @@ else
 }
 
 @code {
+    private const string InventoryModuleKey = "inventory";
+
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Catalog",
@@ -366,15 +365,19 @@ else
     };
 
     private IReadOnlyList<ItemSummary> _items = Array.Empty<ItemSummary>();
+    private IReadOnlyList<UomSummary> _uoms = Array.Empty<UomSummary>();
     private List<TaxCodeSummary> _salesTaxCodes = new();
     private List<TaxCodeSummary> _purchaseTaxCodes = new();
-    private IReadOnlyList<UomSummary> _uoms = Array.Empty<UomSummary>();
     private ItemDraft _draft = ItemDraft.Empty();
     private bool _isLoading = true;
     private bool _isCreating;
     private bool _isSubmitting;
     private string? _validation;
     private MutationResult? _lastResult;
+
+    private bool InventoryExpired => ShellState.IsModuleExpired(InventoryModuleKey);
+
+    private bool InventoryWritesBlocked => ShellState.AreModuleWritesBlocked(InventoryModuleKey);
 
     protected override async Task OnInitializedAsync()
     {
@@ -387,7 +390,11 @@ else
         try
         {
             _items = await ItemClient.ListAsync(includeInactive: true);
-            _uoms = await UomClient.ListAsync(includeInactive: false);
+            _uoms = await UomClient.ListAsync();
+            if (_uoms.Count == 0)
+            {
+                _uoms = FallbackUoms();
+            }
             var allTax = await TaxCodeClient.ListAsync();
             _salesTaxCodes = allTax
                 .Where(t => t.IsActive && (string.Equals(t.AppliesTo, "sales", StringComparison.OrdinalIgnoreCase) ||
@@ -409,6 +416,7 @@ else
     private void StartCreate()
     {
         _draft = ItemDraft.Empty();
+        _draft.ApplyUomDefaults();
         _isCreating = true;
         _validation = null;
         _lastResult = null;
@@ -417,6 +425,7 @@ else
     private void StartEdit(ItemSummary item)
     {
         _draft = ItemDraft.From(item);
+        _draft.ApplyUomDefaults();
         _isCreating = true;
         _validation = null;
         _lastResult = null;
@@ -438,12 +447,16 @@ else
         _isSubmitting = true;
         try
         {
+            var uomCode = NormalizeUom(_draft.UomCode);
             var payload = new ItemUpsertPayload(
                 ItemCode: _draft.ItemCode.Trim(),
                 Name: _draft.Name.Trim(),
                 Description: string.IsNullOrWhiteSpace(_draft.Description) ? null : _draft.Description.Trim(),
                 ItemKind: _draft.ItemKind,
-                StockUomCode: string.IsNullOrWhiteSpace(_draft.StockUomCode) ? null : _draft.StockUomCode.Trim(),
+                StockUomCode: _draft.ItemKind == "stock" ? uomCode : null,
+                BaseUomCode: uomCode,
+                SalesUomCode: uomCode,
+                PurchaseUomCode: uomCode,
                 ManageInventoryMethod: _draft.ItemKind == "stock" ? _draft.ManageInventoryMethod : null,
                 DefaultCostingMethod: _draft.ItemKind == "stock" ? _draft.DefaultCostingMethod : null,
                 BackorderMode: _draft.ItemKind == "stock" ? _draft.BackorderMode : null,
@@ -495,6 +508,33 @@ else
         return string.Empty;
     }
 
+    private void OnKindChanged(ChangeEventArgs args)
+    {
+        _draft.ItemKind = args.Value?.ToString() ?? "service";
+        _draft.ApplyUomDefaults();
+    }
+
+    private static string? NormalizeUom(string value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToUpperInvariant();
+
+    private static string DisplayUom(ItemSummary item) =>
+        item.BaseUomCode ?? item.SalesUomCode ?? item.PurchaseUomCode ?? item.StockUomCode ?? "-";
+
+    private static string UomLabel(UomSummary uom) =>
+        $"{uom.Code} - {uom.Name}";
+
+    private static IReadOnlyList<UomSummary> FallbackUoms()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return
+    [
+        new(default, default, "EA", "Each", 0, "Count", true, now, now),
+        new(default, default, "SERVICE", "Service", 0, "Service", true, now, now),
+        new(default, default, "HR", "Hour", 2, "Time", true, now, now),
+        new(default, default, "DAY", "Day", 2, "Time", true, now, now)
+    ];
+    }
+
     private static string KindHint(string kind) => kind switch
     {
         "stock" => "Tracked in inventory; needs Inventory asset + COGS accounts.",
@@ -528,7 +568,7 @@ else
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string ItemKind { get; set; } = "service";
-        public string StockUomCode { get; set; } = string.Empty;
+        public string UomCode { get; set; } = "SERVICE";
         public string ManageInventoryMethod { get; set; } = "manage_stock";
         public string DefaultCostingMethod { get; set; } = "moving_average";
         public string BackorderMode { get; set; } = "disallow";
@@ -553,7 +593,7 @@ else
             Name = item.Name,
             Description = item.Description ?? string.Empty,
             ItemKind = item.ItemKind,
-            StockUomCode = item.StockUomCode ?? string.Empty,
+            UomCode = item.BaseUomCode ?? item.SalesUomCode ?? item.PurchaseUomCode ?? item.StockUomCode ?? DefaultUomForKind(item.ItemKind),
             ManageInventoryMethod = item.ManageInventoryMethod,
             DefaultCostingMethod = item.DefaultCostingMethod,
             BackorderMode = item.BackorderMode,
@@ -569,5 +609,20 @@ else
             DefaultSalesTaxCodeId = item.DefaultSalesTaxCodeId ?? Guid.Empty,
             DefaultPurchaseTaxCodeId = item.DefaultPurchaseTaxCodeId ?? Guid.Empty,
         };
+
+        public void ApplyUomDefaults()
+        {
+            var defaultUom = DefaultUomForKind(ItemKind);
+            UomCode = string.IsNullOrWhiteSpace(UomCode) ? defaultUom : UomCode;
+
+            if (!string.Equals(ItemKind, "service", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(UomCode, "SERVICE", StringComparison.OrdinalIgnoreCase))
+            {
+                UomCode = "EA";
+            }
+        }
+
+        private static string DefaultUomForKind(string itemKind) =>
+            string.Equals(itemKind, "service", StringComparison.OrdinalIgnoreCase) ? "SERVICE" : "EA";
     }
 }

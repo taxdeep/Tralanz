@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Abstractions;
+using Infrastructure.PostgreSQL.Numbering;
 using Citus.Accounting.Application.Repositories;
 using Modules.AP;
 using Modules.AP.Bills;
@@ -322,38 +323,499 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         Guid billId,
         CancellationToken cancellationToken)
     {
-        // Draft cancellation only. Posted bills require a governed
-        // reversal/void workflow so the ledger and AP open item stay
-        // traceable.
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        BillRecord bill;
+        await using (var checkCmd = connection.CreateCommand())
+        {
+            checkCmd.Transaction = transaction;
+            checkCmd.CommandText = SelectBillColumns + " WHERE b.company_id = @company_id AND b.id = @id FOR UPDATE OF b;";
+            checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
+            checkCmd.Parameters.AddWithValue("id", billId);
+            await using var reader = await checkCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            bill = MapRecord(reader, lines: Array.Empty<BillLineRecord>());
+        }
+
+        if (string.Equals(bill.Status, BillStatus.Draft, StringComparison.Ordinal))
+        {
+            await MarkBillVoidedAsync(connection, transaction, companyId, billId, expectedStatus: BillStatus.Draft, cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return await GetByIdAsync(companyId, billId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!string.Equals(bill.Status, BillStatus.Posted, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Bill in status '{bill.Status}' cannot be voided.");
+        }
+
+        await EnsureBillHasNoSettlementApplicationsAsync(connection, transaction, companyId, billId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var journal = await ReadPostedBillJournalAsync(connection, transaction, companyId, billId, cancellationToken)
+            .ConfigureAwait(false);
+        var originalLines = await ReadPostedJournalLinesForReversalAsync(
+            connection,
+            transaction,
+            companyId,
+            journal.Id,
+            cancellationToken).ConfigureAwait(false);
+
+        if (originalLines.Count == 0)
+        {
+            throw new InvalidOperationException("Posted bill journal entry has no lines to reverse.");
+        }
+
+        await InsertVoidedBillJournalAsync(
+            connection,
+            transaction,
+            bill,
+            journal,
+            originalLines,
+            cancellationToken).ConfigureAwait(false);
+
+        await VoidBillOpenItemAsync(connection, transaction, companyId, billId, cancellationToken).ConfigureAwait(false);
+        await MarkBillVoidedAsync(connection, transaction, companyId, billId, expectedStatus: BillStatus.Posted, cancellationToken)
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return await GetByIdAsync(companyId, billId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task MarkBillVoidedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid billId,
+        string expectedStatus,
+        CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE bills
                SET status     = 'voided',
                    updated_at = NOW()
-             WHERE company_id = @company_id AND id = @id
-               AND status = 'draft'
-            RETURNING id;
+             WHERE company_id = @company_id
+               AND id = @id
+               AND status = @expected_status;
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("id", billId);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        if (result is null)
+        command.Parameters.AddWithValue("expected_status", expectedStatus);
+        var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (affectedRows != 1)
         {
-            await using var checkCmd = connection.CreateCommand();
-            checkCmd.CommandText = "SELECT status FROM bills WHERE company_id = @company_id AND id = @id LIMIT 1;";
-            checkCmd.Parameters.AddWithValue("company_id", companyId.Value);
-            checkCmd.Parameters.AddWithValue("id", billId);
-            var status = (string?)await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            if (status is null) return null;
-            throw new InvalidOperationException(
-                status.Equals("posted", StringComparison.OrdinalIgnoreCase)
-                    ? "Posted bills cannot be voided from the legacy Bills page because that would not reverse the journal entry or AP open item. Use the governed bill reversal workflow."
-                    : $"Bill in status '{status}' cannot be voided.");
+            throw new InvalidOperationException("Bill could not be marked voided.");
         }
-        return await GetByIdAsync(companyId, billId, cancellationToken).ConfigureAwait(false);
     }
+
+    private static async Task EnsureBillHasNoSettlementApplicationsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid billId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COUNT(*)
+              FROM settlement_applications sa
+              INNER JOIN ap_open_items oi
+                ON oi.company_id = sa.company_id
+               AND oi.id = sa.target_open_item_id
+             WHERE sa.company_id = @company_id
+               AND sa.target_open_item_type = 'ap_open_item'
+               AND oi.source_type = 'bill'
+               AND oi.source_id = @bill_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bill_id", billId);
+        var applicationCount = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+        if (applicationCount > 0)
+        {
+            throw new InvalidOperationException(
+                "This bill already has payment/application history. Void or reverse the related Pay Bills transaction before voiding the bill.");
+        }
+    }
+
+    private static async Task<BillJournalHeaderSnapshot> ReadPostedBillJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid billId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id,
+                   transaction_currency_code,
+                   base_currency_code,
+                   exchange_rate,
+                   exchange_rate_date,
+                   exchange_rate_source,
+                   created_by_user_id
+              FROM journal_entries
+             WHERE company_id = @company_id
+               AND source_type = 'bill'
+               AND source_id = @bill_id
+               AND status = 'posted'
+             ORDER BY posted_at DESC NULLS LAST, created_at DESC
+             LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bill_id", billId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Posted bill has no linked journal entry to reverse.");
+        }
+
+        return new BillJournalHeaderSnapshot(
+            reader.GetGuid(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetDecimal(3),
+            DateOnly.FromDateTime(reader.GetDateTime(4)),
+            reader.GetString(5),
+            reader.GetString(6));
+    }
+
+    private static async Task<IReadOnlyList<BillJournalLineSnapshot>> ReadPostedJournalLinesForReversalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT account_id,
+                   description,
+                   party_type,
+                   party_id,
+                   tx_debit,
+                   tx_credit,
+                   debit,
+                   credit,
+                   posting_role,
+                   source_line_number
+              FROM journal_entry_lines
+             WHERE company_id = @company_id
+               AND journal_entry_id = @journal_entry_id
+             ORDER BY line_number;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+
+        var lines = new List<BillJournalLineSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            lines.Add(new BillJournalLineSnapshot(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                reader.GetDecimal(4),
+                reader.GetDecimal(5),
+                reader.GetDecimal(6),
+                reader.GetDecimal(7),
+                reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetInt32(9)));
+        }
+
+        return lines;
+    }
+
+    private static async Task InsertVoidedBillJournalAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        BillRecord bill,
+        BillJournalHeaderSnapshot journal,
+        IReadOnlyList<BillJournalLineSnapshot> originalLines,
+        CancellationToken cancellationToken)
+    {
+        var voidJournalEntryId = Guid.NewGuid();
+        var postedAt = DateTimeOffset.UtcNow;
+        var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, bill.CompanyId, cancellationToken)
+            .ConfigureAwait(false);
+        var entityNumber = await ReserveEntityNumberAsync(connection, transaction, bill.CompanyId, bill.BillDate.Year, cancellationToken)
+            .ConfigureAwait(false);
+        var idempotencyKey = $"bill-void:{bill.Id:D}";
+
+        await using (var insertEntryCommand = connection.CreateCommand())
+        {
+            insertEntryCommand.Transaction = transaction;
+            insertEntryCommand.CommandText = """
+                INSERT INTO journal_entries (
+                  id, company_id, entity_number, display_number, status,
+                  source_type, source_id,
+                  transaction_currency_code, base_currency_code,
+                  exchange_rate, exchange_rate_date, exchange_rate_source,
+                  fx_rate_snapshot_id,
+                  total_tx_debit, total_tx_credit, total_debit, total_credit,
+                  posting_run_id, idempotency_key, posted_at, created_by_user_id, created_at
+                )
+                VALUES (
+                  @id, @company_id, @entity_number, @display_number, 'posted',
+                  'bill_void', @source_id,
+                  @transaction_currency_code, @base_currency_code,
+                  @exchange_rate, @exchange_rate_date, @exchange_rate_source,
+                  NULL,
+                  @total_tx_debit, @total_tx_credit, @total_debit, @total_credit,
+                  @posting_run_id, @idempotency_key, @posted_at, @created_by_user_id, NOW()
+                );
+                """;
+            insertEntryCommand.Parameters.AddWithValue("id", voidJournalEntryId);
+            insertEntryCommand.Parameters.AddWithValue("company_id", bill.CompanyId.Value);
+            insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
+            insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
+            insertEntryCommand.Parameters.AddWithValue("source_id", bill.Id);
+            insertEntryCommand.Parameters.AddWithValue("transaction_currency_code", journal.TransactionCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("base_currency_code", journal.BaseCurrencyCode);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate", RoundRate(journal.ExchangeRate));
+            insertEntryCommand.Parameters.Add("exchange_rate_date", NpgsqlDbType.Date).Value =
+                journal.ExchangeRateDate.ToDateTime(TimeOnly.MinValue);
+            insertEntryCommand.Parameters.AddWithValue("exchange_rate_source", journal.ExchangeRateSource);
+            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", RoundTx(originalLines.Sum(static line => line.TxCredit)));
+            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", RoundTx(originalLines.Sum(static line => line.TxDebit)));
+            insertEntryCommand.Parameters.AddWithValue("total_debit", RoundBase(originalLines.Sum(static line => line.Credit)));
+            insertEntryCommand.Parameters.AddWithValue("total_credit", RoundBase(originalLines.Sum(static line => line.Debit)));
+            insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
+            insertEntryCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+            insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
+            insertEntryCommand.Parameters.AddWithValue("created_by_user_id", journal.CreatedByUserId);
+            await insertEntryCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var lineNumber = 1;
+        foreach (var originalLine in originalLines)
+        {
+            await InsertJournalAndLedgerLineAsync(
+                connection,
+                transaction,
+                bill.CompanyId,
+                voidJournalEntryId,
+                lineNumber++,
+                originalLine.AccountId,
+                originalLine.PartyType,
+                originalLine.PartyId,
+                $"Void {originalLine.Description}",
+                journal.TransactionCurrencyCode,
+                txDebit: originalLine.TxCredit,
+                txCredit: originalLine.TxDebit,
+                debit: originalLine.Credit,
+                credit: originalLine.Debit,
+                postingDate: bill.BillDate,
+                postingRole: $"void:{originalLine.PostingRole}",
+                sourceLineNumber: originalLine.SourceLineNumber,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task VoidBillOpenItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid billId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE ap_open_items
+               SET status = 'voided',
+                   open_amount_tx = 0,
+                   open_amount_base = 0,
+                   updated_at = NOW()
+             WHERE company_id = @company_id
+               AND source_type = 'bill'
+               AND source_id = @bill_id
+               AND status <> 'voided';
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bill_id", billId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task InsertJournalAndLedgerLineAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        int lineNumber,
+        Guid accountId,
+        string? partyType,
+        Guid? partyId,
+        string description,
+        string transactionCurrencyCode,
+        decimal txDebit,
+        decimal txCredit,
+        decimal debit,
+        decimal credit,
+        DateOnly postingDate,
+        string postingRole,
+        int? sourceLineNumber,
+        CancellationToken cancellationToken)
+    {
+        var journalEntryLineId = Guid.NewGuid();
+
+        await using (var insertLineCommand = connection.CreateCommand())
+        {
+            insertLineCommand.Transaction = transaction;
+            insertLineCommand.CommandText = """
+                INSERT INTO journal_entry_lines (
+                  id, company_id, journal_entry_id, line_number,
+                  account_id, description, party_type, party_id,
+                  tx_debit, tx_credit, debit, credit,
+                  tax_component_type, control_role, posting_role, source_line_number,
+                  created_at
+                )
+                VALUES (
+                  @id, @company_id, @journal_entry_id, @line_number,
+                  @account_id, @description, @party_type, @party_id,
+                  @tx_debit, @tx_credit, @debit, @credit,
+                  NULL, NULL, @posting_role, @source_line_number,
+                  NOW()
+                );
+                """;
+            insertLineCommand.Parameters.AddWithValue("id", journalEntryLineId);
+            insertLineCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            insertLineCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+            insertLineCommand.Parameters.AddWithValue("line_number", lineNumber);
+            insertLineCommand.Parameters.AddWithValue("account_id", accountId);
+            insertLineCommand.Parameters.AddWithValue("description", description);
+            insertLineCommand.Parameters.AddWithValue("party_type", string.IsNullOrWhiteSpace(partyType) ? DBNull.Value : partyType);
+            insertLineCommand.Parameters.AddWithValue("party_id", (object?)partyId ?? DBNull.Value);
+            insertLineCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
+            insertLineCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
+            insertLineCommand.Parameters.AddWithValue("debit", RoundBase(debit));
+            insertLineCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+            insertLineCommand.Parameters.AddWithValue("posting_role", postingRole);
+            insertLineCommand.Parameters.AddWithValue("source_line_number", (object?)sourceLineNumber ?? DBNull.Value);
+            await insertLineCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var insertLedgerCommand = connection.CreateCommand();
+        insertLedgerCommand.Transaction = transaction;
+        insertLedgerCommand.CommandText = """
+            INSERT INTO ledger_entries (
+              id, company_id, journal_entry_id, journal_entry_line_id,
+              posting_date, account_id, debit, credit,
+              transaction_currency_code, tx_debit, tx_credit,
+              created_at
+            )
+            VALUES (
+              @id, @company_id, @journal_entry_id, @journal_entry_line_id,
+              @posting_date, @account_id, @debit, @credit,
+              @transaction_currency_code, @tx_debit, @tx_credit,
+              NOW()
+            );
+            """;
+        insertLedgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+        insertLedgerCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        insertLedgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+        insertLedgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
+        insertLedgerCommand.Parameters.AddWithValue("posting_date", postingDate);
+        insertLedgerCommand.Parameters.AddWithValue("account_id", accountId);
+        insertLedgerCommand.Parameters.AddWithValue("debit", RoundBase(debit));
+        insertLedgerCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+        insertLedgerCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        insertLedgerCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
+        insertLedgerCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
+        await insertLedgerCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReserveJournalDisplayNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var seedCommand = connection.CreateCommand();
+        seedCommand.Transaction = transaction;
+        seedCommand.CommandText = """
+            SELECT COALESCE(
+                MAX(
+                    CASE
+                        WHEN display_number ~ '^JE-[0-9]+$'
+                        THEN substring(display_number from 4)::bigint
+                        ELSE NULL
+                    END),
+                0) + 1
+              FROM journal_entries
+             WHERE company_id = @company_id;
+            """;
+        seedCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        var seedNumber = Convert.ToInt64(await seedCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 1L);
+
+        return await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "journal-entry-display",
+            "JE-",
+            6,
+            seedNumber,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReserveEntityNumberAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        int year,
+        CancellationToken cancellationToken) =>
+        await PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            $"entity-number:all:{year}",
+            $"EN{year}",
+            5,
+            1,
+            cancellationToken).ConfigureAwait(false);
+
+    private static decimal RoundTx(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static decimal RoundBase(decimal value) =>
+        Math.Round(value, 2, MidpointRounding.ToEven);
+
+    private static decimal RoundRate(decimal value) =>
+        Math.Round(value, 10, MidpointRounding.ToEven);
+
+    private sealed record BillJournalHeaderSnapshot(
+        Guid Id,
+        string TransactionCurrencyCode,
+        string BaseCurrencyCode,
+        decimal ExchangeRate,
+        DateOnly ExchangeRateDate,
+        string ExchangeRateSource,
+        string CreatedByUserId);
+
+    private sealed record BillJournalLineSnapshot(
+        Guid AccountId,
+        string Description,
+        string? PartyType,
+        Guid? PartyId,
+        decimal TxDebit,
+        decimal TxCredit,
+        decimal Debit,
+        decimal Credit,
+        string PostingRole,
+        int? SourceLineNumber);
 
     private static async Task<IReadOnlyList<BillLineRecord>> ReadLinesAsync(
         NpgsqlConnection connection,

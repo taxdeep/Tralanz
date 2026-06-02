@@ -1,4 +1,5 @@
 using Citus.Ui.Shared.Business;
+using Citus.Ui.Shared.Control;
 using Citus.Ui.Shared.Icons;
 using Citus.Ui.Shared.Navigation;
 using Citus.Ui.Shared.Shell;
@@ -44,32 +45,71 @@ public sealed class BusinessShellState
     public IReadOnlyDictionary<string, bool> ModuleFlags { get; private set; } =
         new Dictionary<string, bool>(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Raised after any state mutation that affects derived UI surfaces
-    /// (BusinessNavMenu, CreateNewButton, etc.). Components that render
-    /// from ShellState should subscribe in OnInitialized and call
-    /// StateHasChanged in the handler so toggling a module flag, switching
-    /// companies, or applying a new session updates the sidebar without
-    /// a page refresh.
-    /// </summary>
-    public event Action? OnChanged;
+    public IReadOnlyDictionary<string, CompanyModuleFlagSummary> ModuleFlagSummaries { get; private set; } =
+        new Dictionary<string, CompanyModuleFlagSummary>(StringComparer.Ordinal);
 
-    /// <summary>
-    /// True when the named per-company module flag is on. Drives the
-    /// nav menu and any in-page "Send to {module}" affordances.
-    /// Defaults to false (fail-closed) for unknown keys so a missed
-    /// module-flag fetch never silently exposes a hidden module.
-    /// </summary>
     public bool IsModuleEnabled(string moduleKey)
     {
-        if (string.IsNullOrWhiteSpace(moduleKey)) return true;
-        return ModuleFlags.TryGetValue(moduleKey.Trim().ToLowerInvariant(), out var enabled) && enabled;
+        if (string.IsNullOrWhiteSpace(moduleKey))
+        {
+            return true;
+        }
+
+        var key = moduleKey.Trim().ToLowerInvariant();
+        if (ModuleFlagSummaries.TryGetValue(key, out var summary))
+        {
+            return summary.Enabled || summary.IsExpired;
+        }
+
+        return ModuleFlags.TryGetValue(key, out var enabled) && enabled;
     }
 
-    public void ApplyModuleFlags(IReadOnlyDictionary<string, bool> flags)
+    public void ApplyModuleFlags(IReadOnlyDictionary<string, bool> flags) => ModuleFlags = flags;
+
+    public void ApplyModuleFlags(IReadOnlyList<CompanyModuleFlagSummary> flags)
     {
-        ModuleFlags = flags;
-        OnChanged?.Invoke();
+        var enabled = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var summaries = new Dictionary<string, CompanyModuleFlagSummary>(StringComparer.Ordinal);
+
+        foreach (var flag in flags)
+        {
+            if (string.IsNullOrWhiteSpace(flag.ModuleKey))
+            {
+                continue;
+            }
+
+            var key = flag.ModuleKey.Trim().ToLowerInvariant();
+            enabled[key] = flag.Enabled;
+            summaries[key] = flag;
+        }
+
+        ModuleFlags = enabled;
+        ModuleFlagSummaries = summaries;
+    }
+
+    public bool IsModuleExpired(string moduleKey)
+    {
+        if (string.IsNullOrWhiteSpace(moduleKey))
+        {
+            return false;
+        }
+
+        return ModuleFlagSummaries.TryGetValue(moduleKey.Trim().ToLowerInvariant(), out var flag) && flag.IsExpired;
+    }
+
+    public bool AreModuleWritesBlocked(string moduleKey) =>
+        AreWritesBlocked || IsModuleExpired(moduleKey);
+
+    public string ModuleWriteBlockMessage(string moduleKey)
+    {
+        if (AreWritesBlocked)
+        {
+            return WriteBlockMessage;
+        }
+
+        return IsModuleExpired(moduleKey)
+            ? $"{ModuleDisplayName(moduleKey)} access has expired. Existing records are read-only."
+            : "Business writes are available.";
     }
 
     public IReadOnlyList<NavSection> NavigationSections { get; } =
@@ -87,10 +127,6 @@ public sealed class BusinessShellState
         },
         new NavSection
         {
-            // Per-company opt-in module. Every item below carries
-            // ModuleKey="task"; BusinessNavMenu hides items whose
-            // ModuleKey is set but not enabled. The whole section
-            // disappears when none of its items survive the filter.
             Title = "Tasks",
             Items =
             [
@@ -150,7 +186,6 @@ public sealed class BusinessShellState
             Title = "Banking",
             Items =
             [
-                new NavMenuItem { Title = "Bank Register", Href = "banking/register", Icon = IconName.BuildingBank },
                 new NavMenuItem { Title = "Reconciliation", Href = "reconciliation", Icon = IconName.CircleCheck },
                 new NavMenuItem { Title = "Account Transfers", Href = "bank-transfers", Icon = IconName.ArrowLeft },
                 new NavMenuItem { Title = "Bank Deposits", Href = "bank-deposits", Icon = IconName.Cash }
@@ -167,13 +202,6 @@ public sealed class BusinessShellState
         },
         new NavSection
         {
-            // Items already surfaced as Live "domain cards" on
-            // /settings (CompanySettingsPage) are intentionally NOT
-            // duplicated here — Profile / Currencies / Fiscal Year /
-            // Tax Rates / Payment Terms / Numbering / Invoice
-            // Templates all live behind the Company Settings entry.
-            // The nav keeps only items that don't have a card OR
-            // (Tax Returns) live outside /settings entirely.
             Title = "Settings",
             Items =
             [
@@ -181,12 +209,8 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Modules", Href = "settings/modules", Icon = IconName.Puzzle },
                 new NavMenuItem { Title = "Accounting Periods", Href = "settings/accounting-periods", Icon = IconName.Clock },
                 new NavMenuItem { Title = "Year-end Pre-close", Href = "settings/year-end-pre-close", Icon = IconName.AlertCircle },
-                new NavMenuItem { Title = "Member Permissions", Href = "settings/permissions", Icon = IconName.ShieldLock },
                 new NavMenuItem { Title = "Audit Logs", Href = "settings/audit-logs", Icon = IconName.Eye },
                 new NavMenuItem { Title = "Tax Returns", Href = "tax-returns", Icon = IconName.ReportAnalytics }
-                // /session diagnostics page stays reachable by direct
-                // URL but is no longer surfaced in the sidebar — it's a
-                // debug-style identity dump, not a routine action.
             ]
         }
     ];
@@ -211,7 +235,6 @@ public sealed class BusinessShellState
         ActiveCompany = context.ActiveCompany;
         AvailableCompanies = context.AvailableCompanies;
         MaintenanceState = context.MaintenanceState;
-        OnChanged?.Invoke();
     }
 
     public void ApplyAuthenticatedSession(
@@ -224,7 +247,6 @@ public sealed class BusinessShellState
         AvailableCompanies = session.AvailableCompanies.Count > 0
             ? session.AvailableCompanies
             : new[] { session.ActiveCompany };
-        OnChanged?.Invoke();
     }
 
     /// <summary>
@@ -241,7 +263,6 @@ public sealed class BusinessShellState
         }
 
         User = User with { DisplayName = displayName.Trim() };
-        OnChanged?.Invoke();
     }
 
     public void ClearAuthenticatedSession()
@@ -250,13 +271,13 @@ public sealed class BusinessShellState
         User = BuildSignedOutUser();
         ActiveCompany = BuildSignedOutCompany();
         AvailableCompanies = Array.Empty<BusinessCompanySummary>();
+        ModuleFlags = new Dictionary<string, bool>(StringComparer.Ordinal);
+        ModuleFlagSummaries = new Dictionary<string, CompanyModuleFlagSummary>(StringComparer.Ordinal);
         MaintenanceState = new MaintenanceStateSummary
         {
             Enabled = false,
             Message = "Platform runtime is accepting interactive changes."
         };
-        ModuleFlags = new Dictionary<string, bool>(StringComparer.Ordinal);
-        OnChanged?.Invoke();
     }
 
     private BusinessUserSummary BuildSignedOutUser() => new()
@@ -281,4 +302,12 @@ public sealed class BusinessShellState
         string.IsNullOrWhiteSpace(status)
             ? "inactive"
             : status.Trim().ToLowerInvariant();
+
+    private static string ModuleDisplayName(string moduleKey) =>
+        moduleKey.Trim().ToLowerInvariant() switch
+        {
+            "task" => "Task",
+            "inventory" => "Inventory",
+            _ => moduleKey
+        };
 }

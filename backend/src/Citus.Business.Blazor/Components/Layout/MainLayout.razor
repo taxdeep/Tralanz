@@ -9,7 +9,6 @@
 @inject ILogger<MainLayout> Logger
 
 @inherits LayoutComponentBase
-@implements IDisposable
 
 @*
     MainLayout -- Citus/Radzen shell. The unauthenticated branch hosts
@@ -42,17 +41,23 @@ else if (!ShellState.IsAuthenticated)
 else
 {
     <div class="citus-shell @(_collapsed ? "citus-shell--collapsed" : null)">
-        <aside class="citus-shell__sider">
+        <header class="citus-shell__header">
             <div class="citus-shell__brand">
                 <CitusIcon Name="IconName.BuildingBank" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
                 @if (!_collapsed)
                 {
                     <div class="citus-shell__brand-stack">
-                        <span class="citus-shell__brand-text">Tralanz Books</span>
+                        <span class="citus-shell__brand-text">Aiseworks</span>
                         <span class="citus-shell__brand-version">v@(AppVersion)</span>
                     </div>
                 }
             </div>
+
+            <BusinessTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
+        </header>
+
+        <div class="citus-shell__body">
+            <aside class="citus-shell__sider">
             @if (!_collapsed)
             {
                 <div class="citus-shell__create">
@@ -60,13 +65,9 @@ else
                 </div>
             }
             <BusinessNavMenu Collapsed="@_collapsed" />
-        </aside>
+            </aside>
 
-        <div class="citus-shell__main">
-            <header class="citus-shell__header">
-                <BusinessTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
-            </header>
-
+            <div class="citus-shell__main">
             <main class="citus-shell__content">
                 <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
                 <CitusCompanyAccessBanner Company="ShellState.ActiveCompany" />
@@ -80,6 +81,7 @@ else
                     @Body
                 }
             </main>
+            </div>
         </div>
     </div>
 }
@@ -94,14 +96,8 @@ else
     private bool _isContextLoading;
     private bool _isShellReady;
     private bool _collapsed;
-    // Tracks the most recently observed authenticated state so the
-    // OnChanged handler can detect a sign-in transition and trigger a
-    // post-bootstrap context+module-flag refresh. Without this the nav
-    // menu's TASKS section (and any other ModuleKey-gated entry) shows
-    // empty after a fresh sign-in and only appears on a manual page
-    // refresh — BootstrapShellAsync runs once on layout mount and the
-    // user signed in afterwards.
-    private bool _previouslyAuthenticated;
+    private string? _loadedContextSessionToken;
+    private string? _loadedModuleFlagsCompanyId;
 
     /// <summary>
     /// Display version pulled from the assembly's
@@ -139,66 +135,30 @@ else
 
     protected override Task OnInitializedAsync() => Task.CompletedTask;
 
-    protected override void OnInitialized()
-    {
-        ShellState.OnChanged += HandleShellStateChanged;
-        _previouslyAuthenticated = ShellState.IsAuthenticated;
-    }
-
-    public void Dispose()
-    {
-        ShellState.OnChanged -= HandleShellStateChanged;
-    }
-
-    /// <summary>
-    /// Detects the unauthenticated → authenticated transition that
-    /// happens when the operator signs in on /login (LoginPage calls
-    /// <c>ApplyAuthenticatedSession</c> directly, then navigates to
-    /// /dashboard — MainLayout is the same instance throughout that
-    /// navigation so <c>OnAfterRenderAsync(firstRender: true)</c> does
-    /// NOT fire again, leaving the post-bootstrap context + module
-    /// flags unfetched). On the transition we re-run
-    /// <c>LoadSessionContextAsync</c> so the nav reflects the real
-    /// state on the first render of the authenticated shell.
-    /// </summary>
-    private void HandleShellStateChanged()
-    {
-        var nowAuthenticated = ShellState.IsAuthenticated;
-        var wasAuthenticated = _previouslyAuthenticated;
-        _previouslyAuthenticated = nowAuthenticated;
-
-        if (_isShellReady && !wasAuthenticated && nowAuthenticated)
-        {
-            _ = InvokeAsync(async () =>
-            {
-                await LoadSessionContextAsync();
-                StateHasChanged();
-            });
-            return;
-        }
-
-        InvokeAsync(StateHasChanged);
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender)
+        if (firstRender)
         {
+            try
+            {
+                await BootstrapShellAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Business shell bootstrap failed; rendering login as fallback.");
+                ShellState.ClearAuthenticatedSession();
+            }
+            finally
+            {
+                _isShellReady = true;
+                StateHasChanged();
+            }
+
             return;
         }
 
-        try
+        if (await EnsureAuthenticatedContextFreshAsync())
         {
-            await BootstrapShellAsync();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Business shell bootstrap failed; rendering login as fallback.");
-            ShellState.ClearAuthenticatedSession();
-        }
-        finally
-        {
-            _isShellReady = true;
             StateHasChanged();
         }
     }
@@ -295,15 +255,13 @@ else
             }
 
             ShellState.ApplySessionContext(context);
+            _loadedContextSessionToken = ShellState.SessionToken;
 
-            // Pull the per-company module flags after the session is in
-            // place so the nav menu can hide modules the company hasn't
-            // switched on. Best-effort — if it fails the menu falls
-            // back to "module disabled", which is the safer default.
             try
             {
-                var flags = await ModuleFlagsClient.GetAsync();
+                var flags = await ModuleFlagsClient.ListAsync();
                 ShellState.ApplyModuleFlags(flags);
+                _loadedModuleFlagsCompanyId = ShellState.ActiveCompany.Id.Value;
             }
             catch (Exception ex)
             {
@@ -314,6 +272,26 @@ else
         {
             _isContextLoading = false;
         }
+    }
+
+    private async Task<bool> EnsureAuthenticatedContextFreshAsync()
+    {
+        if (!_isShellReady || !ShellState.IsAuthenticated || _isContextLoading)
+        {
+            return false;
+        }
+
+        var token = ShellState.SessionToken;
+        var companyId = ShellState.ActiveCompany.Id.Value;
+        if (!string.Equals(_loadedContextSessionToken, token, StringComparison.Ordinal)
+            || (!string.IsNullOrWhiteSpace(companyId)
+                && !string.Equals(_loadedModuleFlagsCompanyId, companyId, StringComparison.Ordinal)))
+        {
+            await LoadSessionContextAsync();
+            return true;
+        }
+
+        return false;
     }
 
     private void ToggleCollapsed() => _collapsed = !_collapsed;

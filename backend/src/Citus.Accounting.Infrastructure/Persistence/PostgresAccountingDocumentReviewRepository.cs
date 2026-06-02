@@ -1,8 +1,5 @@
-using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
-using Citus.Modules.Inventory.Application.Contracts;
-using Citus.Modules.Tasks.Application.Contracts;
 using System.Text.Json;
 
 namespace Citus.Accounting.Infrastructure.Persistence;
@@ -11,52 +8,13 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 {
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
-    // PR-6a (C-3): Task billing rollback on invoice reverse. Nullable
-    // so legacy tests that construct the repository directly without
-    // wiring the coordinator can still compile. DI always populates
-    // it in the running API host.
-    private readonly ITaskBillingCoordinator? _taskBilling;
-    // P0-2 (C2): inventory subledger + COGS reverse on invoice reverse.
-    // Same null-safety pattern as _taskBilling — DI in the running API
-    // host always populates these; bare-bones unit-test constructions
-    // can skip them and the reverse path silently no-ops on the
-    // inventory/COGS leg.
-    private readonly IInventoryShipmentStore? _inventoryShipmentStore;
-    private readonly IInventoryIssueStore? _inventoryIssueStore;
-    private readonly PostSalesIssueCogsReverseCommandHandler? _salesIssueCogsReverseHandler;
 
     public PostgresAccountingDocumentReviewRepository(
         PostgresConnectionFactory connections,
         PostgresExecutionContextAccessor executionContextAccessor)
-        : this(connections, executionContextAccessor, taskBilling: null)
-    {
-    }
-
-    public PostgresAccountingDocumentReviewRepository(
-        PostgresConnectionFactory connections,
-        PostgresExecutionContextAccessor executionContextAccessor,
-        ITaskBillingCoordinator? taskBilling)
-        : this(connections, executionContextAccessor, taskBilling,
-               inventoryShipmentStore: null,
-               inventoryIssueStore: null,
-               salesIssueCogsReverseHandler: null)
-    {
-    }
-
-    public PostgresAccountingDocumentReviewRepository(
-        PostgresConnectionFactory connections,
-        PostgresExecutionContextAccessor executionContextAccessor,
-        ITaskBillingCoordinator? taskBilling,
-        IInventoryShipmentStore? inventoryShipmentStore,
-        IInventoryIssueStore? inventoryIssueStore,
-        PostSalesIssueCogsReverseCommandHandler? salesIssueCogsReverseHandler)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
-        _taskBilling = taskBilling;
-        _inventoryShipmentStore = inventoryShipmentStore;
-        _inventoryIssueStore = inventoryIssueStore;
-        _salesIssueCogsReverseHandler = salesIssueCogsReverseHandler;
     }
 
     public async Task<AccountingDocumentReview?> GetSourceDocumentAsync(
@@ -748,32 +706,24 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             return null;
         }
 
-        // PR-6b (C-2): the user's locked business rules require Void
-        // to apply ONLY to unposted / draft documents — posted
-        // documents must go through Reverse so the GL + AR/AP +
-        // Task billing rollback all happen via the governed
-        // compensation flow. The preview layer surfaces this as
-        // `availability_mode='blocked_by_policy'` for posted docs and
-        // (currently) `'blocked_by_status'` for drafts (drafts use
-        // the per-type draft-void stores reachable from their own
-        // endpoints — wiring them through this unified surface is a
-        // follow-up).
-        //
-        // The previous stub returned `"ready_for_implementation"` for
-        // the IsAvailable=true case, which suggested the feature was
-        // still being built. Under the locked rules that case never
-        // exists for AttemptVoid — drafts route through their own
-        // endpoint, posted is blocked by policy — so we simplify the
-        // shape: always report blocked, with the preview's reason
-        // verbatim so the UI can render "Use Reverse".
-        var outcomeCode = string.Equals(preview.AvailabilityMode, "blocked_by_policy", StringComparison.Ordinal)
-            ? "blocked_by_policy"
-            : string.Equals(preview.AvailabilityMode, "not_implemented", StringComparison.Ordinal)
-                ? "not_implemented"
-                : "blocked";
-        var commandAccepted = false;
-        var executed = false;
-        var message = preview.Reason;
+        var (commandAccepted, executed, outcomeCode, message) = preview switch
+        {
+            { IsAvailable: true } => (
+                true,
+                false,
+                "ready_for_implementation",
+                "Source-owned void lifecycle preview passed, but the write-side execution flow is not implemented yet."),
+            { AvailabilityMode: "not_implemented" } => (
+                false,
+                false,
+                "not_implemented",
+                preview.Reason),
+            _ => (
+                false,
+                false,
+                "blocked",
+                preview.Reason)
+        };
 
         return new AccountingDocumentLifecycleCommandAttempt(
             preview.SourceType,
@@ -789,16 +739,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             preview.ActionCode,
             preview.ActionLabel,
             preview.AvailabilityMode,
-            // PR-6b (C-2): ExecutionMode reflects the policy decision
-            // — never a stub-style "skeleton_only". For posted docs we
-            // surface "policy_block" so the UI knows this is a hard
-            // semantic block (use Reverse), not a "not yet built"
-            // signal. For drafts that haven't yet wired through this
-            // surface we keep "request_recording" matching the
-            // reverse path's vocabulary.
-            string.Equals(outcomeCode, "blocked_by_policy", StringComparison.Ordinal)
-                ? "policy_block"
-                : "request_recording",
+            "skeleton_only",
             commandAccepted,
             executed,
             null,
@@ -980,6 +921,23 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             _executionContextAccessor,
             cancellationToken);
 
+        return await GetReverseRequestAsync(
+            scope,
+            companyId,
+            normalizedSourceType,
+            documentId,
+            requestId,
+            cancellationToken);
+    }
+
+    private async Task<AccountingDocumentLifecycleRequestRecord?> GetReverseRequestAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        string normalizedSourceType,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
         var requestedEvent = await GetRequestedReverseRequestEventAsync(
             scope,
             companyId,
@@ -1034,12 +992,19 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
 
-        await using var scope = await PostgresCommandScope.CreateAsync(
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
             _connections,
             _executionContextAccessor,
             cancellationToken);
 
+        await AcquireReverseRequestExecutionLockAsync(
+            scope,
+            companyId,
+            requestId,
+            cancellationToken);
+
         var request = await GetReverseRequestAsync(
+            scope,
             companyId,
             normalizedSourceType,
             documentId,
@@ -1069,6 +1034,15 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 "Cancelled reverse requests cannot be submitted again.");
         }
 
+        if (!string.Equals(request.ExecutionStatus, "not_requested", StringComparison.Ordinal))
+        {
+            return new AccountingDocumentLifecycleRequestTransitionResult(
+                request,
+                "submit",
+                "blocked_by_execution_state",
+                $"Reverse requests cannot be submitted after execution has reached '{request.ExecutionStatus}'.");
+        }
+
         await AppendReverseRequestTransitionAsync(
             scope,
             companyId,
@@ -1086,11 +1060,14 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             cancellationToken);
 
         var updatedRequest = await GetReverseRequestAsync(
+            scope,
             companyId,
             normalizedSourceType,
             documentId,
             requestId,
             cancellationToken);
+
+        await scope.CommitAsync(cancellationToken);
 
         return updatedRequest is null
             ? null
@@ -1111,12 +1088,19 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
 
-        await using var scope = await PostgresCommandScope.CreateAsync(
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
             _connections,
             _executionContextAccessor,
             cancellationToken);
 
+        await AcquireReverseRequestExecutionLockAsync(
+            scope,
+            companyId,
+            requestId,
+            cancellationToken);
+
         var request = await GetReverseRequestAsync(
+            scope,
             companyId,
             normalizedSourceType,
             documentId,
@@ -1137,6 +1121,15 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 "The governed reverse request has already been cancelled.");
         }
 
+        if (!string.Equals(request.ExecutionStatus, "not_requested", StringComparison.Ordinal))
+        {
+            return new AccountingDocumentLifecycleRequestTransitionResult(
+                request,
+                "cancel",
+                "blocked_by_execution_state",
+                $"Reverse requests cannot be cancelled after execution has reached '{request.ExecutionStatus}'.");
+        }
+
         await AppendReverseRequestTransitionAsync(
             scope,
             companyId,
@@ -1154,11 +1147,14 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             cancellationToken);
 
         var updatedRequest = await GetReverseRequestAsync(
+            scope,
             companyId,
             normalizedSourceType,
             documentId,
             requestId,
             cancellationToken);
+
+        await scope.CommitAsync(cancellationToken);
 
         return updatedRequest is null
             ? null
@@ -1255,9 +1251,23 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
-        var request = await GetReverseRequestAsync(
+        var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
+
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await AcquireReverseRequestExecutionLockAsync(
+            scope,
             companyId,
-            sourceType,
+            requestId,
+            cancellationToken);
+
+        var request = await GetReverseRequestAsync(
+            scope,
+            companyId,
+            normalizedSourceType,
             documentId,
             requestId,
             cancellationToken);
@@ -1366,11 +1376,6 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 readiness.Request.CompensationSourceType);
         }
 
-        await using var scope = await PostgresCommandScope.CreateAsync(
-            _connections,
-            _executionContextAccessor,
-            cancellationToken);
-
         await AppendReverseRequestTransitionAsync(
             scope,
             companyId,
@@ -1391,11 +1396,14 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             cancellationToken);
 
         var updatedRequest = await GetReverseRequestAsync(
+            scope,
             companyId,
-            sourceType,
+            normalizedSourceType,
             documentId,
             requestId,
             cancellationToken);
+
+        await scope.CommitAsync(cancellationToken);
 
         return updatedRequest is null
             ? null
@@ -1425,9 +1433,23 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         DateTimeOffset executedAt,
         CancellationToken cancellationToken)
     {
-        var request = await GetReverseRequestAsync(
+        var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
+
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await AcquireReverseRequestExecutionLockAsync(
+            scope,
             companyId,
-            sourceType,
+            requestId,
+            cancellationToken);
+
+        var request = await GetReverseRequestAsync(
+            scope,
+            companyId,
+            normalizedSourceType,
             documentId,
             requestId,
             cancellationToken);
@@ -1469,6 +1491,22 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 request.CompensationSourceType);
         }
 
+        if (!string.Equals(request.RequestStatus, "submitted", StringComparison.Ordinal))
+        {
+            return new AccountingDocumentLifecycleRequestExecutionResult(
+                request,
+                DateOnly.FromDateTime(executedAt.UtcDateTime),
+                "governed_execution_completed",
+                false,
+                false,
+                false,
+                "blocked_by_request_status",
+                $"Reverse execution completion requires a submitted request. Current request status is '{request.RequestStatus}'.",
+                request.CompensationJournalEntryId,
+                request.CompensationJournalEntryDisplayNumber,
+                request.CompensationSourceType);
+        }
+
         var subledgerBlockReason = await GetReverseExecutionSubledgerBlockReasonAsync(
             companyId,
             request.SourceType,
@@ -1491,9 +1529,13 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 request.CompensationSourceType);
         }
 
-        await using var scope = await PostgresCommandScope.CreateAsync(
-            _connections,
-            _executionContextAccessor,
+        await ValidateReverseExecutionCompensationJournalAsync(
+            scope,
+            companyId,
+            request,
+            compensationJournalEntryId,
+            compensationJournalEntryDisplayNumber,
+            compensationSourceType,
             cancellationToken);
 
         var unapplyResult = await UnapplySettlementApplicationsAsync(
@@ -1519,156 +1561,6 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             request.DocumentId,
             cancellationToken);
 
-        // PR-6a (C-3): Task billing rollback. When an invoice is
-        // reversed, every task whose billed_invoice_id matches must
-        // flip back Billed -> Completed so the operator can re-bill
-        // via a new invoice. Without this the tasks stay permanently
-        // marked as billed and TaskBillingCoordinator.MarkAsBilledAsync
-        // refuses any future re-bill attempt (drift guard).
-        //
-        // Idempotent: RollbackBillingAsync looks up tasks by
-        // billed_invoice_id and skips ones already restored, so a
-        // re-run of the reverse completion is safe.
-        //
-        // Soft-failure: the GL reversal already happened and the
-        // governed request bookkeeping is up to date by this point.
-        // If the task-side rollback throws we record the error in the
-        // audit payload but do NOT undo the source-document update —
-        // operator resolves from the Tasks page. Matches the existing
-        // PostCreditNoteCommandHandler / PostInvoiceCommandHandler
-        // "Step 5" soft-failure convention.
-        int taskRollbackProcessed = 0;
-        int taskRollbackSkipped = 0;
-        string? taskRollbackError = null;
-        var taskRollbackAttempted = _taskBilling is not null
-            && actorId.HasValue
-            && string.Equals(
-                NormalizeSourceType(request.SourceType),
-                "invoice",
-                StringComparison.Ordinal);
-        if (taskRollbackAttempted)
-        {
-            try
-            {
-                // H6-3: switch to the line-level rollback path. The
-                // bulk RollbackBySourceAsync clears every task_lines
-                // row stamped by this invoice and recomputes the
-                // affected task headers — which now correctly
-                // distinguishes "fully reversed → Completed" from
-                // "still partially billed by another invoice →
-                // PartiallyBilled" instead of the old whole-task
-                // rollback that incorrectly cleared shared task state.
-                //
-                // Legacy header-billed tasks (no per-line stamp) are
-                // covered by the legacy fallback below so pre-H6-2a
-                // invoices keep working.
-                var rollback = await _taskBilling!.RollbackBySourceAsync(
-                    companyId,
-                    sourceType: "invoice",
-                    sourceId: request.DocumentId,
-                    actorId!.Value,
-                    reason: "Invoice reverse compensation (H6-3 line-level).",
-                    cancellationToken);
-                taskRollbackProcessed = rollback.ProcessedTasks.Count;
-                taskRollbackSkipped = rollback.SkippedTasks.Count;
-
-                // Legacy fallback: any task whose header billed_invoice_id
-                // points at this invoice but whose lines were never stamped
-                // (pre-H6-2a era) still needs the whole-task rollback.
-                // RollbackBillingAsync reads tasks.billed_invoice_id and
-                // restores those rows in addition to the line-level set.
-                var legacy = await _taskBilling.RollbackBillingAsync(
-                    companyId,
-                    request.DocumentId,
-                    actorId.Value,
-                    reason: "Invoice reverse compensation (legacy header-level fallback).",
-                    cancellationToken);
-                taskRollbackProcessed += legacy.ProcessedTasks.Count;
-                taskRollbackSkipped += legacy.SkippedTasks.Count;
-            }
-            catch (Exception ex)
-            {
-                taskRollbackError = ex.Message;
-            }
-        }
-
-        // P0-2 (C2): inventory subledger restore + compensating COGS JE for
-        // every posted sales-issue linked to a reversed invoice. Both
-        // halves are independently idempotent so a partial-commit recovery
-        // on retry converges to the same end state. Soft-failure pattern
-        // matches task billing rollback above: error message goes into the
-        // audit payload, source-document mark stays as 'reversed' so the
-        // operator can resolve from the inventory + AI Activity surfaces.
-        int salesIssueCogsReverseProcessed = 0;
-        int salesIssueCogsReverseSkipped = 0;
-        decimal salesIssueCogsReverseTotalQty = 0m;
-        decimal salesIssueCogsReverseTotalCostBase = 0m;
-        string? salesIssueCogsReverseError = null;
-        var salesIssueCogsReverseAttempted = _inventoryShipmentStore is not null
-            && _inventoryIssueStore is not null
-            && _salesIssueCogsReverseHandler is not null
-            && actorId.HasValue
-            && string.Equals(
-                NormalizeSourceType(request.SourceType),
-                "invoice",
-                StringComparison.Ordinal);
-        if (salesIssueCogsReverseAttempted)
-        {
-            try
-            {
-                var lane = await _inventoryShipmentStore!.GetInvoiceLaneSummaryAsync(
-                    companyId,
-                    request.DocumentId,
-                    cancellationToken);
-
-                foreach (var issue in lane.RecentIssues)
-                {
-                    if (!string.Equals(issue.Status, "posted", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        var subledgerResult = await _inventoryIssueStore!.ReverseForInvoiceAsync(
-                            companyId,
-                            issue.DocumentId,
-                            request.DocumentId,
-                            actorId!.Value,
-                            cancellationToken);
-
-                        // Always post-or-probe the compensating COGS JE,
-                        // even when AlreadyReversed=true — the handler's
-                        // own idempotency probe surfaces the prior JE id.
-                        // The two halves are independently idempotent.
-                        await _salesIssueCogsReverseHandler!.HandleAsync(
-                            new PostSalesIssueCogsReverseCommand(
-                                companyId,
-                                actorId!.Value,
-                                issue.DocumentId,
-                                request.DocumentId),
-                            cancellationToken);
-
-                        salesIssueCogsReverseProcessed++;
-                        if (!subledgerResult.AlreadyReversed)
-                        {
-                            salesIssueCogsReverseTotalQty += subledgerResult.TotalQuantityRestored;
-                            salesIssueCogsReverseTotalCostBase += subledgerResult.TotalCostBaseRestored;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        salesIssueCogsReverseSkipped++;
-                        salesIssueCogsReverseError ??= ex.Message;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                salesIssueCogsReverseError = ex.Message;
-            }
-        }
-
         await AppendReverseRequestTransitionAsync(
             scope,
             companyId,
@@ -1689,34 +1581,19 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 SettlementApplicationsUnapplied = unapplyResult.ApplicationCount,
                 SettlementApplicationsUnappliedAmountTx = unapplyResult.TotalAppliedAmountTx,
                 SettlementApplicationsUnappliedAmountBase = unapplyResult.TotalAppliedAmountBase,
-                // PR-6a (C-3): task-billing rollback outcome included
-                // in the audit payload so post-incident analysis can
-                // distinguish "no tasks linked", "rollback succeeded",
-                // and "rollback failed — manual fix needed".
-                TaskBillingRollbackAttempted = taskRollbackAttempted,
-                TaskBillingRollbackProcessedCount = taskRollbackProcessed,
-                TaskBillingRollbackSkippedCount = taskRollbackSkipped,
-                TaskBillingRollbackError = taskRollbackError,
-                // P0-2 (C2): inventory + COGS reverse outcome — same audit
-                // intent as task billing rollback. Distinguishes "no
-                // sales-issues linked", "reverse succeeded", "reverse
-                // failed — operator needs to inspect inventory state".
-                SalesIssueCogsReverseAttempted = salesIssueCogsReverseAttempted,
-                SalesIssueCogsReverseProcessedCount = salesIssueCogsReverseProcessed,
-                SalesIssueCogsReverseSkippedCount = salesIssueCogsReverseSkipped,
-                SalesIssueCogsReverseTotalQuantityRestored = salesIssueCogsReverseTotalQty,
-                SalesIssueCogsReverseTotalCostBaseRestored = salesIssueCogsReverseTotalCostBase,
-                SalesIssueCogsReverseError = salesIssueCogsReverseError,
                 ExecutedAt = executedAt
             },
             cancellationToken);
 
         var updatedRequest = await GetReverseRequestAsync(
+            scope,
             companyId,
-            sourceType,
+            normalizedSourceType,
             documentId,
             requestId,
             cancellationToken);
+
+        await scope.CommitAsync(cancellationToken);
 
         return updatedRequest is null
             ? null
@@ -1915,6 +1792,17 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             }
         }
 
+        if (applications.Count == 0)
+        {
+            return await LoadSettlementUnapplyRecoveryAsync(
+                scope,
+                companyId,
+                normalizedSourceType,
+                documentId,
+                requestId,
+                cancellationToken);
+        }
+
         foreach (var application in applications)
         {
             var targetTable = application.TargetOpenItemType switch
@@ -1969,6 +1857,45 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             applications.Count,
             applications.Sum(static application => application.AppliedAmountTx),
             applications.Sum(static application => application.AppliedAmountBase));
+    }
+
+    private static async Task<SettlementUnapplyResult> LoadSettlementUnapplyRecoveryAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        string normalizedSourceType,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              count(*)::integer as application_count,
+              coalesce(sum((payload ->> 'AppliedAmountTx')::numeric), 0) as total_applied_amount_tx,
+              coalesce(sum((payload ->> 'AppliedAmountBase')::numeric), 0) as total_applied_amount_base
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'settlement_application_reversal'
+              and action = 'settlement_application_reversed'
+              and payload ->> 'RequestId' = @request_id
+              and payload ->> 'SourceType' = @source_type
+              and payload ->> 'SourceId' = @document_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("request_id", requestId.ToString("D"));
+        command.Parameters.AddWithValue("source_type", normalizedSourceType);
+        command.Parameters.AddWithValue("document_id", documentId.ToString("D"));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new SettlementUnapplyResult(0, 0m, 0m);
+        }
+
+        return new SettlementUnapplyResult(
+            reader.GetInt32(reader.GetOrdinal("application_count")),
+            reader.GetDecimal(reader.GetOrdinal("total_applied_amount_tx")),
+            reader.GetDecimal(reader.GetOrdinal("total_applied_amount_base")));
     }
 
     private static async Task AppendSettlementApplicationReversalAuditAsync(
@@ -2161,10 +2088,12 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             $"""
             update {tableName}
             set status = 'reversed',
-                updated_at = now()
+                updated_at = case
+                    when status = 'reversed' then updated_at
+                    else now()
+                end
             where company_id = @company_id
-              and id = @document_id
-              and status <> 'reversed';
+              and id = @document_id;
             """);
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("document_id", documentId);
@@ -2175,6 +2104,90 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
             throw new InvalidOperationException("The source document could not be marked reversed in the active company context.");
         }
     }
+
+    private static async Task AcquireReverseRequestExecutionLockAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select pg_advisory_xact_lock(hashtextextended(@lock_key, 0));
+            """);
+        command.Parameters.AddWithValue(
+            "lock_key",
+            $"{companyId.Value}:source_document_reverse_request:{requestId:D}");
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ValidateReverseExecutionCompensationJournalAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        AccountingDocumentLifecycleRequestRecord request,
+        Guid compensationJournalEntryId,
+        string compensationJournalEntryDisplayNumber,
+        string compensationSourceType,
+        CancellationToken cancellationToken)
+    {
+        if (!request.JournalEntryId.HasValue)
+        {
+            throw new InvalidOperationException("Reverse execution completion requires the source document's linked journal entry.");
+        }
+
+        var expectedCompensationSourceType = ResolveExpectedReverseCompensationSourceType(request.SourceType);
+        if (!string.Equals(compensationSourceType, expectedCompensationSourceType, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Reverse execution compensation source type must be '{expectedCompensationSourceType}' for source type '{request.SourceType}'.");
+        }
+
+        await using var command = scope.CreateCommand(
+            """
+            select 1
+            from journal_entries original
+            inner join journal_entries compensation
+              on compensation.company_id = original.company_id
+             and compensation.id = @compensation_journal_entry_id
+             and compensation.display_number = @compensation_display_number
+             and compensation.status = 'posted'
+             and compensation.source_type = @compensation_source_type
+             and compensation.source_id = original.source_id
+            where original.company_id = @company_id
+              and original.id = @original_journal_entry_id
+              and original.status = 'reversed'
+              and original.source_type = @source_type
+              and original.source_id = @source_id
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("original_journal_entry_id", request.JournalEntryId.Value);
+        command.Parameters.AddWithValue("source_type", request.SourceType);
+        command.Parameters.AddWithValue("source_id", request.DocumentId);
+        command.Parameters.AddWithValue("compensation_journal_entry_id", compensationJournalEntryId);
+        command.Parameters.AddWithValue("compensation_display_number", compensationJournalEntryDisplayNumber);
+        command.Parameters.AddWithValue("compensation_source_type", compensationSourceType);
+
+        if (await command.ExecuteScalarAsync(cancellationToken) is null)
+        {
+            throw new InvalidOperationException("Reverse execution compensation journal entry does not match the reversed source document in the active company context.");
+        }
+    }
+
+    private static string ResolveExpectedReverseCompensationSourceType(string sourceType) =>
+        NormalizeSourceType(sourceType) switch
+        {
+            "invoice" => "invoice_reversal",
+            "credit_note" => "credit_note_reversal",
+            "bill" => "bill_reversal",
+            "vendor_credit" => "vendor_credit_reversal",
+            "receive_payment" => "receive_payment_reversal",
+            "credit_application" => "credit_application_reversal",
+            "pay_bill" => "pay_bill_reversal",
+            "vendor_credit_application" => "vendor_credit_application_reversal",
+            _ => throw new InvalidOperationException(
+                $"Reverse execution compensation validation is not supported for source type '{sourceType}'.")
+        };
 
     private async Task<ReverseRequestRequestedEvent?> GetRequestedReverseRequestEventAsync(
         PostgresCommandScope scope,
@@ -3709,15 +3722,8 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 new AccountingDocumentLifecycleAction("edit_draft", "Edit Draft", "blocked_by_status", false, "Posted source documents are no longer editable through the draft flow."),
                 new AccountingDocumentLifecycleAction("post_draft", "Post Draft", "blocked_by_status", false, "The source document is already posted."),
                 new AccountingDocumentLifecycleAction("reopen_document", "Reopen", "not_implemented", false, "Reopen-after-post requires governed lifecycle rules and is not implemented yet."),
-                // PR-6b (C-2): per the locked Tralanz business rules,
-                // posted documents are NEVER voided — they're reversed.
-                // Void is reserved for draft soft-cancel. Surface a
-                // clear policy block here so the UI's Void button
-                // returns "use Reverse" instead of a stubbed
-                // "not_implemented" response that suggested the
-                // feature was still coming.
-                new AccountingDocumentLifecycleAction("void_document", "Void", "blocked_by_policy", false, "Posted source documents cannot be voided. Use Reverse to post a compensating entry; the original document and journal stay intact for audit."),
-                new AccountingDocumentLifecycleAction("reverse_document", "Reverse", "available_now", true, "Posted source documents support governed reverse — submits a request, posts a compensation journal entry, rolls back AR/AP open items, and unbills linked tasks. Original document and journal stay intact for audit.")
+                new AccountingDocumentLifecycleAction("void_document", "Void", "not_implemented", false, "Source-owned void flow is not implemented yet. Current review is read-only."),
+                new AccountingDocumentLifecycleAction("reverse_document", "Reverse", "not_implemented", false, "Source-owned reverse flow is not implemented yet. Current review is read-only.")
             ],
             "historical_linked_je_voided" =>
             [

@@ -124,9 +124,6 @@ public sealed record ExpenseLineRecord(
     decimal UnitPrice,
     Guid? TaxCodeId,
     decimal LineTotal,
-    // Optional Task back-link, persisted in expense_lines.task_id. Read
-    // path surfaces it so the edit page can pre-fill the per-line
-    // TaskPicker; write path persists it after the validator clears.
     Guid? TaskId = null);
 
 public sealed record ExpenseUpsertInput(
@@ -148,11 +145,6 @@ public sealed record ExpenseUpsertInput(
     string? Memo,
     string? InternalNote,
     IReadOnlyList<ExpenseLineInput> Lines,
-    // Copy A3 Phase 1: when populated, the store writes an
-    // `expense_copied` row into audit_logs alongside the regular
-    // CREATE. Pure soft-link — no FK on the expenses row itself, so
-    // operators get a provenance trail without coupling the two
-    // expenses for state (the new one is fully independent).
     Guid? CopiedFromExpenseId = null);
 
 public sealed record ExpenseLineInput(
@@ -164,7 +156,6 @@ public sealed record ExpenseLineInput(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    // See ExpenseLineRecord.TaskId.
     Guid? TaskId = null);
 
 public static class ExpenseStatus

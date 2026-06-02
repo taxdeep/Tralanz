@@ -1206,24 +1206,61 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.False(readiness.ApplyReady);
             Assert.Equal("request_recording_only", readiness.ExecutionMode);
 
-            var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
-                CompanyId.FromOrdinal(1),
-                "invoice",
-                invoiceId,
+            var executeResults = await Task.WhenAll(
+                reviewRepository.ExecuteReverseRequestAsync(
+                    CompanyId.FromOrdinal(1),
+                    "invoice",
+                    invoiceId,
+                    attempt.RequestId.Value,
+                    userId,
+                    new DateOnly(2026, 4, 14),
+                    CancellationToken.None),
+                reviewRepository.ExecuteReverseRequestAsync(
+                    CompanyId.FromOrdinal(1),
+                    "invoice",
+                    invoiceId,
+                    attempt.RequestId.Value,
+                    userId,
+                    new DateOnly(2026, 4, 14),
+                    CancellationToken.None));
+
+            var executeResult = Assert.Single(
+                executeResults,
+                result => result?.OutcomeCode == "execution_request_recorded");
+            var alreadyRequestedResult = Assert.Single(
+                executeResults,
+                result => result?.OutcomeCode == "execution_already_requested");
+            var executionRequestedCount = await CountReverseExecutionRequestedTransitionsAsync(
+                connectionFactory,
+                CompanyId,
                 attempt.RequestId.Value,
-                userId,
-                new DateOnly(2026, 4, 14),
                 CancellationToken.None);
 
             Assert.NotNull(executeResult);
             Assert.True(executeResult!.CommandAccepted);
             Assert.False(executeResult.Executed);
             Assert.True(executeResult.Persisted);
-            Assert.Equal("execution_request_recorded", executeResult.OutcomeCode);
             Assert.Equal("execution_requested", executeResult.Request.ExecutionStatus);
             Assert.Equal("user", executeResult.Request.ExecutionRequestedByActorType);
             Assert.Equal((object?)userId, (object?)executeResult.Request.ExecutionRequestedByActorId);
             Assert.NotNull(executeResult.Request.ExecutionRequestedAt);
+            Assert.NotNull(alreadyRequestedResult);
+            Assert.False(alreadyRequestedResult!.CommandAccepted);
+            Assert.Equal("execution_requested", alreadyRequestedResult.Request.ExecutionStatus);
+            Assert.Equal(1, executionRequestedCount);
+
+            var cancelAfterExecutionResult = await reviewRepository.CancelReverseRequestAsync(
+                CompanyId.FromOrdinal(1),
+                "invoice",
+                invoiceId,
+                attempt.RequestId.Value,
+                userId,
+                CancellationToken.None);
+
+            Assert.NotNull(cancelAfterExecutionResult);
+            Assert.Equal("blocked_by_execution_state", cancelAfterExecutionResult!.OutcomeCode);
+            Assert.Equal("submitted", cancelAfterExecutionResult.Request.RequestStatus);
+            Assert.Equal("execution_requested", cancelAfterExecutionResult.Request.ExecutionStatus);
         }
         finally
         {
@@ -1721,6 +1758,36 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
                 CancellationToken.None);
 
             compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
+
+            var invalidCompletion = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                reviewRepository.CompleteReverseRequestExecutionAsync(
+                    CompanyId.FromOrdinal(1),
+                    "invoice",
+                    invoiceId,
+                    attempt.RequestId.Value,
+                    userId,
+                    lifecycleResult.CompensationJournalEntryId,
+                    "JE-SMOKE-WRONG",
+                    lifecycleResult.CompensationSourceType,
+                    lifecycleResult.LifecycleAt,
+                    CancellationToken.None));
+            Assert.Contains("does not match", invalidCompletion.Message, StringComparison.OrdinalIgnoreCase);
+
+            var requestAfterRejectedCompletion = await reviewRepository.GetReverseRequestAsync(
+                CompanyId.FromOrdinal(1),
+                "invoice",
+                invoiceId,
+                attempt.RequestId.Value,
+                CancellationToken.None);
+            var sourceStatusAfterRejectedCompletion = await GetDocumentStatusAsync(
+                connectionFactory,
+                "invoices",
+                invoiceId,
+                CancellationToken.None);
+
+            Assert.NotNull(requestAfterRejectedCompletion);
+            Assert.Equal("execution_requested", requestAfterRejectedCompletion!.ExecutionStatus);
+            Assert.Equal("posted", sourceStatusAfterRejectedCompletion);
 
             var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
                 CompanyId.FromOrdinal(1),
@@ -3911,6 +3978,8 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         PostgresConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
+        await EnsureCustomerAsync(connectionFactory, cancellationToken);
+
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var findCommand = connection.CreateCommand();
         findCommand.CommandText = "select id from users order by created_at limit 1;";
@@ -3933,6 +4002,46 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         insertCommand.Parameters.AddWithValue("password_hash", "smoke-hash");
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         return (newUserId, true);
+    }
+
+    private static async Task EnsureCustomerAsync(
+        PostgresConnectionFactory connectionFactory,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            insert into customers (
+              id,
+              company_id,
+              entity_number,
+              display_name,
+              default_currency_code,
+              is_active,
+              created_at,
+              updated_at
+            )
+            values (
+              @id,
+              @company_id,
+              'EN2026AR001',
+              'Receivable Smoke Customer',
+              'USD',
+              true,
+              now(),
+              now()
+            )
+            on conflict (id) do update
+            set company_id = excluded.company_id,
+                display_name = excluded.display_name,
+                default_currency_code = excluded.default_currency_code,
+                is_active = excluded.is_active,
+                updated_at = now();
+            """;
+        command.Parameters.AddWithValue("id", CustomerId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<string> ReserveEntityNumberAsync(
@@ -5183,6 +5292,28 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             """;
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task<int> CountReverseExecutionRequestedTransitionsAsync(
+        PostgresConnectionFactory connectionFactory,
+        CompanyId companyId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select count(*)::int
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'source_document_reverse_request'
+              and action = 'reverse_execution_requested'
+              and entity_id = @request_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("request_id", requestId.ToString("D"));
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 

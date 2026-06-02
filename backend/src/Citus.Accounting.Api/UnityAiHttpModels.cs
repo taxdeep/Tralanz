@@ -1,22 +1,6 @@
-namespace Citus.Accounting.Api;
+using Citus.Modules.UnityAi.Application.Contracts;
 
-/// <summary>
-/// Wire shape for GET /accounting/uom. Mirrors UomRecord field-for-field;
-/// kept as a separate record so the application-layer domain type
-/// (Citus.Accounting.Application.Abstractions.UomRecord) doesn't leak
-/// CompanyId / DateTimeOffset serialization details onto the HTTP
-/// contract.
-/// </summary>
-public sealed record UomHttpSummary(
-    Guid Id,
-    CompanyId CompanyId,
-    string Code,
-    string Name,
-    int DecimalPrecision,
-    string? Category,
-    bool IsActive,
-    DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+namespace Citus.Accounting.Api;
 
 public sealed record UnitysearchUsageHttpRequest
 {
@@ -77,6 +61,41 @@ public sealed record TaxCodeUpsertHttpRequest
     public bool? IsActive { get; init; }
 }
 
+public sealed record SalesTaxCodeUpsertHttpRequest
+{
+    public string? Code { get; init; }
+    public string? Name { get; init; }
+    public string? AppliesTo { get; init; }
+    public string? RegistrationNumber { get; init; }
+    public bool? IsActive { get; init; }
+    public IReadOnlyList<SalesTaxCodeComponentUpsertHttpRequest>? Components { get; init; }
+}
+
+public sealed record SalesTaxRuleUpsertHttpRequest
+{
+    public string? Code { get; init; }
+    public string? Name { get; init; }
+    public decimal? RatePercent { get; init; }
+    public string? TaxType { get; init; }
+    public string? AppliesTo { get; init; }
+    public string? Treatment { get; init; }
+    public string? Recoverability { get; init; }
+    public Guid? PayableAccountId { get; init; }
+    public Guid? RecoverableAccountId { get; init; }
+    public string? RegistrationNumber { get; init; }
+    public bool? IsActive { get; init; }
+}
+
+public sealed record SalesTaxCodeComponentUpsertHttpRequest
+{
+    public Guid? TaxRuleId { get; init; }
+    public decimal? RatePercent { get; init; }
+    public string? TaxType { get; init; }
+    public string? Recoverability { get; init; }
+    public string? AppliesTo { get; init; }
+    public string? RegistrationNumber { get; init; }
+}
+
 public sealed record AccountUpsertHttpRequest
 {
     public string? Code { get; init; }
@@ -86,19 +105,46 @@ public sealed record AccountUpsertHttpRequest
     public string? CurrencyCode { get; init; }
     public bool? AllowManualPosting { get; init; }
     public bool? IsActive { get; init; }
-    // Batch C: nullable self-reference. NULL or absent = top-level
-    // account. The store accepts cross-root-type parenting; the UI
-    // discourages it but the DB stays open.
-    public Guid? ParentAccountId { get; init; }
 }
 
-/// <summary>
-/// Batch D: payload for POST /accounting/accounts/{id}/lock or
-/// .../unlock. Lock=true → mark account locked; Lock=false → unlock.
-/// The actor is read from the session, not the body, so this DTO
-/// only needs the lock direction.
-/// </summary>
-public sealed record AccountLockHttpRequest
+internal static class UnityAiHttpRequestMapper
 {
-    public bool Lock { get; init; }
+    public static string? NormalizeSearchQuery(string? query) =>
+        string.IsNullOrWhiteSpace(query) ? null : query.Trim().ToLowerInvariant();
+
+    public static UnitysearchEventInput BuildUnitysearchEventInput(
+        CompanyId companyId,
+        UserId userId,
+        UnitysearchUsageHttpRequest request) =>
+        new(
+            CompanyId: companyId,
+            UserId: userId,
+            SessionId: request.SessionId,
+            Context: request.Context.Trim(),
+            EntityType: request.EntityType.Trim(),
+            Query: request.Query,
+            NormalizedQuery: NormalizeSearchQuery(request.Query),
+            EventType: request.EventType.Trim(),
+            SelectedEntityId: request.SelectedEntityId,
+            RankPosition: request.RankPosition,
+            ResultCount: request.ResultCount,
+            SourceRoute: request.SourceRoute,
+            AnchorContext: request.AnchorContext,
+            AnchorEntityType: request.AnchorEntityType,
+            AnchorEntityId: request.AnchorEntityId,
+            MetadataJson: request.MetadataJson);
+
+    public static ReportUsageEventInput BuildReportUsageEventInput(
+        CompanyId companyId,
+        UserId userId,
+        ReportUsageHttpRequest request) =>
+        new(
+            CompanyId: companyId,
+            UserId: userId,
+            ReportKey: request.ReportKey.Trim(),
+            EventType: request.EventType.Trim(),
+            DateRangeKey: request.DateRangeKey,
+            FiltersJson: request.FiltersJson,
+            SourceRoute: request.SourceRoute,
+            MetadataJson: request.MetadataJson);
 }

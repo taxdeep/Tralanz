@@ -36,11 +36,9 @@
         <RadzenDataGrid TItem="PurchaseOrderRow"
                         Data="@_rows"
                         AllowSorting="true"
-                        AllowFiltering="true"
                         AllowColumnResize="true"
                         AllowPaging="true"
                         PageSize="50"
-                        FilterMode="FilterMode.Simple"
                         class="citus-radzen-grid">
             <Columns>
                 <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.PurchaseOrderNumber)" Title="PO #" Width="200px">

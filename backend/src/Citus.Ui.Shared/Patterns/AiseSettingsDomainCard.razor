@@ -1,0 +1,64 @@
+@if (!string.IsNullOrWhiteSpace(Href))
+{
+    <a href="@Href" class="@CssClass">
+        <header class="citus-domain-card__header">
+            <h3 class="citus-domain-card__title">@Title</h3>
+            @if (!string.IsNullOrWhiteSpace(Stage))
+            {
+                <CitusBadge Color="@StageColor">@Stage</CitusBadge>
+            }
+        </header>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <p class="citus-domain-card__description">@Description</p>
+        }
+    </a>
+}
+else
+{
+    <article class="@CssClass">
+        <header class="citus-domain-card__header">
+            <h3 class="citus-domain-card__title">@Title</h3>
+            @if (!string.IsNullOrWhiteSpace(Stage))
+            {
+                <CitusBadge Color="@StageColor">@Stage</CitusBadge>
+            }
+        </header>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <p class="citus-domain-card__description">@Description</p>
+        }
+    </article>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Stage { get; set; }
+
+    [Parameter] public string StageColor { get; set; } = "default";
+
+    [Parameter] public string? Description { get; set; }
+
+    [Parameter] public string? Href { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "citus-domain-card" };
+            if (!string.IsNullOrWhiteSpace(Href))
+            {
+                classes.Add("citus-domain-card--linked");
+            }
+            if (!string.IsNullOrWhiteSpace(Class))
+            {
+                classes.Add(Class);
+            }
+
+            return string.Join(' ', classes);
+        }
+    }
+}

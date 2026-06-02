@@ -1120,7 +1120,7 @@ apply_backend_baseline_if_needed() {
   )"
 
   if [[ "${users_table_exists//[[:space:]]/}" == "t" ]]; then
-    log "Backend PostgreSQL baseline already exists; skipping ${REPO_ROOT}/CITUS_POSTGRESQL_MIGRATION_DRAFT.sql."
+    log "Backend PostgreSQL baseline already exists; skipping ${REPO_ROOT}/TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql."
     return
   fi
 
@@ -1136,7 +1136,7 @@ apply_backend_baseline_if_needed() {
   )"
 
   if [[ "${public_table_count//[[:space:]]/}" != "0" ]]; then
-    fail "The PostgreSQL database is not empty but the baseline sentinel table 'users' is missing. Refusing to auto-apply ${SOURCE_DIR}/CITUS_POSTGRESQL_MIGRATION_DRAFT.sql."
+    fail "The PostgreSQL database is not empty but the baseline sentinel table 'users' is missing. Refusing to auto-apply ${SOURCE_DIR}/TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql."
   fi
 
   log "Applying backend PostgreSQL baseline draft."
@@ -1147,7 +1147,7 @@ apply_backend_baseline_if_needed() {
       -p "${CITUS_DB_PORT}" \
       -U "${CITUS_DB_USER}" \
       -d "${CITUS_DB_NAME}" \
-      -f "${SOURCE_DIR}/CITUS_POSTGRESQL_MIGRATION_DRAFT.sql"
+      -f "${SOURCE_DIR}/TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql"
 }
 
 # Stage-1.2: Apply each deploy/migrations/*.sql once, in alpha order.

@@ -1,0 +1,44 @@
+<div class="@CssClass">
+    <span class="aise-summary-metric__label">@Label</span>
+    <span class="aise-summary-metric__value">@Value</span>
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <span class="aise-summary-metric__description">@Description</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+
+    [Parameter] public string? Description { get; set; }
+
+    [Parameter] public string Tone { get; set; } = "neutral";
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "aise-summary-metric", $"aise-summary-metric--{NormalizeTone(Tone)}" };
+            if (!string.IsNullOrWhiteSpace(Class))
+            {
+                classes.Add(Class);
+            }
+
+            return string.Join(' ', classes);
+        }
+    }
+
+    private static string NormalizeTone(string? tone) =>
+        tone?.Trim().ToLowerInvariant() switch
+        {
+            "success" => "success",
+            "danger" => "danger",
+            "warning" => "warning",
+            "primary" => "primary",
+            _ => "neutral",
+        };
+}

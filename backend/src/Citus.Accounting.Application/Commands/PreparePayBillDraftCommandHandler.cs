@@ -33,7 +33,8 @@ public sealed class PreparePayBillDraftCommandHandler
                     command.PaymentDate,
                     command.AcceptedFxSnapshotId,
                     command.Memo,
-                    command.Lines),
+                    command.Lines,
+                    command.ClientRequestId),
                 ct);
 
             return PreparePayBillDraftCommandResult.FromRepositoryResult(result);

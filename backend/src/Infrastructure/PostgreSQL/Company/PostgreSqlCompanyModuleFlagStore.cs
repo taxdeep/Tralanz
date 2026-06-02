@@ -16,6 +16,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
           company_id   char(7)      not null,
           module_key   varchar(64)  not null,
           enabled      boolean      not null,
+          access_expires_at timestamptz null,
           updated_at   timestamptz  not null default now(),
           updated_by   char(7)      null,
           primary key (company_id, module_key)
@@ -40,7 +41,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            select module_key, enabled, updated_at, updated_by
+            select module_key, enabled, access_expires_at, updated_at, updated_by
             from company_module_flags
             where company_id = @company_id;
             """;
@@ -53,6 +54,10 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
             {
                 var key = reader.GetString(reader.GetOrdinal("module_key")).Trim();
                 var enabled = reader.GetBoolean(reader.GetOrdinal("enabled"));
+                var accessExpiresAtOrdinal = reader.GetOrdinal("access_expires_at");
+                var accessExpiresAt = reader.IsDBNull(accessExpiresAtOrdinal)
+                    ? (DateTimeOffset?)null
+                    : ToUtcOffset(reader.GetFieldValue<DateTime>(accessExpiresAtOrdinal));
                 var updatedAt = reader.GetFieldValue<DateTime>(reader.GetOrdinal("updated_at"));
                 var updatedByOrdinal = reader.GetOrdinal("updated_by");
                 UserId? updatedBy = reader.IsDBNull(updatedByOrdinal)
@@ -60,7 +65,8 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
                     : UserId.Parse(reader.GetString(updatedByOrdinal).Trim());
                 persisted[key] = new PersistedRow(
                     enabled,
-                    new DateTimeOffset(DateTime.SpecifyKind(updatedAt, DateTimeKind.Utc), TimeSpan.Zero),
+                    accessExpiresAt,
+                    ToUtcOffset(updatedAt),
                     updatedBy);
             }
         }
@@ -80,6 +86,8 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
                     option.DisplayName,
                     option.Description,
                     row.Enabled,
+                    row.AccessExpiresAtUtc,
+                    row.Enabled && row.AccessExpiresAtUtc.HasValue && row.AccessExpiresAtUtc.Value <= DateTimeOffset.UtcNow,
                     row.UpdatedAtUtc,
                     row.UpdatedBy));
             }
@@ -91,6 +99,8 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
                     option.DisplayName,
                     option.Description,
                     Enabled: false,
+                    AccessExpiresAtUtc: null,
+                    IsExpired: false,
                     UpdatedAtUtc: null,
                     UpdatedByUserId: null));
             }
@@ -120,6 +130,49 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
         return raw is bool enabled && enabled;
     }
 
+    public async Task<CompanyModuleFlagAccessStatus> GetAccessStatusAsync(
+        CompanyId companyId,
+        string moduleKey,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select enabled, access_expires_at
+            from company_module_flags
+            where company_id = @company_id
+              and module_key = @module_key;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("module_key", moduleKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new CompanyModuleFlagAccessStatus(
+                companyId,
+                moduleKey,
+                Enabled: false,
+                AccessExpiresAtUtc: null,
+                IsExpired: false);
+        }
+
+        var enabled = reader.GetBoolean(reader.GetOrdinal("enabled"));
+        var accessExpiresAtOrdinal = reader.GetOrdinal("access_expires_at");
+        var accessExpiresAt = reader.IsDBNull(accessExpiresAtOrdinal)
+            ? (DateTimeOffset?)null
+            : ToUtcOffset(reader.GetFieldValue<DateTime>(accessExpiresAtOrdinal));
+
+        return new CompanyModuleFlagAccessStatus(
+            companyId,
+            moduleKey,
+            enabled,
+            accessExpiresAt,
+            enabled && accessExpiresAt.HasValue && accessExpiresAt.Value <= nowUtc);
+    }
+
     public async Task<CompanyModuleFlagUpdateResult> SetEnabledAsync(
         CompanyId companyId,
         string moduleKey,
@@ -127,6 +180,7 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
         string reason,
         string actorType,
         UserId? actorUserId,
+        DateTimeOffset? accessExpiresAtUtc,
         bool forceAuditOnNoChange,
         CancellationToken cancellationToken)
     {
@@ -150,10 +204,11 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
             upsertCommand.Transaction = transaction;
             upsertCommand.CommandText =
                 """
-                insert into company_module_flags (company_id, module_key, enabled, updated_at, updated_by)
-                values (@company_id, @module_key, @enabled, now(), @updated_by)
+                insert into company_module_flags (company_id, module_key, enabled, access_expires_at, updated_at, updated_by)
+                values (@company_id, @module_key, @enabled, @access_expires_at, now(), @updated_by)
                 on conflict (company_id, module_key) do update set
                   enabled = excluded.enabled,
+                  access_expires_at = excluded.access_expires_at,
                   updated_at = excluded.updated_at,
                   updated_by = excluded.updated_by
                 returning updated_at;
@@ -161,6 +216,9 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
             upsertCommand.Parameters.AddWithValue("company_id", companyId.Value);
             upsertCommand.Parameters.AddWithValue("module_key", moduleKey);
             upsertCommand.Parameters.AddWithValue("enabled", enabled);
+            upsertCommand.Parameters.AddWithValue(
+                "access_expires_at",
+                accessExpiresAtUtc.HasValue ? (object)accessExpiresAtUtc.Value : DBNull.Value);
             upsertCommand.Parameters.AddWithValue(
                 "updated_by",
                 actorUserId.HasValue ? (object)actorUserId.Value.Value : DBNull.Value);
@@ -193,6 +251,8 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
             option.DisplayName,
             option.Description,
             enabled,
+            accessExpiresAtUtc,
+            enabled && accessExpiresAtUtc.HasValue && accessExpiresAtUtc.Value <= DateTimeOffset.UtcNow,
             updatedAt,
             actorUserId);
 
@@ -300,7 +360,14 @@ public sealed class PostgreSqlCompanyModuleFlagStore(
         return new Guid(hash);
     }
 
-    private sealed record PersistedRow(bool Enabled, DateTimeOffset UpdatedAtUtc, UserId? UpdatedBy);
+    private static DateTimeOffset ToUtcOffset(DateTime value) =>
+        new(DateTime.SpecifyKind(value, DateTimeKind.Utc), TimeSpan.Zero);
+
+    private sealed record PersistedRow(
+        bool Enabled,
+        DateTimeOffset? AccessExpiresAtUtc,
+        DateTimeOffset UpdatedAtUtc,
+        UserId? UpdatedBy);
 
     private sealed record PreviousRow(bool Enabled);
 }

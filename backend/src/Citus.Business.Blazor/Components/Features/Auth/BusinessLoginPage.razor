@@ -6,6 +6,9 @@
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 @inject BusinessAuthenticationClient BusinessAuthenticationClient
+@inject BusinessSetupStatusClient SetupStatusClient
+@inject ModuleFlagsClient ModuleFlagsClient
+@inject ILogger<BusinessLoginPage> Logger
 
 @*
     Plain HTML inputs are used here on purpose: the login surface must
@@ -14,13 +17,13 @@
     with the rest of the app.
 *@
 
-<PageTitle>Sign in | Tralanz Books</PageTitle>
+<PageTitle>Sign in | Aiseworks</PageTitle>
 
 <div class="sys-login">
     <header class="sys-login__bar">
         <span class="sys-login__bar-title">
             <CitusIcon Name="IconName.BuildingBank" Size="IconSize.Inline" />
-            Tralanz Books
+            Aiseworks
         </span>
         <span class="sys-login__bar-meta">Multi-tenant ERP</span>
     </header>
@@ -36,6 +39,30 @@
                 Company-scoped accounting workspace. Use the credentials issued to your business membership.
             </p>
         </div>
+
+        @if (_isCheckingSetup)
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Info"
+                        ShowIcon="true"
+                        Message="Checking first-time setup status..."
+                        Class="mt-4" />
+        }
+        else if (RequiresFirstTimeSetup)
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Warning"
+                        ShowIcon="true"
+                        Message="@BuildSetupMessage()"
+                        Class="mt-4" />
+
+            <div class="mt-4">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Size="CitusButtonSize.Large"
+                             Block="true"
+                             OnClick="OpenFirstTimeSetupAsync">
+                    Open first-time setup
+                </CitusButton>
+            </div>
+        }
 
         <div class="sys-login__rule"></div>
 
@@ -62,13 +89,9 @@
                        disabled="@_isSubmitting" />
             </label>
 
-            @* Remember-email opt-in. Defaults checked when an email is
-               already remembered (operator previously opted in); defaults
-               unchecked for a first-time visitor so we don't presume to
-               persist anything. Only the email is stored — never the
-               password. Backed by localStorage on the operator's device. *@
-            <label class="flex items-center gap-2 text-sm">
+            <label class="flex items-center gap-2 text-sm text-fg-muted">
                 <input type="checkbox"
+                       class="h-4 w-4 rounded border-border"
                        checked="@_rememberEmail"
                        @onchange="OnRememberEmailChanged"
                        disabled="@_isSubmitting" />
@@ -89,34 +112,25 @@
             </div>
         </form>
     </div>
-
-    <footer class="sys-login__switcher">
-        <span class="text-fg-muted text-xs">Platform administrator?</span>
-        <a href="/sysadmin/login" class="citus-link">SysAdmin sign in</a>
-    </footer>
 </div>
 
 @code {
+    private const string RememberEmailKey = "aiseworks.business.login.rememberEmail";
+    private const string SavedEmailKey = "aiseworks.business.login.email";
+
     private string _email = string.Empty;
     private string _password = string.Empty;
-    private bool _isSubmitting;
-    // Remember-email checkbox state. Hydrated from localStorage on the
-    // first interactive render: if there's a remembered email we default
-    // the checkbox to ON and prefill the field; otherwise OFF so a
-    // first-time visit doesn't presume to persist anything.
     private bool _rememberEmail;
+    private bool _isSubmitting;
+    private bool _isCheckingSetup = true;
+    private bool _hasRedirectedToSetup;
+    private BusinessSetupStatus? _setupStatus;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender) return;
-        var saved = await JS.InvokeAsync<string>("citusBusinessAuth.getRememberedEmail");
-        if (!string.IsNullOrWhiteSpace(saved))
-        {
-            _email = saved;
-            _rememberEmail = true;
-            StateHasChanged();
-        }
-    }
+    private bool RequiresFirstTimeSetup =>
+        _setupStatus is not null &&
+        (!_setupStatus.BusinessReady ||
+         _setupStatus.SetupRequired ||
+         _setupStatus.FirstCompanySetupRequired);
 
     private void OnEmailChanged(ChangeEventArgs args) =>
         _email = args.Value?.ToString() ?? string.Empty;
@@ -125,12 +139,52 @@
         _password = args.Value?.ToString() ?? string.Empty;
 
     private void OnRememberEmailChanged(ChangeEventArgs args) =>
-        _rememberEmail = args.Value is bool b && b;
+        _rememberEmail = args.Value is bool value && value;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSetupStatusAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await LoadRememberedEmailAsync();
+    }
+
+    private async Task LoadSetupStatusAsync()
+    {
+        _isCheckingSetup = true;
+
+        try
+        {
+            _setupStatus = await SetupStatusClient.GetSetupStatusAsync();
+            if (RequiresFirstTimeSetup && !_hasRedirectedToSetup)
+            {
+                _hasRedirectedToSetup = true;
+                NavigationManager.NavigateTo("/setup", forceLoad: true);
+            }
+        }
+        finally
+        {
+            _isCheckingSetup = false;
+        }
+    }
 
     private async Task SignInAsync()
     {
         if (_isSubmitting)
         {
+            return;
+        }
+
+        if (RequiresFirstTimeSetup)
+        {
+            await OpenFirstTimeSetupAsync();
             return;
         }
 
@@ -155,13 +209,7 @@
 
             ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session);
             await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", response.SessionToken);
-
-            // Persist the email if the operator opted in; otherwise clear
-            // any previously-saved value (so unchecking the box on a
-            // shared device actually removes it).
-            await JS.InvokeVoidAsync(
-                "citusBusinessAuth.setRememberedEmail",
-                _rememberEmail ? _email.Trim() : string.Empty);
+            await PersistRememberedEmailAsync();
 
             // Merge any persisted display-name override so the user sees
             // their preferred name on the first dashboard render.
@@ -171,6 +219,8 @@
                 ShellState.UpdateUserDisplayName(profileOverride.DisplayName);
             }
 
+            await LoadModuleFlagsForFirstDashboardRenderAsync();
+
             await Message.SuccessAsync($"Welcome back, {response.Session.User.DisplayName}.");
 
             NavigationManager.NavigateTo("dashboard");
@@ -178,6 +228,90 @@
         finally
         {
             _isSubmitting = false;
+        }
+    }
+
+    private Task OpenFirstTimeSetupAsync()
+    {
+        _hasRedirectedToSetup = true;
+        NavigationManager.NavigateTo("/setup", forceLoad: true);
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadModuleFlagsForFirstDashboardRenderAsync()
+    {
+        try
+        {
+            var flags = await ModuleFlagsClient.ListAsync();
+            ShellState.ApplyModuleFlags(flags);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to preload module flags after business sign-in.");
+        }
+    }
+
+    private string BuildSetupMessage()
+    {
+        if (_setupStatus?.SetupRequired == true)
+        {
+            return "Aiseworks has not been initialized yet. Create the first SysAdmin account before business users can sign in.";
+        }
+
+        if (_setupStatus?.FirstCompanySetupRequired == true || _setupStatus?.BusinessReady == false)
+        {
+            return "Aiseworks still needs the first company and owner account before the business workspace can be used.";
+        }
+
+        return "Aiseworks first-time setup is not complete.";
+    }
+
+    private async Task LoadRememberedEmailAsync()
+    {
+        try
+        {
+            var rememberRaw = await JS.InvokeAsync<string?>(
+                "window.localStorage.getItem",
+                RememberEmailKey);
+
+            _rememberEmail = string.Equals(rememberRaw, "true", StringComparison.OrdinalIgnoreCase);
+            if (_rememberEmail)
+            {
+                var savedEmail = await JS.InvokeAsync<string?>(
+                    "window.localStorage.getItem",
+                    SavedEmailKey);
+                if (!string.IsNullOrWhiteSpace(savedEmail))
+                {
+                    _email = savedEmail.Trim();
+                }
+            }
+
+            StateHasChanged();
+        }
+        catch
+        {
+            // Local browser storage can be disabled. Login still works.
+        }
+    }
+
+    private async Task PersistRememberedEmailAsync()
+    {
+        try
+        {
+            if (_rememberEmail)
+            {
+                await JS.InvokeVoidAsync("window.localStorage.setItem", RememberEmailKey, "true");
+                await JS.InvokeVoidAsync("window.localStorage.setItem", SavedEmailKey, _email.Trim());
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("window.localStorage.removeItem", RememberEmailKey);
+                await JS.InvokeVoidAsync("window.localStorage.removeItem", SavedEmailKey);
+            }
+        }
+        catch
+        {
+            // Remembering the email is best-effort and must not block sign-in.
         }
     }
 }

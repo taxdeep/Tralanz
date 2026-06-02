@@ -91,9 +91,9 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         // entity_number stays as the platform-wide audit identifier
         // (EN+YYYY+5base36, kept for ledger / cross-company references).
         // customer_number is the operator-facing display code drawn from
-        // the company-scoped "customer-display" numbering scope (CUS-NNNNNN
+        // the company-scoped "customer-display" numbering scope (CUSNNNNNN
         // by default, configurable in Settings → Numbering). The two run
-        // off independent scopes so a tenant can reset their CUS- counter
+        // off independent scopes so a tenant can reset their CUS counter
         // mid-year without disturbing the audit chain.
         var customerNumberSeed = await FindCustomerNumberSeedAsync(
             connection, transaction, companyId, cancellationToken).ConfigureAwait(false);
@@ -102,7 +102,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
             transaction,
             companyId,
             "customer-display",
-            "CUS-",
+            "CUS",
             padding: 6,
             seedNumber: customerNumberSeed,
             cancellationToken).ConfigureAwait(false);
@@ -291,8 +291,8 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     // Seed for the customer-display sequence is max(existing) + 1 across
     // this company's customers. Without the seed scan a fresh sequence
     // row would start at 1, but if the operator had already issued
-    // CUS-000003 manually (via a prior seed import), we'd hand back
-    // CUS-000001 again and trip uq_customers_company_customer_number.
+    // CUS000003 manually (or CUS-000003 from an older build), we'd hand
+    // back CUS000001 again and trip uq_customers_company_customer_number.
     private static async Task<long> FindCustomerNumberSeedAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -305,8 +305,8 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
             select coalesce(
               max(
                 case
-                  when customer_number ~ '^CUS-[0-9]+$'
-                    then substring(customer_number from 5)::bigint
+                  when customer_number ~ '^CUS-?[0-9]+$'
+                    then regexp_replace(customer_number, '^CUS-?', '')::bigint
                   else null
                 end
               ),

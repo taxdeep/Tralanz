@@ -1,258 +1,329 @@
 @page "/invoices/new"
+@page "/invoices/{InvoiceId:guid}/edit"
 
 @using Citus.Modules.UnitySearch.Blazor
 @using Citus.Modules.Tasks.Domain.Shared
-@using TaskStatus = Citus.Modules.Tasks.Domain.Shared.TaskStatus
 
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
+@inject InvoiceClient InvoiceClient
 @inject CustomerClient CustomerClient
 @inject ItemClient ItemClient
 @inject AccountClient AccountClient
 @inject TaxCodeClient TaxCodeClient
-@inject UomClient UomClient
+@inject SalesTaxClient SalesTaxClient
 @inject SalesOrderClient SalesOrderClient
 @inject TaskClient TaskClient
-@inject InvoiceClient InvoiceClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
-<PageTitle>New Invoice | Tralanz Books</PageTitle>
+<PageTitle>@($"{InvoiceTitle} | Tralanz Books")</PageTitle>
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <a class="citus-button citus-button--ghost" href="invoices">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to invoices</span>
-        </a>
-    </Actions>
-</CitusPageHeader>
+<div class="aise-invoice-page">
+    <header class="aise-invoice-topbar">
+        <div class="aise-invoice-title">
+            <a class="aise-invoice-back" href="invoices" title="Back to invoices">
+                <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            </a>
+            <div>
+                <h1>@InvoiceTitle</h1>
+                <span>@ShellState.ActiveCompany.CompanyName</span>
+            </div>
+        </div>
+        <div class="aise-invoice-topbar__actions">
+            <a class="citus-button citus-button--ghost" href="receive-payment">
+                <CitusIcon Name="IconName.Cash" Size="IconSize.Inline" />
+                <span>Receive payment</span>
+            </a>
+        </div>
+    </header>
 
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
-}
+    @if (ShellState.AreWritesBlocked)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-3" />
+    }
 
-@if (_isFromCopy)
-{
-    @* Copy A3 Phase 2: prefilled from another invoice. The source is
-       untouched; this is a fresh draft the operator can revise. *@
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Review the lines and revise as needed; the original invoice is unchanged." />
-}
-
-@if (!string.IsNullOrWhiteSpace(_validation))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-}
-
-@if (_lastResult is not null)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
-        <MessageTemplate>
-            <strong>@_lastResult.Operation</strong>
-            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
-        </MessageTemplate>
-    </CitusAlert>
-}
-
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Document date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
+    @if (NeedsFxRate)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Class="mb-3">
+            <MessageTemplate>
+                <strong>Something's not quite right.</strong>
+                <div class="text-fg-muted text-sm mt-1">
+                    No exchange rate is available for the chosen date. Please enter the exchange rate.
+                    <button type="button" class="citus-link-button" @onclick="OpenFxDrawer">Enter</button>
                 </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Due date</label>
+            </MessageTemplate>
+        </CitusAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-3" />
+    }
+
+    @if (_lastResult is not null)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-3">
+            <MessageTemplate>
+                <strong>@_lastResult.Operation</strong>
+                <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
+            </MessageTemplate>
+        </CitusAlert>
+    }
+
+    <div class="aise-invoice-workspace">
+        <main class="aise-invoice-sheet">
+            <section class="aise-invoice-sheet__header">
+                <h2>Invoice</h2>
+                <div class="aise-invoice-balance">
+                    <span>Balance due</span>
+                    <strong>@_currency.ToUpperInvariant() @FormatAmount(_total)</strong>
+                </div>
+            </section>
+
+            <section class="aise-invoice-band">
+                <div class="aise-invoice-customer">
+                    <label class="aise-invoice-label">Customer</label>
+                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                    Placeholder="Choose a customer..."
+                                    Take="8"
+                                    SourceRoute="/invoices/new"
+                                    SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
+                                    SelectedDisplayText="@_customerDisplay"
+                                    OnCustomerSelected="OnCustomerSelected"
+                                    OnCleared="OnCustomerCleared" />
+                    <CitusInput TValue="string" Placeholder="Enter customer email" Size="CitusButtonSize.Small" />
+                    <button type="button" class="citus-link-button">Cc/Bcc</button>
+                </div>
+
+                <div class="aise-invoice-address">
+                    <label class="aise-invoice-label">Bill to</label>
+                    <textarea class="citus-form-field__input aise-invoice-textarea">@CustomerAddressText</textarea>
+                    <button type="button" class="citus-link-button">Edit Customer</button>
+                </div>
+
+                <div class="aise-invoice-address">
+                    <label class="aise-invoice-label">Ship to</label>
+                    <textarea class="citus-form-field__input aise-invoice-textarea">@CustomerAddressText</textarea>
+                </div>
+
+                <div class="aise-invoice-shipping">
+                    <label>Ship via</label>
+                    <CitusInput TValue="string" Size="CitusButtonSize.Small" />
+                    <label>Shipping date</label>
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Class="citus-control-full" />
+                    <label>Tracking no.</label>
+                    <CitusInput TValue="string" Size="CitusButtonSize.Small" />
+                </div>
+
+                <div class="aise-invoice-meta">
+                    <label>Invoice no.</label>
+                    <div class="citus-form-field__input citus-form-field__input--readonly">Reserved at posting</div>
+                    <label>Terms</label>
+                    <select class="citus-form-field__input">
+                        <option>Due on receipt</option>
+                        <option>Net 15</option>
+                        <option>Net 30</option>
+                    </select>
+                    <label>Invoice date</label>
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
+                    <label>Due date</label>
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Class="citus-control-full" />
                 </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Customer</label>
-                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                       UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                       Placeholder="Search customers…"
-                                       Take="8"
-                                       SourceRoute="/invoices/new"
-                                       SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
-                                       SelectedDisplayText="@_customerDisplay"
-                                       OnCustomerSelected="OnCustomerSelected"
-                                       OnCleared="OnCustomerCleared" />
-                </div>
-                <div>
-                    @* The "Transaction currency" label / display is gone —
-                       it was redundant with the FxRateInline rate widget,
-                       which already shows the quote currency code + flag.
-                       FxRateInline self-handles all three states:
-                         - no customer picked → muted "Pick a customer first"
-                         - customer in base currency → "Base currency — no FX rate needed"
-                         - customer in foreign currency → "1 USD = 1.357893 CAD" with flags + override input *@
-                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                    @if (_customerId == Guid.Empty)
-                    {
-                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
-                            <span class="text-fg-subtle">Pick a customer first</span>
-                        </div>
-                    }
-                    else
-                    {
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
-                    }
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
-                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
-                </div>
-                <div>
-                    @* Source SO display — filled when invoice is created via
-                       "Invoice this SO" (flow lands with M3 iter 3). For
-                       direct-create invoices this stays empty and the field
-                       remains null. *@
-                    <label class="text-sm font-medium block mb-1">From sales order</label>
-                    <div class="text-fg-muted text-sm">
-                        @(_salesOrderId is null ? "Direct invoice (no source SO)" : $"From SO {_salesOrderNumber}")
-                    </div>
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
-                </div>
-            </div>
-        </section>
+            </section>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Lines</h2>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </header>
+            <section class="aise-invoice-options">
+                <label class="aise-invoice-label">Tags (hidden)</label>
+                <CitusInput TValue="string" Placeholder="Start typing to add a tag" Size="CitusButtonSize.Small" />
+                <label class="aise-invoice-label">Invoice amounts are (hidden)</label>
+                <select class="citus-form-field__input aise-invoice-tax-mode">
+                    <option>Exclusive of Tax</option>
+                </select>
+            </section>
 
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th style="width: 2.25rem"></th>
-                        <th style="width: 16rem">Item / Service</th>
-                        <th>Description</th>
-                        <th class="text-right" style="width: 6rem">Qty</th>
-                        <th class="text-right" style="width: 9rem">Unit price</th>
-                        <th style="width: 6rem">Tax</th>
-                        <th class="text-right" style="width: 9rem">Line total</th>
-                        <th style="width: 3rem"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (var index = 0; index < _lines.Count; index++)
-                    {
-                        var i = index;
-                        var line = _lines[i];
-                        <tr>
-                            <td>
-                                @* Insert-below button. Always visible (no hover-show) — keeps
-                                   the affordance discoverable for new operators. Plus auto-grow
-                                   below means most operators won't actually need this; it's
-                                   for re-ordering / inserting between two filled lines. *@
-                                <button type="button"
-                                        class="citus-icon-button"
-                                        title="Insert line below"
-                                        @onclick="() => InsertLineAfter(i)">
-                                    <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
-                                </button>
-                            </td>
-                            <td>
-                                @* Item / Service picker. Uses the shared sales item-service wrapper
-                                   (active product_service + inventory_item rows). On select we
-                                   pull the item's DefaultSalesRevenueAccountId and pre-fill the
-                                   line's revenue account from it — sales lines have no separate
-                                   Account column; the Item is the single source of truth. *@
-                                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                   Placeholder="Search items…"
-                                                   Take="6"
-                                                   SourceRoute="/invoices/new"
-                                                   SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
-                                                   SelectedDisplayText="@line.ItemDisplay"
-                                                   OnItemSelected="@(option => OnItemPicked(i, option))"
-                                                   OnCleared="@(() => OnItemCleared(i))" />
-                                @if (line.ItemId != Guid.Empty)
-                                {
-                                    @if (!string.IsNullOrWhiteSpace(line.AccountDisplay))
-                                    {
-                                        <div class="text-fg-subtle text-xs mt-1">→ @line.AccountDisplay</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="text-error text-xs mt-1">Item has no sales/revenue account — set one in Products &amp; Services.</div>
-                                    }
-                                }
-                            </td>
-                            <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td>
-                                <TaxCodePicker SelectedId="@line.TaxCodeId"
-                                               SelectedDisplayText="@line.TaxCode"
-                                               AppliesTo="sales"
-                                               Placeholder="Tax"
-                                               OnTaxCodeSelected="@(tax => OnTaxCodeSelected(i, tax))"
-                                               OnCleared="@(() => OnTaxCodeCleared(i))" />
-                            </td>
-                            <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
-                            <td>
-                                <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
-                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                    <tr class="citus-data-table__total">
-                        <td colspan="6" class="text-right font-medium">Total</td>
-                        <td class="text-right font-semibold">@FormatAmount(_total)</td>
-                        <td></td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
-    </div>
+            <section class="aise-invoice-lines">
+                <header>
+                    <h3>Product or service</h3>
+                    <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
+                </header>
 
-    <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
-                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
-                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
-                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
+                <div class="aise-invoice-table-wrap">
+                    <table class="citus-data-table aise-invoice-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 2.25rem">#</th>
+                                <th style="width: 16rem">Product/service</th>
+                                <th>Description</th>
+                                <th class="text-right" style="width: 6rem">Qty</th>
+                                <th class="text-right" style="width: 9rem">Rate</th>
+                                <th class="text-right" style="width: 9rem">Amount</th>
+                                <th style="width: 7rem">Sales tax</th>
+                                <th style="width: 3rem"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var index = 0; index < _lines.Count; index++)
+                            {
+                                var i = index;
+                                var line = _lines[i];
+                                <tr>
+                                    <td>@(i + 1)</td>
+                                    <td>
+                                        <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                           UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                                           Placeholder="Search items..."
+                                                           Take="6"
+                                                           SourceRoute="/invoices/new"
+                                                           SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                                           SelectedDisplayText="@line.ItemDisplay"
+                                                           OnItemSelected="@(option => OnItemPicked(i, option))"
+                                                           OnCleared="@(() => OnItemCleared(i))" />
+                                        @if (line.ItemId != Guid.Empty && string.IsNullOrWhiteSpace(line.AccountDisplay))
+                                        {
+                                            <div class="text-error text-xs mt-1">Item has no sales/revenue account.</div>
+                                        }
+                                    </td>
+                                    <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
+                                    <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(async v => await UpdateAndRefreshTaxAsync(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
+                                    <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(async v => await UpdateAndRefreshTaxAsync(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
+                                    <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                                    <td>
+                                        <TaxCodePicker SelectedId="@line.TaxCodeId"
+                                                       SelectedDisplayText="@line.TaxCode"
+                                                       AppliesTo="sales"
+                                                       Placeholder="Tax"
+                                                       OnTaxCodeSelected="@(tax => OnTaxCodeSelected(i, tax))"
+                                                       OnCleared="@(() => OnTaxCodeCleared(i))" />
+                                    </td>
+                                    <td>
+                                        <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
+                                            <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="aise-invoice-line-actions">
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">Add product or service</CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                </div>
+            </section>
+
+            <section class="aise-invoice-lower">
+                <div class="aise-invoice-notes">
+                    <label class="aise-invoice-label">Message on invoice</label>
+                    <textarea class="citus-form-field__input aise-invoice-textarea" placeholder="Thank you for your business."></textarea>
+                    <label class="aise-invoice-label">Memo on statement</label>
+                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="This memo will not show up on your invoice." Size="CitusButtonSize.Small" />
+                    <label class="aise-invoice-label">Attachments</label>
+                    <div class="aise-invoice-attachment">Add attachment<br /><span>Max file size 20 MB</span></div>
+                </div>
+                <div class="aise-invoice-totals">
+                    <div><span>Subtotal</span><strong>@_currency.ToUpperInvariant() @FormatAmount(_subtotal)</strong></div>
+                    <div><span>Discount</span><strong>@_currency.ToUpperInvariant() 0.00</strong></div>
+                    <div><span>Shipping</span><strong>@_currency.ToUpperInvariant() 0.00</strong></div>
+                    <div><span>Tax</span><strong>@_currency.ToUpperInvariant() @FormatAmount(_taxTotal)</strong></div>
+                    <div class="aise-invoice-totals__grand"><span>Invoice total</span><strong>@_currency.ToUpperInvariant() @FormatAmount(_total)</strong></div>
                     @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                     {
-                        <tr>
-                            <th>FX rate</th>
-                            <td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td>
-                        </tr>
+                        <button type="button" class="citus-link-button" @onclick="OpenFxDrawer">
+                            Edit exchange rate
+                        </button>
                     }
-                </tbody>
-            </table>
-        </section>
+                </div>
+            </section>
+        </main>
 
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post invoice</h2>
-            <p class="text-fg-muted text-sm mb-3">
-                Posting reserves the invoice number, opens the AR control account row, and creates the journal entry. All flow through the backend Posting Engine.
-            </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post invoice")
-            </CitusButton>
-        </section>
+        <aside class="aise-invoice-rail">
+            <header>
+                <strong>Invoice</strong>
+                <span>@InvoiceSourceLabel</span>
+            </header>
+            <section>
+                <label>Status</label>
+                <select class="citus-form-field__input">
+                    <option>Open</option>
+                </select>
+            </section>
+            <section>
+                <label>Payment options</label>
+                <div class="aise-invoice-payment-icons">
+                    <span>Visa</span><span>MC</span><span>ACH</span>
+                </div>
+            </section>
+            <section>
+                <label>Exchange rate</label>
+                <button type="button" class="citus-link-button" @onclick="OpenFxDrawer">
+                    @FxSummary
+                </button>
+            </section>
+            <section>
+                <label>Design</label>
+                <div class="text-fg-muted text-sm">Default invoice template</div>
+            </section>
+        </aside>
     </div>
+
+    <AisePageActionBar>
+        <LeftContent>
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="@(() => NavigationManager.NavigateTo("invoices"))">Cancel</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="ClearLines">Clear lines</CitusButton>
+        </LeftContent>
+        <CenterContent>
+            <span class="text-fg-muted text-sm">Print or download</span>
+            <span class="text-fg-muted text-sm">Make recurring</span>
+        </CenterContent>
+        <RightContent>
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Disabled="@(_isSavingDraft || _isSubmitting || ShellState.AreWritesBlocked)"
+                         Loading="@_isSavingDraft"
+                         OnClick="SaveDraftAsync">
+                @(_isSavingDraft ? "Saving..." : "Save draft")
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Disabled="@(_lines.Count == 0 || _subtotal <= 0 || ShellState.AreWritesBlocked || _isSubmitting || _isSavingDraft)"
+                         OnClick="PostCurrentAsync">
+                @(_isSubmitting ? "Posting..." : PrimaryPostLabel)
+            </CitusButton>
+        </RightContent>
+    </AisePageActionBar>
 </div>
 
+<CitusDrawer @bind-IsOpen="_isFxDrawerOpen"
+             Title="Edit exchange rate"
+             Width="CitusDrawerWidth.Medium"
+             SaveDisabled="@(!_fxRateDraft.HasValue || _fxRateDraft.Value <= 0)"
+             OnSave="SaveFxDrawer"
+             OnCancel="CancelFxDrawer">
+    <div class="aise-fx-drawer">
+        <div class="aise-fx-drawer__note">
+            We use the recommended exchange rate for the invoice date when one is available.
+        </div>
+        <h3>Custom rate</h3>
+        <label>@_currency.ToUpperInvariant()</label>
+        <div class="citus-form-field__input citus-form-field__input--readonly">$1</div>
+        <label>@ShellState.ActiveCompany.BaseCurrencyCode.ToUpperInvariant()</label>
+        <RadzenNumeric TValue="decimal?"
+                       @bind-Value="_fxRateDraft"
+                       Min="0"
+                       Format="0.000000"
+                       Class="citus-control-full" />
+        <hr />
+        <h3>Apply rate to</h3>
+        <label class="aise-fx-drawer__radio">
+            <input type="radio" checked />
+            <span>Transaction only</span>
+        </label>
+    </div>
+</CitusDrawer>
+
 @code {
+    [Parameter] public Guid InvoiceId { get; set; }
+
     /// <summary>
     /// Optional source-SO id passed via query string. When present (the
     /// "Invoice this SO" flow from the SO detail page) the create page
@@ -262,31 +333,8 @@
     /// </summary>
     [SupplyParameterFromQuery] public Guid? FromSalesOrderId { get; set; }
 
-    /// <summary>
-    /// Optional source-task id passed via query string. When present
-    /// ("Bill this task" flow from TaskDetailPage) the create page
-    /// pre-fills customer + currency + lines from the task, and every
-    /// line is stamped with TaskId so the post handler can flip the
-    /// task Completed -> Billed once the invoice posts.
-    /// </summary>
-    [SupplyParameterFromQuery] public Guid? FromTaskId { get; set; }
-
-    /// <summary>
-    /// Copy A3 Phase 2: source invoice id passed via query string. Set
-    /// by InvoiceDetailPage's More → Copy. The create page hydrates
-    /// the form with the source's customer / currency / lines / memo,
-    /// resets the dates to today (+30), and shows a "This is a copy"
-    /// banner. The new invoice is fully independent of the source —
-    /// no FK back, no JE link.
-    /// </summary>
-    [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromInvoiceId { get; set; }
-
-    private PageHeaderModel _header = new()
-    {
-        Eyebrow = "Sales & Get Paid",
-        Title = "New invoice",
-        Subtitle = "Customer-facing receivable. Posting opens the AR open item; settlement happens in Receive Payment."
-    };
+    [SupplyParameterFromQuery(Name = "FromTaskId")]
+    public Guid? FromTaskId { get; set; }
 
     private DateTime? _documentDate = DateTime.Today;
     private DateTime? _dueDate = DateTime.Today.AddDays(30);
@@ -309,6 +357,9 @@
     /// </summary>
     private Guid? _salesOrderId;
     private string? _salesOrderNumber;
+    private Guid? _sourceTaskId;
+    private string? _sourceTaskNumber;
+    private string? _editingInvoiceNumber;
     /// <summary>
     /// UI-side per-line state. Carries the wire-shape fields plus the
     /// item-picker's <see cref="ItemId"/> / <see cref="ItemDisplay"/> so
@@ -328,41 +379,76 @@
         string AccountCode = "",
         Guid? TaxCodeId = null,
         string TaxCode = "",
-        // Back-link to the Task this line bills. Set on every line when
-        // the page is opened via "Bill this task" (FromTaskId path). The
-        // submit projection passes it to the wire shape so the post
-        // handler can flip the source tasks Completed -> Billed.
-        Guid? TaskId = null)
+        decimal TaxAmount = 0m,
+        Guid? TaskId = null,
+        Guid? TaskLineId = null)
     {
         public bool HasContent =>
             ItemId != Guid.Empty
             || !string.IsNullOrWhiteSpace(Description)
             || !string.IsNullOrWhiteSpace(AccountCode)
             || !string.IsNullOrWhiteSpace(TaxCode)
+            || TaskId.HasValue
+            || TaskLineId.HasValue
             || UnitPrice > 0m;
     }
 
     private readonly List<InvoiceLineEditState> _lines = new() { new InvoiceLineEditState() };
     private bool _isSubmitting;
+    private bool _isSavingDraft;
+    private bool _isFxDrawerOpen;
+    private decimal? _fxRateDraft;
     private string? _validation;
     private WriteFlowResult? _lastResult;
-    // Copy A3 Phase 2: drives the "This is a copy" banner. Set true
-    // by TryHydrateFromCopySourceAsync when ?copyFrom={id} succeeds.
-    private bool _isFromCopy;
 
     // Item + account caches let the Item picker auto-fill each line's revenue
     // account without a per-pick round-trip. Loaded once on page init; stale
     // entries fall back to "missing account" and surface the validation error.
     private Dictionary<Guid, ItemSummary> _itemsById = new();
     private Dictionary<Guid, AccountSummary> _accountsById = new();
-    // UOM lookup: drives the Task-prefill rounding (qty precision follows
-    // the picked item's UOM). Default 2 when the item has no UOM or the
-    // master couldn't be loaded — lets fractional hour-based services
-    // through instead of force-flooring to integer.
-    private Dictionary<string, UomSummary> _uomsByCode = new(StringComparer.OrdinalIgnoreCase);
-    private const int DefaultUomPrecision = 2;
+    private Dictionary<Guid, TaxCodeSummary> _salesTaxCodesById = new();
 
-    private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
+    private decimal _subtotal => Math.Round(_lines.Sum(l => l.Quantity * l.UnitPrice), 4);
+    private decimal _taxTotal => Math.Round(_lines.Sum(l => l.TaxAmount), 4);
+    private decimal _total => Math.Round(_subtotal + _taxTotal, 4);
+
+    private bool IsForeignCurrency =>
+        !string.IsNullOrWhiteSpace(_currency)
+        && !string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase);
+
+    private bool NeedsFxRate => _customerId != Guid.Empty && IsForeignCurrency && (!_fxRate.HasValue || _fxRate.Value <= 0m);
+
+    private bool IsEditMode => InvoiceId != Guid.Empty;
+
+    private string CustomerAddressText =>
+        string.IsNullOrWhiteSpace(_customerDisplay)
+            ? string.Empty
+            : _customerDisplay;
+
+    private string FxSummary =>
+        !IsForeignCurrency
+            ? "Base currency"
+            : _fxRate.HasValue && _fxRate.Value > 0m
+                ? $"1 {_currency.ToUpperInvariant()} = {_fxRate.Value:0.000000} {ShellState.ActiveCompany.BaseCurrencyCode.ToUpperInvariant()}"
+                : "Enter exchange rate";
+
+    private string InvoiceTitle =>
+        IsEditMode
+            ? $"Edit invoice {_editingInvoiceNumber ?? string.Empty}".TrimEnd()
+            : _salesOrderId is not null
+            ? $"New invoice from {_salesOrderNumber}"
+            : _sourceTaskId is not null
+                ? $"New invoice from {_sourceTaskNumber}"
+                : "New invoice";
+
+    private string PrimaryPostLabel => IsEditMode ? "Save and post" : "Review and post";
+
+    private string InvoiceSourceLabel =>
+        _salesOrderId is not null
+            ? _salesOrderNumber ?? "Sales order"
+            : _sourceTaskId is not null
+                ? _sourceTaskNumber ?? "Task"
+                : "New invoice";
 
     protected override async Task OnInitializedAsync()
     {
@@ -371,10 +457,14 @@
         _itemsById = items.ToDictionary(i => i.Id);
         var accounts = await AccountClient.ListAsync();
         _accountsById = accounts.ToDictionary(a => a.Id);
-        var uoms = await UomClient.ListAsync(includeInactive: false);
-        _uomsByCode = uoms.ToDictionary(u => u.Code, StringComparer.OrdinalIgnoreCase);
+        var taxCodes = await TaxCodeClient.ListAsync(appliesTo: "sales");
+        _salesTaxCodesById = taxCodes.ToDictionary(t => t.Id);
 
-        if (FromSalesOrderId is { } soId && soId != Guid.Empty)
+        if (IsEditMode)
+        {
+            await LoadExistingDraftAsync(InvoiceId);
+        }
+        else if (FromSalesOrderId is { } soId && soId != Guid.Empty)
         {
             await PrefillFromSalesOrderAsync(soId);
         }
@@ -382,215 +472,84 @@
         {
             await PrefillFromTaskAsync(taskId);
         }
-        else if (CopyFromInvoiceId is { } copyId && copyId != Guid.Empty)
-        {
-            await PrefillFromCopySourceAsync(copyId);
-        }
     }
 
-    /// <summary>
-    /// Copy A3 Phase 2: pre-fills the form from an existing invoice
-    /// (called via the More → Copy flow on InvoiceDetailPage). The
-    /// new invoice is fully independent of the source — there's no
-    /// FK link and no JE provenance. Defaults that intentionally
-    /// differ from a verbatim copy:
-    ///   - Document date  → today
-    ///   - Due date       → today + 30 days (reset; carrying the
-    ///                      source's due date would yield a date
-    ///                      already in the past for stale invoices)
-    ///   - FX rate        → null (re-resolved for today)
-    ///   - Customer PO #  → blank (PO #s are per-occurrence)
-    ///   - Sales Order    → not carried (we're not refulfilling an SO)
-    ///   - Memo           → copied (describes the deliverable)
-    ///   - Lines          → copied (item/account/qty/unit price/tax)
-    ///   - Task back-link → NOT copied (source task may already be
-    ///                      Billed/Closed; a new bill needs an
-    ///                      explicit operator decision on attribution)
-    /// </summary>
-    private async Task PrefillFromCopySourceAsync(Guid sourceInvoiceId)
+    private async Task LoadExistingDraftAsync(Guid invoiceId)
     {
-        InvoiceRecordDto? source;
-        try
+        var invoice = await InvoiceClient.GetByIdAsync(invoiceId, ShellState.ActiveCompany.Id);
+        if (invoice is null)
         {
-            source = await InvoiceClient.GetByIdAsync(sourceInvoiceId, ShellState.ActiveCompany.Id);
-        }
-        catch
-        {
-            return;
-        }
-        if (source is null)
-        {
-            _validation = "The invoice you copied from is not visible in this company. The form is blank.";
+            _validation = "Invoice draft was not found in this company.";
             return;
         }
 
-        var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
-        _isFromCopy = true;
-        _customerId = source.CustomerId;
-        _customerDisplay = customer?.DisplayName ?? string.Empty;
-        _currency = source.TransactionCurrencyCode;
-        _documentDate = DateTime.Today;
-        _dueDate = DateTime.Today.AddDays(30);
+        if (!string.Equals(invoice.Status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            _validation = "Only draft invoices can be edited.";
+            await Message.WarningAsync(_validation);
+            return;
+        }
+
+        _editingInvoiceNumber = invoice.DisplayNumber;
+        _customerId = invoice.CustomerId;
+        _documentDate = invoice.DocumentDate.ToDateTime(TimeOnly.MinValue);
+        _dueDate = invoice.DueDate?.ToDateTime(TimeOnly.MinValue);
+        _currency = string.IsNullOrWhiteSpace(invoice.TransactionCurrencyCode)
+            ? ShellState.ActiveCompany.BaseCurrencyCode
+            : invoice.TransactionCurrencyCode.Trim().ToUpperInvariant();
         _fxRate = null;
-        _memo = source.Memo ?? string.Empty;
-        _customerPoNumber = string.Empty;
-        _salesOrderId = null;
-        _salesOrderNumber = null;
+        _memo = invoice.Memo ?? string.Empty;
+        _customerPoNumber = invoice.CustomerPoNumber ?? string.Empty;
+        _salesOrderId = invoice.SalesOrderId;
+        _sourceTaskId = invoice.Lines.FirstOrDefault(line => line.TaskId.HasValue)?.TaskId;
+        _sourceTaskNumber = _sourceTaskId.HasValue ? "task" : null;
 
-        // Note: InvoiceLineDto exposes only the resolved TaxAmount, not
-        // the source tax-code id, so we can't carry per-line tax codes
-        // across a copy without widening the read DTO. For Phase 2 we
-        // accept that tradeoff — operator re-picks tax on the new
-        // invoice (which is anyway sensible: rates may have changed
-        // since the original).
-        _lines.Clear();
-        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
-        {
-            var accountDisplay = line.RevenueAccountId is { } rid && _accountsById.TryGetValue(rid, out var acct)
-                ? $"{acct.Code}  {acct.Name}"
-                : string.Empty;
-            var accountCode = line.RevenueAccountId is { } rid2 && _accountsById.TryGetValue(rid2, out var acct2)
-                ? acct2.Code
-                : string.Empty;
-            _lines.Add(new InvoiceLineEditState(
-                ItemId: Guid.Empty,
-                ItemDisplay: string.Empty,
-                Description: line.Description ?? string.Empty,
-                Quantity: line.Quantity,
-                UnitPrice: line.UnitPrice,
-                AccountId: line.RevenueAccountId,
-                AccountDisplay: accountDisplay,
-                AccountCode: accountCode,
-                TaxCodeId: null,   // see comment above
-                TaxCode: string.Empty,
-                TaskId: null));    // Task back-link NOT copied — see doc
-        }
-        if (_lines.Count == 0) _lines.Add(new InvoiceLineEditState());
-
-        _header = _header with
-        {
-            Title = "New invoice (copy)",
-            Subtitle = $"Pre-filled from {source.DisplayNumber}. The original invoice is unchanged."
-        };
-    }
-
-    /// <summary>
-    /// Pre-fills the form from a Completed task. Mirrors the SO prefill
-    /// pattern: header carries customer + currency + memo, lines mirror
-    /// the task's lines (best-effort revenue-account resolve from item
-    /// master), and every line is stamped with TaskId so the post
-    /// handler can flip the task Completed -> Billed.
-    /// </summary>
-    private async Task PrefillFromTaskAsync(Guid taskId)
-    {
-        var task = await TaskClient.GetAsync(taskId);
-        if (task is null)
-        {
-            await Message.WarningAsync("Source task not found in this company; starting a blank invoice.");
-            return;
-        }
-
-        if (task.Status != TaskStatus.Completed)
-        {
-            await Message.WarningAsync(
-                $"Task {task.TaskNo} is in status '{task.Status}' and cannot be billed. Only completed tasks can build an invoice.");
-            return;
-        }
-
-        if (task.CustomerId is null)
-        {
-            await Message.WarningAsync(
-                $"Task {task.TaskNo} has no customer assigned; set one on the task before billing.");
-            return;
-        }
-
-        // Header pre-fill — fetch the customer summary to populate the
-        // display name + currency. Falls back to task currency if the
-        // customer fetch fails (best-effort).
-        var customer = await CustomerClient.GetByIdAsync(task.CustomerId.Value);
-        _customerId = task.CustomerId.Value;
+        var customer = await CustomerClient.GetByIdAsync(_customerId);
         _customerDisplay = customer?.DisplayName ?? string.Empty;
-        _currency = customer?.DefaultCurrencyCode ?? task.CurrencyCode;
-        _memo = task.Description?.Trim() ?? string.Empty;
-
-        _header = _header with
-        {
-            Title = $"New invoice from task {task.TaskNo}",
-            Subtitle = $"Pre-filled from task {task.TaskNo}. Review and post — posting flips the task to Billed."
-        };
-
-        // Tax codes loaded only on this path so the display labels in
-        // the per-line tax picker render correctly. Same pattern as
-        // PrefillFromSalesOrderAsync.
-        Dictionary<Guid, TaxCodeSummary> taxById;
-        try
-        {
-            var taxCodes = await TaxCodeClient.ListAsync(appliesTo: "sales");
-            taxById = taxCodes.ToDictionary(t => t.Id);
-        }
-        catch
-        {
-            taxById = new Dictionary<Guid, TaxCodeSummary>();
-        }
 
         _lines.Clear();
-        foreach (var line in task.Lines.OrderBy(l => l.LineNo))
+        foreach (var invoiceLine in invoice.Lines.OrderBy(static line => line.LineNumber))
         {
-            string itemDisplay = string.Empty;
-            Guid? accountId = null;
+            var itemId = invoiceLine.ItemId ?? Guid.Empty;
+            var itemDisplay = itemId != Guid.Empty && _itemsById.TryGetValue(itemId, out var item)
+                ? item.Name
+                : string.Empty;
+            var accountId = invoiceLine.RevenueAccountId;
             string accountCode = string.Empty;
             string accountDisplay = string.Empty;
-
-            if (_itemsById.TryGetValue(line.ItemId, out var item))
+            if (accountId is { } resolvedAccountId && _accountsById.TryGetValue(resolvedAccountId, out var account))
             {
-                itemDisplay = item.Name;
-                if (item.DefaultSalesRevenueAccountId is { } itemAccountId
-                    && _accountsById.TryGetValue(itemAccountId, out var account))
-                {
-                    accountId = account.Id;
-                    accountCode = account.Code;
-                    accountDisplay = $"{account.Code} {account.Name}";
-                }
+                accountCode = account.Code;
+                accountDisplay = $"{account.Code} {account.Name}";
             }
 
-            string taxDisplay = string.Empty;
-            if (line.TaxCodeId is { } taxId && taxById.TryGetValue(taxId, out var tax))
-            {
-                taxDisplay = tax.Code;
-            }
+            var taxDisplay = invoiceLine.TaxCodeId is { } taxCodeId &&
+                             _salesTaxCodesById.TryGetValue(taxCodeId, out var tax)
+                ? tax.Code
+                : string.Empty;
 
-            // task_lines columns are numeric(20,4) so DB always returns scale 4
-            // even when the operator entered an integer ("2.0000") or 2-dp value
-            // ("60.0000"). RadzenNumeric falls back to the decimal's native scale
-            // for display, so without rounding the grid surfaces "2.0000" /
-            // "60.0000". Use the item's UOM precision to round qty (hours stay
-            // fractional, "each" floors to integer); price always rounds to 2
-            // decimals (CAD/USD billing convention).
-            var qtyPrecision = DefaultUomPrecision;
-            if (_itemsById.TryGetValue(line.ItemId, out var pickedItem)
-                && !string.IsNullOrWhiteSpace(pickedItem.StockUomCode)
-                && _uomsByCode.TryGetValue(pickedItem.StockUomCode!, out var uom))
-            {
-                qtyPrecision = uom.DecimalPrecision;
-            }
             _lines.Add(new InvoiceLineEditState(
-                ItemId: line.ItemId,
+                ItemId: itemId,
                 ItemDisplay: itemDisplay,
-                Description: line.Description ?? string.Empty,
-                Quantity: Math.Round(line.Quantity, qtyPrecision, MidpointRounding.AwayFromZero),
-                UnitPrice: Math.Round(line.UnitPrice, 2, MidpointRounding.AwayFromZero),
+                Description: invoiceLine.Description ?? string.Empty,
+                Quantity: invoiceLine.Quantity,
+                UnitPrice: invoiceLine.UnitPrice,
                 AccountId: accountId,
                 AccountDisplay: accountDisplay,
                 AccountCode: accountCode,
-                TaxCodeId: line.TaxCodeId,
+                TaxCodeId: invoiceLine.TaxCodeId,
                 TaxCode: taxDisplay,
-                TaskId: task.Id));
+                TaxAmount: invoiceLine.TaxAmount,
+                TaskId: invoiceLine.TaskId,
+                TaskLineId: invoiceLine.TaskLineId));
         }
 
         if (_lines.Count == 0 || _lines[^1].HasContent)
         {
-            _lines.Add(new InvoiceLineEditState(TaskId: task.Id));
+            _lines.Add(new InvoiceLineEditState());
         }
+
+        await RefreshAllTaxPreviewsAsync();
     }
 
     /// <summary>
@@ -617,12 +576,6 @@
         _salesOrderId = so.Id;
         _salesOrderNumber = so.SalesOrderNumber;
         _memo = so.MemoToCustomer ?? string.Empty;
-
-        _header = _header with
-        {
-            Title = $"New invoice from {so.SalesOrderNumber}",
-            Subtitle = $"Pre-filled from {so.SalesOrderNumber} for {so.CustomerName}. Review and post."
-        };
 
         // Tax codes are loaded only on this path so the display labels in
         // the per-line tax picker render correctly. Normal "blank invoice"
@@ -686,6 +639,117 @@
         {
             _lines.Add(new InvoiceLineEditState());
         }
+
+        await RefreshAllTaxPreviewsAsync();
+    }
+
+    private async Task PrefillFromTaskAsync(Guid taskId)
+    {
+        var task = await TaskClient.GetAsync(taskId);
+        if (task is null)
+        {
+            await Message.WarningAsync("Source task not found in this company; starting a blank invoice.");
+            return;
+        }
+
+        if (!task.CustomerId.HasValue || task.CustomerId.Value == Guid.Empty)
+        {
+            _validation = "The source task has no customer, so it cannot pre-fill an invoice.";
+            return;
+        }
+
+        var taskDisplay = FormatTaskDisplay(task);
+        _sourceTaskId = task.Id;
+        _sourceTaskNumber = task.TaskNo;
+        _customerId = task.CustomerId.Value;
+        _currency = string.IsNullOrWhiteSpace(task.CurrencyCode)
+            ? ShellState.ActiveCompany.BaseCurrencyCode
+            : task.CurrencyCode.Trim().ToUpperInvariant();
+
+        if (task.ServiceDate is { } serviceDate)
+        {
+            _documentDate = serviceDate.ToDateTime(TimeOnly.MinValue);
+            _dueDate = _documentDate.Value.AddDays(30);
+        }
+
+        var customer = await CustomerClient.GetByIdAsync(_customerId);
+        if (customer is not null)
+        {
+            _customerDisplay = customer.DisplayName;
+            if (string.IsNullOrWhiteSpace(task.CurrencyCode) && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
+            {
+                _currency = customer.DefaultCurrencyCode.Trim().ToUpperInvariant();
+            }
+        }
+
+        _memo = $"Invoice for {taskDisplay}";
+
+        Dictionary<Guid, TaxCodeSummary> taxById;
+        try
+        {
+            var taxCodes = await TaxCodeClient.ListAsync(appliesTo: "sales");
+            taxById = taxCodes.ToDictionary(t => t.Id);
+        }
+        catch
+        {
+            taxById = new Dictionary<Guid, TaxCodeSummary>();
+        }
+
+        _lines.Clear();
+        foreach (var taskLine in task.Lines.OrderBy(l => l.LineNo))
+        {
+            var itemId = taskLine.ItemId;
+            string itemDisplay = string.Empty;
+            Guid? accountId = null;
+            string accountCode = string.Empty;
+            string accountDisplay = string.Empty;
+
+            if (itemId != Guid.Empty && _itemsById.TryGetValue(itemId, out var item))
+            {
+                itemDisplay = item.Name;
+                if (item.DefaultSalesRevenueAccountId is { } itemAccountId
+                    && _accountsById.TryGetValue(itemAccountId, out var account))
+                {
+                    accountId = account.Id;
+                    accountCode = account.Code;
+                    accountDisplay = $"{account.Code} {account.Name}";
+                }
+            }
+
+            string taxDisplay = string.Empty;
+            if (taskLine.TaxCodeId is { } taxId && taxById.TryGetValue(taxId, out var tax))
+            {
+                taxDisplay = tax.Code;
+            }
+
+            _lines.Add(new InvoiceLineEditState(
+                ItemId: itemId,
+                ItemDisplay: itemDisplay,
+                Description: string.IsNullOrWhiteSpace(taskLine.Description) ? task.Title : taskLine.Description,
+                Quantity: taskLine.Quantity,
+                UnitPrice: taskLine.UnitPrice,
+                AccountId: accountId,
+                AccountDisplay: accountDisplay,
+                AccountCode: accountCode,
+                TaxCodeId: taskLine.TaxCodeId,
+                TaxCode: taxDisplay,
+                TaskId: task.Id,
+                TaskLineId: taskLine.Id));
+        }
+
+        if (_lines.Count == 0)
+        {
+            _validation = $"Task {taskDisplay} has no billable lines.";
+            _lines.Add(new InvoiceLineEditState());
+            return;
+        }
+
+        if (_lines[^1].HasContent)
+        {
+            _lines.Add(new InvoiceLineEditState());
+        }
+
+        await RefreshAllTaxPreviewsAsync();
     }
 
     private async Task OnCustomerSelected(UnitySearchPickerOption option)
@@ -713,6 +777,12 @@
 
     private void AddLine() => _lines.Add(new InvoiceLineEditState());
 
+    private void ClearLines()
+    {
+        _lines.Clear();
+        _lines.Add(new InvoiceLineEditState());
+    }
+
     private void RemoveLine(int i)
     {
         if (i < 0 || i >= _lines.Count) return;
@@ -734,6 +804,12 @@
         if (i < 0 || i >= _lines.Count) return;
         _lines[i] = mutate(_lines[i]);
         EnsureTrailingBlankLine();
+    }
+
+    private async Task UpdateAndRefreshTaxAsync(int i, Func<InvoiceLineEditState, InvoiceLineEditState> mutate)
+    {
+        Update(i, mutate);
+        await RefreshLineTaxPreviewAsync(i);
     }
 
     /// <summary>
@@ -802,18 +878,83 @@
         return (accountId, account.Code, $"{account.Code} {account.Name}");
     }
 
-    private void OnTaxCodeSelected(int i, TaxCodeSummary tax)
+    private async Task OnTaxCodeSelected(int i, TaxCodeSummary tax)
     {
+        _salesTaxCodesById[tax.Id] = tax;
         Update(i, l => l with
         {
             TaxCodeId = tax.Id,
             TaxCode = tax.Code
         });
+        await RefreshLineTaxPreviewAsync(i);
     }
 
     private void OnTaxCodeCleared(int i)
     {
-        Update(i, l => l with { TaxCodeId = null, TaxCode = string.Empty });
+        Update(i, l => l with { TaxCodeId = null, TaxCode = string.Empty, TaxAmount = 0m });
+    }
+
+    private async Task RefreshAllTaxPreviewsAsync()
+    {
+        for (var i = 0; i < _lines.Count; i++)
+        {
+            await RefreshLineTaxPreviewAsync(i);
+        }
+    }
+
+    private async Task RefreshLineTaxPreviewAsync(int i)
+    {
+        if (i < 0 || i >= _lines.Count)
+        {
+            return;
+        }
+
+        var line = _lines[i];
+        var lineAmount = Math.Round(line.Quantity * line.UnitPrice, 4);
+        if (lineAmount <= 0m || line.TaxCodeId is not { } taxCodeId)
+        {
+            _lines[i] = line with { TaxAmount = 0m };
+            return;
+        }
+
+        var preview = await SalesTaxClient.CalculatePreviewAsync(new SalesTaxPreviewRequest(
+            DocumentSide: "sales",
+            DocumentDate: DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
+            TaxMode: "exclusive",
+            Amount: lineAmount,
+            TaxCodeId: taxCodeId,
+            CurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency.Trim().ToUpperInvariant()));
+
+        if (i < 0 || i >= _lines.Count)
+        {
+            return;
+        }
+
+        var current = _lines[i];
+        if (current.TaxCodeId != taxCodeId || Math.Round(current.Quantity * current.UnitPrice, 4) != lineAmount)
+        {
+            return;
+        }
+
+        _lines[i] = current with { TaxAmount = Math.Round(preview?.TaxAmount ?? 0m, 4) };
+    }
+
+    private void OpenFxDrawer()
+    {
+        _fxRateDraft = _fxRate is > 0m ? _fxRate : null;
+        _isFxDrawerOpen = true;
+    }
+
+    private Task SaveFxDrawer()
+    {
+        _fxRate = _fxRateDraft;
+        _isFxDrawerOpen = false;
+        return Task.CompletedTask;
+    }
+
+    private void CancelFxDrawer()
+    {
+        _isFxDrawerOpen = false;
     }
 
     private async Task PostAsync()
@@ -830,8 +971,8 @@
         if (meaningful.Any(l => l.ItemId == Guid.Empty)) { _validation = "Every line needs an item / service picked."; return; }
         if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
         if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "One or more items have no sales / revenue account configured. Set it in Products & Services and re-pick."; return; }
-        var total = meaningful.Sum(l => l.Quantity * l.UnitPrice);
-        if (total <= 0) { _validation = "Invoice total must be greater than zero."; return; }
+        var lineSubtotal = meaningful.Sum(l => l.Quantity * l.UnitPrice);
+        if (lineSubtotal <= 0) { _validation = "Invoice total must be greater than zero."; return; }
 
         _isSubmitting = true;
         try
@@ -853,12 +994,14 @@
                 {
                     LineNumber = idx + 1,
                     RevenueAccountId = l.AccountId!.Value,
+                    ItemId = l.ItemId == Guid.Empty ? null : l.ItemId,
                     Description = l.Description,
                     Quantity = l.Quantity,
                     UnitPrice = l.UnitPrice,
                     TaxCodeId = l.TaxCodeId,
-                    TaxAmount = 0m, // Tax computed server-side from tax_code rate; client doesn't push a computed amount.
+                    TaxAmount = l.TaxAmount, // Server recomputes from TaxCodeId when saving; this keeps the draft echo consistent.
                     TaskId = l.TaskId,
+                    TaskLineId = l.TaskLineId,
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostInvoiceAsync(draft);
@@ -879,6 +1022,152 @@
         }
         finally { _isSubmitting = false; }
     }
+
+    private async Task PostCurrentAsync()
+    {
+        _lastResult = null;
+        var draft = BuildValidatedDraft();
+        if (draft is null)
+        {
+            return;
+        }
+
+        _isSubmitting = true;
+        try
+        {
+            if (IsEditMode)
+            {
+                var saveResult = await WriteFlow.SaveInvoiceDraftAsync(draft, InvoiceId);
+                if (!saveResult.Succeeded)
+                {
+                    _lastResult = saveResult;
+                    await Message.WarningAsync(saveResult.Message);
+                    return;
+                }
+
+                var refreshed = await InvoiceClient.GetByIdAsync(InvoiceId, ShellState.ActiveCompany.Id);
+                _lastResult = await WriteFlow.PostExistingInvoiceAsync(
+                    InvoiceId,
+                    ShellState.ActiveCompany.Id,
+                    ShellState.User.Id,
+                    refreshed?.DisplayNumber ?? _editingInvoiceNumber ?? InvoiceId.ToString("D"),
+                    refreshed?.CustomerId ?? _customerId,
+                    refreshed is null ? Array.Empty<InvoiceTaskBillingLink>() : BuildTaskBillingLinks(refreshed));
+            }
+            else
+            {
+                _lastResult = await WriteFlow.PostInvoiceAsync(draft);
+            }
+
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync(_lastResult.Message);
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id
+                    ? $"invoices/{id:D}"
+                    : "invoices");
+            }
+            else
+            {
+                await Message.InfoAsync(_lastResult.Message);
+            }
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        _lastResult = null;
+        var draft = BuildValidatedDraft();
+        if (draft is null)
+        {
+            return;
+        }
+
+        _isSavingDraft = true;
+        try
+        {
+            _lastResult = await WriteFlow.SaveInvoiceDraftAsync(
+                draft,
+                IsEditMode ? InvoiceId : null);
+            if (!_lastResult.Succeeded)
+            {
+                await Message.WarningAsync(_lastResult.Message);
+                return;
+            }
+
+            await Message.SuccessAsync(_lastResult.Message);
+            NavigationManager.NavigateTo(_lastResult.DocumentId is { } id
+                ? $"invoices/{id:D}"
+                : "invoices");
+        }
+        finally
+        {
+            _isSavingDraft = false;
+        }
+    }
+
+    private InvoiceDraft? BuildValidatedDraft()
+    {
+        _validation = null;
+
+        if (_customerId == Guid.Empty) { _validation = "Pick a customer first."; return null; }
+
+        // Drop any trailing blank lines the auto-grow heuristic left behind
+        // before validating; they're scaffolding, not user intent.
+        var meaningful = _lines.Where(l => l.HasContent).ToArray();
+        if (meaningful.Length == 0) { _validation = "Add at least one invoice line."; return null; }
+        if (meaningful.Any(l => l.ItemId == Guid.Empty)) { _validation = "Every line needs an item / service picked."; return null; }
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return null; }
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "One or more items have no sales / revenue account configured. Set it in Products & Services and re-pick."; return null; }
+        var lineSubtotal = meaningful.Sum(l => l.Quantity * l.UnitPrice);
+        if (lineSubtotal <= 0) { _validation = "Invoice total must be greater than zero."; return null; }
+
+        return new InvoiceDraft
+        {
+            CompanyId = ShellState.ActiveCompany.Id,
+            UserId = ShellState.User.Id,
+            DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
+            DueDate = _dueDate.HasValue ? DateOnly.FromDateTime(_dueDate.Value.Date) : null,
+            CustomerId = _customerId,
+            TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
+            BaseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode.Trim().ToUpperInvariant(),
+            FxRate = _fxRate,
+            Memo = _memo.Trim(),
+            CustomerPoNumber = _customerPoNumber.Trim(),
+            SalesOrderId = _salesOrderId,
+            Lines = meaningful.Select((l, idx) => new InvoiceLineDraft
+            {
+                LineNumber = idx + 1,
+                RevenueAccountId = l.AccountId!.Value,
+                ItemId = l.ItemId == Guid.Empty ? null : l.ItemId,
+                Description = l.Description,
+                Quantity = l.Quantity,
+                UnitPrice = l.UnitPrice,
+                TaxCodeId = l.TaxCodeId,
+                TaxAmount = l.TaxAmount,
+                TaskId = l.TaskId,
+                TaskLineId = l.TaskLineId,
+            }).ToArray()
+        };
+    }
+
+    private static IReadOnlyList<InvoiceTaskBillingLink> BuildTaskBillingLinks(InvoiceRecordDto invoice) =>
+        invoice.Lines
+            .Where(static line => line.TaskId.HasValue && line.TaskLineId.HasValue)
+            .Select(static line => new InvoiceTaskBillingLink(
+                line.TaskId!.Value,
+                line.TaskLineId!.Value,
+                line.Id))
+            .Distinct()
+            .ToArray();
+
+    private static string FormatTaskDisplay(TaskRecord task) =>
+        string.IsNullOrWhiteSpace(task.Title)
+            ? task.TaskNo
+            : $"{task.TaskNo} - {task.Title}";
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
 }

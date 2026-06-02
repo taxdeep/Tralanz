@@ -3,6 +3,10 @@ using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Documents;
 using Citus.Accounting.Infrastructure;
+using Npgsql;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Citus.Accounting.Infrastructure.Persistence;
 
@@ -38,6 +42,46 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             cancellationToken);
     }
 
+    public async Task<PostedSettlementPostingResult?> GetPostedResultAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              id,
+              display_number,
+              posted_at
+            from journal_entries
+            where company_id = @company_id
+              and source_type = 'pay_bill'
+              and source_id = @document_id
+              and status = 'posted'
+            order by posted_at desc, created_at desc
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new PostedSettlementPostingResult(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("display_number")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")));
+    }
+
     public async Task<SettlementDraftPreparationResult> PrepareDraftAsync(
         PayBillDraftPreparation request,
         CancellationToken cancellationToken)
@@ -57,10 +101,31 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             throw new InvalidOperationException("Pay bill draft cannot target the same open item more than once.");
         }
 
-        await using var scope = await PostgresCommandScope.CreateAsync(
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
             _connections,
             _executionContextAccessor,
             cancellationToken);
+
+        ValidateClientRequestId(request.ClientRequestId);
+        var clientRequestHash = request.ClientRequestId.HasValue
+            ? BuildClientRequestHash(request)
+            : null;
+        if (request.ClientRequestId.HasValue)
+        {
+            await LockClientRequestAsync(scope, request.CompanyId, request.ClientRequestId.Value, cancellationToken);
+
+            var existing = await TryLoadClientRequestResultAsync(
+                scope,
+                request.CompanyId,
+                request.ClientRequestId.Value,
+                clientRequestHash,
+                cancellationToken);
+            if (existing is not null)
+            {
+                await scope.CommitAsync(cancellationToken);
+                return existing;
+            }
+        }
 
         await EnsureActiveVendorAsync(scope, request.CompanyId, request.VendorId, cancellationToken);
         await PostgresSettlementDraftingSupport.EnsureActiveBankAccountAsync(
@@ -162,6 +227,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             fxSnapshot,
             totalAmount,
             request.Memo,
+            request.ClientRequestId,
+            clientRequestHash,
             cancellationToken);
         await InsertDraftLinesAsync(
             scope,
@@ -169,6 +236,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
             draftId,
             request.Lines,
             cancellationToken);
+
+        await scope.CommitAsync(cancellationToken);
 
         return new SettlementDraftPreparationResult(
             draftId,
@@ -566,6 +635,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         FxSnapshotRef fxSnapshot,
         decimal totalAmount,
         string? memo,
+        Guid? clientRequestId,
+        string? clientRequestHash,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -588,6 +659,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
               fx_source,
               total_amount,
               memo,
+              client_request_id,
+              client_request_hash,
               created_by_user_id
             )
             values (
@@ -608,6 +681,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
               @fx_source,
               @total_amount,
               @memo,
+              @client_request_id,
+              @client_request_hash,
               @created_by_user_id
             );
             """);
@@ -628,6 +703,8 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         command.Parameters.AddWithValue("fx_source", fxSnapshot.SourceSemantics);
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(memo) ? DBNull.Value : memo.Trim());
+        command.Parameters.AddWithValue("client_request_id", clientRequestId.HasValue ? clientRequestId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("client_request_hash", string.IsNullOrWhiteSpace(clientRequestHash) ? DBNull.Value : clientRequestHash);
         command.Parameters.AddWithValue("created_by_user_id", userId.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -714,4 +791,113 @@ public sealed class PostgresPayBillDocumentRepository : IPayBillDocumentReposito
         string Status,
         decimal OpenAmountTx,
         decimal OpenAmountBase);
+
+    private static void ValidateClientRequestId(Guid? clientRequestId)
+    {
+        if (clientRequestId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Pay bill draft client request id must be a non-empty GUID.");
+        }
+    }
+
+    private static async Task LockClientRequestAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select pg_advisory_xact_lock(hashtextextended(@lock_key, 0));
+            """);
+        command.Parameters.AddWithValue("lock_key", $"pay-bill-draft:{companyId.Value}:{clientRequestId:D}");
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<SettlementDraftPreparationResult?> TryLoadClientRequestResultAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid clientRequestId,
+        string? expectedClientRequestHash,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              pb.id,
+              pb.entity_number,
+              pb.payment_number,
+              pb.status,
+              pb.total_amount,
+              pb.client_request_hash,
+              (
+                select count(*)
+                from pay_bill_lines pbl
+                where pbl.company_id = pb.company_id
+                  and pbl.pay_bill_id = pb.id
+              ) as line_count
+            from pay_bills pb
+            where pb.company_id = @company_id
+              and pb.client_request_id = @client_request_id
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("client_request_id", clientRequestId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var existingHash = reader.IsDBNull(reader.GetOrdinal("client_request_hash"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("client_request_hash"));
+        if (!string.Equals(existingHash, expectedClientRequestHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Pay bill draft client request id was already used with different request details.");
+        }
+
+        return new SettlementDraftPreparationResult(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("entity_number")),
+            reader.GetString(reader.GetOrdinal("payment_number")),
+            Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("line_count"))),
+            reader.GetDecimal(reader.GetOrdinal("total_amount")),
+            reader.GetString(reader.GetOrdinal("status")));
+    }
+
+    private static string BuildClientRequestHash(PayBillDraftPreparation request)
+    {
+        var builder = new StringBuilder("pay-bill-draft:v1");
+        AppendHashPart(builder, request.CompanyId.Value);
+        AppendHashPart(builder, request.UserId.Value);
+        AppendHashPart(builder, request.VendorId.ToString("D"));
+        AppendHashPart(builder, request.BankAccountId.ToString("D"));
+        AppendHashPart(builder, request.PaymentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        AppendHashPart(builder, request.AcceptedFxSnapshotId?.ToString("D") ?? string.Empty);
+        AppendHashPart(builder, NormalizeHashText(request.Memo));
+        AppendHashPart(builder, request.Lines.Count.ToString(CultureInfo.InvariantCulture));
+
+        foreach (var line in request.Lines)
+        {
+            AppendHashPart(builder, line.TargetOpenItemId.ToString("D"));
+            AppendHashPart(builder, line.AppliedAmountTx.ToString("0.######", CultureInfo.InvariantCulture));
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    }
+
+    private static string NormalizeHashText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static void AppendHashPart(StringBuilder builder, string? value)
+    {
+        var normalized = value ?? string.Empty;
+        builder.Append('|');
+        builder.Append(normalized.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(':');
+        builder.Append(normalized);
+    }
 }

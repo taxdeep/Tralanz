@@ -984,6 +984,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             if (recoverableTaxAmount > 0m)
             {
                 var baseTax = Math.Round(recoverableTaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                // Recoverable input tax remains a debit even if the chosen tax account is a liability
+                // account shared with output tax payable; sharing the account only nets the balance.
                 fragments.Add(new PostingFragment(
                     line.RecoverableTaxAccountId!.Value,
                     bill.TransactionCurrencyCode,

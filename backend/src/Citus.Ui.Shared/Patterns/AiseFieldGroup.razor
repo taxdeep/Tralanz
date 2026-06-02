@@ -1,0 +1,44 @@
+<div class="@CssClass">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="citus-form-field__label" for="@For">
+            @Label
+            @if (Required)
+            {
+                <span class="aise-field-group__required" aria-hidden="true">*</span>
+            }
+        </label>
+    }
+
+    @ChildContent
+
+    @if (!string.IsNullOrWhiteSpace(ValidationMessage))
+    {
+        <p class="aise-field-group__validation">@ValidationMessage</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(HelperText))
+    {
+        <p class="aise-field-group__helper">@HelperText</p>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+
+    [Parameter] public string? For { get; set; }
+
+    [Parameter] public bool Required { get; set; }
+
+    [Parameter] public string? HelperText { get; set; }
+
+    [Parameter] public string? ValidationMessage { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string CssClass =>
+        string.IsNullOrWhiteSpace(Class)
+            ? "citus-form-field aise-field-group"
+            : $"citus-form-field aise-field-group {Class}";
+}

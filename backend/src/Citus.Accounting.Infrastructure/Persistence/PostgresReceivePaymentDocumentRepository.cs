@@ -3,6 +3,9 @@ using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Documents;
 using Citus.Accounting.Infrastructure;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Citus.Accounting.Infrastructure.Persistence;
 
@@ -38,6 +41,46 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             cancellationToken);
     }
 
+    public async Task<PostedSettlementPostingResult?> GetPostedResultAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              id,
+              display_number,
+              posted_at
+            from journal_entries
+            where company_id = @company_id
+              and source_type = 'receive_payment'
+              and source_id = @document_id
+              and status = 'posted'
+            order by posted_at desc, created_at desc
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new PostedSettlementPostingResult(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("display_number")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")));
+    }
+
     public async Task<SettlementDraftPreparationResult> PrepareDraftAsync(
         ReceivePaymentDraftPreparation request,
         CancellationToken cancellationToken)
@@ -57,10 +100,36 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             throw new InvalidOperationException("Receive payment draft cannot target the same open item more than once.");
         }
 
-        await using var scope = await PostgresCommandScope.CreateAsync(
+        if (request.ExtraDepositAmount < 0m)
+        {
+            throw new InvalidOperationException("Receive payment extra deposit amount cannot be negative.");
+        }
+
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
             _connections,
             _executionContextAccessor,
             cancellationToken);
+
+        ValidateClientRequestId(request.ClientRequestId);
+        var clientRequestHash = request.ClientRequestId.HasValue
+            ? BuildClientRequestHash(request)
+            : null;
+        if (request.ClientRequestId.HasValue)
+        {
+            await LockClientRequestAsync(scope, request.CompanyId, request.ClientRequestId.Value, cancellationToken);
+
+            var existing = await TryLoadClientRequestResultAsync(
+                scope,
+                request.CompanyId,
+                request.ClientRequestId.Value,
+                clientRequestHash,
+                cancellationToken);
+            if (existing is not null)
+            {
+                await scope.CommitAsync(cancellationToken);
+                return existing;
+            }
+        }
 
         await EnsureActiveCustomerAsync(scope, request.CompanyId, request.CustomerId, cancellationToken);
         await PostgresSettlementDraftingSupport.EnsureActiveBankAccountAsync(
@@ -131,6 +200,14 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
               ?? throw new InvalidOperationException(
                   "Receive payment draft could not find an acceptable FX snapshot for the payment date.");
 
+        if (request.ExtraDepositAmount > 0m &&
+            !string.Equals(documentCurrencyCode, baseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Receive payment overpayment parking as a customer deposit currently supports base-currency receipts only.");
+        }
+
+        var totalCashAmount = totalAmount + request.ExtraDepositAmount;
         var draftId = Guid.NewGuid();
         var entityNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
@@ -160,8 +237,11 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             documentCurrencyCode,
             baseCurrencyCode,
             fxSnapshot,
-            totalAmount,
+            totalCashAmount,
+            request.ExtraDepositAmount,
             request.Memo,
+            request.ClientRequestId,
+            clientRequestHash,
             cancellationToken);
         await InsertDraftLinesAsync(
             scope,
@@ -170,12 +250,14 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             request.Lines,
             cancellationToken);
 
+        await scope.CommitAsync(cancellationToken);
+
         return new SettlementDraftPreparationResult(
             draftId,
             entityNumber,
             paymentNumber,
             request.Lines.Count,
-            totalAmount,
+            totalCashAmount,
             "draft");
     }
 
@@ -197,6 +279,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         Guid customerId;
         Guid bankAccountId;
         Guid receivableAccountId;
+        Guid? customerDepositAccountId = null;
         Guid? realizedFxGainAccountId = null;
         Guid? realizedFxLossAccountId = null;
         string documentCurrencyCode;
@@ -207,6 +290,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         DateOnly fxEffectiveDate;
         string fxSource;
         decimal totalAmount;
+        decimal extraDepositAmount;
         string? memo;
 
         await using (var headerCommand = scope.CreateCommand(
@@ -227,6 +311,7 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
                            rp.fx_effective_date,
                            rp.fx_source,
                            rp.total_amount,
+                           rp.extra_deposit_amount,
                            rp.memo,
                            (
                              select a.id
@@ -246,7 +331,16 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
                                end,
                                a.code
                              limit 1
-                           ) as receivable_account_id
+                           ) as receivable_account_id,
+                           (
+                             select a.id
+                             from accounts a
+                             where a.company_id = rp.company_id
+                               and a.is_active = true
+                               and a.system_role = 'customer_deposit'
+                             order by a.code
+                             limit 1
+                           ) as customer_deposit_account_id
                          from receive_payments rp
                          where rp.company_id = @company_id
                            and rp.id = @document_id
@@ -282,13 +376,30 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             fxEffectiveDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_effective_date"));
             fxSource = reader.GetString(reader.GetOrdinal("fx_source"));
             totalAmount = reader.GetDecimal(reader.GetOrdinal("total_amount"));
+            extraDepositAmount = reader.GetDecimal(reader.GetOrdinal("extra_deposit_amount"));
             memo = reader.IsDBNull(reader.GetOrdinal("memo")) ? null : reader.GetString(reader.GetOrdinal("memo"));
+            customerDepositAccountId = reader.IsDBNull(reader.GetOrdinal("customer_deposit_account_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("customer_deposit_account_id"));
         }
 
         if (receivableAccountId == Guid.Empty)
         {
             throw new InvalidOperationException(
                 "Receive payment routing could not resolve an active Accounts Receivable control account.");
+        }
+
+        if (extraDepositAmount > 0m && !customerDepositAccountId.HasValue)
+        {
+            throw new InvalidOperationException(
+                "Receive payment overpayment routing could not resolve an active Customer Deposit account.");
+        }
+
+        if (extraDepositAmount > 0m &&
+            !string.Equals(documentCurrencyCode, baseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Receive payment overpayment parking as a customer deposit currently supports base-currency receipts only.");
         }
 
         await using (var bankAccountCommand = scope.CreateCommand(
@@ -360,14 +471,14 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         }
 
         var appliedTotal = rawLines.Sum(static line => line.AppliedAmountTx);
-        if (appliedTotal != totalAmount)
+        if (appliedTotal + extraDepositAmount != totalAmount)
         {
-            throw new InvalidOperationException("Receive payment total must equal the sum of its application lines.");
+            throw new InvalidOperationException("Receive payment total must equal the sum of its application lines plus extra customer deposit amount.");
         }
 
         var appliedAmountBases = SettlementAmountMath.AllocateSettlementBaseAmounts(
             rawLines.Select(static line => line.AppliedAmountTx).ToArray(),
-            totalAmount,
+            appliedTotal,
             fxRate);
 
         var lines = new List<ReceivePaymentDocumentLine>();
@@ -446,7 +557,256 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
             fxSnapshot,
             lines,
             totalAmount,
-            memo);
+            memo,
+            extraDepositAmount,
+            customerDepositAccountId);
+    }
+
+    public async Task<CustomerDepositParkingResult?> ParkExtraDepositAsync(
+        ReceivePaymentDocument document,
+        UserId createdByUserId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.ExtraDepositAmount <= 0m)
+        {
+            return null;
+        }
+
+        var customerDepositAccountId = document.CustomerDepositAccountId
+            ?? throw new InvalidOperationException(
+                "Receive payment overpayment requires a Customer Deposit account before parking.");
+
+        await using var scope = await PostgresCommandScope.CreateTransactionalAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using (var lockCommand = scope.CreateCommand(
+                         """
+                         select status,
+                                extra_deposit_amount,
+                                customer_id,
+                                document_currency_code,
+                                base_currency_code
+                         from receive_payments
+                         where company_id = @company_id
+                           and id = @receive_payment_id
+                         for update;
+                         """))
+        {
+            lockCommand.Parameters.AddWithValue("company_id", document.CompanyId.Value);
+            lockCommand.Parameters.AddWithValue("receive_payment_id", document.Id);
+
+            await using var reader = await lockCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new InvalidOperationException("Receive payment document was not found while parking extra deposit.");
+            }
+
+            var status = reader.GetString(reader.GetOrdinal("status"));
+            if (status != "posted")
+            {
+                throw new InvalidOperationException("Receive payment extra deposit can only be parked after the payment is posted.");
+            }
+
+            var storedExtra = reader.GetDecimal(reader.GetOrdinal("extra_deposit_amount"));
+            if (storedExtra != document.ExtraDepositAmount)
+            {
+                throw new InvalidOperationException("Receive payment extra deposit amount changed before parking.");
+            }
+
+            var customerId = reader.GetGuid(reader.GetOrdinal("customer_id"));
+            if (customerId != document.PartyId)
+            {
+                throw new InvalidOperationException("Receive payment customer changed before parking extra deposit.");
+            }
+
+            var documentCurrencyCode = reader.GetString(reader.GetOrdinal("document_currency_code"));
+            var baseCurrencyCode = reader.GetString(reader.GetOrdinal("base_currency_code"));
+            if (!string.Equals(documentCurrencyCode, baseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Receive payment overpayment parking as a customer deposit currently supports base-currency receipts only.");
+            }
+        }
+
+        var existing = await TryLoadExistingExtraDepositAsync(
+            scope,
+            document.CompanyId,
+            document.Id,
+            cancellationToken);
+        if (existing is not null)
+        {
+            await scope.CommitAsync(cancellationToken);
+            return existing;
+        }
+
+        var transaction = scope.Transaction
+            ?? throw new InvalidOperationException("Customer deposit parking requires a transactional command scope.");
+
+        var entityNumber = await PostgresNumberingSequences.ReserveAsync(
+            scope,
+            document.CompanyId,
+            $"entity-number:customer-deposit:{document.DocumentDate:yyyy}",
+            $"EN{document.DocumentDate:yyyy}",
+            padding: EntityNumber.OrdinalWidth,
+            cancellationToken);
+
+        var displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
+            scope.Connection,
+            transaction,
+            document.CompanyId,
+            "customer-deposit-display",
+            "DEP-",
+            6,
+            await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
+                scope.Connection,
+                transaction,
+                document.CompanyId,
+                "customer_deposits",
+                "display_number",
+                "^DEP-[0-9]+$",
+                4,
+                cancellationToken),
+            cancellationToken);
+
+        var depositId = Guid.NewGuid();
+        await using (var insertDeposit = scope.CreateCommand(
+                         """
+                         insert into customer_deposits (
+                           id,
+                           company_id,
+                           customer_id,
+                           entity_number,
+                           display_number,
+                           status,
+                           deposit_date,
+                           transaction_currency_code,
+                           base_currency_code,
+                           fx_rate_snapshot_id,
+                           fx_rate,
+                           fx_requested_date,
+                           fx_effective_date,
+                           fx_source,
+                           original_amount_tx,
+                           original_amount_base,
+                           source_receive_payment_id,
+                           memo,
+                           posted_at,
+                           created_by_user_id,
+                           created_at,
+                           updated_at
+                         )
+                         values (
+                           @id,
+                           @company_id,
+                           @customer_id,
+                           @entity_number,
+                           @display_number,
+                           'open',
+                           @deposit_date,
+                           @transaction_currency_code,
+                           @base_currency_code,
+                           @fx_rate_snapshot_id,
+                           @fx_rate,
+                           @fx_requested_date,
+                           @fx_effective_date,
+                           @fx_source,
+                           @original_amount_tx,
+                           @original_amount_base,
+                           @source_receive_payment_id,
+                           @memo,
+                           now(),
+                           @created_by_user_id,
+                           now(),
+                           now()
+                         );
+                         """))
+        {
+            insertDeposit.Parameters.AddWithValue("id", depositId);
+            insertDeposit.Parameters.AddWithValue("company_id", document.CompanyId.Value);
+            insertDeposit.Parameters.AddWithValue("customer_id", document.PartyId);
+            insertDeposit.Parameters.AddWithValue("entity_number", entityNumber);
+            insertDeposit.Parameters.AddWithValue("display_number", displayNumber);
+            insertDeposit.Parameters.AddWithValue("deposit_date", document.DocumentDate);
+            insertDeposit.Parameters.AddWithValue("transaction_currency_code", document.TransactionCurrencyCode.Value);
+            insertDeposit.Parameters.AddWithValue("base_currency_code", document.BaseCurrencyCode.Value);
+            insertDeposit.Parameters.AddWithValue(
+                "fx_rate_snapshot_id",
+                document.FxSnapshot is { SnapshotId: var snapshotId } && snapshotId != Guid.Empty
+                    ? (object)snapshotId
+                    : DBNull.Value);
+            insertDeposit.Parameters.AddWithValue("fx_rate", document.FxSnapshot?.Rate ?? 1m);
+            insertDeposit.Parameters.AddWithValue("fx_requested_date", document.FxSnapshot?.RequestedDate ?? document.DocumentDate);
+            insertDeposit.Parameters.AddWithValue("fx_effective_date", document.FxSnapshot?.EffectiveDate ?? document.DocumentDate);
+            insertDeposit.Parameters.AddWithValue("fx_source", document.FxSnapshot?.SourceSemantics ?? "identity");
+            insertDeposit.Parameters.AddWithValue("original_amount_tx", document.ExtraDepositAmount);
+            insertDeposit.Parameters.AddWithValue("original_amount_base", document.ExtraDepositAmountBase);
+            insertDeposit.Parameters.AddWithValue("source_receive_payment_id", document.Id);
+            insertDeposit.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(document.Memo) ? DBNull.Value : (object)document.Memo);
+            insertDeposit.Parameters.AddWithValue("created_by_user_id", createdByUserId.Value);
+            await insertDeposit.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var insertOpenItem = scope.CreateCommand(
+                         """
+                         insert into ar_open_items (
+                           id,
+                           company_id,
+                           customer_id,
+                           source_type,
+                           source_id,
+                           balance_side,
+                           document_currency_code,
+                           base_currency_code,
+                           original_amount_tx,
+                           original_amount_base,
+                           open_amount_tx,
+                           open_amount_base,
+                           status,
+                           due_date,
+                           created_at,
+                           updated_at
+                         )
+                         values (
+                           gen_random_uuid(),
+                           @company_id,
+                           @customer_id,
+                           'customer_deposit',
+                           @source_id,
+                           'credit',
+                           @document_currency_code,
+                           @base_currency_code,
+                           @amount_tx,
+                           @amount_base,
+                           @amount_tx,
+                           @amount_base,
+                           'open',
+                           null,
+                           now(),
+                           now()
+                         );
+                         """))
+        {
+            insertOpenItem.Parameters.AddWithValue("company_id", document.CompanyId.Value);
+            insertOpenItem.Parameters.AddWithValue("customer_id", document.PartyId);
+            insertOpenItem.Parameters.AddWithValue("source_id", depositId);
+            insertOpenItem.Parameters.AddWithValue("document_currency_code", document.TransactionCurrencyCode.Value);
+            insertOpenItem.Parameters.AddWithValue("base_currency_code", document.BaseCurrencyCode.Value);
+            insertOpenItem.Parameters.AddWithValue("amount_tx", document.ExtraDepositAmount);
+            insertOpenItem.Parameters.AddWithValue("amount_base", document.ExtraDepositAmountBase);
+            await insertOpenItem.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await scope.CommitAsync(cancellationToken);
+
+        return new CustomerDepositParkingResult(
+            depositId,
+            displayNumber,
+            document.ExtraDepositAmount,
+            document.ExtraDepositAmountBase);
     }
 
     private static async Task<IReadOnlyList<SettlementOpenItemCandidate>> LoadOpenReceivableCandidatesAsync(
@@ -525,6 +885,41 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         return candidates;
     }
 
+    private static async Task<CustomerDepositParkingResult?> TryLoadExistingExtraDepositAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid receivePaymentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              id,
+              display_number,
+              original_amount_tx,
+              original_amount_base
+            from customer_deposits
+            where company_id = @company_id
+              and source_receive_payment_id = @receive_payment_id
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("receive_payment_id", receivePaymentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new CustomerDepositParkingResult(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("display_number")),
+            reader.GetDecimal(reader.GetOrdinal("original_amount_tx")),
+            reader.GetDecimal(reader.GetOrdinal("original_amount_base")));
+    }
+
     private static async Task EnsureActiveCustomerAsync(
         PostgresCommandScope scope,
         CompanyId companyId,
@@ -565,7 +960,10 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         string baseCurrencyCode,
         FxSnapshotRef fxSnapshot,
         decimal totalAmount,
+        decimal extraDepositAmount,
         string? memo,
+        Guid? clientRequestId,
+        string? clientRequestHash,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -587,7 +985,10 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
               fx_effective_date,
               fx_source,
               total_amount,
+              extra_deposit_amount,
               memo,
+              client_request_id,
+              client_request_hash,
               created_by_user_id
             )
             values (
@@ -607,7 +1008,10 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
               @fx_effective_date,
               @fx_source,
               @total_amount,
+              @extra_deposit_amount,
               @memo,
+              @client_request_id,
+              @client_request_hash,
               @created_by_user_id
             );
             """);
@@ -627,7 +1031,10 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         command.Parameters.AddWithValue("fx_effective_date", fxSnapshot.EffectiveDate);
         command.Parameters.AddWithValue("fx_source", fxSnapshot.SourceSemantics);
         command.Parameters.AddWithValue("total_amount", totalAmount);
+        command.Parameters.AddWithValue("extra_deposit_amount", extraDepositAmount);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(memo) ? DBNull.Value : memo.Trim());
+        command.Parameters.AddWithValue("client_request_id", clientRequestId.HasValue ? clientRequestId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("client_request_hash", string.IsNullOrWhiteSpace(clientRequestHash) ? DBNull.Value : clientRequestHash);
         command.Parameters.AddWithValue("created_by_user_id", userId.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -714,4 +1121,114 @@ public sealed class PostgresReceivePaymentDocumentRepository : IReceivePaymentDo
         string Status,
         decimal OpenAmountTx,
         decimal OpenAmountBase);
+
+    private static void ValidateClientRequestId(Guid? clientRequestId)
+    {
+        if (clientRequestId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Receive payment draft client request id must be a non-empty GUID.");
+        }
+    }
+
+    private static async Task LockClientRequestAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select pg_advisory_xact_lock(hashtextextended(@lock_key, 0));
+            """);
+        command.Parameters.AddWithValue("lock_key", $"receive-payment-draft:{companyId.Value}:{clientRequestId:D}");
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<SettlementDraftPreparationResult?> TryLoadClientRequestResultAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid clientRequestId,
+        string? expectedClientRequestHash,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              rp.id,
+              rp.entity_number,
+              rp.payment_number,
+              rp.status,
+              rp.total_amount,
+              rp.client_request_hash,
+              (
+                select count(*)
+                from receive_payment_lines rpl
+                where rpl.company_id = rp.company_id
+                  and rpl.receive_payment_id = rp.id
+              ) as line_count
+            from receive_payments rp
+            where rp.company_id = @company_id
+              and rp.client_request_id = @client_request_id
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("client_request_id", clientRequestId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var existingHash = reader.IsDBNull(reader.GetOrdinal("client_request_hash"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("client_request_hash"));
+        if (!string.Equals(existingHash, expectedClientRequestHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Receive payment draft client request id was already used with different request details.");
+        }
+
+        return new SettlementDraftPreparationResult(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("entity_number")),
+            reader.GetString(reader.GetOrdinal("payment_number")),
+            Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("line_count"))),
+            reader.GetDecimal(reader.GetOrdinal("total_amount")),
+            reader.GetString(reader.GetOrdinal("status")));
+    }
+
+    private static string BuildClientRequestHash(ReceivePaymentDraftPreparation request)
+    {
+        var builder = new StringBuilder("receive-payment-draft:v1");
+        AppendHashPart(builder, request.CompanyId.Value);
+        AppendHashPart(builder, request.UserId.Value);
+        AppendHashPart(builder, request.CustomerId.ToString("D"));
+        AppendHashPart(builder, request.BankAccountId.ToString("D"));
+        AppendHashPart(builder, request.PaymentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        AppendHashPart(builder, request.AcceptedFxSnapshotId?.ToString("D") ?? string.Empty);
+        AppendHashPart(builder, NormalizeHashText(request.Memo));
+        AppendHashPart(builder, request.ExtraDepositAmount.ToString("0.######", CultureInfo.InvariantCulture));
+        AppendHashPart(builder, request.Lines.Count.ToString(CultureInfo.InvariantCulture));
+
+        foreach (var line in request.Lines)
+        {
+            AppendHashPart(builder, line.TargetOpenItemId.ToString("D"));
+            AppendHashPart(builder, line.AppliedAmountTx.ToString("0.######", CultureInfo.InvariantCulture));
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    }
+
+    private static string NormalizeHashText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static void AppendHashPart(StringBuilder builder, string? value)
+    {
+        var normalized = value ?? string.Empty;
+        builder.Append('|');
+        builder.Append(normalized.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(':');
+        builder.Append(normalized);
+    }
 }

@@ -61,6 +61,14 @@
 }
 else
 {
+    @if (InventoryExpired)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning"
+                    ShowIcon="true"
+                    Message="@ShellState.ModuleWriteBlockMessage(InventoryModuleKey)"
+                    Class="mb-4" />
+    }
+
     @if (!string.IsNullOrWhiteSpace(_validation))
     {
         <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
@@ -260,7 +268,7 @@ else
                                     <div class="flex gap-1 justify-end">
                                         <CitusButton Variant="CitusButtonVariant.Primary"
                                                      Size="CitusButtonSize.Small"
-                                                     Disabled="_isSubmitting"
+                                                     Disabled="@(_isSubmitting || InventoryWritesBlocked)"
                                                      OnClick="@(() => SaveAsync(warehouse))">
                                             @(_isSubmitting ? "Saving…" : "Save")
                                         </CitusButton>
@@ -274,6 +282,7 @@ else
                                 {
                                     <CitusButton Variant="CitusButtonVariant.Ghost"
                                                  Size="CitusButtonSize.Small"
+                                                 Disabled="@InventoryWritesBlocked"
                                                  OnClick="@(() => StartEdit(warehouse))">Edit</CitusButton>
                                 }
                             </td>
@@ -286,6 +295,8 @@ else
 }
 
 @code {
+    private const string InventoryModuleKey = "inventory";
+
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Warehouse",
@@ -296,6 +307,10 @@ else
     // POs in this status block receipt: confirmed but not yet billed /
     // received. The list endpoint filters server-side by status.
     private const string OpenPoStatus = "confirmed";
+
+    private bool InventoryExpired => ShellState.IsModuleExpired(InventoryModuleKey);
+
+    private bool InventoryWritesBlocked => ShellState.AreModuleWritesBlocked(InventoryModuleKey);
 
     // SOs that still owe a shipment: confirmed (no invoice yet) plus
     // partially-invoiced (some lines outstanding). Closed/fully-invoiced

@@ -82,7 +82,11 @@ public sealed class BusinessWriteFlowClient
                 Succeeded: true,
                 Message: $"Journal entry {body?.JournalDisplayNumber ?? "(unknown)"} posted.",
                 Operation: nameof(PostManualJournalAsync),
-                DraftEcho: body ?? (object)draft);
+                DraftEcho: body ?? (object)draft)
+            {
+                DocumentId = body?.DocumentId,
+                JournalEntryId = body?.JournalEntryId,
+            };
         }
         catch (Exception ex)
         {
@@ -102,6 +106,69 @@ public sealed class BusinessWriteFlowClient
         string JournalDisplayNumber);
 
     private sealed record ManualJournalErrorBody(string? ErrorCode, string? Message);
+
+    public async Task<WriteFlowResult> SaveInvoiceDraftAsync(
+        InvoiceDraft draft,
+        Guid? documentId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var validation = ValidateInvoiceDraft(draft);
+        if (validation is not null)
+        {
+            return new WriteFlowResult(false, validation, nameof(SaveInvoiceDraftAsync), draft);
+        }
+
+        try
+        {
+            using var response = documentId.HasValue
+                ? await _httpClient.PutAsJsonAsync(
+                    $"accounting/invoices/drafts/{documentId.Value:D}",
+                    BuildInvoiceSavePayload(draft),
+                    cancellationToken)
+                : await _httpClient.PostAsJsonAsync(
+                    "accounting/invoices/drafts",
+                    BuildInvoiceSavePayload(draft),
+                    cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(response, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Could not save the invoice draft (HTTP {(int)response.StatusCode}).",
+                    Operation: nameof(SaveInvoiceDraftAsync),
+                    DraftEcho: draft);
+            }
+
+            var saved = await response.Content.ReadFromJsonAsync<InvoiceSaveDraftResponse>(cancellationToken);
+            if (saved is null || saved.DocumentId == Guid.Empty)
+            {
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: "Server saved the draft but did not return a document id.",
+                    Operation: nameof(SaveInvoiceDraftAsync),
+                    DraftEcho: draft);
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: $"Invoice {saved.DisplayNumber} saved as draft.",
+                Operation: nameof(SaveInvoiceDraftAsync),
+                DraftEcho: saved)
+            {
+                DocumentId = saved.DocumentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invoice draft save call failed.");
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to save the invoice draft. Please retry.",
+                Operation: nameof(SaveInvoiceDraftAsync),
+                DraftEcho: draft);
+        }
+    }
 
     /// <summary>
     /// Two-step invoice post — mirrors <see cref="PostReceivePaymentAsync"/>:
@@ -124,53 +191,11 @@ public sealed class BusinessWriteFlowClient
     /// </summary>
     public async Task<WriteFlowResult> PostInvoiceAsync(InvoiceDraft draft, CancellationToken cancellationToken = default)
     {
-        if (draft.CompanyId.Value is null)
+        var validation = ValidateInvoiceDraft(draft);
+        if (validation is not null)
         {
-            return new WriteFlowResult(false, "Active company is required.", nameof(PostInvoiceAsync), draft);
+            return new WriteFlowResult(false, validation, nameof(PostInvoiceAsync), draft);
         }
-        if (draft.UserId.Value is null)
-        {
-            return new WriteFlowResult(false, "Active user is required.", nameof(PostInvoiceAsync), draft);
-        }
-        if (draft.CustomerId is null || draft.CustomerId == Guid.Empty)
-        {
-            return new WriteFlowResult(false, "Customer is required.", nameof(PostInvoiceAsync), draft);
-        }
-        if (draft.Lines.Count == 0)
-        {
-            return new WriteFlowResult(false, "At least one line is required.", nameof(PostInvoiceAsync), draft);
-        }
-
-        var savePayload = new
-        {
-            companyId = draft.CompanyId,
-            userId = draft.UserId,
-            customerId = draft.CustomerId.Value,
-            invoiceDate = draft.DocumentDate,
-            dueDate = draft.DueDate ?? draft.DocumentDate,
-            transactionCurrencyCode = string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
-            baseCurrencyCode = string.IsNullOrWhiteSpace(draft.BaseCurrencyCode)
-                ? (string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant())
-                : draft.BaseCurrencyCode.Trim().ToUpperInvariant(),
-            fxSnapshotId = (Guid?)null,
-            fxRate = draft.FxRate,
-            fxEffectiveDate = (DateOnly?)null,
-            fxSource = (string?)null,
-            memo = draft.Memo,
-            lines = draft.Lines.Select(l => new
-            {
-                lineNumber = l.LineNumber,
-                revenueAccountId = l.RevenueAccountId,
-                description = l.Description,
-                quantity = l.Quantity,
-                unitPrice = l.UnitPrice,
-                taxCodeId = l.TaxCodeId,
-                taxAmount = l.TaxAmount,
-                taskId = l.TaskId,
-            }).ToArray(),
-            customerPoNumber = string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? null : draft.CustomerPoNumber.Trim(),
-            salesOrderId = draft.SalesOrderId,
-        };
 
         Guid documentId;
         string displayNumber;
@@ -178,7 +203,7 @@ public sealed class BusinessWriteFlowClient
         {
             using var saveResponse = await _httpClient.PostAsJsonAsync(
                 "accounting/invoices/drafts",
-                savePayload,
+                BuildInvoiceSavePayload(draft),
                 cancellationToken);
 
             if (!saveResponse.IsSuccessStatusCode)
@@ -243,9 +268,19 @@ public sealed class BusinessWriteFlowClient
             }
 
             var posted = await postResponse.Content.ReadFromJsonAsync<InvoicePostResponse>(cancellationToken);
+            var message = ComposePostInvoiceMessage(displayNumber, posted);
+            var taskBillingMessage = await TryMarkInvoiceTaskLinesBilledAsync(
+                draft,
+                documentId,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(taskBillingMessage))
+            {
+                message = $"{message} {taskBillingMessage}";
+            }
+
             return new WriteFlowResult(
                 Succeeded: true,
-                Message: ComposePostInvoiceMessage(displayNumber, posted),
+                Message: message,
                 Operation: nameof(PostInvoiceAsync),
                 DraftEcho: posted ?? (object)draft)
             {
@@ -265,6 +300,231 @@ public sealed class BusinessWriteFlowClient
             };
         }
     }
+
+    public async Task<WriteFlowResult> PostExistingInvoiceAsync(
+        Guid documentId,
+        CompanyId companyId,
+        UserId userId,
+        string displayNumber,
+        Guid? customerId,
+        IReadOnlyList<InvoiceTaskBillingLink>? taskLinks = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (documentId == Guid.Empty)
+        {
+            return new WriteFlowResult(false, "Invoice id is required.", nameof(PostExistingInvoiceAsync), new { DocumentId = documentId });
+        }
+        if (companyId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active company is required.", nameof(PostExistingInvoiceAsync), new { DocumentId = documentId });
+        }
+        if (userId.Value is null)
+        {
+            return new WriteFlowResult(false, "Active user is required.", nameof(PostExistingInvoiceAsync), new { DocumentId = documentId });
+        }
+
+        var postPayload = new
+        {
+            companyId,
+            userId,
+            acceptedFxSnapshotId = (Guid?)null,
+            idempotencyKey = (string?)null,
+        };
+
+        try
+        {
+            using var postResponse = await _httpClient.PostAsJsonAsync(
+                $"accounting/invoices/{documentId:D}/post",
+                postPayload,
+                cancellationToken);
+
+            if (!postResponse.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(postResponse, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Posting failed: HTTP {(int)postResponse.StatusCode}.",
+                    Operation: nameof(PostExistingInvoiceAsync),
+                    DraftEcho: new { DocumentId = documentId })
+                {
+                    DocumentId = documentId,
+                };
+            }
+
+            var posted = await postResponse.Content.ReadFromJsonAsync<InvoicePostResponse>(cancellationToken);
+            var message = ComposePostInvoiceMessage(
+                string.IsNullOrWhiteSpace(displayNumber) ? documentId.ToString("D") : displayNumber,
+                posted);
+            var taskBillingMessage = await TryMarkInvoiceTaskLinesBilledAsync(
+                documentId,
+                customerId,
+                taskLinks ?? Array.Empty<InvoiceTaskBillingLink>(),
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(taskBillingMessage))
+            {
+                message = $"{message} {taskBillingMessage}";
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: message,
+                Operation: nameof(PostExistingInvoiceAsync),
+                DraftEcho: posted ?? (object)new { DocumentId = documentId })
+            {
+                DocumentId = documentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invoice post call failed for existing draft {InvoiceId}.", documentId);
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to post this invoice. Please retry from the draft.",
+                Operation: nameof(PostExistingInvoiceAsync),
+                DraftEcho: new { DocumentId = documentId })
+            {
+                DocumentId = documentId,
+            };
+        }
+    }
+
+    private async Task<string?> TryMarkInvoiceTaskLinesBilledAsync(
+        InvoiceDraft draft,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        var links = draft.Lines
+            .Where(static line => line.TaskId.HasValue && line.TaskLineId.HasValue)
+            .Select(static line => new InvoiceTaskBillingLink(
+                line.TaskId!.Value,
+                line.TaskLineId!.Value,
+                SourceLineId: null))
+            .Distinct()
+            .ToArray();
+        return await TryMarkInvoiceTaskLinesBilledAsync(
+            documentId,
+            draft.CustomerId,
+            links,
+            cancellationToken);
+    }
+
+    private async Task<string?> TryMarkInvoiceTaskLinesBilledAsync(
+        Guid documentId,
+        Guid? customerId,
+        IReadOnlyList<InvoiceTaskBillingLink> links,
+        CancellationToken cancellationToken)
+    {
+        var sanitized = links
+            .Where(static link => link.TaskId != Guid.Empty && link.TaskLineId != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (sanitized.Length == 0)
+        {
+            return null;
+        }
+
+        var payload = new
+        {
+            SourceType = "invoice",
+            SourceId = documentId,
+            CustomerId = customerId,
+            Lines = sanitized.Select(static link => new
+            {
+                link.TaskId,
+                link.TaskLineId,
+                link.SourceLineId,
+            }).ToArray(),
+        };
+
+        try
+        {
+            using var response = await _httpClient.PostAsJsonAsync(
+                "accounting/tasks/billing/mark-lines-billed",
+                payload,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(response, cancellationToken);
+                return $"Task billing link failed: {error ?? $"HTTP {(int)response.StatusCode}"}.";
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<TaskBillingPostResponse>(cancellationToken);
+            var affectedTaskCount =
+                (result?.ProcessedTasks?.Count ?? 0) +
+                (result?.SkippedTasks?.Count ?? 0);
+            if (affectedTaskCount <= 0)
+            {
+                return "Task lines linked to invoice.";
+            }
+
+            return affectedTaskCount == 1
+                ? "Task marked billed."
+                : $"{affectedTaskCount} tasks marked billed.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Task billing link call failed for invoice {InvoiceId}.", documentId);
+            return "Invoice posted, but task billing link could not be updated. Please review the task.";
+        }
+    }
+
+    private static string? ValidateInvoiceDraft(InvoiceDraft draft)
+    {
+        if (draft.CompanyId.Value is null)
+        {
+            return "Active company is required.";
+        }
+        if (draft.UserId.Value is null)
+        {
+            return "Active user is required.";
+        }
+        if (draft.CustomerId is null || draft.CustomerId == Guid.Empty)
+        {
+            return "Customer is required.";
+        }
+        if (draft.Lines.Count == 0)
+        {
+            return "At least one line is required.";
+        }
+
+        return null;
+    }
+
+    private static object BuildInvoiceSavePayload(InvoiceDraft draft) => new
+    {
+        companyId = draft.CompanyId,
+        userId = draft.UserId,
+        customerId = draft.CustomerId!.Value,
+        invoiceDate = draft.DocumentDate,
+        dueDate = draft.DueDate ?? draft.DocumentDate,
+        transactionCurrencyCode = string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode)
+            ? "USD"
+            : draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+        baseCurrencyCode = string.IsNullOrWhiteSpace(draft.BaseCurrencyCode)
+            ? (string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant())
+            : draft.BaseCurrencyCode.Trim().ToUpperInvariant(),
+        fxSnapshotId = (Guid?)null,
+        fxRate = draft.FxRate,
+        fxEffectiveDate = (DateOnly?)null,
+        fxSource = (string?)null,
+        memo = draft.Memo,
+        lines = draft.Lines.Select(l => new
+        {
+            lineNumber = l.LineNumber,
+            revenueAccountId = l.RevenueAccountId,
+            description = l.Description,
+            quantity = l.Quantity,
+            unitPrice = l.UnitPrice,
+            taxCodeId = l.TaxCodeId,
+            taxAmount = l.TaxAmount,
+            itemId = l.ItemId,
+            taskId = l.TaskId,
+            taskLineId = l.TaskLineId,
+        }).ToArray(),
+        customerPoNumber = string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? null : draft.CustomerPoNumber.Trim(),
+        salesOrderId = draft.SalesOrderId,
+    };
 
     private static string ComposePostInvoiceMessage(string displayNumber, InvoicePostResponse? posted)
     {
@@ -401,6 +661,13 @@ public sealed class BusinessWriteFlowClient
         bool DepositFullyClosed);
 
     private sealed record AccountingErrorBody(string? Code, string? Message);
+
+    private sealed record TaskBillingPostResponse(
+        Guid InvoiceId,
+        IReadOnlyList<TaskBillingTaskDto>? ProcessedTasks,
+        IReadOnlyList<TaskBillingTaskDto>? SkippedTasks);
+
+    private sealed record TaskBillingTaskDto(Guid Id, string TaskNo, string Title);
 
     public Task<WriteFlowResult> PostBillAsync(BillDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostBillAsync), draft);
@@ -713,13 +980,13 @@ public sealed class BusinessWriteFlowClient
         return outcome.Succeeded
             ? new WriteFlowResult(
                 Succeeded: true,
-                Message: $"Customer {outcome.Saved!.EntityNumber} saved.",
-                Operation: nameof(SaveCustomerAsync),
+                Message: $"{DisplayCounterpartyName(outcome.Saved!.DisplayName, outcome.Saved.EntityNumber)} saved.",
+                Operation: "Customer saved",
                 DraftEcho: outcome.Saved)
             : new WriteFlowResult(
                 Succeeded: false,
                 Message: outcome.ErrorMessage ?? "Could not save the customer.",
-                Operation: nameof(SaveCustomerAsync),
+                Operation: "Save customer",
                 DraftEcho: draft);
     }
 
@@ -746,15 +1013,18 @@ public sealed class BusinessWriteFlowClient
         return outcome.Succeeded
             ? new WriteFlowResult(
                 Succeeded: true,
-                Message: $"Vendor {outcome.Saved!.EntityNumber} saved.",
-                Operation: nameof(SaveVendorAsync),
+                Message: $"{DisplayCounterpartyName(outcome.Saved!.DisplayName, outcome.Saved.EntityNumber)} saved.",
+                Operation: "Vendor saved",
                 DraftEcho: outcome.Saved)
             : new WriteFlowResult(
                 Succeeded: false,
                 Message: outcome.ErrorMessage ?? "Could not save the vendor.",
-                Operation: nameof(SaveVendorAsync),
+                Operation: "Save vendor",
                 DraftEcho: draft);
     }
+
+    private static string DisplayCounterpartyName(string? displayName, string fallbackNumber) =>
+        string.IsNullOrWhiteSpace(displayName) ? fallbackNumber : displayName.Trim();
 
     private static Task<WriteFlowResult> Pending(string operation, object payload) =>
         Task.FromResult(new WriteFlowResult(
@@ -790,6 +1060,13 @@ public sealed record WriteFlowResult(
     /// successful post.
     /// </summary>
     public Guid? DocumentId { get; init; }
+
+    /// <summary>
+    /// Journal entry id created by flows that immediately post GL truth.
+    /// Manual journal uses this to move from the transient draft page to
+    /// read-only review after the save/post boundary.
+    /// </summary>
+    public Guid? JournalEntryId { get; init; }
 }
 
 public sealed record ManualJournalDraft
@@ -856,6 +1133,11 @@ public sealed record InvoiceDraft
     public IReadOnlyList<InvoiceLineDraft> Lines { get; init; } = Array.Empty<InvoiceLineDraft>();
 }
 
+public sealed record InvoiceTaskBillingLink(
+    Guid TaskId,
+    Guid TaskLineId,
+    Guid? SourceLineId = null);
+
 /// <summary>
 /// Wire-shape line for <see cref="InvoiceDraft"/>. Mirror of
 /// <see cref="SalesReceiptLineDraft"/> — sends the resolved
@@ -866,19 +1148,14 @@ public sealed record InvoiceLineDraft
 {
     public int LineNumber { get; init; }
     public Guid RevenueAccountId { get; init; }
+    public Guid? ItemId { get; init; }
     public string Description { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
-
-    /// <summary>
-    /// Per-line back-link to the Task this line bills. Set when the
-    /// invoice was opened via "Bill this task" — the server persists
-    /// it on invoice_lines.task_id, and the post handler aggregates
-    /// distinct task_ids to flip source tasks Completed -> Billed.
-    /// </summary>
     public Guid? TaskId { get; init; }
+    public Guid? TaskLineId { get; init; }
 }
 
 /// <summary>
@@ -937,6 +1214,8 @@ public sealed record SalesReceiptLineDraft
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
+    public Guid? TaskId { get; init; }
+    public Guid? TaskLineId { get; init; }
 }
 
 /// <summary>
@@ -987,14 +1266,8 @@ public sealed record CreditMemoLineDraft
     public decimal UnitPrice { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
-
-    /// <summary>
-    /// Optional Task back-link. Set when the credit memo was pre-filled
-    /// from a "Credit invoice" flow that propagates the source invoice
-    /// line's task_id. After the credit note posts, the server-side
-    /// hook rolls every linked task back to Completed.
-    /// </summary>
     public Guid? TaskId { get; init; }
+    public Guid? TaskLineId { get; init; }
 }
 
 /// <summary>

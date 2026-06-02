@@ -45,6 +45,8 @@ public sealed class InventoryAdjustmentWorkflow
             throw new InvalidOperationException("Adjustment warehouse is required.");
         }
 
+        ValidateClientRequestId(request.ClientRequestId);
+
         if (request.Lines is null || request.Lines.Count == 0)
         {
             throw new InvalidOperationException("At least one adjustment line is required.");
@@ -109,6 +111,7 @@ public sealed class InventoryAdjustmentWorkflow
             throw new InvalidOperationException("Write-off warehouse is required.");
         }
 
+        ValidateClientRequestId(request.ClientRequestId);
         ValidateLines(request.Lines, requireGainUnitCost: false);
         return _store.RequestWriteOffAsync(request, cancellationToken);
     }
@@ -159,6 +162,14 @@ public sealed class InventoryAdjustmentWorkflow
         }
 
         return _store.PostApprovedWriteOffAsync(request, cancellationToken);
+    }
+
+    private static void ValidateClientRequestId(Guid? clientRequestId)
+    {
+        if (clientRequestId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Client request id cannot be empty when supplied.");
+        }
     }
 
     private static void ValidateLines(

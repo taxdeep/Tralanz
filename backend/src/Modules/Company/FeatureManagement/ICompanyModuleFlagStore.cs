@@ -24,6 +24,12 @@ public interface ICompanyModuleFlagStore
         string moduleKey,
         CancellationToken cancellationToken);
 
+    Task<CompanyModuleFlagAccessStatus> GetAccessStatusAsync(
+        CompanyId companyId,
+        string moduleKey,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// Upserts the toggle state and writes a single audit_logs row in
     /// the same transaction. Returns the post-write summary plus
@@ -38,6 +44,7 @@ public interface ICompanyModuleFlagStore
         string reason,
         string actorType,
         UserId? actorUserId,
+        DateTimeOffset? accessExpiresAtUtc,
         bool forceAuditOnNoChange,
         CancellationToken cancellationToken);
 }

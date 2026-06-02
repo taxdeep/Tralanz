@@ -25,10 +25,9 @@
     </Actions>
 </CitusPageHeader>
 
-<section class="citus-panel">
-    <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Payment terms</h2>
-        <div class="flex items-center gap-3">
+<AiseFormSection Title="Payment terms">
+    <Actions>
+        <AiseButtonGroup>
             <label class="inline-flex items-center gap-2 text-sm">
                 <input type="checkbox"
                        checked="@_includeInactive"
@@ -38,8 +37,9 @@
             <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
                 @ShellState.ActiveCompany.CompanyName
             </CitusBadge>
-        </div>
-    </header>
+        </AiseButtonGroup>
+    </Actions>
+    <ChildContent>
 
     @if (_isLoading)
     {
@@ -99,20 +99,16 @@
             </tbody>
         </table>
     }
-</section>
+    </ChildContent>
+</AiseFormSection>
 
 @if (_isFormOpen)
 {
-    <section class="citus-panel mt-6">
-        <header class="citus-panel__header">
-            <h2 class="citus-panel__title">@(_editingId is null ? "New payment term" : "Edit payment term")</h2>
-        </header>
-
-        <form class="grid grid-cols-1 md:grid-cols-2 gap-4"
+    <AiseFormSection Title="@(_editingId is null ? "New payment term" : "Edit payment term")" Class="mt-6">
+        <form class="aise-form-grid aise-form-grid--cols-2"
               @onsubmit="OnSaveAsync"
               @onsubmit:preventDefault>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Code</span>
+            <AiseFieldGroup Label="Code">
                 <input type="text"
                        class="citus-form-field__input"
                        value="@_formCode"
@@ -120,10 +116,9 @@
                        maxlength="32"
                        placeholder="NET30, DOR, COD, …"
                        disabled="@_isMutating" />
-            </label>
+            </AiseFieldGroup>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Name</span>
+            <AiseFieldGroup Label="Name">
                 <input type="text"
                        class="citus-form-field__input"
                        value="@_formName"
@@ -131,10 +126,9 @@
                        maxlength="120"
                        placeholder="Net 30 days"
                        disabled="@_isMutating" />
-            </label>
+            </AiseFieldGroup>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Net days</span>
+            <AiseFieldGroup Label="Net days">
                 <input type="number"
                        class="citus-form-field__input"
                        step="1"
@@ -143,7 +137,7 @@
                        value="@_formNetDays"
                        @oninput="@(e => _formNetDays = e.Value?.ToString() ?? string.Empty)"
                        disabled="@_isMutating" />
-            </label>
+            </AiseFieldGroup>
 
             <label class="citus-form-field md:col-span-2">
                 <span class="inline-flex items-center gap-2 text-sm">
@@ -155,7 +149,7 @@
                 </span>
             </label>
 
-            <div class="md:col-span-2 flex items-center gap-3">
+            <AiseButtonGroup Class="md:col-span-2">
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              HtmlType="@("submit")"
                              Disabled="@_isMutating"
@@ -167,9 +161,9 @@
                              OnClick="CancelForm">
                     Cancel
                 </CitusButton>
-            </div>
+            </AiseButtonGroup>
         </form>
-    </section>
+    </AiseFormSection>
 }
 
 @code {

@@ -18,6 +18,10 @@ public sealed record class CompanyModuleFlagSummary
 
     public bool Enabled { get; init; }
 
+    public DateTimeOffset? AccessExpiresAtUtc { get; init; }
+
+    public bool IsExpired { get; init; }
+
     public DateTimeOffset? UpdatedAtUtc { get; init; }
 
     public UserId? UpdatedByUserId { get; init; }

@@ -1,0 +1,14 @@
+<div class="@CssClass">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string CssClass =>
+        string.IsNullOrWhiteSpace(Class)
+            ? "aise-summary-metric-grid"
+            : $"aise-summary-metric-grid {Class}";
+}

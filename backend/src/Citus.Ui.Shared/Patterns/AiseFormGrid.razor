@@ -1,0 +1,39 @@
+<div class="@CssClass" style="@StyleValue">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public int Columns { get; set; }
+
+    [Parameter] public string MinColumnWidth { get; set; } = "16rem";
+
+    [Parameter] public bool Dense { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "aise-form-grid" };
+            if (Columns > 0)
+            {
+                classes.Add($"aise-form-grid--cols-{Math.Clamp(Columns, 1, 4)}");
+            }
+            if (Dense)
+            {
+                classes.Add("aise-form-grid--dense");
+            }
+            if (!string.IsNullOrWhiteSpace(Class))
+            {
+                classes.Add(Class);
+            }
+
+            return string.Join(' ', classes);
+        }
+    }
+
+    private string StyleValue => $"--aise-form-grid-min: {MinColumnWidth};";
+}

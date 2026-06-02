@@ -23,8 +23,6 @@
 @using Citus.Business.Blazor.State
 @inject BusinessShellState ShellState
 
-@implements IDisposable
-
 <details class="citus-popover citus-create-menu">
     <summary class="citus-create-menu__trigger">
         <span class="citus-create-menu__plus">+</span>
@@ -58,12 +56,15 @@
 @code {
     private RenderFragment RenderItem(CreateMenuEntry item) => __builder =>
     {
-        if (item.Href is null)
+        if (item.Href is null || IsWriteBlocked(item))
         {
+            var title = item.Href is null
+                ? "Coming soon"
+                : ShellState.ModuleWriteBlockMessage(item.ModuleKey!);
             <button type="button"
                     class="citus-create-menu__item is-disabled"
                     disabled
-                    title="Coming soon">@item.Label</button>
+                    title="@title">@item.Label</button>
         }
         else
         {
@@ -115,28 +116,11 @@
         new("Task", "/tasks/new", ModuleKey: "task")
     };
 
-    // Hide module-gated entries when their module is disabled. Mirrors the
-    // sidebar's BusinessNavMenu filter so the create menu doesn't surface
-    // a clickable link that lands on a disabled page.
     private bool IsVisible(CreateMenuEntry item) =>
         string.IsNullOrEmpty(item.ModuleKey) || ShellState.IsModuleEnabled(item.ModuleKey);
 
-    // Subscribe to ShellState mutations so the popover refreshes when
-    // module flags arrive after the initial render. The <details> element
-    // toggles open/closed in the DOM but Blazor only paints the contents
-    // when state changes — without this subscription the Task entry stays
-    // hidden until a page refresh forces a fresh render.
-    protected override void OnInitialized()
-    {
-        ShellState.OnChanged += HandleShellStateChanged;
-    }
-
-    public void Dispose()
-    {
-        ShellState.OnChanged -= HandleShellStateChanged;
-    }
-
-    private void HandleShellStateChanged() => InvokeAsync(StateHasChanged);
+    private bool IsWriteBlocked(CreateMenuEntry item) =>
+        !string.IsNullOrEmpty(item.ModuleKey) && ShellState.AreModuleWritesBlocked(item.ModuleKey);
 
     private sealed record CreateMenuEntry(string Label, string? Href, string? ModuleKey = null);
 }

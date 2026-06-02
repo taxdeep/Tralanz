@@ -34,11 +34,9 @@
         <RadzenDataGrid TItem="InvoiceListRow"
                         Data="@_invoices"
                         AllowSorting="true"
-                        AllowFiltering="true"
                         AllowColumnResize="true"
                         AllowPaging="true"
                         PageSize="50"
-                        FilterMode="FilterMode.Simple"
                         class="citus-radzen-grid">
             <Columns>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.DisplayNumber)" Title="Invoice" Width="180px">

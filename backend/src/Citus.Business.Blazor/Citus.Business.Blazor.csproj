@@ -10,6 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
     <ProjectReference Include="..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
+    <ProjectReference Include="..\Modules\Tasks\Application.Contracts\Citus.Modules.Tasks.Application.Contracts.csproj" />
+    <ProjectReference Include="..\Modules\Tasks\Domain.Shared\Citus.Modules.Tasks.Domain.Shared.csproj" />
     <ProjectReference Include="..\Modules\UnitySearch\Blazor\Citus.Modules.UnitySearch.Blazor.csproj" />
     <!-- Task pages deserialize TaskRecord / TaskSummary off the wire
          and dispatch on TaskStatus; reference Domain.Shared directly
@@ -21,12 +23,12 @@
   <!-- Phase-gated migration: see UI_LIBRARY_MIGRATION_PLAN.md.
        Radzen.Blazor coexists with AntDesign on the report / list / chart
        surfaces; AntDesign retains the shell + form chrome until Phase 8.
-       System.Linq.Dynamic.Core is pinned directly to override Radzen's
-       transitive 1.3.7 (CVE GHSA-4cv2-4hjh-77rx); the patched 1.6.4
-       wire-compat is unchanged for the runtime LINQ Where /
-       OrderBy expressions Radzen builds at filter / sort time. -->
+       Radzen is pinned to 5.9.8 because the older 5.0.0 package expects
+       the pre-1.6 Dynamic.Core CustomTypeProvider ABI and crashes dropdown
+       filtering at runtime when System.Linq.Dynamic.Core is patched to
+       1.6.4 (CVE GHSA-4cv2-4hjh-77rx). -->
   <ItemGroup>
-    <PackageReference Include="Radzen.Blazor" Version="[5.0.0,7.0.0)" />
+    <PackageReference Include="Radzen.Blazor" Version="5.9.8" />
     <PackageReference Include="System.Linq.Dynamic.Core" Version="1.6.4" />
   </ItemGroup>
 

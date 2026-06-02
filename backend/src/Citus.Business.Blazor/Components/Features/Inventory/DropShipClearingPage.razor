@@ -23,6 +23,13 @@
 {
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
 }
+@if (InventoryExpired)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                ShowIcon="true"
+                Message="@ShellState.ModuleWriteBlockMessage(InventoryModuleKey)"
+                Class="mb-4" />
+}
 
 <section class="citus-panel">
     <CitusAsyncBoundary IsLoading="@_isLoading"
@@ -78,7 +85,7 @@
                             {
                                 <CitusButton Variant="CitusButtonVariant.Ghost"
                                              Size="CitusButtonSize.Small"
-                                             Disabled="@isWritingOff"
+                                             Disabled="@(isWritingOff || InventoryWritesBlocked)"
                                              OnClick="@(() => WriteOffAsync(row))">
                                     @(isWritingOff ? "Writing off…" : "Write off")
                                 </CitusButton>
@@ -102,6 +109,8 @@
 </p>
 
 @code {
+    private const string InventoryModuleKey = "inventory";
+
     private PageHeaderModel _header = new()
     {
         Eyebrow = "Inventory",
@@ -115,6 +124,10 @@
     private string? _validation;
     private Guid? _writingOffItemId;
     private string _baseCurrencyCode = string.Empty;
+
+    private bool InventoryExpired => ShellState.IsModuleExpired(InventoryModuleKey);
+
+    private bool InventoryWritesBlocked => ShellState.AreModuleWritesBlocked(InventoryModuleKey);
 
     protected override async Task OnInitializedAsync()
     {

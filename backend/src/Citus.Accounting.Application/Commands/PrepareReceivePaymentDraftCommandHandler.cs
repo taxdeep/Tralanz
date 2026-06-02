@@ -34,7 +34,8 @@ public sealed class PrepareReceivePaymentDraftCommandHandler
                     command.AcceptedFxSnapshotId,
                     command.Memo,
                     command.Lines,
-                    command.ExtraDepositAmount),
+                    command.ExtraDepositAmount,
+                    command.ClientRequestId),
                 ct);
 
             return PrepareReceivePaymentDraftCommandResult.FromRepositoryResult(result);

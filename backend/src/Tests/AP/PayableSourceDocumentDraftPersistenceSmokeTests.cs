@@ -2166,6 +2166,36 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
             billCompensationJournalEntryId = billLifecycle.CompensationJournalEntryId;
 
+            var invalidBillCompletion = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                reviewRepository.CompleteReverseRequestExecutionAsync(
+                    CompanyId.FromOrdinal(1),
+                    "bill",
+                    billId,
+                    billAttempt.RequestId.Value,
+                    userId,
+                    billLifecycle.CompensationJournalEntryId,
+                    "JE-SMOKE-WRONG",
+                    billLifecycle.CompensationSourceType,
+                    billLifecycle.LifecycleAt,
+                    CancellationToken.None));
+            Assert.Contains("does not match", invalidBillCompletion.Message, StringComparison.OrdinalIgnoreCase);
+
+            var billRequestAfterRejectedCompletion = await reviewRepository.GetReverseRequestAsync(
+                CompanyId.FromOrdinal(1),
+                "bill",
+                billId,
+                billAttempt.RequestId.Value,
+                CancellationToken.None);
+            var billStatusAfterRejectedCompletion = await GetDocumentStatusAsync(
+                connectionFactory,
+                "bills",
+                billId,
+                CancellationToken.None);
+
+            Assert.NotNull(billRequestAfterRejectedCompletion);
+            Assert.Equal("execution_requested", billRequestAfterRejectedCompletion!.ExecutionStatus);
+            Assert.Equal("posted", billStatusAfterRejectedCompletion);
+
             var billCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
                 CompanyId.FromOrdinal(1),
                 "bill",

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace Citus.Business.Blazor.Services;
 
@@ -53,6 +54,57 @@ public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> 
             return null;
         }
     }
+
+    public async Task<InvoiceMutationOutcome> VoidAsync(
+        Guid invoiceId,
+        CompanyId companyId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                $"accounting/invoices/{invoiceId:D}/void",
+                new VoidInvoiceRequest(companyId),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new InvoiceMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
+            }
+
+            var saved = await response.Content.ReadFromJsonAsync<InvoiceRecordDto>(cancellationToken);
+            return new InvoiceMutationOutcome(true, saved, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to void invoice {InvoiceId}.", invoiceId);
+            return new InvoiceMutationOutcome(false, null, "Unable to reach the server. Please try again.");
+        }
+    }
+
+    private static async Task<string> ReadMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return $"Request failed with status code {(int)response.StatusCode}.";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            if (document.RootElement.TryGetProperty("message", out var message) &&
+                message.ValueKind == JsonValueKind.String)
+            {
+                return message.GetString() ?? raw;
+            }
+        }
+        catch (JsonException) { }
+
+        return raw;
+    }
+
+    private sealed record VoidInvoiceRequest(CompanyId CompanyId);
 }
 
 public sealed record InvoiceSummaryDto(
@@ -91,15 +143,21 @@ public sealed record InvoiceRecordDto(
     IReadOnlyList<InvoiceLineDto> Lines);
 
 public sealed record InvoiceLineDto(
+    Guid? Id,
     int LineNumber,
     Guid? RevenueAccountId,
     string? Description,
     decimal Quantity,
     decimal UnitPrice,
     decimal LineAmount,
+    Guid? TaxCodeId,
     decimal TaxAmount,
     Guid? PayableTaxAccountId,
-    // Surfaced so the CreditMemoCreatePage "From invoice" pre-fill
-    // can propagate per-line task attribution. New invoices created
-    // without a Task source emit null here.
-    Guid? TaskId = null);
+    Guid? ItemId,
+    Guid? TaskId,
+    Guid? TaskLineId);
+
+public sealed record InvoiceMutationOutcome(
+    bool Succeeded,
+    InvoiceRecordDto? Saved,
+    string? ErrorMessage);

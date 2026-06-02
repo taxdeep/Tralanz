@@ -31,6 +31,17 @@ public sealed class PostReceivePaymentCommandHandler
 
         return _unitOfWork.ExecuteAsync(async ct =>
         {
+            var existingPost = await _documents.GetPostedResultAsync(command.CompanyId, command.DocumentId, ct);
+            if (existingPost is not null)
+            {
+                return new PostReceivePaymentCommandResult(
+                    existingPost.JournalEntryId,
+                    existingPost.JournalEntryDisplayNumber,
+                    "posted",
+                    existingPost.PostedAt,
+                    Array.Empty<string>());
+            }
+
             var document = await _documents.GetForPostingAsync(command.CompanyId, command.DocumentId, ct);
             if (document is null)
             {
@@ -57,6 +68,7 @@ public sealed class PostReceivePaymentCommandHandler
 
             var result = await _postingEngine.PostAsync(document, postingContext, ct);
             await _settlements.ApplyReceivePaymentAsync(document, command.UserId, ct);
+            await _documents.ParkExtraDepositAsync(document, command.UserId, ct);
             return PostReceivePaymentCommandResult.FromPostingResult(result);
         }, cancellationToken);
     }

@@ -134,7 +134,7 @@ else
             (invoice + payment term). All values in @_baseCurrencyCode.
         </p>
 
-        @if (_cashFlow is null || _cashFlow.Months.Count == 0)
+        @if (_cashFlow is null || _cashFlow.Months.Count == 0 || (_cashFlowReceivedPoints.Count == 0 && _cashFlowForecastPoints.Count == 0))
         {
             <p class="text-fg-subtle text-sm">No cash-flow data yet.</p>
         }
@@ -542,11 +542,9 @@ else
 
     private void RebuildCashFlowPoints()
     {
-        // Two parallel series so Radzen renders Received + Forecast in
-        // distinct colors with their own legend entries. Both arrays
-        // span all 14 months so the x-axis stays aligned; entries that
-        // don't apply to a bucket get null so the chart skips them
-        // (no zero-height column drawn).
+        // Keep each Radzen series free of nullable values. Passing null
+        // points into a column series can throw when the chart computes
+        // its value scale.
         var received = new List<CashFlowChartPoint>();
         var forecast = new List<CashFlowChartPoint>();
 
@@ -560,12 +558,18 @@ else
         foreach (var bucket in _cashFlow.Months)
         {
             var label = bucket.MonthStart.ToString("MMM yy");
-            received.Add(new CashFlowChartPoint(
-                Label: label,
-                Amount: bucket.IsForecast ? null : (double?)bucket.ReceivedAmountBase));
-            forecast.Add(new CashFlowChartPoint(
-                Label: label,
-                Amount: bucket.IsForecast ? (double?)bucket.ForecastAmountBase : null));
+            if (bucket.IsForecast)
+            {
+                forecast.Add(new CashFlowChartPoint(
+                    Label: label,
+                    Amount: (double)bucket.ForecastAmountBase));
+            }
+            else
+            {
+                received.Add(new CashFlowChartPoint(
+                    Label: label,
+                    Amount: (double)bucket.ReceivedAmountBase));
+            }
         }
 
         _cashFlowReceivedPoints = received;
@@ -652,5 +656,5 @@ else
 
     private sealed record IncomeChartPoint(string Label, double Amount);
 
-    private sealed record CashFlowChartPoint(string Label, double? Amount);
+    private sealed record CashFlowChartPoint(string Label, double Amount);
 }

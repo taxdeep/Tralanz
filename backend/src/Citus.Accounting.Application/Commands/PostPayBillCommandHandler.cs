@@ -31,6 +31,17 @@ public sealed class PostPayBillCommandHandler
 
         return _unitOfWork.ExecuteAsync(async ct =>
         {
+            var existingPost = await _documents.GetPostedResultAsync(command.CompanyId, command.DocumentId, ct);
+            if (existingPost is not null)
+            {
+                return new PostPayBillCommandResult(
+                    existingPost.JournalEntryId,
+                    existingPost.JournalEntryDisplayNumber,
+                    "posted",
+                    existingPost.PostedAt,
+                    Array.Empty<string>());
+            }
+
             var document = await _documents.GetForPostingAsync(command.CompanyId, command.DocumentId, ct);
             if (document is null)
             {

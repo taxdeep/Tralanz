@@ -211,8 +211,6 @@ public sealed record ExpenseLineDto(
     decimal UnitPrice,
     Guid? TaxCodeId,
     decimal LineTotal,
-    // Optional Task back-link surfaced on read so the expense detail
-    // view (and any future edit form) can show the attribution.
     Guid? TaskId = null);
 
 public sealed record ExpenseUpsertPayload(
@@ -233,13 +231,7 @@ public sealed record ExpenseUpsertPayload(
     decimal? DiscountValue,
     string? Memo,
     string? InternalNote,
-    IReadOnlyList<ExpenseLinePayload> Lines,
-    // Copy A3 Phase 1: when the form was prefilled from an existing
-    // expense (via ExpenseDetailPage → More → Copy → /expenses/new?copyFrom=…),
-    // the create page sets this so the server can audit the provenance.
-    // Nullable + defaulted-null so non-copy flows don't have to know
-    // about it.
-    Guid? CopiedFromExpenseId = null);
+    IReadOnlyList<ExpenseLinePayload> Lines);
 
 public sealed record ExpenseLinePayload(
     int Sequence,
@@ -250,8 +242,6 @@ public sealed record ExpenseLinePayload(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    // Optional Task back-link sent on write. Server validates via
-    // ITaskLineLinkValidator and persists to expense_lines.task_id.
     Guid? TaskId = null);
 
 public sealed record ExpenseMutationOutcome(bool Succeeded, ExpenseRecordDto? Saved, string? ErrorMessage);

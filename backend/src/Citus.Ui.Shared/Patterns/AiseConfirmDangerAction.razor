@@ -1,0 +1,46 @@
+@inject IJSRuntime JsRuntime
+
+<CitusButton Variant="@Variant"
+             Size="@Size"
+             LeadingIcon="@LeadingIcon"
+             Danger="true"
+             Disabled="@Disabled"
+             Loading="@Loading"
+             Class="@Class"
+             OnClick="ConfirmAsync">
+    @Label
+</CitusButton>
+
+@code {
+    [Parameter] public string Label { get; set; } = "Delete";
+
+    [Parameter] public string ConfirmMessage { get; set; } = "This action cannot be undone. Continue?";
+
+    [Parameter] public CitusButtonVariant Variant { get; set; } = CitusButtonVariant.Ghost;
+
+    [Parameter] public CitusButtonSize Size { get; set; } = CitusButtonSize.Medium;
+
+    [Parameter] public IconName? LeadingIcon { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public bool Loading { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public EventCallback OnConfirmed { get; set; }
+
+    private async Task ConfirmAsync()
+    {
+        if (Disabled || Loading)
+        {
+            return;
+        }
+
+        var confirmed = await JsRuntime.InvokeAsync<bool>("confirm", ConfirmMessage);
+        if (confirmed && OnConfirmed.HasDelegate)
+        {
+            await OnConfirmed.InvokeAsync();
+        }
+    }
+}

@@ -6,7 +6,7 @@ namespace Infrastructure.PostgreSQL.Accounts;
 /// <summary>
 /// PostgreSQL implementation of <see cref="IAccountStore"/>. Reads and
 /// writes the existing <c>accounts</c> table from the migration draft
-/// (line 645 of <c>CITUS_POSTGRESQL_MIGRATION_DRAFT.sql</c>).
+/// (line 645 of <c>TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql</c>).
 ///
 /// Schema compatibility notes:
 ///   * <c>EnsureSchemaAsync</c> verifies the migration-installed table

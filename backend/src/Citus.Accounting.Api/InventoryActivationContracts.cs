@@ -52,4 +52,33 @@ internal static class InventoryActivationRequestParser
         InventoryCostingMethod.Fifo => "fifo",
         _ => "moving_average"
     };
+
+    public static string ResolveWarehouseName(string? raw) =>
+        string.IsNullOrWhiteSpace(raw)
+            ? "Main Warehouse"
+            : raw.Trim();
+
+    public static InventoryCostingPolicyUpdateRequest BuildPolicyUpdateRequest(
+        CompanyId companyId,
+        UserId userId,
+        InventoryActivationHttpRequest request) =>
+        new(
+            CompanyId: companyId,
+            UserId: userId,
+            DefaultCostingMethod: ParseCostingMethod(request.CostingMethod),
+            NegativeStockAllowed: false,
+            RequireWriteOffApproval: true);
+
+    public static InventoryWarehouseUpsertRequest BuildDefaultWarehouseRequest(
+        CompanyId companyId,
+        UserId userId,
+        Guid? warehouseId,
+        InventoryActivationHttpRequest request) =>
+        new(
+            CompanyId: companyId,
+            UserId: userId,
+            WarehouseId: warehouseId,
+            WarehouseCode: "MAIN",
+            Name: ResolveWarehouseName(request.WarehouseName),
+            Description: "Default warehouse created by the Inventory activation wizard.");
 }

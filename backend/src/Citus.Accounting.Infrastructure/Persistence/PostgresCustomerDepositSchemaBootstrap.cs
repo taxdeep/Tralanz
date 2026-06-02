@@ -2,7 +2,7 @@ namespace Citus.Accounting.Infrastructure.Persistence;
 
 /// <summary>
 /// Idempotent schema bootstrap for the Customer Deposits feature. The
-/// canonical definitions live in CITUS_POSTGRESQL_MIGRATION_DRAFT.sql at
+/// canonical definitions live in TRALANZ_POSTGRESQL_MIGRATION_DRAFT.sql at
 /// the repo root; this class re-asserts them on app startup so dev / test
 /// databases don't have to re-run the full migration script every time
 /// the schema gains a new column or table.
@@ -91,6 +91,10 @@ public sealed class PostgresCustomerDepositSchemaBootstrap
 
             create index if not exists ix_customer_deposits_source_receive_payment
               on customer_deposits (source_receive_payment_id)
+              where source_receive_payment_id is not null;
+
+            create unique index if not exists ux_customer_deposits_company_source_receive_payment
+              on customer_deposits (company_id, source_receive_payment_id)
               where source_receive_payment_id is not null;
 
             -- M5 iter 3: standalone-deposit path. Customer pays directly

@@ -1,0 +1,46 @@
+<section class="@CssClass">
+    @if (HasHeader)
+    {
+        <header class="citus-panel__header aise-form-section__header">
+            <div class="aise-form-section__heading">
+                @if (!string.IsNullOrWhiteSpace(Title))
+                {
+                    <h2 class="citus-panel__title">@Title</h2>
+                }
+                @if (!string.IsNullOrWhiteSpace(Description))
+                {
+                    <p class="aise-form-section__description">@Description</p>
+                }
+            </div>
+
+            @if (Actions is not null)
+            {
+                <div class="aise-form-section__actions">@Actions</div>
+            }
+        </header>
+    }
+
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? Description { get; set; }
+
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool HasHeader =>
+        !string.IsNullOrWhiteSpace(Title)
+        || !string.IsNullOrWhiteSpace(Description)
+        || Actions is not null;
+
+    private string CssClass =>
+        string.IsNullOrWhiteSpace(Class)
+            ? "citus-panel aise-form-section"
+            : $"citus-panel aise-form-section {Class}";
+}

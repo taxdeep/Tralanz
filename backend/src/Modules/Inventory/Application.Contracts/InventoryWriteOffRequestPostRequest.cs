@@ -6,4 +6,5 @@ public sealed record class InventoryWriteOffRequestPostRequest(
     Guid WarehouseId,
     DateOnly PostingDate,
     string? Memo,
-    IReadOnlyList<InventoryAdjustmentLineInput> Lines);
+    IReadOnlyList<InventoryAdjustmentLineInput> Lines,
+    Guid? ClientRequestId = null);

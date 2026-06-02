@@ -26,6 +26,8 @@ public static class SearchScopeContext
     public const string InvoiceItemPicker = "invoice.item_picker";
     public const string BillVendorPicker = "bill.vendor_picker";
     public const string BillItemPicker = "bill.item_picker";
+    public const string TaskPicker = "task.picker";
+    public const string UserPicker = "user.picker";
 
     /// <summary>
     /// Generic vendor picker for AP-side documents that don't have their
@@ -44,22 +46,5 @@ public static class SearchScopeContext
     /// </summary>
     public const string JournalEntryNamePicker = "journal_entry.name_picker";
 
-    /// <summary>
-    /// Picker for selecting a Task from AR / AP line-item editors
-    /// (Batch 8 will wire this into invoice / bill / expense / PO
-    /// lines so postings can attribute themselves to a Task for the
-    /// gross-margin read model).
-    /// </summary>
-    public const string TaskPicker = "task.picker";
-
-    /// <summary>
-    /// Picker for selecting a User (company member) — used by report
-    /// filters and any future "who" pickers (audit log, notification
-    /// rules, etc.). Backed by a synthetic uuid hashed from the
-    /// char(7) user_id; the real user_id round-trips through the
-    /// projection's metadata_json so callers can use the typed
-    /// <see cref="SharedKernel.Identity.UserId"/> instead of the
-    /// synthetic guid.
-    /// </summary>
-    public const string UserPicker = "user.picker";
+    public const string TaskItemPicker = "task.item_picker";
 }
