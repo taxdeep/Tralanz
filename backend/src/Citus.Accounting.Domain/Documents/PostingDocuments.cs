@@ -4452,9 +4452,22 @@ public sealed class InvoiceReversePostingDocument : IPostingDocument
     public IReadOnlyList<InvoiceReversePostingDocumentLine> ReverseLines { get; }
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
 
-    // The reverse JE reuses the original invoice's captured rate — no fresh
-    // FX resolution (identity when transaction currency equals base).
-    public FxSnapshotRef? FxSnapshot => null;
+    // The reverse JE reuses the original invoice's CAPTURED rate (read from
+    // the original JE's exchange_rate) instead of resolving a fresh FX
+    // snapshot — exactly how InvoiceDocument hands the engine a Guid.Empty
+    // FxSnapshotRef for a manual/foreign rate, so no local-snapshot lookup
+    // runs. Null (identity) when the transaction currency equals base.
+    public FxSnapshotRef? FxSnapshot =>
+        TransactionCurrencyCode == BaseCurrencyCode && FxRate == 1m
+            ? null
+            : new FxSnapshotRef(
+                Guid.Empty,
+                BaseCurrencyCode,
+                TransactionCurrencyCode,
+                FxRate,
+                DocumentDate,
+                DocumentDate,
+                "reverse_captured");
 }
 
 /// <summary>
