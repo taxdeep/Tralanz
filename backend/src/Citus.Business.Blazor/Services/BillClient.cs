@@ -238,7 +238,12 @@ public sealed record BillRecordDto(
     DateTimeOffset? PostedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<BillLineDto> Lines);
+    IReadOnlyList<BillLineDto> Lines,
+    // Per-Tax-Rule breakdown (GST, PST, …) so the detail Totals can split a
+    // multi-rule Tax Code; null/single → one combined Tax row.
+    IReadOnlyList<BillTaxBreakdownLine>? TaxBreakdown = null);
+
+public sealed record BillTaxBreakdownLine(string Code, decimal Amount);
 
 public sealed record BillLineDto(
     Guid Id,

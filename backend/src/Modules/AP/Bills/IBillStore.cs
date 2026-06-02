@@ -124,7 +124,14 @@ public sealed record BillRecord(
     DateTimeOffset? PostedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<BillLineRecord> Lines);
+    IReadOnlyList<BillLineRecord> Lines,
+    // Per-Tax-Rule tax breakdown (GST, PST, …) aggregated from the line
+    // sales-tax snapshots, so the detail Totals can split a multi-rule Tax
+    // Code instead of showing one combined Tax figure. Null/empty when the
+    // bill carries no snapshots (legacy / single-rule).
+    IReadOnlyList<BillTaxBreakdownLine>? TaxBreakdown = null);
+
+public sealed record BillTaxBreakdownLine(string Code, decimal Amount);
 
 public sealed record BillLineRecord(
     Guid Id,

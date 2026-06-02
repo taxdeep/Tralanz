@@ -195,8 +195,22 @@ else
                 <div class="citus-totals-card">
                     <CitusKeyValueTable>
                         <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                        @* Live per-Tax-Rule preview (GST / PST inside a GP/BC code),
+                           computed client-side from the loaded Tax Code rates; the
+                           engine recomputes the authoritative split on save. Falls
+                           back to the manual Tax amount when no Tax Code is picked. *@
+                        @if (_taxByRule.Count > 0)
+                        {
+                            @foreach (var t in _taxByRule)
+                            {
+                                <CitusKeyValueRow Label="@t.RuleCode" ValueAlignRight="true">@FormatAmount(t.Amount)</CitusKeyValueRow>
+                            }
+                        }
+                        else
+                        {
+                            <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
+                        }
+                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Subtotal + (_taxByRule.Count > 0 ? _taxPreviewTotal : TaxTotal)) @_currency</strong></CitusKeyValueRow>
                     </CitusKeyValueTable>
                 </div>
             </div>
@@ -382,6 +396,43 @@ else
     private decimal Subtotal => _lines.Sum(l => Math.Round(l.LineAmount, 6));
     private decimal TaxTotal => _lines.Sum(l => Math.Round(l.TaxAmount, 6));
     private decimal Total => Math.Round(Subtotal + TaxTotal, 6);
+
+    // Live per-Tax-Rule tax preview for the Summary card: split each line's
+    // selected Tax Code into its component rules (GST, PST, …) using the
+    // loaded rates. Client-side estimate only — the engine recomputes the
+    // authoritative split on save. Mirrors the invoice editor.
+    private IReadOnlyList<(string RuleCode, decimal Amount)> _taxByRule
+    {
+        get
+        {
+            var totals = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<string>();
+            foreach (var line in _lines)
+            {
+                if (line.TaxCodeSetId is not { } setId) continue;
+                var set = _taxCodeSets.FirstOrDefault(s => s.Id == setId);
+                if (set is null || set.Members.Count == 0) continue;
+                var lineAmount = line.LineAmount;
+                if (lineAmount <= 0m) continue;
+                var compoundBase = lineAmount;
+                foreach (var rule in set.Members.OrderBy(m => m.Sequence))
+                {
+                    var taxable = rule.IsCompound ? compoundBase : lineAmount;
+                    var amount = Math.Round(taxable * rule.RatePercent / 100m, 2, MidpointRounding.AwayFromZero);
+                    if (!totals.ContainsKey(rule.RuleCode))
+                    {
+                        totals[rule.RuleCode] = 0m;
+                        order.Add(rule.RuleCode);
+                    }
+                    totals[rule.RuleCode] += amount;
+                    if (rule.IsCompound) compoundBase += amount;
+                }
+            }
+            return order.Select(c => (c, totals[c])).ToList();
+        }
+    }
+
+    private decimal _taxPreviewTotal => _taxByRule.Sum(t => t.Amount);
 
     /// <summary>
     /// Resting-state label shown inside the AccountPicker control so a

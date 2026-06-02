@@ -132,7 +132,8 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
         }
 
         var lines = await ReadLinesAsync(connection, billId, cancellationToken).ConfigureAwait(false);
-        return bill with { Lines = lines };
+        var taxBreakdown = await ReadTaxBreakdownAsync(connection, companyId, billId, cancellationToken).ConfigureAwait(false);
+        return bill with { Lines = lines, TaxBreakdown = taxBreakdown };
     }
 
     public async Task<BillRecord> CreateAsync(
@@ -387,6 +388,40 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
                 TaskId: reader.IsDBNull(8) ? null : reader.GetGuid(8)));
         }
         return lines;
+    }
+
+    private static async Task<IReadOnlyList<BillTaxBreakdownLine>> ReadTaxBreakdownAsync(
+        NpgsqlConnection connection,
+        CompanyId companyId,
+        Guid billId,
+        CancellationToken cancellationToken)
+    {
+        // Per-rule tax aggregated from the v2 sales-tax snapshots written at
+        // draft save (document_type='bill'). Grouped by the Tax Rule's code,
+        // ordered by the rule sequence so GST shows before PST. Empty when the
+        // bill has no snapshots (legacy / single-rule) — the Totals card then
+        // falls back to a single combined Tax row.
+        var rows = new List<BillTaxBreakdownLine>();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT code_snapshot, SUM(tax_amount) AS amount
+              FROM document_line_sales_tax_snapshots
+             WHERE company_id = @company_id
+               AND document_type = 'bill'
+               AND document_id = @bill_id
+             GROUP BY code_snapshot
+             ORDER BY MIN(sequence);
+            """;
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bill_id", billId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rows.Add(new BillTaxBreakdownLine(
+                Code: reader.GetString(0),
+                Amount: reader.GetDecimal(1)));
+        }
+        return rows;
     }
 
     private static async Task InsertLinesAsync(
