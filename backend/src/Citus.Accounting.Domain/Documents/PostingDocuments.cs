@@ -4387,3 +4387,89 @@ public sealed record ExpenseVoidPostingDocumentLine(
     string? ControlRole = null,
     Guid? PartyId = null,
     int? SourceLineNumber = null) : IPostingDocumentLine;
+
+/// <summary>
+/// Reverse-of-a-posted-invoice compensation JE. Mirrors
+/// <see cref="ExpenseVoidPostingDocument"/>: the repository reads the
+/// original invoice JE (source_type='invoice') + its lines and pre-flips
+/// each Dr/Cr, so the engine just emits them as fragments. Reverses every
+/// original leg — AR, revenue, and each per-rule sales-tax leg — for free.
+/// Stamps source_type='invoice_reversal' (idempotency probe key with
+/// source_id = InvoiceId).
+/// </summary>
+public sealed class InvoiceReversePostingDocument : IPostingDocument
+{
+    public InvoiceReversePostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        Guid invoiceId,
+        DateOnly documentDate,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        decimal fxRate,
+        IEnumerable<InvoiceReversePostingDocumentLine> lines)
+    {
+        if (invoiceId == Guid.Empty)
+        {
+            throw new ArgumentException("Invoice id is required.", nameof(invoiceId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber;
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        InvoiceId = invoiceId;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        FxRate = fxRate;
+
+        var materialized = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materialized.Length == 0)
+        {
+            throw new InvalidOperationException("Invoice-reverse document must carry at least one line.");
+        }
+
+        ReverseLines = Array.AsReadOnly(materialized);
+        Lines = Array.AsReadOnly(materialized.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "invoice_reversal";
+
+    public string Status => "draft";
+    public Guid InvoiceId { get; }
+    public DateOnly DocumentDate { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public decimal FxRate { get; }
+    public IReadOnlyList<InvoiceReversePostingDocumentLine> ReverseLines { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    // The reverse JE reuses the original invoice's captured rate — no fresh
+    // FX resolution (identity when transaction currency equals base).
+    public FxSnapshotRef? FxSnapshot => null;
+}
+
+/// <summary>
+/// One leg of an invoice-reverse compensation JE — amounts ALREADY flipped
+/// relative to the forward invoice post (Dr/Cr and TxDr/TxCr swapped).
+/// </summary>
+public sealed record InvoiceReversePostingDocumentLine(
+    int LineNumber,
+    Guid AccountId,
+    decimal TxDebit,
+    decimal TxCredit,
+    decimal Debit,
+    decimal Credit,
+    string Description,
+    string PostingRole,
+    string? ControlRole = null,
+    Guid? PartyId = null,
+    int? SourceLineNumber = null) : IPostingDocumentLine;

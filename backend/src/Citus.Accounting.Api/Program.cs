@@ -201,6 +201,7 @@ builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueC
 // PostgreSqlExpenseStore. The repo reads the original Expense JE and
 // builds a pre-flipped ExpenseVoidPostingDocument.
 builder.Services.AddScoped<IExpenseVoidPostingRepository, PostgresExpenseVoidPostingRepository>();
+builder.Services.AddScoped<IInvoiceReversePostingRepository, PostgresInvoiceReversePostingRepository>();
 builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoiceDropShipCogsPostingRepository>();
 builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearingAgingReader>();
 builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
@@ -340,6 +341,7 @@ builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
 // H1: orchestrates the Expense Void compensating JE via the Posting Engine.
 builder.Services.AddScoped<PostExpenseVoidCommandHandler>();
+builder.Services.AddScoped<PostInvoiceReverseCommandHandler>();
 // P0-2 (C2): compensating COGS post on invoice-reverse. Mirror of the
 // forward sales-issue COGS handler with isReverse=true on the posting
 // document. Invoked by PostgresAccountingDocumentReviewRepository
@@ -10598,8 +10600,8 @@ accounting.MapPost(
     async (
         Guid documentId,
         BusinessSessionContextAccessor sessionAccessor,
+        PostInvoiceReverseCommandHandler reverseHandler,
         IInvoiceDocumentRepository repository,
-        Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow journalEntryLifecycle,
         IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
@@ -10615,17 +10617,12 @@ accounting.MapPost(
 
         try
         {
-            var journalEntryId = await repository.GetPostedJournalEntryIdAsync(
-                session.ActiveCompanyId, documentId, cancellationToken);
-            if (journalEntryId is null)
-            {
-                return Results.BadRequest(new { message = "This invoice has no posted journal entry to reverse." });
-            }
-
-            // Reverse the original posting with a compensating journal entry —
-            // this reverses every leg, including each per-rule sales-tax leg.
-            var lifecycle = await journalEntryLifecycle.VoidAsync(
-                session.ActiveCompanyId, journalEntryId.Value, session.UserId, cancellationToken);
+            // Post the compensating JE through the posting engine — reverses
+            // every original leg incl. each per-rule sales-tax leg. Idempotent
+            // on source_type='invoice_reversal' + source_id.
+            var result = await reverseHandler.HandleAsync(
+                new PostInvoiceReverseCommand(session.ActiveCompanyId, session.UserId, documentId),
+                cancellationToken);
 
             // Flip the invoice out of the receivable set (mirrors the expense
             // void: compensation JE first, then the source-row status flip).
@@ -10635,8 +10632,9 @@ accounting.MapPost(
             return Results.Ok(new
             {
                 reversed = true,
-                compensationJournalEntryId = lifecycle.CompensationJournalEntryId,
-                compensationDisplayNumber = lifecycle.CompensationDisplayNumber,
+                compensationJournalEntryId = result.JournalEntryId,
+                compensationDisplayNumber = result.JournalEntryDisplayNumber,
+                alreadyReversed = result.AlreadyReversed,
             });
         }
         catch (InvalidOperationException ex)

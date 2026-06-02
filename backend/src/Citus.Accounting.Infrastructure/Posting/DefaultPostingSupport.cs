@@ -433,6 +433,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildCustomerDepositApplicationFragments(depositApp).AsReadOnly()),
             ExpenseVoidPostingDocument expenseVoid => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildExpenseVoidFragments(expenseVoid).AsReadOnly()),
+            InvoiceReversePostingDocument invoiceReverse => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildInvoiceReverseFragments(invoiceReverse).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -451,6 +453,34 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     {
         var fragments = new List<PostingFragment>(document.VoidLines.Count);
         foreach (var line in document.VoidLines)
+        {
+            fragments.Add(new PostingFragment(
+                line.AccountId,
+                document.TransactionCurrencyCode,
+                line.TxDebit,
+                line.TxCredit,
+                line.Debit,
+                line.Credit,
+                line.Description,
+                TaxComponentType: null,
+                ControlRole: line.ControlRole,
+                PartyId: line.PartyId,
+                PostingRole: line.PostingRole,
+                SourceLineNumber: line.SourceLineNumber));
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    // Invoice reverse: the document's lines are already the flipped legs of
+    // the original invoice JE (read + swapped by the repository), so we just
+    // emit them verbatim and re-assert balance on both axes.
+    private static List<PostingFragment> BuildInvoiceReverseFragments(
+        InvoiceReversePostingDocument document)
+    {
+        var fragments = new List<PostingFragment>(document.ReverseLines.Count);
+        foreach (var line in document.ReverseLines)
         {
             fragments.Add(new PostingFragment(
                 line.AccountId,
