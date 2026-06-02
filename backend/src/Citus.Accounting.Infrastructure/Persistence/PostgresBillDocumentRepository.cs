@@ -451,7 +451,18 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 );
                 """;
             BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount);
-            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+            try
+            {
+                await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505"
+                && ex.ConstraintName == "bills_unique_company_bill_number")
+            {
+                // Friendly message instead of a raw 500 — the endpoint maps
+                // InvalidOperationException to a 400 the form can render.
+                throw new InvalidOperationException(
+                    $"A bill numbered '{displayNumber}' already exists. Enter a different bill number.");
+            }
         }
         else
         {
@@ -564,7 +575,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             insertLineCommand.Parameters.AddWithValue("bill_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("expense_account_id", line.ExpenseAccountId);
-            insertLineCommand.Parameters.AddWithValue("description", line.Description.Trim());
+            insertLineCommand.Parameters.AddWithValue("description", (line.Description ?? string.Empty).Trim());
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.LineAmount));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("item_id", NpgsqlDbType.Uuid) { TypedValue = line.ItemId });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("warehouse_id", NpgsqlDbType.Uuid) { TypedValue = line.WarehouseId });
@@ -832,9 +843,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
 
         foreach (var line in draft.Lines)
         {
-            if (line.LineNumber <= 0 || line.ExpenseAccountId == Guid.Empty || string.IsNullOrWhiteSpace(line.Description))
+            // Line description is optional on a bill — many vendor invoices
+            // carry only a category + amount per line.
+            if (line.LineNumber <= 0 || line.ExpenseAccountId == Guid.Empty)
             {
-                throw new InvalidOperationException("Bill draft lines must have a line number, expense account, and description.");
+                throw new InvalidOperationException("Bill draft lines must have a line number and an expense account.");
             }
 
             if (line.LineAmount <= 0m || line.TaxAmount < 0m)

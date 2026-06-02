@@ -605,10 +605,9 @@ public sealed record BillDocumentLine : IPostingDocumentLine
             throw new ArgumentException("Expense account id is required.", nameof(expenseAccountId));
         }
 
-        if (string.IsNullOrWhiteSpace(description))
-        {
-            throw new ArgumentException("Description is required.", nameof(description));
-        }
+        // Description is optional on a bill line (many vendor invoices carry
+        // only a category + amount); the JE line description falls back to a
+        // placeholder when blank.
 
         if (lineAmount <= 0m || taxAmount < 0m)
         {
@@ -681,7 +680,7 @@ public sealed record BillDocumentLine : IPostingDocumentLine
 
         LineNumber = lineNumber;
         ExpenseAccountId = expenseAccountId;
-        Description = description.Trim();
+        Description = description?.Trim() ?? string.Empty;
         LineAmount = lineAmount;
         TaxAmount = taxAmount;
         IsTaxRecoverable = isTaxRecoverable;
