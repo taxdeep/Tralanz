@@ -481,6 +481,16 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
         DateTime postedAt,
         CancellationToken cancellationToken)
     {
+        // A reversal/compensation JE has no draft source document to flip to
+        // 'posted' — the original invoice is already posted (it is being
+        // reversed; its status is moved to 'reversed' separately, in the
+        // reverse endpoint). Treat the source claim as satisfied so the
+        // writer proceeds to post the compensation entry.
+        if (sourceType == "invoice_reversal")
+        {
+            return true;
+        }
+
         var sql = sourceType switch
         {
             "manual_journal" => """
