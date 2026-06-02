@@ -97,6 +97,7 @@ public sealed class DefaultPostingEngine : IPostingEngine
         {
             ManualJournalDocument manualJournal => manualJournal.FxSnapshot,
             InvoiceDocument invoice => invoice.FxSnapshot,
+            InvoiceReversePostingDocument invoiceReverse => invoiceReverse.FxSnapshot,
             SalesReceiptDocument salesReceipt => salesReceipt.FxSnapshot,
             RefundReceiptDocument refundReceipt => refundReceipt.FxSnapshot,
             BankTransferDocument bankTransfer => bankTransfer.FxSnapshot,
