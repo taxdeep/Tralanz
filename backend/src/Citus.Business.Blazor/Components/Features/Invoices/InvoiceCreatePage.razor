@@ -157,7 +157,8 @@
                 <thead>
                     <tr>
                         <th style="width: 2.25rem"></th>
-                        <th style="width: 16rem">Item / Service</th>
+                        <th style="width: 15rem">Item / Service</th>
+                        <th style="width: 14rem">Category</th>
                         <th>Description</th>
                         <th class="text-right" style="width: 6rem">Qty</th>
                         <th class="text-right" style="width: 9rem">Unit price</th>
@@ -185,31 +186,31 @@
                                 </button>
                             </td>
                             <td>
-                                @* Item / Service picker. Uses the shared sales item-service wrapper
-                                   (active product_service + inventory_item rows). On select we
-                                   pull the item's DefaultSalesRevenueAccountId and pre-fill the
-                                   line's revenue account from it — sales lines have no separate
-                                   Account column; the Item is the single source of truth. *@
+                                @* Item / Service picker (optional). On select, the
+                                   line's Category auto-fills from the item's revenue
+                                   account; the Category stays editable. *@
                                 <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
                                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                   Placeholder="Search items…"
+                                                   Placeholder="Search items… (optional)"
                                                    Take="6"
                                                    SourceRoute="/invoices/new"
                                                    SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
                                                    SelectedDisplayText="@line.ItemDisplay"
                                                    OnItemSelected="@(option => OnItemPicked(i, option))"
                                                    OnCleared="@(() => OnItemCleared(i))" />
-                                @if (line.ItemId != Guid.Empty)
-                                {
-                                    @if (!string.IsNullOrWhiteSpace(line.AccountDisplay))
-                                    {
-                                        <div class="text-fg-subtle text-xs mt-1">→ @line.AccountDisplay</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="text-error text-xs mt-1">Item has no sales/revenue account — set one in Products &amp; Services.</div>
-                                    }
-                                }
+                            </td>
+                            <td>
+                                @* Category = the line's income account. Required;
+                                   auto-filled from the Item when one is picked, and
+                                   editable for item-less lines (added flexibility). *@
+                                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                               Context="invoice.line.category"
+                                               SelectedId="@line.AccountId"
+                                               SelectedDisplayText="@GetAccountLabel(line.AccountId)"
+                                               Placeholder="Pick a category…"
+                                               OnAccountSelected="@(acct => Update(i, l => l with { AccountId = acct.Id, AccountCode = acct.Code, AccountDisplay = $"{acct.Code}  {acct.Name}" }))"
+                                               OnCleared="@(() => Update(i, l => l with { AccountId = null, AccountCode = string.Empty, AccountDisplay = string.Empty }))" />
                             </td>
                             <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
@@ -389,6 +390,7 @@
     {
         public bool HasContent =>
             ItemId != Guid.Empty
+            || AccountId is not null
             || !string.IsNullOrWhiteSpace(Description)
             || !string.IsNullOrWhiteSpace(AccountCode)
             || !string.IsNullOrWhiteSpace(TaxCode)
@@ -987,15 +989,21 @@
 
     private void OnItemCleared(int i)
     {
+        // Clear only the item; keep the Category (account) + description so an
+        // item-less line stands on its own (Item is optional now).
         Update(i, l => l with
         {
             ItemId = Guid.Empty,
             ItemDisplay = string.Empty,
-            AccountId = null,
-            AccountCode = string.Empty,
-            AccountDisplay = string.Empty,
         });
     }
+
+    // Resting-state label for the Category AccountPicker so a pre-filled /
+    // loaded line shows the account before the picker fetches its own chart.
+    private string? GetAccountLabel(Guid? id) =>
+        id is { } accountId && _accountsById.TryGetValue(accountId, out var a)
+            ? $"{a.Code}  {a.Name}"
+            : null;
 
     private (Guid? AccountId, string AccountCode, string AccountDisplay) ResolveItemAccount(Guid itemId)
     {
@@ -1023,9 +1031,8 @@
         // before validating — they're scaffolding, not user intent.
         var meaningful = _lines.Where(l => l.HasContent).ToArray();
         if (meaningful.Length == 0) { _validation = "Add at least one invoice line."; return; }
-        if (meaningful.Any(l => l.ItemId == Guid.Empty)) { _validation = "Every line needs an item / service picked."; return; }
         if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
-        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "One or more items have no sales / revenue account configured. Set it in Products & Services and re-pick."; return; }
+        if (meaningful.Any(l => l.AccountId is null)) { _validation = "Every line needs a Category (income account). Pick a Category, or an Item / Service to fill it."; return; }
         var total = meaningful.Sum(l => l.Quantity * l.UnitPrice);
         if (total <= 0) { _validation = "Invoice total must be greater than zero."; return; }
 
