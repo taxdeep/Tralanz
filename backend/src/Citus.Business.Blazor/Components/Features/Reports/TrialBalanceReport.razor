@@ -48,13 +48,7 @@
                     <Template Context="row"><span class="citus-inline-code">@row.Code</span></Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.Name)" Title="Account">
-                    <Template Context="row">
-                        <div>@row.Name</div>
-                        @if (!string.IsNullOrWhiteSpace(row.DetailType))
-                        {
-                            <div class="text-fg-subtle text-xs">@row.DetailType</div>
-                        }
-                    </Template>
+                    <Template Context="row">@row.Name</Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.RootType)" Title="Root type" Width="140px" />
                 <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Title="Status" Width="120px" Sortable="false">
