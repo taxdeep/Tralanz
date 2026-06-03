@@ -81,7 +81,7 @@
                                               Title="Journal entry"
                                               Width="200px">
                             <Template Context="item">
-                                <a class="citus-link" href="@($"journal-entry/review/{item.Id:D}")">@item.DisplayNumber</a>
+                                <a class="citus-link" href="@ResolveSourceHref(item)">@item.DisplayNumber</a>
                                 <div class="text-fg-subtle text-xs">
                                     <span class="citus-inline-code">@item.EntityNumber</span> | @GetLifecycleSummary(item)
                                 </div>
@@ -231,6 +231,26 @@
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    // A journal-review row opens the SOURCE document, not the raw JE — bill →
+    // the bill, invoice → the invoice — so users manage the lifecycle from the
+    // business document (and never void a JE while its source lives on). Only a
+    // manual journal (where the JE *is* the document) opens the JE review;
+    // other source docs use the generic document review, and types without a
+    // document surface (e.g. reversals) fall back to the JE review.
+    private static string ResolveSourceHref(JournalEntryReviewListItemSummary item)
+    {
+        var normalized = item.SourceType?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "manual_journal" => $"journal-entry/review/{item.Id:D}",
+            "bill" => $"bills/{item.SourceId:D}",
+            "invoice" => $"invoices/{item.SourceId:D}",
+            _ => AccountingDocumentReviewRouteCatalog.TryBuildReviewHref(normalized, item.SourceId, out var href)
+                ? href
+                : $"journal-entry/review/{item.Id:D}",
+        };
+    }
 
     private static bool IsMultiCurrency(JournalEntryReviewListItemSummary item) =>
         !string.IsNullOrWhiteSpace(item.TransactionCurrencyCode)

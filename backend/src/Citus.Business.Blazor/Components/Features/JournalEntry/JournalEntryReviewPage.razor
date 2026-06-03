@@ -160,7 +160,8 @@
        is auto-generated, original marked as voided) or "edited" — which is
        just a void followed by re-entering on the create form. Buttons hide
        once the entry is already voided / reversed. *@
-    @if (string.Equals(_review.Status, "posted", StringComparison.OrdinalIgnoreCase))
+    @if (string.Equals(_review.Status, "posted", StringComparison.OrdinalIgnoreCase)
+         && string.Equals(_review.SourceType, "manual_journal", StringComparison.OrdinalIgnoreCase))
     {
         <section class="citus-panel mt-6">
             <header class="citus-panel__header">
@@ -257,6 +258,26 @@
                     </CitusButton>
                 </div>
             }
+        </section>
+    }
+    else if (string.Equals(_review.Status, "posted", StringComparison.OrdinalIgnoreCase))
+    {
+        @* Source-document JE (bill, invoice, …): no Void/Edit here. Voiding
+           the JE alone would leave the source document behind, so the
+           lifecycle is driven from the source instead. *@
+        <section class="citus-panel mt-6">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Lifecycle actions</h2>
+            </header>
+            <p class="text-fg-muted text-sm m-0">
+                Posted from a @_review.SourceTypeLabel. To void or reverse it, use the source
+                document — that keeps the @_review.SourceTypeLabel and its journal entry in sync;
+                voiding the journal entry on its own would leave the @_review.SourceTypeLabel behind.
+                @if (_sourceDocumentHref is not null)
+                {
+                    <a class="citus-link" href="@_sourceDocumentHref"> Open the source document.</a>
+                }
+            </p>
         </section>
     }
 }
