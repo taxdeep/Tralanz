@@ -114,9 +114,6 @@
                     </div>
                 </CitusFormField>
             </CitusFormGrid>
-            <CitusFormField Label="Memo" Class="mt-4">
-                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
-            </CitusFormField>
         </CitusFormSection>
 
         <CitusFormSection Title="Lines">
@@ -214,32 +211,36 @@
             </ChildContent>
         </CitusFormSection>
 
-        @* Summary sits below the Lines section (full width); the engine
-           recomputes the authoritative tax split on save. *@
-        <CitusFormSection Title="Summary">
-            <CitusKeyValueTable>
-                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
-                @* Live tax preview, broken out per Tax Rule (the components
-                   of each selected Tax Code — e.g. GST / PST inside a BC/GP
-                   code). Computed client-side from the loaded code rates;
-                   the engine recomputes the authoritative split on save. *@
-                @foreach (var t in _taxByRule)
-                {
-                    <CitusKeyValueRow Label="@t.RuleCode">@FormatAmount(t.Amount)</CitusKeyValueRow>
-                }
-                <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
-                @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                {
-                    <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
-                }
-                @if (_taxTotal > 0m)
-                {
-                    <CitusKeyValueRow Label="Total"><strong>@FormatAmount(_total + _taxTotal) @_currency.ToUpperInvariant()</strong></CitusKeyValueRow>
-                }
-            </CitusKeyValueTable>
-        </CitusFormSection>
+        @* Memo (left) + Summary (right) share a row below the Lines.
+           The engine recomputes the authoritative tax split on save. *@
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <CitusFormSection Title="Memo">
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
+            </CitusFormSection>
+            <CitusFormSection Title="Summary">
+                <CitusKeyValueTable>
+                    <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
+                    @* Live tax preview, broken out per Tax Rule (the components
+                       of each selected Tax Code — e.g. GST / PST inside a BC/GP
+                       code). Computed client-side from the loaded code rates;
+                       the engine recomputes the authoritative split on save. *@
+                    @foreach (var t in _taxByRule)
+                    {
+                        <CitusKeyValueRow Label="@t.RuleCode">@FormatAmount(t.Amount)</CitusKeyValueRow>
+                    }
+                    <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
+                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
+                    }
+                    @if (_taxTotal > 0m)
+                    {
+                        <CitusKeyValueRow Label="Total"><strong>@FormatAmount(_total + _taxTotal) @_currency.ToUpperInvariant()</strong></CitusKeyValueRow>
+                    }
+                </CitusKeyValueTable>
+            </CitusFormSection>
+        </div>
 </div>
 
 @* Sticky Post action — single primary button (no Cancel; invoices
