@@ -55,6 +55,32 @@ public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> 
     }
 
     /// <summary>
+    /// Reads the next auto invoice number (INV-######) WITHOUT reserving it,
+    /// so the create page can pre-fill the editable "Invoice #" default.
+    /// Returns null on any failure — the field then just starts blank.
+    /// </summary>
+    public async Task<string?> PeekNextNumberAsync(CompanyId companyId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.GetAsync(
+                $"accounting/invoices/next-number?companyId={companyId:D}", cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+            using var document = System.Text.Json.JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(cancellationToken));
+            return document.RootElement.TryGetProperty("nextNumber", out var el)
+                   && el.ValueKind == System.Text.Json.JsonValueKind.String
+                ? el.GetString()
+                : null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to peek the next invoice number.");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Reverses a posted invoice: the dedicated endpoint posts a
     /// compensating journal entry (reversing every leg, including each
     /// per-rule sales-tax leg) and flips the invoice to 'reversed' so it

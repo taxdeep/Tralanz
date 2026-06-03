@@ -400,23 +400,30 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                 await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(connection, transaction, draft.CompanyId, year, cancellationToken),
                 cancellationToken);
 
-            displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
-                connection,
-                transaction,
-                draft.CompanyId,
-                "invoice-display",
-                "INV-",
-                6,
-                await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
+            // A user-supplied number (free-form) takes precedence over the
+            // auto sequence; otherwise reserve the next INV-######. The auto
+            // seed scan (FindDisplaySeedNumberAsync) reads existing INV-#
+            // rows, so a manual INV-# number self-heals the sequence on the
+            // next auto allocation. Uniqueness is enforced on insert below.
+            displayNumber = !string.IsNullOrWhiteSpace(draft.InvoiceNumber)
+                ? draft.InvoiceNumber.Trim()
+                : await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                     connection,
                     transaction,
                     draft.CompanyId,
-                    "invoices",
-                    "invoice_number",
-                    "^INV-[0-9]+$",
-                    5,
-                    cancellationToken),
-                cancellationToken);
+                    "invoice-display",
+                    "INV-",
+                    6,
+                    await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
+                        connection,
+                        transaction,
+                        draft.CompanyId,
+                        "invoices",
+                        "invoice_number",
+                        "^INV-[0-9]+$",
+                        5,
+                        cancellationToken),
+                    cancellationToken);
 
             await using var insertCommand = connection.CreateCommand();
             insertCommand.Transaction = transaction;
@@ -478,7 +485,18 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                 );
                 """;
             BindHeader(insertCommand, draft, documentId, entityNumber, displayNumber, headerTaxAmount);
-            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+            try
+            {
+                await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505"
+                && ex.ConstraintName == "invoices_unique_company_invoice_number")
+            {
+                // Friendly message instead of a raw 500 — the endpoint maps
+                // InvalidOperationException to a 400 the form can render.
+                throw new InvalidOperationException(
+                    $"An invoice numbered '{displayNumber}' already exists. Enter a different invoice number.");
+            }
         }
         else
         {
@@ -703,6 +721,36 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         command.Parameters.AddWithValue("id", invoiceId);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<string> PeekNextDisplayNumberAsync(
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        // Read-only preview of the next INV-###### the auto sequence WOULD
+        // issue (greatest of the stored sequence cursor and the max existing
+        // INV row + 1) — mirrors ReserveAsync's issued-number formula without
+        // advancing the counter. Backs the editable "Invoice #" default.
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            """
+            select 'INV-' || lpad(
+              greatest(
+                coalesce((select next_number from company_numbering_sequences
+                          where company_id = @company_id and scope_key = 'invoice-display'), 0),
+                coalesce((select max(substring(invoice_number from 5)::bigint)
+                          from invoices
+                          where company_id = @company_id and invoice_number ~ '^INV-[0-9]+$'), 0) + 1
+              )::text, 6, '0');
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result as string ?? "INV-000001";
     }
 
     public async Task<IReadOnlyList<Guid>> ListLinkedTaskIdsAsync(

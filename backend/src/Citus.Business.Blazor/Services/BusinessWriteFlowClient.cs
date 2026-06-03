@@ -389,6 +389,7 @@ public sealed class BusinessWriteFlowClient
         fxEffectiveDate = (DateOnly?)null,
         fxSource = (string?)null,
         memo = draft.Memo,
+        invoiceNumber = string.IsNullOrWhiteSpace(draft.InvoiceNumber) ? null : draft.InvoiceNumber.Trim(),
         lines = draft.Lines.Select(l => new
         {
             lineNumber = l.LineNumber,
@@ -1245,6 +1246,12 @@ public sealed record InvoiceDraft
     /// </summary>
     public decimal? FxRate { get; init; }
     public string Memo { get; init; } = string.Empty;
+    /// <summary>
+    /// User-supplied invoice number (free-form). Defaults to the peeked next
+    /// auto number on a new invoice; the server uses it instead of the
+    /// INV-###### auto sequence when non-blank, and ignores it on update.
+    /// </summary>
+    public string? InvoiceNumber { get; init; }
     /// <summary>
     /// Customer's own purchase-order reference. Carried into the wire shape
     /// so when the create endpoint lands the value is already in the payload.

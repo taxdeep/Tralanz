@@ -241,7 +241,10 @@ public sealed record SaveInvoiceDraftHttpRequest(
     // editor saw on GET; the repository rejects the UPDATE with a 409
     // if the value no longer matches the row's current updated_at.
     // Null on first save / when the editor opts out of the check.
-    DateTimeOffset? ExpectedUpdatedAt = null);
+    DateTimeOffset? ExpectedUpdatedAt = null,
+    // User-supplied invoice number (free-form); used on a NEW invoice
+    // instead of the auto INV-###### sequence, ignored on update.
+    string? InvoiceNumber = null);
 
 public sealed record SaveInvoiceDraftLineHttpRequest(
     int LineNumber,

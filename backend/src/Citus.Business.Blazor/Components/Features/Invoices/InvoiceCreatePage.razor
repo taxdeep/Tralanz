@@ -62,6 +62,20 @@
 <div class="flex flex-col gap-6">
         <CitusFormSection Title="Header">
             <CitusFormGrid Columns="2">
+                <CitusFormField Label="Invoice #">
+                    @* Defaults to the system's next auto number; editable on a
+                       new invoice, read-only once the number is assigned. *@
+                    @if (_editInvoiceId is null)
+                    {
+                        <CitusInput TValue="string" @bind-Value="_invoiceNumber" Placeholder="Auto-assigned on save; editable" MaxLength="64" />
+                    }
+                    else
+                    {
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                            <span class="citus-inline-code">@_invoiceNumber</span>
+                        </div>
+                    }
+                </CitusFormField>
                 <CitusFormField Label="Document date">
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
                 </CitusFormField>
@@ -313,6 +327,9 @@
     private string _currency = string.Empty;
     private decimal? _fxRate;
     private string _memo = string.Empty;
+    // Editable invoice number. Pre-filled with the peeked next auto number
+    // on a new invoice; on edit it shows the assigned number (read-only).
+    private string _invoiceNumber = string.Empty;
     private string _customerPoNumber = string.Empty;
     /// <summary>
     /// Back-link to the source Sales Order, populated when the page is
@@ -446,6 +463,14 @@
         {
             await PrefillFromEditSourceAsync(editId);
         }
+
+        // New invoice (incl. copy / from-SO / from-task): pre-fill the
+        // editable Invoice # with the system's next auto number. Edit keeps
+        // the already-assigned number (set in PrefillFromEditSourceAsync).
+        if (_editInvoiceId is null)
+        {
+            _invoiceNumber = await InvoiceClient.PeekNextNumberAsync(ShellState.ActiveCompany.Id) ?? string.Empty;
+        }
     }
 
     /// <summary>
@@ -565,6 +590,7 @@
         }
 
         _editInvoiceId = source.Id;
+        _invoiceNumber = source.DisplayNumber;
 
         var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
         _customerId = source.CustomerId;
@@ -969,6 +995,7 @@
                 BaseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode.Trim().ToUpperInvariant(),
                 FxRate = _fxRate,
                 Memo = _memo.Trim(),
+                InvoiceNumber = string.IsNullOrWhiteSpace(_invoiceNumber) ? null : _invoiceNumber.Trim(),
                 CustomerPoNumber = _customerPoNumber.Trim(),
                 SalesOrderId = _salesOrderId,
                 Lines = meaningful.Select((l, idx) => new InvoiceLineDraft

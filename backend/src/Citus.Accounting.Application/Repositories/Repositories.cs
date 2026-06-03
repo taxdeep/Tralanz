@@ -26,6 +26,14 @@ public interface IInvoiceDocumentRepository
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Computes the next auto invoice display number (INV-######) WITHOUT
+    /// reserving it — backs the create page's editable "Invoice #" default.
+    /// </summary>
+    Task<string> PeekNextDisplayNumberAsync(
+        CompanyId companyId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Resolves the posted journal entry id for an invoice (via
     /// journal_entries.source_type='invoice' + source_id), or null when the
     /// invoice has no posted JE. Backs the reverse flow.
@@ -449,7 +457,12 @@ public sealed record InvoiceDraftSaveModel(
     // the UPDATE if the row's current updated_at no longer matches —
     // see ConcurrencyConflictException. Null on first save (insert
     // path) or when the caller opts out of the check.
-    DateTimeOffset? ExpectedUpdatedAt = null);
+    DateTimeOffset? ExpectedUpdatedAt = null,
+    // User-supplied invoice number (free-form). When non-blank on a NEW
+    // invoice the repository uses it as the display number instead of
+    // auto-reserving the next INV-######; ignored on update (the number
+    // is already assigned). Uniqueness is enforced per company.
+    string? InvoiceNumber = null);
 
 public sealed record InvoiceDraftLineSaveModel(
     int LineNumber,

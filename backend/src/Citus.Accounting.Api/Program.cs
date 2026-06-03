@@ -10384,6 +10384,17 @@ accounting.MapGet(
             });
     });
 
+// Read-only preview of the next auto invoice number, so the create page can
+// pre-fill the editable "Invoice #" field with the system default.
+accounting.MapGet(
+    "/invoices/next-number",
+    async (CompanyId companyId, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        var nextNumber = await repository.PeekNextDisplayNumberAsync(companyId, cancellationToken);
+        return Results.Ok(new { nextNumber });
+    });
+
 accounting.MapPost(
     "/invoices/drafts",
     async (SaveInvoiceDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
@@ -10420,7 +10431,8 @@ accounting.MapPost(
                         line.TaskLineId,
                         line.TaxCodeSetId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
-                    request.SalesOrderId),
+                    request.SalesOrderId,
+                    InvoiceNumber: request.InvoiceNumber),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -10468,7 +10480,8 @@ accounting.MapPut(
                         line.TaxCodeSetId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
                     request.SalesOrderId,
-                    request.ExpectedUpdatedAt),
+                    request.ExpectedUpdatedAt,
+                    InvoiceNumber: request.InvoiceNumber),
                 cancellationToken);
 
             return Results.Ok(result);
