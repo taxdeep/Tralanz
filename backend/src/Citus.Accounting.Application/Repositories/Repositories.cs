@@ -462,7 +462,10 @@ public sealed record InvoiceDraftSaveModel(
     // invoice the repository uses it as the display number instead of
     // auto-reserving the next INV-######; ignored on update (the number
     // is already assigned). Uniqueness is enforced per company.
-    string? InvoiceNumber = null);
+    string? InvoiceNumber = null,
+    // Free-text billing / shipping address surfaced on the invoice Header.
+    string? BillingAddress = null,
+    string? ShippingAddress = null);
 
 public sealed record InvoiceDraftLineSaveModel(
     int LineNumber,

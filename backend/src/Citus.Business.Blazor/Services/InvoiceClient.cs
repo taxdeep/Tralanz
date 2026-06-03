@@ -162,6 +162,8 @@ public sealed record InvoiceRecordDto(
     string? Memo,
     string? CustomerPoNumber,
     Guid? SalesOrderId,
+    string? BillingAddress,
+    string? ShippingAddress,
     IReadOnlyList<InvoiceLineDto> Lines,
     IReadOnlyList<InvoiceTaxBreakdownLine>? TaxBreakdown = null);
 

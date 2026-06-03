@@ -244,7 +244,10 @@ public sealed record SaveInvoiceDraftHttpRequest(
     DateTimeOffset? ExpectedUpdatedAt = null,
     // User-supplied invoice number (free-form); used on a NEW invoice
     // instead of the auto INV-###### sequence, ignored on update.
-    string? InvoiceNumber = null);
+    string? InvoiceNumber = null,
+    // Free-text billing / shipping address surfaced on the invoice Header.
+    string? BillingAddress = null,
+    string? ShippingAddress = null);
 
 public sealed record SaveInvoiceDraftLineHttpRequest(
     int LineNumber,

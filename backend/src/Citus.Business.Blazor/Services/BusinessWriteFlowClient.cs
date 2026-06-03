@@ -390,6 +390,8 @@ public sealed class BusinessWriteFlowClient
         fxSource = (string?)null,
         memo = draft.Memo,
         invoiceNumber = string.IsNullOrWhiteSpace(draft.InvoiceNumber) ? null : draft.InvoiceNumber.Trim(),
+        billingAddress = string.IsNullOrWhiteSpace(draft.BillingAddress) ? null : draft.BillingAddress.Trim(),
+        shippingAddress = string.IsNullOrWhiteSpace(draft.ShippingAddress) ? null : draft.ShippingAddress.Trim(),
         lines = draft.Lines.Select(l => new
         {
             lineNumber = l.LineNumber,
@@ -1252,6 +1254,9 @@ public sealed record InvoiceDraft
     /// INV-###### auto sequence when non-blank, and ignores it on update.
     /// </summary>
     public string? InvoiceNumber { get; init; }
+    /// <summary>Free-text billing / shipping address shown on the invoice Header.</summary>
+    public string? BillingAddress { get; init; }
+    public string? ShippingAddress { get; init; }
     /// <summary>
     /// Customer's own purchase-order reference. Carried into the wire shape
     /// so when the create endpoint lands the value is already in the payload.

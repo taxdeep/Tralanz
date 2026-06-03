@@ -10432,7 +10432,9 @@ accounting.MapPost(
                         line.TaxCodeSetId)).ToArray(),
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
                     request.SalesOrderId,
-                    InvoiceNumber: request.InvoiceNumber),
+                    InvoiceNumber: request.InvoiceNumber,
+                    BillingAddress: request.BillingAddress,
+                    ShippingAddress: request.ShippingAddress),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -10481,7 +10483,9 @@ accounting.MapPut(
                     string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
                     request.SalesOrderId,
                     request.ExpectedUpdatedAt,
-                    InvoiceNumber: request.InvoiceNumber),
+                    InvoiceNumber: request.InvoiceNumber,
+                    BillingAddress: request.BillingAddress,
+                    ShippingAddress: request.ShippingAddress),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -10560,6 +10564,8 @@ accounting.MapGet(
             document.Memo,
             document.CustomerPoNumber,
             document.SalesOrderId,
+            document.BillingAddress,
+            document.ShippingAddress,
             Lines = document.InvoiceLines.Select(line => new
             {
                 line.LineNumber,

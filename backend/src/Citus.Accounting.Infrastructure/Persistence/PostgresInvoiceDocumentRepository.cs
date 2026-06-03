@@ -66,6 +66,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         decimal totalAmount;
         string? memo;
         string? customerPoNumber;
+        string? billingAddress;
+        string? shippingAddress;
         Guid? salesOrderId;
 
         await using (var headerCommand = scope.CreateCommand(
@@ -91,6 +93,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                            i.memo,
                            i.customer_po_number,
                            i.sales_order_id,
+                           i.billing_address,
+                           i.shipping_address,
                            (
                              select a.id
                              from accounts a
@@ -153,6 +157,12 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             customerPoNumber = reader.IsDBNull(reader.GetOrdinal("customer_po_number"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("customer_po_number"));
+            billingAddress = reader.IsDBNull(reader.GetOrdinal("billing_address"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("billing_address"));
+            shippingAddress = reader.IsDBNull(reader.GetOrdinal("shipping_address"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("shipping_address"));
             salesOrderId = reader.IsDBNull(reader.GetOrdinal("sales_order_id"))
                 ? null
                 : reader.GetGuid(reader.GetOrdinal("sales_order_id"));
@@ -263,7 +273,9 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             totalAmount,
             memo,
             customerPoNumber,
-            salesOrderId);
+            salesOrderId,
+            billingAddress,
+            shippingAddress);
     }
 
     public async Task<IReadOnlyList<InvoiceListItem>> ListAsync(
@@ -451,6 +463,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   memo,
                   customer_po_number,
                   sales_order_id,
+                  billing_address,
+                  shipping_address,
                   posted_at,
                   created_by_user_id,
                   created_at,
@@ -478,6 +492,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   @memo,
                   @customer_po_number,
                   @sales_order_id,
+                  @billing_address,
+                  @shipping_address,
                   null,
                   @created_by_user_id,
                   now(),
@@ -531,6 +547,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                     memo = @memo,
                     customer_po_number = @customer_po_number,
                     sales_order_id = @sales_order_id,
+                    billing_address = @billing_address,
+                    shipping_address = @shipping_address,
                     updated_at = now()
                 where id = @id
                   and company_id = @company_id
@@ -938,6 +956,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(draft.Memo) ? (object)DBNull.Value : draft.Memo.Trim());
         command.Parameters.AddWithValue("customer_po_number", string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? (object)DBNull.Value : draft.CustomerPoNumber.Trim());
         command.Parameters.Add(new NpgsqlParameter<Guid?>("sales_order_id", NpgsqlDbType.Uuid) { TypedValue = draft.SalesOrderId });
+        command.Parameters.AddWithValue("billing_address", string.IsNullOrWhiteSpace(draft.BillingAddress) ? (object)DBNull.Value : draft.BillingAddress.Trim());
+        command.Parameters.AddWithValue("shipping_address", string.IsNullOrWhiteSpace(draft.ShippingAddress) ? (object)DBNull.Value : draft.ShippingAddress.Trim());
     }
 
     private static void ValidateFx(string transactionCurrencyCode, string baseCurrencyCode, decimal? fxRate)

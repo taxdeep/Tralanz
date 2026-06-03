@@ -299,7 +299,9 @@ public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
         decimal totalAmount,
         string? memo = null,
         string? customerPoNumber = null,
-        Guid? salesOrderId = null)
+        Guid? salesOrderId = null,
+        string? billingAddress = null,
+        string? shippingAddress = null)
     {
         if (customerId == Guid.Empty)
         {
@@ -329,6 +331,8 @@ public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
         CustomerPoNumber = string.IsNullOrWhiteSpace(customerPoNumber) ? null : customerPoNumber.Trim();
         SalesOrderId = salesOrderId;
+        BillingAddress = string.IsNullOrWhiteSpace(billingAddress) ? null : billingAddress.Trim();
+        ShippingAddress = string.IsNullOrWhiteSpace(shippingAddress) ? null : shippingAddress.Trim();
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -381,6 +385,12 @@ public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
     /// retail / B2C invoices typically leave it null.
     /// </summary>
     public string? CustomerPoNumber { get; }
+
+    /// <summary>Free-text billing / shipping address surfaced on the invoice
+    /// Header. Metadata only — not used in the posting fragments.</summary>
+    public string? BillingAddress { get; }
+
+    public string? ShippingAddress { get; }
 
     /// <summary>
     /// Back-link to the Sales Order this invoice was created from, when

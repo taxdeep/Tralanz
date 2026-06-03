@@ -61,73 +61,91 @@
 
 <div class="flex flex-col gap-6">
         <CitusFormSection Title="Header">
-            <CitusFormGrid Columns="2">
-                <CitusFormField Label="Invoice #">
-                    @* Defaults to the system's next auto number; editable on a
-                       new invoice, read-only once the number is assigned. *@
-                    @if (_editInvoiceId is null)
-                    {
-                        <CitusInput TValue="string" @bind-Value="_invoiceNumber" Placeholder="Auto-assigned on save; editable" MaxLength="64" />
-                    }
-                    else
-                    {
-                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
-                            <span class="citus-inline-code">@_invoiceNumber</span>
-                        </div>
-                    }
-                </CitusFormField>
-                <CitusFormField Label="Document date">
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Due date">
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Customer">
-                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                       UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                       Placeholder="Search customers…"
-                                       Take="8"
-                                       SourceRoute="/invoices/new"
-                                       SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
-                                       SelectedDisplayText="@_customerDisplay"
-                                       OnCustomerSelected="OnCustomerSelected"
-                                       OnCleared="OnCustomerCleared" />
-                </CitusFormField>
-                <CitusFormField Label="Exchange rate">
-                    @* The "Transaction currency" label / display is gone —
-                       it was redundant with the FxRateInline rate widget,
-                       which already shows the quote currency code + flag.
-                       FxRateInline self-handles all three states:
-                         - no customer picked → muted "Pick a customer first"
-                         - customer in base currency → "Base currency — no FX rate needed"
-                         - customer in foreign currency → "1 USD = 1.357893 CAD" with flags + override input *@
-                    @if (_customerId == Guid.Empty)
-                    {
-                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
-                            <span class="text-fg-subtle">Pick a customer first</span>
-                        </div>
-                    }
-                    else
-                    {
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
-                    }
-                </CitusFormField>
-                <CitusFormField Label="Customer PO #">
-                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
-                </CitusFormField>
-                <CitusFormField Label="From sales order">
-                    @* Source SO display — filled when invoice is created via
-                       "Invoice this SO" (flow lands with M3 iter 3). For
-                       direct-create invoices this stays empty and the field
-                       remains null. *@
-                    <div class="text-fg-muted text-sm">
-                        @(_salesOrderId is null ? "Direct invoice (no source SO)" : $"From SO {_salesOrderNumber}")
+            @* Two-column header: identity / customer on the left, dates /
+               currency on the right; billing + shipping addresses below. *@
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
+                @* LEFT column *@
+                <div class="flex flex-col gap-4">
+                    <CitusFormField Label="Invoice #">
+                        @* Defaults to the system's next auto number; editable on a
+                           new invoice, read-only once the number is assigned. *@
+                        @if (_editInvoiceId is null)
+                        {
+                            <CitusInput TValue="string" @bind-Value="_invoiceNumber" Placeholder="Auto-assigned on save; editable" MaxLength="64" />
+                        }
+                        else
+                        {
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                                <span class="citus-inline-code">@_invoiceNumber</span>
+                            </div>
+                        }
+                    </CitusFormField>
+                    <CitusFormField Label="Customer">
+                        <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                           UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                           Placeholder="Search customers…"
+                                           Take="8"
+                                           SourceRoute="/invoices/new"
+                                           SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
+                                           SelectedDisplayText="@_customerDisplay"
+                                           OnCustomerSelected="OnCustomerSelected"
+                                           OnCleared="OnCustomerCleared" />
+                    </CitusFormField>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <CitusFormField Label="Sales order">
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                                <span class="text-fg-muted text-sm">@(_salesOrderId is null ? "Direct invoice (no source SO)" : $"From SO {_salesOrderNumber}")</span>
+                            </div>
+                        </CitusFormField>
+                        <CitusFormField Label="Customer PO #">
+                            <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
+                        </CitusFormField>
                     </div>
+                </div>
+                @* RIGHT column *@
+                <div class="flex flex-col gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <CitusFormField Label="Document date">
+                            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
+                        </CitusFormField>
+                        <CitusFormField Label="Due date">
+                            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Class="citus-control-full" />
+                        </CitusFormField>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <CitusFormField Label="Currency">
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                                <span>@_currency.ToUpperInvariant()</span>
+                            </div>
+                        </CitusFormField>
+                        <CitusFormField Label="Exchange rate">
+                            @if (_customerId == Guid.Empty)
+                            {
+                                <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                                    <span class="text-fg-subtle">Pick a customer first</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                              BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                              QuoteCurrencyCode="@_currency"
+                                              @bind-Rate="_fxRate" />
+                            }
+                        </CitusFormField>
+                    </div>
+                </div>
+            </div>
+            @* Billing (left) + Shipping (right) addresses — free-text, pre-filled
+               from the selected customer and editable per invoice. *@
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+                <CitusFormField Label="Billing address">
+                    <RadzenTextArea @bind-Value="_billingAddress" Rows="3" Placeholder="Pre-filled from the customer; editable" Class="citus-control-full" />
                 </CitusFormField>
-            </CitusFormGrid>
+                <CitusFormField Label="Shipping address">
+                    <RadzenTextArea @bind-Value="_shippingAddress" Rows="3" Placeholder="Pre-filled from the customer; editable" Class="citus-control-full" />
+                </CitusFormField>
+            </div>
         </CitusFormSection>
 
         <CitusFormSection Title="Lines">
@@ -330,6 +348,10 @@
     // Editable invoice number. Pre-filled with the peeked next auto number
     // on a new invoice; on edit it shows the assigned number (read-only).
     private string _invoiceNumber = string.Empty;
+    // Free-text billing / shipping address. Pre-filled from the selected
+    // customer (OnCustomerSelected) or the source on edit/copy; editable.
+    private string _billingAddress = string.Empty;
+    private string _shippingAddress = string.Empty;
     private string _customerPoNumber = string.Empty;
     /// <summary>
     /// Back-link to the source Sales Order, populated when the page is
@@ -518,6 +540,8 @@
         _dueDate = DateTime.Today.AddDays(30);
         _fxRate = null;
         _memo = source.Memo ?? string.Empty;
+        _billingAddress = source.BillingAddress ?? string.Empty;
+        _shippingAddress = source.ShippingAddress ?? string.Empty;
         _customerPoNumber = string.Empty;
         _salesOrderId = null;
         _salesOrderNumber = null;
@@ -591,6 +615,8 @@
 
         _editInvoiceId = source.Id;
         _invoiceNumber = source.DisplayNumber;
+        _billingAddress = source.BillingAddress ?? string.Empty;
+        _shippingAddress = source.ShippingAddress ?? string.Empty;
 
         var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
         _customerId = source.CustomerId;
@@ -859,10 +885,32 @@
         // operator can re-pick to retry. The invoice can't post without
         // a valid customer id either way.
         var customer = await CustomerClient.GetByIdAsync(_customerId);
-        if (customer is not null && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
+        if (customer is not null)
         {
-            _currency = customer.DefaultCurrencyCode;
+            if (!string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
+            {
+                _currency = customer.DefaultCurrencyCode;
+            }
+            // Pre-fill both addresses from the customer; the operator can edit
+            // (e.g. a different ship-to) per invoice.
+            var formatted = FormatCustomerAddress(customer);
+            if (!string.IsNullOrWhiteSpace(formatted))
+            {
+                _billingAddress = formatted;
+                _shippingAddress = formatted;
+            }
         }
+    }
+
+    private static string FormatCustomerAddress(CustomerSummary c)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(c.AddressLine)) parts.Add(c.AddressLine!.Trim());
+        var locality = string.Join(" ", new[] { c.City, c.ProvinceState, c.PostalCode }
+            .Where(static s => !string.IsNullOrWhiteSpace(s)).Select(static s => s!.Trim()));
+        if (!string.IsNullOrWhiteSpace(locality)) parts.Add(locality);
+        if (!string.IsNullOrWhiteSpace(c.Country)) parts.Add(c.Country!.Trim());
+        return string.Join("\n", parts);
     }
 
     private void OnCustomerCleared()
@@ -996,6 +1044,8 @@
                 FxRate = _fxRate,
                 Memo = _memo.Trim(),
                 InvoiceNumber = string.IsNullOrWhiteSpace(_invoiceNumber) ? null : _invoiceNumber.Trim(),
+                BillingAddress = string.IsNullOrWhiteSpace(_billingAddress) ? null : _billingAddress.Trim(),
+                ShippingAddress = string.IsNullOrWhiteSpace(_shippingAddress) ? null : _shippingAddress.Trim(),
                 CustomerPoNumber = _customerPoNumber.Trim(),
                 SalesOrderId = _salesOrderId,
                 Lines = meaningful.Select((l, idx) => new InvoiceLineDraft
