@@ -1,0 +1,139 @@
+@using Citus.Ui.Shared.Reports
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject TrialBalanceClient TrialBalanceClient
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="flex flex-wrap items-center gap-3 mb-4">
+    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
+    <label class="inline-flex items-center gap-2 text-sm">
+        <RadzenCheckBox @bind-Value="_includeZeroBalances" /> Include zero-balance accounts
+    </label>
+    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+        Run Trial Balance
+    </CitusButton>
+    <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isLoading || _isExporting)" OnClick="ExportAsync">
+        Export CSV
+    </CitusButton>
+</div>
+
+@if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_trialBalance is not null)
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <CitusStatCard Label="As of" Value="@_trialBalance.AsOfDate.ToString("yyyy-MM-dd")" Description="Trial Balance stays pinned to one backend-owned cut-off date." Icon="IconName.Calendar" Tone="StatTone.Info" />
+        <CitusStatCard Label="Accounts" Value="@_trialBalance.AccountCount.ToString()" Description="Only active-company accounts participate in this report." Icon="IconName.BuildingBank" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Debit total" Value="@ReportFormat.Amount(_trialBalance.TotalBalanceDebit)" Description="@($"Base currency {_trialBalance.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Success" />
+        <CitusStatCard Label="Balance check" Value="@(_trialBalance.IsBalanced ? "Balanced" : "Out of balance")" Description="@($"Credit total {ReportFormat.Amount(_trialBalance.TotalBalanceCredit)} {_trialBalance.BaseCurrencyCode}")" Icon="IconName.CircleCheck" Tone="@(_trialBalance.IsBalanced ? StatTone.Success : StatTone.Danger)" />
+    </div>
+
+    @if (_trialBalance.Rows.Count == 0)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Info" Message="@($"No ledger-backed account balances were found for this company as of {_trialBalance.AsOfDate:yyyy-MM-dd}.")" ShowIcon="true" />
+    }
+    else
+    {
+        <RadzenDataGrid TItem="TrialBalanceAccountSummary"
+                        Data="@_trialBalance.Rows"
+                        AllowSorting="true"
+                        AllowColumnResize="true"
+                        AllowPaging="true"
+                        PageSize="50"
+                        class="citus-radzen-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.Code)" Title="Code" Width="110px">
+                    <Template Context="row"><span class="citus-inline-code">@row.Code</span></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.Name)" Title="Account">
+                    <Template Context="row">
+                        <div>@row.Name</div>
+                        @if (!string.IsNullOrWhiteSpace(row.DetailType))
+                        {
+                            <div class="text-fg-subtle text-xs">@row.DetailType</div>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.RootType)" Title="Root type" Width="140px" />
+                <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Title="Status" Width="120px" Sortable="false">
+                    <Template Context="row">
+                        @(row.IsActive ? "Active" : "Inactive")
+                        @if (row.IsSystem)
+                        {
+                            <span class="text-fg-subtle text-xs"> · System</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.BalanceDebit)" Title="Debit balance" TextAlign="TextAlign.Right" Width="160px">
+                    <Template Context="row">@ReportFormat.Amount(row.BalanceDebit)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.BalanceCredit)" Title="Credit balance" TextAlign="TextAlign.Right" Width="160px">
+                    <Template Context="row">@ReportFormat.Amount(row.BalanceCredit)</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    }
+}
+
+@code {
+    private TrialBalanceReportSummary? _trialBalance;
+    private bool _isLoading;
+    private bool _isExporting;
+    private bool _includeZeroBalances;
+    private string? _error;
+    private DateTime? _asOfDate = DateTime.Today;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+
+        var report = await TrialBalanceClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date),
+            _includeZeroBalances);
+
+        if (report is null)
+        {
+            _trialBalance = null;
+            _error = "Trial Balance is unavailable until the active company is provisioned in the accounting core and ledger data exists.";
+        }
+        else
+        {
+            _trialBalance = report;
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task ExportAsync()
+    {
+        _isExporting = true;
+        _error = null;
+
+        var file = await TrialBalanceClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date),
+            _includeZeroBalances);
+
+        await ReportFormat.SaveCsvAsync(
+            JSRuntime,
+            file,
+            "Trial Balance CSV is unavailable until the active company is provisioned in the accounting core and ledger data exists.",
+            message => _error = message);
+
+        _isExporting = false;
+    }
+}

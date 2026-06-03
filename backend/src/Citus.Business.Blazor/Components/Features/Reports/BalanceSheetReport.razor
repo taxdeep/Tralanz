@@ -1,0 +1,163 @@
+@using Citus.Ui.Shared.Reports
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject BalanceSheetClient BalanceSheetClient
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="flex flex-wrap items-center gap-3 mb-4">
+    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
+    <label class="inline-flex items-center gap-2 text-sm">
+        <RadzenCheckBox @bind-Value="_includeZeroRows" /> Include zero-balance accounts
+    </label>
+    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+        Run Balance Sheet
+    </CitusButton>
+    <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isLoading || _isExporting)" OnClick="ExportAsync">
+        Export CSV
+    </CitusButton>
+</div>
+
+@if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_balanceSheet is not null)
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <CitusStatCard Label="Assets" Value="@ReportFormat.Amount(_balanceSheet.TotalAssets)" Description="@($"As of {_balanceSheet.AsOfDate:yyyy-MM-dd}")" Icon="IconName.BuildingBank" Tone="StatTone.Info" />
+        <CitusStatCard Label="Liabilities" Value="@ReportFormat.Amount(_balanceSheet.TotalLiabilities)" Description="@($"Base currency {_balanceSheet.BaseCurrencyCode}")" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+        <CitusStatCard Label="Equity" Value="@ReportFormat.Amount(_balanceSheet.TotalEquity)" Description="@($"Includes current earnings {ReportFormat.Amount(_balanceSheet.CurrentEarnings)}")" Icon="IconName.Report" Tone="StatTone.Success" />
+        <CitusStatCard Label="Balance check" Value="@(_balanceSheet.IsBalanced ? "Balanced" : "Out of balance")" Description="@($"Liabilities + equity {ReportFormat.Amount(_balanceSheet.TotalLiabilitiesAndEquity)}")" Icon="IconName.CircleCheck" Tone="@(_balanceSheet.IsBalanced ? StatTone.Success : StatTone.Danger)" />
+    </div>
+
+    @if (_balanceSheet.AccountCount == 0)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Info" Message="@($"No balance-sheet accounts were found for this company as of {_balanceSheet.AsOfDate:yyyy-MM-dd}.")" ShowIcon="true" />
+    }
+    else
+    {
+        @foreach (var reportSection in GetSections())
+        {
+            <article class="citus-subpanel">
+                <header class="citus-subpanel__header">
+                    <h3 class="citus-subpanel__title">@reportSection.Title</h3>
+                    <CitusBadge Color="@TagColor(reportSection.Tone)">@ReportFormat.Amount(reportSection.Total)</CitusBadge>
+                </header>
+
+                @if (reportSection.Rows.Count == 0)
+                {
+                    <p class="text-fg-muted text-sm">No accounts in this section for the selected date.</p>
+                }
+                else
+                {
+                    <table class="citus-data-table">
+                        <thead>
+                            <tr><th>Code</th><th>Account</th><th class="text-right">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in reportSection.Rows)
+                            {
+                                <tr>
+                                    <td><span class="citus-inline-code">@row.Code</span></td>
+                                    <td>
+                                        <div>@row.Name</div>
+                                        <div class="text-fg-subtle text-xs">@row.DetailType</div>
+                                    </td>
+                                    <td class="text-right">@ReportFormat.Amount(row.DisplayAmount)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </article>
+        }
+    }
+}
+
+@code {
+    private BalanceSheetReportSummary? _balanceSheet;
+    private bool _isLoading;
+    private bool _isExporting;
+    private bool _includeZeroRows;
+    private string? _error;
+    private DateTime? _asOfDate = DateTime.Today;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+
+        var report = await BalanceSheetClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date),
+            _includeZeroRows);
+
+        if (report is null)
+        {
+            _balanceSheet = null;
+            _error = "Balance Sheet is unavailable until the active company is provisioned in the accounting core and as-of ledger data exists.";
+        }
+        else
+        {
+            _balanceSheet = report;
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task ExportAsync()
+    {
+        _isExporting = true;
+        _error = null;
+
+        var file = await BalanceSheetClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date),
+            _includeZeroRows);
+
+        await ReportFormat.SaveCsvAsync(
+            JSRuntime,
+            file,
+            "Balance Sheet CSV is unavailable until the active company is provisioned in the accounting core and as-of ledger data exists.",
+            message => _error = message);
+
+        _isExporting = false;
+    }
+
+    private sealed record SectionBlock(string Title, StatTone Tone, decimal Total, IReadOnlyList<BalanceSheetAccountSummary> Rows);
+
+    private IEnumerable<SectionBlock> GetSections()
+    {
+        if (_balanceSheet is null)
+        {
+            return Array.Empty<SectionBlock>();
+        }
+
+        return
+        [
+            new SectionBlock("Assets", StatTone.Info, _balanceSheet.TotalAssets, _balanceSheet.AssetRows),
+            new SectionBlock("Liabilities", StatTone.Warning, _balanceSheet.TotalLiabilities, _balanceSheet.LiabilityRows),
+            new SectionBlock("Equity", StatTone.Success, _balanceSheet.TotalEquity, _balanceSheet.EquityRows)
+        ];
+    }
+
+    private static string TagColor(StatTone tone) => tone switch
+    {
+        StatTone.Success => "green",
+        StatTone.Warning => "orange",
+        StatTone.Danger => "red",
+        StatTone.Info => "blue",
+        StatTone.Primary => "geekblue",
+        _ => "default"
+    };
+}

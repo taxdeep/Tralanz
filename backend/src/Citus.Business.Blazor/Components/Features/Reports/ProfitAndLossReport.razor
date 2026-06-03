@@ -1,0 +1,182 @@
+@using Citus.Ui.Shared.Reports
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject IncomeStatementClient IncomeStatementClient
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="flex flex-wrap items-center gap-3 mb-4">
+    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dateFrom" Placeholder="@("From")" />
+    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dateTo" Placeholder="@("To")" />
+    <label class="inline-flex items-center gap-2 text-sm">
+        <RadzenCheckBox @bind-Value="_includeZeroRows" /> Include zero-balance accounts
+    </label>
+    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+        Run Profit and Loss
+    </CitusButton>
+    <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isLoading || _isExporting)" OnClick="ExportAsync">
+        Export CSV
+    </CitusButton>
+</div>
+
+@if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_incomeStatement is not null)
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <CitusStatCard Label="Revenue" Value="@ReportFormat.Amount(_incomeStatement.TotalRevenue)" Description="@($"Range {_incomeStatement.DateFrom:yyyy-MM-dd} to {_incomeStatement.DateTo:yyyy-MM-dd}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Success" />
+        <CitusStatCard Label="Gross profit" Value="@ReportFormat.Amount(_incomeStatement.GrossProfit)" Description="@($"After cost of sales in {_incomeStatement.BaseCurrencyCode}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
+        <CitusStatCard Label="Expenses" Value="@ReportFormat.Amount(_incomeStatement.TotalExpenses)" Description="Operating expense accounts in the selected range." Icon="IconName.Wallet" Tone="StatTone.Warning" />
+        <CitusStatCard Label="Net income" Value="@ReportFormat.Amount(_incomeStatement.NetIncome)" Description="@($"Company base currency {_incomeStatement.BaseCurrencyCode}")" Icon="IconName.BuildingBank" Tone="@(_incomeStatement.NetIncome >= 0m ? StatTone.Success : StatTone.Danger)" />
+    </div>
+
+    @if (_incomeStatement.AccountCount == 0)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Info" Message="@($"No income activity was found for this company between {_incomeStatement.DateFrom:yyyy-MM-dd} and {_incomeStatement.DateTo:yyyy-MM-dd}.")" ShowIcon="true" />
+    }
+    else
+    {
+        @foreach (var reportSection in GetSections())
+        {
+            <article class="citus-subpanel">
+                <header class="citus-subpanel__header">
+                    <h3 class="citus-subpanel__title">@reportSection.Title</h3>
+                    <CitusBadge Color="@TagColor(reportSection.Tone)">@ReportFormat.Amount(reportSection.Total)</CitusBadge>
+                </header>
+
+                @if (reportSection.Rows.Count == 0)
+                {
+                    <p class="text-fg-muted text-sm">No accounts in this section for the selected range.</p>
+                }
+                else
+                {
+                    <table class="citus-data-table">
+                        <thead>
+                            <tr><th>Code</th><th>Account</th><th class="text-right">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in reportSection.Rows)
+                            {
+                                <tr>
+                                    <td><span class="citus-inline-code">@row.Code</span></td>
+                                    <td>
+                                        <div>@row.Name</div>
+                                        <div class="text-fg-subtle text-xs">@row.DetailType</div>
+                                    </td>
+                                    <td class="text-right">@ReportFormat.Amount(row.DisplayAmount)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </article>
+        }
+    }
+}
+
+@code {
+    private IncomeStatementReportSummary? _incomeStatement;
+    private bool _isLoading;
+    private bool _isExporting;
+    private bool _includeZeroRows;
+    private string? _error;
+    private DateTime? _dateFrom = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _dateTo = DateTime.Today;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+
+        var dateFrom = DateOnly.FromDateTime((_dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date);
+        var dateTo = DateOnly.FromDateTime((_dateTo ?? DateTime.Today).Date);
+
+        if (dateFrom > dateTo)
+        {
+            _incomeStatement = null;
+            _error = "Profit and Loss date range is invalid. The start date must be on or before the end date.";
+            _isLoading = false;
+            return;
+        }
+
+        var report = await IncomeStatementClient.GetReportAsync(
+            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows);
+
+        if (report is null)
+        {
+            _incomeStatement = null;
+            _error = "Profit and Loss is unavailable until the active company is provisioned in the accounting core and date-range report data exists.";
+        }
+        else
+        {
+            _incomeStatement = report;
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task ExportAsync()
+    {
+        _isExporting = true;
+        _error = null;
+
+        var dateFrom = DateOnly.FromDateTime((_dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date);
+        var dateTo = DateOnly.FromDateTime((_dateTo ?? DateTime.Today).Date);
+
+        if (dateFrom > dateTo)
+        {
+            _error = "Profit and Loss date range is invalid. The start date must be on or before the end date.";
+            _isExporting = false;
+            return;
+        }
+
+        var file = await IncomeStatementClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows);
+
+        await ReportFormat.SaveCsvAsync(
+            JSRuntime,
+            file,
+            "Profit and Loss CSV is unavailable until the active company is provisioned in the accounting core and date-range report data exists.",
+            message => _error = message);
+
+        _isExporting = false;
+    }
+
+    private sealed record SectionBlock(string Title, StatTone Tone, decimal Total, IReadOnlyList<IncomeStatementAccountSummary> Rows);
+
+    private IEnumerable<SectionBlock> GetSections()
+    {
+        if (_incomeStatement is null)
+        {
+            return Array.Empty<SectionBlock>();
+        }
+
+        return
+        [
+            new SectionBlock("Revenue", StatTone.Success, _incomeStatement.TotalRevenue, _incomeStatement.RevenueRows),
+            new SectionBlock("Cost Of Sales", StatTone.Warning, _incomeStatement.TotalCostOfSales, _incomeStatement.CostOfSalesRows),
+            new SectionBlock("Expenses", StatTone.Info, _incomeStatement.TotalExpenses, _incomeStatement.ExpenseRows)
+        ];
+    }
+
+    private static string TagColor(StatTone tone) => tone switch
+    {
+        StatTone.Success => "green",
+        StatTone.Warning => "orange",
+        StatTone.Danger => "red",
+        StatTone.Info => "blue",
+        StatTone.Primary => "geekblue",
+        _ => "default"
+    };
+}

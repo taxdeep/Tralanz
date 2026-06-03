@@ -1,0 +1,72 @@
+@page "/reports/{ReportKey}"
+
+@inject NavigationManager Navigation
+
+<PageTitle>@($"{(_definition?.Title ?? "Report")} | Tralanz Books")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusLinkButton Href="reports" Variant="CitusButtonVariant.Ghost" LeadingIcon="IconName.ArrowLeft">
+            Back to reports
+        </CitusLinkButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_definition is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                Message="@($"Report '{ReportKey}' was not found. Choose a report from the reports list.")"
+                ShowIcon="true" />
+}
+else if (!_definition.IsImplemented)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                Message="@($"{_definition.Title} is coming soon.")"
+                ShowIcon="true" />
+}
+else
+{
+    <section class="citus-panel">
+        @switch (_definition.Key)
+        {
+            case "profit-and-loss":
+                <ProfitAndLossReport />
+                break;
+            case "balance-sheet":
+                <BalanceSheetReport />
+                break;
+            case "trial-balance":
+                <TrialBalanceReport />
+                break;
+            case "ar-aging-summary":
+                <ArAgingReport />
+                break;
+            case "ap-aging-summary":
+                <ApAgingReport />
+                break;
+            default:
+                <CitusAlert Severity="CitusAlertSeverity.Warning"
+                            Message="This report has no view wired up yet."
+                            ShowIcon="true" />
+                break;
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string? ReportKey { get; set; }
+
+    private ReportDefinition? _definition;
+    private PageHeaderModel _header = new() { Eyebrow = "Reports", Title = "Report" };
+
+    protected override void OnParametersSet()
+    {
+        _definition = ReportCatalog.ByKey(ReportKey);
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Reports",
+            Title = _definition?.Title ?? "Report",
+            Subtitle = _definition?.Description ?? "The requested report could not be found."
+        };
+    }
+}

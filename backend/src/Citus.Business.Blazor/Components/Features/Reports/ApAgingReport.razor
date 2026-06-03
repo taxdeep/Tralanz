@@ -1,0 +1,218 @@
+@using Citus.Ui.Shared.Reports
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject ApAgingClient ApAgingClient
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="flex flex-wrap items-center gap-3 mb-4">
+    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
+    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+        Run A/P Aging
+    </CitusButton>
+    <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isLoading || _isExporting)" OnClick="ExportAsync">
+        Export CSV
+    </CitusButton>
+</div>
+
+@if (_isLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_apAging is not null)
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <CitusStatCard Label="Outstanding" Value="@ReportFormat.Amount(_apAging.TotalOutstandingAmountBase)" Description="@($"As of {_apAging.AsOfDate:yyyy-MM-dd} in {_apAging.BaseCurrencyCode}")" Icon="IconName.Receipt" Tone="StatTone.Info" />
+        <CitusStatCard Label="Vendors" Value="@_apAging.VendorCount.ToString()" Description="@($"{_apAging.OpenItemCount} open items in scope")" Icon="IconName.BuildingStore" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Overdue" Value="@ReportFormat.Amount(_apAging.TotalOverdueAmountBase)" Description="Total payable value already past due." Icon="IconName.AlertTriangle" Tone="@(_apAging.TotalOverdueAmountBase > 0m ? StatTone.Warning : StatTone.Success)" />
+        <CitusStatCard Label="> 90 days" Value="@ReportFormat.Amount(_apAging.DaysOver90AmountBase)" Description="The oldest overdue bucket stays visible for payment control." Icon="IconName.Clock" Tone="@(_apAging.DaysOver90AmountBase > 0m ? StatTone.Danger : StatTone.Success)" />
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        <CitusStatCard Label="Current" Value="@ReportFormat.Amount(_apAging.CurrentAmountBase)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
+        <CitusStatCard Label="1-30" Value="@ReportFormat.Amount(_apAging.Days1To30AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+        <CitusStatCard Label="31-60" Value="@ReportFormat.Amount(_apAging.Days31To60AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+        <CitusStatCard Label="61-90" Value="@ReportFormat.Amount(_apAging.Days61To90AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+        <CitusStatCard Label="> 90" Value="@ReportFormat.Amount(_apAging.DaysOver90AmountBase)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
+        <CitusStatCard Label="Total" Value="@ReportFormat.Amount(_apAging.TotalOutstandingAmountBase)" Description="Net open payables" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
+    </div>
+
+    @if (_apAging.TotalOutstandingAmountBase > 0)
+    {
+        <div class="citus-radzen-chart mb-4" style="height: 240px">
+            <RadzenChart>
+                <RadzenColumnSeries Data="@BuildBuckets(_apAging)" CategoryProperty="Label" ValueProperty="Amount" Title="Open AP" />
+                <RadzenColumnOptions Radius="3" />
+                <RadzenCategoryAxis />
+                <RadzenValueAxis Formatter="@ReportFormat.ChartAmount" />
+            </RadzenChart>
+        </div>
+    }
+
+    @if (_apAging.OpenItemCount == 0)
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Info" Message="@($"No open payable items were found for this company as of {_apAging.AsOfDate:yyyy-MM-dd}.")" ShowIcon="true" />
+    }
+    else
+    {
+        <article class="citus-subpanel">
+            <h3 class="citus-subpanel__title">Vendor summary</h3>
+            <RadzenDataGrid TItem="ApAgingVendorSummary" Data="@_apAging.VendorRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="50" class="citus-radzen-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.VendorDisplayName)" Title="Vendor">
+                        <Template Context="row">
+                            <div>@row.VendorDisplayName</div>
+                            <div class="text-fg-subtle text-xs">
+                                <span class="citus-inline-code">@row.VendorEntityNumber</span>
+                                @if (row.OldestDueDate is not null)
+                                {
+                                    <span> · oldest due @row.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
+                                }
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.VendorIsActive)" Title="Status" Width="100px">
+                        <Template Context="row">@(row.VendorIsActive ? "Active" : "Inactive")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.CurrentAmountBase)" Title="Current" TextAlign="TextAlign.Right" Width="120px">
+                        <Template Context="row">@ReportFormat.Amount(row.CurrentAmountBase)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.Days1To30AmountBase)" Title="1-30" TextAlign="TextAlign.Right" Width="110px">
+                        <Template Context="row">@ReportFormat.Amount(row.Days1To30AmountBase)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.Days31To60AmountBase)" Title="31-60" TextAlign="TextAlign.Right" Width="110px">
+                        <Template Context="row">@ReportFormat.Amount(row.Days31To60AmountBase)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.Days61To90AmountBase)" Title="61-90" TextAlign="TextAlign.Right" Width="110px">
+                        <Template Context="row">@ReportFormat.Amount(row.Days61To90AmountBase)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.DaysOver90AmountBase)" Title="> 90" TextAlign="TextAlign.Right" Width="110px">
+                        <Template Context="row">@ReportFormat.Amount(row.DaysOver90AmountBase)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.TotalOutstandingAmountBase)" Title="Total" TextAlign="TextAlign.Right" Width="130px">
+                        <Template Context="row"><strong>@ReportFormat.Amount(row.TotalOutstandingAmountBase)</strong></Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </article>
+
+        <article class="citus-subpanel">
+            <h3 class="citus-subpanel__title">Open-item detail</h3>
+            <RadzenDataGrid TItem="ApAgingOpenItemSummary" Data="@_apAging.DetailRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="100" class="citus-radzen-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.VendorDisplayName)" Title="Vendor">
+                        <Template Context="row">
+                            <div>@row.VendorDisplayName</div>
+                            <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.VendorEntityNumber</span></div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.DisplayNumber)" Title="Document" Width="200px">
+                        <Template Context="row">
+                            @{ var href = ReportFormat.DocumentHref(row.SourceType, row.SourceDocumentId); }
+                            @if (href is not null)
+                            {
+                                <a class="citus-link" href="@href">@row.DisplayNumber</a>
+                            }
+                            else
+                            {
+                                <span>@row.DisplayNumber</span>
+                            }
+                            <div class="text-fg-subtle text-xs">@row.SourceType · @row.DocumentDate.ToString("yyyy-MM-dd")</div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.DueDate)" Title="Due date" Width="150px">
+                        <Template Context="row">
+                            @if (row.DueDate is null)
+                            {
+                                <span>No due date</span>
+                            }
+                            else
+                            {
+                                <div>@row.DueDate.Value.ToString("yyyy-MM-dd")</div>
+                                <div class="text-fg-subtle text-xs">@($"{row.DaysPastDue} days past due")</div>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.AgingBucket)" Title="Bucket" Width="110px">
+                        <Template Context="row">@ReportFormat.AgingBucket(row.AgingBucket)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.SignedOpenAmountBase)" Title="Open amount" TextAlign="TextAlign.Right" Width="160px">
+                        <Template Context="row">
+                            <div>@ReportFormat.Amount(row.SignedOpenAmountBase)</div>
+                            <div class="text-fg-subtle text-xs">@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </article>
+    }
+}
+
+@code {
+    private ApAgingReportSummary? _apAging;
+    private bool _isLoading;
+    private bool _isExporting;
+    private string? _error;
+    private DateTime? _asOfDate = DateTime.Today;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+
+        var report = await ApAgingClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date));
+
+        if (report is null)
+        {
+            _apAging = null;
+            _error = "A/P Aging is unavailable until the active company is provisioned in the accounting core and payable open-item data exists.";
+        }
+        else
+        {
+            _apAging = report;
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task ExportAsync()
+    {
+        _isExporting = true;
+        _error = null;
+
+        var file = await ApAgingClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date));
+
+        await ReportFormat.SaveCsvAsync(
+            JSRuntime,
+            file,
+            "A/P Aging CSV is unavailable until the active company is provisioned in the accounting core and payable open-item data exists.",
+            message => _error = message);
+
+        _isExporting = false;
+    }
+
+    private sealed record AgingBucketPoint(string Label, decimal Amount);
+
+    private static IReadOnlyList<AgingBucketPoint> BuildBuckets(ApAgingReportSummary report) =>
+        new[]
+        {
+            new AgingBucketPoint("Current", report.CurrentAmountBase),
+            new AgingBucketPoint("1-30", report.Days1To30AmountBase),
+            new AgingBucketPoint("31-60", report.Days31To60AmountBase),
+            new AgingBucketPoint("61-90", report.Days61To90AmountBase),
+            new AgingBucketPoint("> 90", report.DaysOver90AmountBase),
+        };
+}
