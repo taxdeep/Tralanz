@@ -59,8 +59,7 @@
     </CitusAlert>
 }
 
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 flex flex-col gap-6">
+<div class="flex flex-col gap-6">
         <CitusFormSection Title="Header">
             <CitusFormGrid Columns="2">
                 <CitusFormField Label="Document date">
@@ -214,9 +213,9 @@
             </table>
             </ChildContent>
         </CitusFormSection>
-    </div>
 
-    <div class="lg:col-span-4 flex flex-col gap-6">
+        @* Summary sits below the Lines section (full width); the engine
+           recomputes the authoritative tax split on save. *@
         <CitusFormSection Title="Summary">
             <CitusKeyValueTable>
                 <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
@@ -241,13 +240,6 @@
                 }
             </CitusKeyValueTable>
         </CitusFormSection>
-
-        <CitusFormSection Title="Post invoice">
-            <p class="text-fg-muted text-sm m-0">
-                Posting reserves the invoice number, opens the AR control account row, and creates the journal entry. All flow through the backend Posting Engine.
-            </p>
-        </CitusFormSection>
-    </div>
 </div>
 
 @* Sticky Post action — single primary button (no Cancel; invoices
