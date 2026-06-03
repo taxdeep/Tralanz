@@ -1,0 +1,185 @@
+@using Radzen
+@using Radzen.Blazor
+
+@* Shared A/R + A/P aging report (presentational). The thin ArAgingReport /
+   ApAgingReport wrappers load + map their DTO into AgingReportView and pass
+   the party/chart labels, so this markup lives once. *@
+
+<ReportShell IsLoading="IsLoading" Error="Error">
+    <Controls>
+        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                          Value="@AsOfDate"
+                          ValueChanged="@OnAsOfDateChanged"
+                          Placeholder="@("As of date")" />
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="IsLoading" OnClick="OnRun">
+            @RunLabel
+        </CitusButton>
+        <CitusButton LeadingIcon="IconName.Download" Disabled="@(IsLoading || IsExporting)" OnClick="OnExport">
+            Export CSV
+        </CitusButton>
+    </Controls>
+    <Body>
+        @if (View is not null)
+        {
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <CitusStatCard Label="Outstanding" Value="@ReportFormat.Amount(View.TotalOutstanding)" Description="@($"As of {View.AsOfDate:yyyy-MM-dd} in {View.BaseCurrencyCode}")" Icon="IconName.Receipt" Tone="StatTone.Info" />
+                <CitusStatCard Label="@PartyCountLabel" Value="@View.PartyCount.ToString()" Description="@($"{View.OpenItemCount} open items in scope")" Icon="IconName.Users" Tone="StatTone.Primary" />
+                <CitusStatCard Label="Overdue" Value="@ReportFormat.Amount(View.TotalOverdue)" Description="Total value already past due." Icon="IconName.AlertTriangle" Tone="@(View.TotalOverdue > 0m ? StatTone.Warning : StatTone.Success)" />
+                <CitusStatCard Label="> 90 days" Value="@ReportFormat.Amount(View.DaysOver90)" Description="The oldest overdue bucket." Icon="IconName.Clock" Tone="@(View.DaysOver90 > 0m ? StatTone.Danger : StatTone.Success)" />
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                <CitusStatCard Label="Current" Value="@ReportFormat.Amount(View.Current)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
+                <CitusStatCard Label="1-30" Value="@ReportFormat.Amount(View.Days1To30)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                <CitusStatCard Label="31-60" Value="@ReportFormat.Amount(View.Days31To60)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                <CitusStatCard Label="61-90" Value="@ReportFormat.Amount(View.Days61To90)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                <CitusStatCard Label="> 90" Value="@ReportFormat.Amount(View.DaysOver90)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
+                <CitusStatCard Label="Total" Value="@ReportFormat.Amount(View.TotalOutstanding)" Description="Net open balance" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
+            </div>
+
+            @if (View.TotalOutstanding > 0)
+            {
+                <div class="citus-radzen-chart mb-4" style="height: 240px">
+                    <RadzenChart>
+                        <RadzenColumnSeries Data="@BuildBuckets(View)" CategoryProperty="Label" ValueProperty="Amount" Title="@ChartTitle" />
+                        <RadzenColumnOptions Radius="3" />
+                        <RadzenCategoryAxis />
+                        <RadzenValueAxis Formatter="@ReportFormat.ChartAmount" />
+                    </RadzenChart>
+                </div>
+            }
+
+            @if (View.OpenItemCount == 0)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" Message="@EmptyMessage" ShowIcon="true" />
+            }
+            else
+            {
+                <article class="citus-subpanel">
+                    <h3 class="citus-subpanel__title">@($"{PartyLabel} summary")</h3>
+                    <RadzenDataGrid TItem="AgingPartyRow" Data="@View.PartyRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="50" class="citus-radzen-grid">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.DisplayName)" Title="@PartyLabel">
+                                <Template Context="row">
+                                    <div>@row.DisplayName</div>
+                                    <div class="text-fg-subtle text-xs">
+                                        <span class="citus-inline-code">@row.EntityNumber</span>
+                                        @if (row.OldestDueDate is not null)
+                                        {
+                                            <span> · oldest due @row.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
+                                        }
+                                    </div>
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.IsActive)" Title="Status" Width="100px">
+                                <Template Context="row">@(row.IsActive ? "Active" : "Inactive")</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Current)" Title="Current" TextAlign="TextAlign.Right" Width="120px">
+                                <Template Context="row">@ReportFormat.Amount(row.Current)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Days1To30)" Title="1-30" TextAlign="TextAlign.Right" Width="110px">
+                                <Template Context="row">@ReportFormat.Amount(row.Days1To30)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Days31To60)" Title="31-60" TextAlign="TextAlign.Right" Width="110px">
+                                <Template Context="row">@ReportFormat.Amount(row.Days31To60)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Days61To90)" Title="61-90" TextAlign="TextAlign.Right" Width="110px">
+                                <Template Context="row">@ReportFormat.Amount(row.Days61To90)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.DaysOver90)" Title="> 90" TextAlign="TextAlign.Right" Width="110px">
+                                <Template Context="row">@ReportFormat.Amount(row.DaysOver90)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.TotalOutstanding)" Title="Total" TextAlign="TextAlign.Right" Width="130px">
+                                <Template Context="row"><strong>@ReportFormat.Amount(row.TotalOutstanding)</strong></Template>
+                            </RadzenDataGridColumn>
+                        </Columns>
+                    </RadzenDataGrid>
+                </article>
+
+                <article class="citus-subpanel">
+                    <h3 class="citus-subpanel__title">Open-item detail</h3>
+                    <RadzenDataGrid TItem="AgingOpenItemRow" Data="@View.OpenItemRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="100" class="citus-radzen-grid">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.PartyDisplayName)" Title="@PartyLabel">
+                                <Template Context="row">
+                                    <div>@row.PartyDisplayName</div>
+                                    <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.PartyEntityNumber</span></div>
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DisplayNumber)" Title="Document" Width="200px">
+                                <Template Context="row">
+                                    @{ var href = ReportFormat.DocumentHref(row.SourceType, row.SourceDocumentId); }
+                                    @if (href is not null)
+                                    {
+                                        <a class="citus-link" href="@href">@row.DisplayNumber</a>
+                                    }
+                                    else
+                                    {
+                                        <span>@row.DisplayNumber</span>
+                                    }
+                                    <div class="text-fg-subtle text-xs">@row.SourceType · @row.DocumentDate.ToString("yyyy-MM-dd")</div>
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DueDate)" Title="Due date" Width="150px">
+                                <Template Context="row">
+                                    @if (row.DueDate is null)
+                                    {
+                                        <span>No due date</span>
+                                    }
+                                    else
+                                    {
+                                        <div>@row.DueDate.Value.ToString("yyyy-MM-dd")</div>
+                                        <div class="text-fg-subtle text-xs">@($"{row.DaysPastDue} days past due")</div>
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.AgingBucket)" Title="Bucket" Width="110px">
+                                <Template Context="row">@ReportFormat.AgingBucket(row.AgingBucket)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.SignedOpenAmountBase)" Title="Open amount" TextAlign="TextAlign.Right" Width="160px">
+                                <Template Context="row">
+                                    <div>@ReportFormat.Amount(row.SignedOpenAmountBase)</div>
+                                    <div class="text-fg-subtle text-xs">@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
+                                </Template>
+                            </RadzenDataGridColumn>
+                        </Columns>
+                    </RadzenDataGrid>
+                </article>
+            }
+        }
+    </Body>
+</ReportShell>
+
+@code {
+    [Parameter] public AgingReportView? View { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public bool IsExporting { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string RunLabel { get; set; } = "Run";
+    [Parameter] public string PartyLabel { get; set; } = "Party";
+    [Parameter] public string PartyCountLabel { get; set; } = "Parties";
+    [Parameter] public string ChartTitle { get; set; } = "Open balance";
+    [Parameter] public string EmptyMessage { get; set; } = "No open items were found.";
+    [Parameter] public DateTime? AsOfDate { get; set; }
+    [Parameter] public EventCallback<DateTime?> AsOfDateChanged { get; set; }
+    [Parameter] public EventCallback OnRun { get; set; }
+    [Parameter] public EventCallback OnExport { get; set; }
+
+    private async Task OnAsOfDateChanged(DateTime? value)
+    {
+        AsOfDate = value;
+        await AsOfDateChanged.InvokeAsync(value);
+    }
+
+    private sealed record AgingBucketPoint(string Label, decimal Amount);
+
+    private static IReadOnlyList<AgingBucketPoint> BuildBuckets(AgingReportView view) =>
+        new[]
+        {
+            new AgingBucketPoint("Current", view.Current),
+            new AgingBucketPoint("1-30", view.Days1To30),
+            new AgingBucketPoint("31-60", view.Days31To60),
+            new AgingBucketPoint("61-90", view.Days61To90),
+            new AgingBucketPoint("> 90", view.DaysOver90),
+        };
+}

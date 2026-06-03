@@ -6,29 +6,20 @@
 @inject TrialBalanceClient TrialBalanceClient
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
-<div class="flex flex-wrap items-center gap-3 mb-4">
-    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
-    <label class="inline-flex items-center gap-2 text-sm">
-        <RadzenCheckBox @bind-Value="_includeZeroBalances" /> Include zero-balance accounts
-    </label>
-    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
-        Run Trial Balance
-    </CitusButton>
-    <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isLoading || _isExporting)" OnClick="ExportAsync">
-        Export CSV
-    </CitusButton>
-</div>
-
-@if (_isLoading)
-{
-    <div class="mb-4"><CitusLoadingBar /></div>
-}
-
-@if (!string.IsNullOrWhiteSpace(_error))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
-}
-
+<ReportShell IsLoading="_isLoading" Error="_error">
+    <Controls>
+        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
+        <label class="inline-flex items-center gap-2 text-sm">
+            <RadzenCheckBox @bind-Value="_includeZeroBalances" /> Include zero-balance accounts
+        </label>
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+            Run Trial Balance
+        </CitusButton>
+        <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isLoading || _isExporting)" OnClick="ExportAsync">
+            Export CSV
+        </CitusButton>
+    </Controls>
+    <Body>
 @if (_trialBalance is not null)
 {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
@@ -84,6 +75,8 @@
         </RadzenDataGrid>
     }
 }
+    </Body>
+</ReportShell>
 
 @code {
     private TrialBalanceReportSummary? _trialBalance;

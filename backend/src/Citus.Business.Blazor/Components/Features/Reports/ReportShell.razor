@@ -1,0 +1,26 @@
+@* Standard report layout: a controls row, then loading / error, then the
+   report body. Keeps every report's chrome identical and is where the
+   toolbar + period presets land in R4. Presentational only. *@
+
+<div class="flex flex-wrap items-center gap-3 mb-4">
+    @Controls
+</div>
+
+@if (IsLoading)
+{
+    <div class="mb-4"><CitusLoadingBar /></div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@Error" ShowIcon="true" Class="mb-4" />
+}
+
+@Body
+
+@code {
+    [Parameter] public RenderFragment? Controls { get; set; }
+    [Parameter] public RenderFragment? Body { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string? Error { get; set; }
+}
