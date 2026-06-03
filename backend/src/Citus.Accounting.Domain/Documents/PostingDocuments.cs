@@ -614,9 +614,16 @@ public sealed record BillDocumentLine : IPostingDocumentLine
             throw new ArgumentOutOfRangeException(nameof(lineAmount), "Bill line amounts must be positive and tax cannot be negative.");
         }
 
-        if (taxAmount > 0m && isTaxRecoverable && recoverableTaxAccountId is null)
+        // A single line-level recoverable account only fits a single-rule
+        // tax. A multi-rule Tax Code (e.g. GST + PST) splits into per-rule
+        // recoverable (ITC) / non-recoverable legs whose accounts live on the
+        // per-leg tax snapshots, so the line-level recoverable account is
+        // legitimately null there. Require it ONLY when the line bears
+        // recoverable tax but has no snapshots to carry the per-rule accounts.
+        if (taxAmount > 0m && isTaxRecoverable && recoverableTaxAccountId is null
+            && (taxSnapshots is null || taxSnapshots.Count == 0))
         {
-            throw new InvalidOperationException("Recoverable tax bill lines must resolve to a recoverable tax account.");
+            throw new InvalidOperationException("Recoverable tax bill lines must resolve to a recoverable tax account (directly or via tax snapshots).");
         }
 
         // Stock-receipt-grade lines need the full bundle: item + warehouse +
