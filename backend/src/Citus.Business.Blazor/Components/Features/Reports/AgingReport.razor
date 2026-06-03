@@ -57,7 +57,7 @@
             {
                 <article class="citus-subpanel">
                     <h3 class="citus-subpanel__title">@($"{PartyLabel} summary")</h3>
-                    <RadzenDataGrid TItem="AgingPartyRow" Data="@View.PartyRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="50" class="citus-radzen-grid">
+                    <RadzenDataGrid TItem="AgingPartyRow" Data="@View.PartyRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="50" Density="Density.Compact" class="citus-radzen-grid citus-radzen-grid--compact">
                         <Columns>
                             <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.DisplayName)" Title="@PartyLabel">
                                 <Template Context="row">
@@ -98,15 +98,12 @@
 
                 <article class="citus-subpanel">
                     <h3 class="citus-subpanel__title">Open-item detail</h3>
-                    <RadzenDataGrid TItem="AgingOpenItemRow" Data="@View.OpenItemRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="100" class="citus-radzen-grid">
+                    <RadzenDataGrid TItem="AgingOpenItemRow" Data="@View.OpenItemRows" AllowSorting="true" AllowColumnResize="true" AllowPaging="true" PageSize="100" Density="Density.Compact" class="citus-radzen-grid citus-radzen-grid--compact">
                         <Columns>
                             <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.PartyDisplayName)" Title="@PartyLabel">
-                                <Template Context="row">
-                                    <div>@row.PartyDisplayName</div>
-                                    <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.PartyEntityNumber</span></div>
-                                </Template>
+                                <Template Context="row">@row.PartyDisplayName</Template>
                             </RadzenDataGridColumn>
-                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DisplayNumber)" Title="Document" Width="200px">
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DisplayNumber)" Title="Document" Width="160px">
                                 <Template Context="row">
                                     @{ var href = ReportFormat.DocumentHref(row.SourceType, row.SourceDocumentId); }
                                     @if (href is not null)
@@ -117,29 +114,27 @@
                                     {
                                         <span>@row.DisplayNumber</span>
                                     }
-                                    <div class="text-fg-subtle text-xs">@row.SourceType · @row.DocumentDate.ToString("yyyy-MM-dd")</div>
                                 </Template>
                             </RadzenDataGridColumn>
-                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DueDate)" Title="Due date" Width="150px">
-                                <Template Context="row">
-                                    @if (row.DueDate is null)
-                                    {
-                                        <span>No due date</span>
-                                    }
-                                    else
-                                    {
-                                        <div>@row.DueDate.Value.ToString("yyyy-MM-dd")</div>
-                                        <div class="text-fg-subtle text-xs">@($"{row.DaysPastDue} days past due")</div>
-                                    }
-                                </Template>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DocumentDate)" Title="Doc date" Width="115px">
+                                <Template Context="row">@row.DocumentDate.ToString("yyyy-MM-dd")</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DueDate)" Title="Due date" Width="115px">
+                                <Template Context="row">@(row.DueDate is null ? "No due date" : row.DueDate.Value.ToString("yyyy-MM-dd"))</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.DaysPastDue)" Title="Days past due" TextAlign="TextAlign.Right" Width="110px">
+                                <Template Context="row">@(row.DueDate is null ? "—" : Math.Max(0, row.DaysPastDue).ToString())</Template>
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.AgingBucket)" Title="Bucket" Width="110px">
                                 <Template Context="row">@ReportFormat.AgingBucket(row.AgingBucket)</Template>
                             </RadzenDataGridColumn>
-                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.SignedOpenAmountBase)" Title="Open amount" TextAlign="TextAlign.Right" Width="160px">
+                            <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.SignedOpenAmountBase)" Title="Open amount" TextAlign="TextAlign.Right" Width="150px">
                                 <Template Context="row">
                                     <div>@ReportFormat.Amount(row.SignedOpenAmountBase)</div>
-                                    <div class="text-fg-subtle text-xs">@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
+                                    @if (!string.Equals(row.DocumentCurrencyCode, View!.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <div class="text-fg-subtle text-xs">@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
+                                    }
                                 </Template>
                             </RadzenDataGridColumn>
                         </Columns>

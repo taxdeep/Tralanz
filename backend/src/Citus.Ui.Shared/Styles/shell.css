@@ -2501,6 +2501,31 @@ select.citus-journal-lines__cell-input {
     cursor: pointer;
 }
 
+/* ---------- Report density (Excel-like compact tables) ----------
+   Scoped --compact modifiers tighten rows and flatten the headers on the
+   report surfaces (P&L / Balance Sheet / aging grids) so they read like a
+   spreadsheet. Detail-page tables keep the roomier base rhythm. */
+
+.citus-data-table--compact th {
+    padding: 0.25rem var(--citus-space-2);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.citus-data-table--compact td {
+    padding: 0.1875rem var(--citus-space-2);
+}
+
+.citus-radzen-grid--compact .rz-grid-table thead th {
+    padding: 0.25rem var(--citus-space-2);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.citus-radzen-grid--compact .rz-grid-table tbody td {
+    padding: 0.1875rem var(--citus-space-2);
+}
+
 /* ---------- CitusInput (RadzenTextBox-backed) ---------- */
 
 .citus-input {

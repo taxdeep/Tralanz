@@ -50,7 +50,7 @@
                 }
                 else
                 {
-                    <table class="citus-data-table">
+                    <table class="citus-data-table citus-data-table--compact">
                         <thead>
                             <tr><th>Code</th><th>Account</th><th class="text-right">Amount</th></tr>
                         </thead>
@@ -59,10 +59,7 @@
                             {
                                 <tr>
                                     <td><span class="citus-inline-code">@row.Code</span></td>
-                                    <td>
-                                        <div>@row.Name</div>
-                                        <div class="text-fg-subtle text-xs">@row.DetailType</div>
-                                    </td>
+                                    <td>@row.Name</td>
                                     <td class="text-right">@ReportFormat.Amount(row.DisplayAmount)</td>
                                 </tr>
                             }

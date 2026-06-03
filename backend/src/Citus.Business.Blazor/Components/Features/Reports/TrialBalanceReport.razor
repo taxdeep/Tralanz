@@ -41,7 +41,8 @@
                         AllowColumnResize="true"
                         AllowPaging="true"
                         PageSize="50"
-                        class="citus-radzen-grid">
+                        Density="Density.Compact"
+                        class="citus-radzen-grid citus-radzen-grid--compact">
             <Columns>
                 <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.Code)" Title="Code" Width="110px">
                     <Template Context="row"><span class="citus-inline-code">@row.Code</span></Template>
