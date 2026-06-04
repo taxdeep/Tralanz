@@ -6,7 +6,7 @@
    party with a per-party subtotal — the QuickBooks "Aging Detail" companion to
    "Aging Summary". The thin AR/AP wrappers load + map + pass the party labels. *@
 
-<ReportShell IsLoading="IsLoading" Error="Error">
+<ReportShell IsLoading="IsLoading" Error="@Error">
     <Controls>
         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
                           Value="@AsOfDate"

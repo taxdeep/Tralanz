@@ -7,7 +7,7 @@
    picked party) and pass the result in. Stage 2 swaps the data source to a
    dedicated party-scoped query (adds address/email for the PDF). *@
 
-<ReportShell IsLoading="IsLoading" Error="Error">
+<ReportShell IsLoading="IsLoading" Error="@Error">
     <Controls>@Controls</Controls>
     <Body>
         @if (!HasParty)

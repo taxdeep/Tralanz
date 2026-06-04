@@ -5,7 +5,7 @@
    ApAgingReport wrappers load + map their DTO into AgingReportView and pass
    the party/chart labels, so this markup lives once. *@
 
-<ReportShell IsLoading="IsLoading" Error="Error">
+<ReportShell IsLoading="IsLoading" Error="@Error">
     <Controls>
         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
                           Value="@AsOfDate"
