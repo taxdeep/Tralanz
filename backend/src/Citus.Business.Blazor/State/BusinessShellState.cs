@@ -80,7 +80,6 @@ public sealed class BusinessShellState
             Items =
             [
                 new NavMenuItem { Title = "Dashboard", Href = "dashboard", Icon = IconName.LayoutDashboard },
-                new NavMenuItem { Title = "Journal Entry", Href = "journal-entry", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Invoices", Href = "invoices", Icon = IconName.FileInvoice },
                 new NavMenuItem { Title = "Bills", Href = "bills", Icon = IconName.Receipt }
             ]
@@ -162,6 +161,7 @@ public sealed class BusinessShellState
             Items =
             [
                 new NavMenuItem { Title = "Chart of Accounts", Href = "chart-of-accounts", Icon = IconName.BuildingBank },
+                new NavMenuItem { Title = "Journal Entry", Href = "journal-entry", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Reports", Href = "reports", Icon = IconName.ReportAnalytics }
             ]
         },
