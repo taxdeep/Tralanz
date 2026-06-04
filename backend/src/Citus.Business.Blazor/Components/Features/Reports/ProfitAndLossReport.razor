@@ -13,6 +13,7 @@
         <label class="inline-flex items-center gap-2 text-sm">
             <RadzenCheckBox @bind-Value="_includeZeroRows" /> Include zero-balance accounts
         </label>
+        <RadzenDropDown TValue="string" @bind-Value="_basis" Data="@_basisOptions" Style="width: 9rem" />
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
             Run Profit and Loss
         </CitusButton>
@@ -21,6 +22,10 @@
         </CitusButton>
     </Controls>
     <Body>
+@if (_incomeStatement is not null && string.Equals(_basis, "Cash", StringComparison.OrdinalIgnoreCase))
+{
+    <p class="text-fg-subtle text-xs mb-3">Cash basis — invoiced/billed amounts are recognised as their payments are received/paid; direct expenses and manual entries stay at their posting date.</p>
+}
 @if (_incomeStatement is not null)
 {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
@@ -78,6 +83,8 @@
     private bool _isLoading;
     private bool _isExporting;
     private bool _includeZeroRows;
+    private string _basis = "Accrual";
+    private readonly string[] _basisOptions = { "Accrual", "Cash" };
     private string? _error;
     private DateTime? _dateFrom = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private DateTime? _dateTo = DateTime.Today;
@@ -101,7 +108,7 @@
         }
 
         var report = await IncomeStatementClient.GetReportAsync(
-            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows);
+            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows, _basis.ToLowerInvariant());
 
         if (report is null)
         {
@@ -132,7 +139,7 @@
         }
 
         var file = await IncomeStatementClient.ExportCsvAsync(
-            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows);
+            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows, _basis.ToLowerInvariant());
 
         await ReportFormat.SaveCsvAsync(
             JSRuntime,

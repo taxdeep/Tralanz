@@ -3772,7 +3772,8 @@ accounting.MapGet(
                 query.CompanyId,
                 dateFrom,
                 dateTo,
-                query.IncludeZeroBalances),
+                query.IncludeZeroBalances,
+                AccountingBasisExtensions.ParseBasis(query.Basis)),
             cancellationToken);
 
         if (report is null)
@@ -3806,7 +3807,8 @@ accounting.MapGet(
                 query.CompanyId,
                 dateFrom,
                 dateTo,
-                query.IncludeZeroBalances),
+                query.IncludeZeroBalances,
+                AccountingBasisExtensions.ParseBasis(query.Basis)),
             cancellationToken);
 
         if (report is null)

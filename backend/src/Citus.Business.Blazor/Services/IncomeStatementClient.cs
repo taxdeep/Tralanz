@@ -10,11 +10,12 @@ public sealed class IncomeStatementClient(HttpClient httpClient, ILogger<IncomeS
         DateOnly dateFrom,
         DateOnly dateTo,
         bool includeZeroBalances,
+        string basis = "accrual",
         CancellationToken cancellationToken = default) =>
         ReportExportClientSupport.TryGetCsvAsync(
             httpClient,
             logger,
-            $"accounting/reports/income-statement/export.csv?companyId={companyId:D}&dateFrom={dateFrom:yyyy-MM-dd}&dateTo={dateTo:yyyy-MM-dd}&includeZeroBalances={includeZeroBalances.ToString().ToLowerInvariant()}",
+            $"accounting/reports/income-statement/export.csv?companyId={companyId:D}&dateFrom={dateFrom:yyyy-MM-dd}&dateTo={dateTo:yyyy-MM-dd}&includeZeroBalances={includeZeroBalances.ToString().ToLowerInvariant()}&basis={basis}",
             "Income Statement CSV is unavailable because the active company is not provisioned in the accounting core yet.",
             "Unable to export the income statement report.",
             cancellationToken);
@@ -24,10 +25,11 @@ public sealed class IncomeStatementClient(HttpClient httpClient, ILogger<IncomeS
         DateOnly dateFrom,
         DateOnly dateTo,
         bool includeZeroBalances,
+        string basis = "accrual",
         CancellationToken cancellationToken = default)
     {
         var requestUri =
-            $"accounting/reports/income-statement?companyId={companyId:D}&dateFrom={dateFrom:yyyy-MM-dd}&dateTo={dateTo:yyyy-MM-dd}&includeZeroBalances={includeZeroBalances.ToString().ToLowerInvariant()}";
+            $"accounting/reports/income-statement?companyId={companyId:D}&dateFrom={dateFrom:yyyy-MM-dd}&dateTo={dateTo:yyyy-MM-dd}&includeZeroBalances={includeZeroBalances.ToString().ToLowerInvariant()}&basis={basis}";
 
         try
         {

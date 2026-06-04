@@ -120,6 +120,11 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             return null;
         }
 
+        if (query.Basis == AccountingBasis.Cash)
+        {
+            return await BuildCashBasisIncomeStatementAsync(scope, query, baseCurrencyCode, cancellationToken);
+        }
+
         var rows = new List<IncomeStatementAccountAmount>();
 
         await using var command = scope.CreateCommand(
@@ -175,6 +180,131 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
                     reader.GetBoolean(reader.GetOrdinal("is_system")),
                     reader.GetFieldValue<decimal>(reader.GetOrdinal("posted_debit_total")),
                     reader.GetFieldValue<decimal>(reader.GetOrdinal("posted_credit_total"))));
+        }
+
+        return IncomeStatementReport.Create(
+            query.CompanyId,
+            query.DateFrom,
+            query.DateTo,
+            baseCurrencyCode,
+            query.IncludeZeroBalanceAccounts,
+            rows);
+    }
+
+    // Cash-basis P&L (derived on read): direct (non invoice/bill) P&L activity
+    // at posting date + the paid fraction of each settled invoice/bill's own
+    // P&L journal-entry lines, dated to the payment. The proportional math is
+    // the unit-tested CashBasisIncomeMath; this only fetches the raw rows and
+    // feeds the same IncomeStatementReport.Create as the accrual path.
+    private async Task<IncomeStatementReport> BuildCashBasisIncomeStatementAsync(
+        PostgresCommandScope scope,
+        GetIncomeStatementQuery query,
+        string baseCurrencyCode,
+        CancellationToken cancellationToken)
+    {
+        var contributions = new List<CashBasisContributionRow>();
+
+        await using (var command = scope.CreateCommand(
+            """
+            select le.account_id as account_id, 1::numeric as num, 1::numeric as den,
+                   coalesce(sum(le.debit), 0)::numeric(20,6) as debit_amt,
+                   coalesce(sum(le.credit), 0)::numeric(20,6) as credit_amt
+            from ledger_entries le
+            join journal_entries je on je.id = le.journal_entry_id
+            join accounts a on a.id = le.account_id and a.company_id = le.company_id
+            where le.company_id = @company_id
+              and le.posting_date >= @date_from and le.posting_date <= @date_to
+              and a.root_type in ('revenue', 'cost_of_sales', 'expense')
+              and coalesce(je.source_type, '') not in ('invoice', 'bill', 'credit_note', 'vendor_credit')
+            group by le.account_id
+
+            union all
+
+            select le.account_id, sa.applied_amount_tx, oi.original_amount_tx, le.debit, le.credit
+            from receive_payments rp
+            join settlement_applications sa
+              on sa.source_type = 'receive_payment' and sa.source_id = rp.id
+            join ar_open_items oi
+              on oi.id = sa.target_open_item_id and sa.target_open_item_type = 'ar_open_item'
+            join journal_entries je
+              on je.company_id = rp.company_id and je.source_type = oi.source_type and je.source_id = oi.source_id
+            join ledger_entries le on le.journal_entry_id = je.id
+            join accounts a
+              on a.id = le.account_id and a.root_type in ('revenue', 'cost_of_sales', 'expense')
+            where rp.company_id = @company_id and rp.status = 'posted'
+              and rp.payment_date >= @date_from and rp.payment_date <= @date_to
+
+            union all
+
+            select le.account_id, sa.applied_amount_tx, oi.original_amount_tx, le.debit, le.credit
+            from pay_bills pb
+            join settlement_applications sa
+              on sa.source_type = 'pay_bill' and sa.source_id = pb.id
+            join ap_open_items oi
+              on oi.id = sa.target_open_item_id and sa.target_open_item_type = 'ap_open_item'
+            join journal_entries je
+              on je.company_id = pb.company_id and je.source_type = oi.source_type and je.source_id = oi.source_id
+            join ledger_entries le on le.journal_entry_id = je.id
+            join accounts a
+              on a.id = le.account_id and a.root_type in ('revenue', 'cost_of_sales', 'expense')
+            where pb.company_id = @company_id and pb.status = 'posted'
+              and pb.payment_date >= @date_from and pb.payment_date <= @date_to;
+            """))
+        {
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("date_from", query.DateFrom);
+            command.Parameters.AddWithValue("date_to", query.DateTo);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var accountIdOrdinal = reader.GetOrdinal("account_id");
+            var numOrdinal = reader.GetOrdinal("num");
+            var denOrdinal = reader.GetOrdinal("den");
+            var debitOrdinal = reader.GetOrdinal("debit_amt");
+            var creditOrdinal = reader.GetOrdinal("credit_amt");
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                contributions.Add(new CashBasisContributionRow(
+                    reader.GetGuid(accountIdOrdinal),
+                    reader.GetFieldValue<decimal>(numOrdinal),
+                    reader.GetFieldValue<decimal>(denOrdinal),
+                    reader.GetFieldValue<decimal>(debitOrdinal),
+                    reader.GetFieldValue<decimal>(creditOrdinal)));
+            }
+        }
+
+        var totals = CashBasisIncomeMath.Aggregate(contributions);
+
+        var rows = new List<IncomeStatementAccountAmount>();
+
+        await using (var accountsCommand = scope.CreateCommand(
+            """
+            select id, entity_number, code, name, root_type, detail_type, is_active, is_system
+            from accounts
+            where company_id = @company_id
+              and root_type in ('revenue', 'cost_of_sales', 'expense')
+            order by code, name;
+            """))
+        {
+            accountsCommand.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+
+            await using var reader = await accountsCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var accountId = reader.GetGuid(reader.GetOrdinal("id"));
+                var hasTotals = totals.TryGetValue(accountId, out var total);
+                rows.Add(IncomeStatementAccountAmount.Create(
+                    accountId,
+                    reader.GetString(reader.GetOrdinal("entity_number")),
+                    reader.GetString(reader.GetOrdinal("code")),
+                    reader.GetString(reader.GetOrdinal("name")),
+                    reader.GetString(reader.GetOrdinal("root_type")),
+                    reader.GetString(reader.GetOrdinal("detail_type")),
+                    reader.GetBoolean(reader.GetOrdinal("is_active")),
+                    reader.GetBoolean(reader.GetOrdinal("is_system")),
+                    hasTotals ? total!.Debit : 0m,
+                    hasTotals ? total!.Credit : 0m));
+            }
         }
 
         return IncomeStatementReport.Create(

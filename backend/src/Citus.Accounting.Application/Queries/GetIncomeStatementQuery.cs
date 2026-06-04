@@ -6,7 +6,8 @@ public sealed record class GetIncomeStatementQuery(
     CompanyId CompanyId,
     DateOnly DateFrom,
     DateOnly DateTo,
-    bool IncludeZeroBalanceAccounts = false);
+    bool IncludeZeroBalanceAccounts = false,
+    AccountingBasis Basis = AccountingBasis.Accrual);
 
 public sealed record class IncomeStatementAccountAmount
 {

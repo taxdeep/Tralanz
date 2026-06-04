@@ -9,7 +9,8 @@ public sealed record IncomeStatementLookupQuery(
     CompanyId CompanyId,
     DateOnly? DateFrom = null,
     DateOnly? DateTo = null,
-    bool IncludeZeroBalances = false);
+    bool IncludeZeroBalances = false,
+    string? Basis = null);
 
 public sealed record BalanceSheetLookupQuery(
     CompanyId CompanyId,
