@@ -14,7 +14,8 @@
             <RadzenCheckBox @bind-Value="_includeZeroRows" /> Include zero-balance accounts
         </label>
         <RadzenDropDown TValue="string" @bind-Value="_basis" Data="@_basisOptions" Style="width: 9rem" />
-        <RadzenDropDown TValue="string" @bind-Value="_compare" Data="@_compareOptions" Style="width: 11rem" />
+        <RadzenDropDown TValue="string" @bind-Value="_compare" Data="@_compareOptions" Disabled="@(_columnsBy != NoColumns)" Style="width: 11rem" />
+        <RadzenDropDown TValue="string" @bind-Value="_columnsBy" Data="@_columnsOptions" Style="width: 10rem" />
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
             Run Profit and Loss
         </CitusButton>
@@ -46,56 +47,99 @@
     }
     else
     {
-        @foreach (var reportSection in GetSections())
+        @foreach (var sec in Sections)
         {
             <article class="citus-subpanel">
                 <header class="citus-subpanel__header">
-                    <h3 class="citus-subpanel__title">@reportSection.Title</h3>
+                    <h3 class="citus-subpanel__title">@sec.Title</h3>
                     <div class="flex items-center gap-2">
-                        <CitusBadge Color="@TagColor(reportSection.Tone)">@ReportFormat.Amount(reportSection.Total)</CitusBadge>
+                        <CitusBadge Color="@TagColor(sec.Tone)">@ReportFormat.Amount(sec.TotalOf(_incomeStatement))</CitusBadge>
                         @if (_comparison is not null)
                         {
-                            <span class="text-fg-subtle text-xs">vs @ReportFormat.Amount(reportSection.ComparisonTotal)</span>
+                            <span class="text-fg-subtle text-xs">vs @ReportFormat.Amount(sec.TotalOf(_comparison))</span>
                         }
                     </div>
                 </header>
 
-                @{ var mergedRows = MergeRows(reportSection.Rows, _comparison is null ? null : reportSection.ComparisonRows); }
-                @if (mergedRows.Count == 0)
+                @if (_periodReports.Count > 0)
                 {
-                    <p class="text-fg-muted text-sm">No accounts in this section for the selected range.</p>
+                    // Columns-by: one column per sub-period + Total.
+                    var columnRows = BuildColumnRows(sec.RowsOf);
+                    if (columnRows.Count == 0)
+                    {
+                        <p class="text-fg-muted text-sm">No accounts in this section for the selected range.</p>
+                    }
+                    else
+                    {
+                        <table class="citus-data-table citus-data-table--compact">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Account</th>
+                                    @foreach (var period in _periods)
+                                    {
+                                        <th class="text-right">@period.Label</th>
+                                    }
+                                    <th class="text-right">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in columnRows)
+                                {
+                                    <tr>
+                                        <td><span class="citus-inline-code">@row.Code</span></td>
+                                        <td>@row.Name</td>
+                                        @foreach (var value in row.Values)
+                                        {
+                                            <td class="text-right">@ReportFormat.Amount(value)</td>
+                                        }
+                                        <td class="text-right">@ReportFormat.Amount(row.Total)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
                 }
                 else
                 {
-                    <table class="citus-data-table citus-data-table--compact">
-                        <thead>
-                            <tr>
-                                <th>Code</th>
-                                <th>Account</th>
-                                <th class="text-right">Amount</th>
-                                @if (_comparison is not null)
-                                {
-                                    <th class="text-right">@_compare</th>
-                                    <th class="text-right">Change</th>
-                                }
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var row in mergedRows)
-                            {
+                    // Single amount, or current vs comparison + change.
+                    var mergedRows = MergeRows(sec.RowsOf(_incomeStatement), _comparison is null ? null : sec.RowsOf(_comparison));
+                    if (mergedRows.Count == 0)
+                    {
+                        <p class="text-fg-muted text-sm">No accounts in this section for the selected range.</p>
+                    }
+                    else
+                    {
+                        <table class="citus-data-table citus-data-table--compact">
+                            <thead>
                                 <tr>
-                                    <td><span class="citus-inline-code">@row.Code</span></td>
-                                    <td>@row.Name</td>
-                                    <td class="text-right">@ReportFormat.Amount(row.Current)</td>
+                                    <th>Code</th>
+                                    <th>Account</th>
+                                    <th class="text-right">Amount</th>
                                     @if (_comparison is not null)
                                     {
-                                        <td class="text-right">@ReportFormat.Amount(row.Comparison)</td>
-                                        <td class="text-right">@ReportFormat.Amount(row.Current - row.Comparison)</td>
+                                        <th class="text-right">@_compare</th>
+                                        <th class="text-right">Change</th>
                                     }
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in mergedRows)
+                                {
+                                    <tr>
+                                        <td><span class="citus-inline-code">@row.Code</span></td>
+                                        <td>@row.Name</td>
+                                        <td class="text-right">@ReportFormat.Amount(row.Current)</td>
+                                        @if (_comparison is not null)
+                                        {
+                                            <td class="text-right">@ReportFormat.Amount(row.Comparison)</td>
+                                            <td class="text-right">@ReportFormat.Amount(row.Current - row.Comparison)</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
                 }
             </article>
         }
@@ -105,9 +149,13 @@
 </ReportShell>
 
 @code {
+    private const string NoColumns = "No columns";
+
     private IncomeStatementReportSummary? _incomeStatement;
     private IncomeStatementReportSummary? _comparison;
     private string _comparisonRangeLabel = string.Empty;
+    private readonly List<(DateOnly From, DateOnly To, string Label)> _periods = new();
+    private readonly List<IncomeStatementReportSummary?> _periodReports = new();
     private bool _isLoading;
     private bool _isExporting;
     private bool _includeZeroRows;
@@ -115,9 +163,28 @@
     private readonly string[] _basisOptions = { "Accrual", "Cash" };
     private string _compare = "No comparison";
     private readonly string[] _compareOptions = { "No comparison", "Previous year", "Previous period" };
+    private string _columnsBy = NoColumns;
+    private readonly string[] _columnsOptions = { NoColumns, "By month", "By quarter" };
     private string? _error;
     private DateTime? _dateFrom = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private DateTime? _dateTo = DateTime.Today;
+
+    private sealed record SectionDef(
+        string Title,
+        StatTone Tone,
+        Func<IncomeStatementReportSummary, IReadOnlyList<IncomeStatementAccountSummary>> RowsOf,
+        Func<IncomeStatementReportSummary, decimal> TotalOf);
+
+    private static readonly SectionDef[] Sections =
+    {
+        new("Revenue", StatTone.Success, static r => r.RevenueRows, static r => r.TotalRevenue),
+        new("Cost Of Sales", StatTone.Warning, static r => r.CostOfSalesRows, static r => r.TotalCostOfSales),
+        new("Expenses", StatTone.Info, static r => r.ExpenseRows, static r => r.TotalExpenses),
+    };
+
+    private sealed record MergedRow(string Code, string Name, decimal Current, decimal Comparison);
+
+    private sealed record ColumnRow(string Code, string Name, decimal[] Values, decimal Total);
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -131,41 +198,60 @@
 
         if (dateFrom > dateTo)
         {
-            _incomeStatement = null;
-            _comparison = null;
+            ClearResults();
             _error = "Profit and Loss date range is invalid. The start date must be on or before the end date.";
             _isLoading = false;
             return;
         }
 
+        var basis = _basis.ToLowerInvariant();
+
         var report = await IncomeStatementClient.GetReportAsync(
-            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows, _basis.ToLowerInvariant());
+            ShellState.ActiveCompany.Id, dateFrom, dateTo, _includeZeroRows, basis);
 
         if (report is null)
         {
-            _incomeStatement = null;
-            _comparison = null;
+            ClearResults();
             _error = "Profit and Loss is unavailable until the active company is provisioned in the accounting core and date-range report data exists.";
             _isLoading = false;
             return;
         }
 
         _incomeStatement = report;
+        _comparison = null;
+        _comparisonRangeLabel = string.Empty;
+        _periods.Clear();
+        _periodReports.Clear();
 
-        var comparisonRange = ComparisonRange(dateFrom, dateTo);
-        if (comparisonRange is { } range)
+        if (_columnsBy != NoColumns)
         {
-            _comparison = await IncomeStatementClient.GetReportAsync(
-                ShellState.ActiveCompany.Id, range.From, range.To, _includeZeroRows, _basis.ToLowerInvariant());
-            _comparisonRangeLabel = $"{range.From:yyyy-MM-dd} to {range.To:yyyy-MM-dd}";
+            _periods.AddRange(SplitPeriods(dateFrom, dateTo, _columnsBy));
+            var tasks = _periods
+                .Select(period => IncomeStatementClient.GetReportAsync(
+                    ShellState.ActiveCompany.Id, period.From, period.To, _includeZeroRows, basis))
+                .ToArray();
+            _periodReports.AddRange(await Task.WhenAll(tasks));
         }
         else
         {
-            _comparison = null;
-            _comparisonRangeLabel = string.Empty;
+            var comparisonRange = ComparisonRange(dateFrom, dateTo);
+            if (comparisonRange is { } range)
+            {
+                _comparison = await IncomeStatementClient.GetReportAsync(
+                    ShellState.ActiveCompany.Id, range.From, range.To, _includeZeroRows, basis);
+                _comparisonRangeLabel = $"{range.From:yyyy-MM-dd} to {range.To:yyyy-MM-dd}";
+            }
         }
 
         _isLoading = false;
+    }
+
+    private void ClearResults()
+    {
+        _incomeStatement = null;
+        _comparison = null;
+        _periods.Clear();
+        _periodReports.Clear();
     }
 
     private async Task ExportAsync()
@@ -209,31 +295,25 @@
         return (prevTo.AddDays(-spanDays), prevTo);
     }
 
-    private sealed record SectionBlock(
-        string Title,
-        StatTone Tone,
-        decimal Total,
-        decimal ComparisonTotal,
-        IReadOnlyList<IncomeStatementAccountSummary> Rows,
-        IReadOnlyList<IncomeStatementAccountSummary> ComparisonRows);
-
-    private sealed record MergedRow(string Code, string Name, decimal Current, decimal Comparison);
-
-    private IEnumerable<SectionBlock> GetSections()
+    private static List<(DateOnly From, DateOnly To, string Label)> SplitPeriods(DateOnly from, DateOnly to, string mode)
     {
-        if (_incomeStatement is null)
+        var periods = new List<(DateOnly From, DateOnly To, string Label)>();
+        var byQuarter = mode == "By quarter";
+
+        var startMonth = byQuarter ? (((from.Month - 1) / 3) * 3) + 1 : from.Month;
+        var cursor = new DateOnly(from.Year, startMonth, 1);
+
+        while (cursor <= to && periods.Count < 60)
         {
-            return Array.Empty<SectionBlock>();
+            var bucketEnd = (byQuarter ? cursor.AddMonths(3) : cursor.AddMonths(1)).AddDays(-1);
+            var segmentFrom = cursor < from ? from : cursor;
+            var segmentTo = bucketEnd > to ? to : bucketEnd;
+            var label = byQuarter ? $"Q{((cursor.Month - 1) / 3) + 1} {cursor.Year}" : cursor.ToString("yyyy-MM");
+            periods.Add((segmentFrom, segmentTo, label));
+            cursor = byQuarter ? cursor.AddMonths(3) : cursor.AddMonths(1);
         }
 
-        var empty = (IReadOnlyList<IncomeStatementAccountSummary>)Array.Empty<IncomeStatementAccountSummary>();
-
-        return
-        [
-            new SectionBlock("Revenue", StatTone.Success, _incomeStatement.TotalRevenue, _comparison?.TotalRevenue ?? 0m, _incomeStatement.RevenueRows, _comparison?.RevenueRows ?? empty),
-            new SectionBlock("Cost Of Sales", StatTone.Warning, _incomeStatement.TotalCostOfSales, _comparison?.TotalCostOfSales ?? 0m, _incomeStatement.CostOfSalesRows, _comparison?.CostOfSalesRows ?? empty),
-            new SectionBlock("Expenses", StatTone.Info, _incomeStatement.TotalExpenses, _comparison?.TotalExpenses ?? 0m, _incomeStatement.ExpenseRows, _comparison?.ExpenseRows ?? empty)
-        ];
+        return periods;
     }
 
     private static IReadOnlyList<MergedRow> MergeRows(
@@ -257,7 +337,37 @@
             }
         }
 
-        return map.Values
+        return map.Values.OrderBy(static r => r.Code, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private IReadOnlyList<ColumnRow> BuildColumnRows(
+        Func<IncomeStatementReportSummary, IReadOnlyList<IncomeStatementAccountSummary>> selector)
+    {
+        var count = _periodReports.Count;
+        var map = new Dictionary<string, (string Name, decimal[] Values)>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < count; i++)
+        {
+            var periodReport = _periodReports[i];
+            if (periodReport is null)
+            {
+                continue;
+            }
+
+            foreach (var row in selector(periodReport))
+            {
+                if (!map.TryGetValue(row.Code, out var entry))
+                {
+                    entry = (row.Name, new decimal[count]);
+                    map[row.Code] = entry;
+                }
+
+                entry.Values[i] = row.DisplayAmount;
+            }
+        }
+
+        return map
+            .Select(kvp => new ColumnRow(kvp.Key, kvp.Value.Name, kvp.Value.Values, kvp.Value.Values.Sum()))
             .OrderBy(static r => r.Code, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
