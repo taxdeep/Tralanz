@@ -34,7 +34,10 @@
                     var first = group.First();
                     <article class="citus-subpanel">
                         <header class="citus-subpanel__header">
-                            <h3 class="citus-subpanel__title">@first.JournalNumber</h3>
+                            <div>
+                                <div class="text-fg-subtle text-xs">Internal #</div>
+                                <h3 class="citus-subpanel__title">@first.JournalNumber</h3>
+                            </div>
                             <span class="text-fg-subtle text-xs">@FriendlyType(first.SourceType) · @first.PostingDate.ToString("yyyy-MM-dd")</span>
                         </header>
                         <table class="citus-data-table citus-data-table--compact">
@@ -42,7 +45,7 @@
                                 <tr>
                                     <th>Date</th>
                                     <th>Type</th>
-                                    <th>Name</th>
+                                    <th>Reference#</th>
                                     <th>Description</th>
                                     <th>Account #</th>
                                     <th>Account</th>
@@ -56,7 +59,17 @@
                                     <tr>
                                         <td>@line.PostingDate.ToString("yyyy-MM-dd")</td>
                                         <td>@FriendlyType(line.SourceType)</td>
-                                        <td>@line.PartyName</td>
+                                        <td>
+                                            @{ var href = line.SourceId == Guid.Empty || string.IsNullOrEmpty(line.ReferenceNumber) ? null : ReportFormat.DocumentHref(DocType(line.SourceType), line.SourceId); }
+                                            @if (href is not null)
+                                            {
+                                                <a class="citus-link" href="@href">@line.ReferenceNumber</a>
+                                            }
+                                            else
+                                            {
+                                                <span>@line.ReferenceNumber</span>
+                                            }
+                                        </td>
                                         <td>@line.Description</td>
                                         <td><span class="citus-inline-code">@line.AccountCode</span></td>
                                         <td>@line.AccountName</td>
@@ -123,4 +136,11 @@
         "manual_journal" => "Journal Entry",
         _ => System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(sourceType.Replace('_', ' '))
     };
+
+    // A reversal JE's source_id points at the document it reverses, so route
+    // to the underlying doc (invoice_reversal -> invoice, etc.).
+    private static string DocType(string sourceType) =>
+        sourceType.EndsWith("_reversal", StringComparison.OrdinalIgnoreCase)
+            ? sourceType[..^"_reversal".Length]
+            : sourceType;
 }

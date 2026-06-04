@@ -18,6 +18,10 @@ public sealed record class JournalReportLine
 
     public string SourceType { get; init; } = string.Empty;
 
+    public Guid SourceId { get; init; }
+
+    public string ReferenceNumber { get; init; } = string.Empty;
+
     public DateOnly PostingDate { get; init; }
 
     public string PartyName { get; init; } = string.Empty;
@@ -35,6 +39,8 @@ public sealed record class JournalReportLine
     public static JournalReportLine Create(
         string journalNumber,
         string sourceType,
+        Guid sourceId,
+        string? referenceNumber,
         DateOnly postingDate,
         string? partyName,
         string? description,
@@ -46,6 +52,8 @@ public sealed record class JournalReportLine
         {
             JournalNumber = journalNumber.Trim(),
             SourceType = sourceType.Trim(),
+            SourceId = sourceId,
+            ReferenceNumber = (referenceNumber ?? string.Empty).Trim(),
             PostingDate = postingDate,
             PartyName = (partyName ?? string.Empty).Trim(),
             Description = (description ?? string.Empty).Trim(),

@@ -3900,6 +3900,8 @@ accounting.MapGet(
             {
                 JournalNumber = line.JournalNumber,
                 SourceType = line.SourceType,
+                SourceId = line.SourceId,
+                ReferenceNumber = line.ReferenceNumber,
                 PostingDate = line.PostingDate,
                 PartyName = line.PartyName,
                 Description = line.Description,

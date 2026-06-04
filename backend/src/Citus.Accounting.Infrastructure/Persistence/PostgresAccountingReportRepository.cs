@@ -342,6 +342,9 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             """
             select coalesce(je.display_number, je.entity_number, '') as journal_number,
                    je.source_type,
+                   je.source_id,
+                   coalesce(i.invoice_number, b.bill_number, cn.credit_note_number, vc.vendor_credit_number,
+                            e.expense_number, sr.receipt_number, rr.refund_number, rp.payment_number, pb.payment_number, '') as reference_number,
                    le.posting_date,
                    coalesce(v.display_name, c.display_name, '') as party_name,
                    jel.description,
@@ -355,6 +358,15 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             join accounts a on a.id = jel.account_id
             left join vendors v on jel.party_type = 'vendor' and v.id = jel.party_id
             left join customers c on jel.party_type = 'customer' and c.id = jel.party_id
+            left join invoices i on i.id = je.source_id
+            left join bills b on b.id = je.source_id
+            left join credit_notes cn on cn.id = je.source_id
+            left join vendor_credits vc on vc.id = je.source_id
+            left join expenses e on e.id = je.source_id
+            left join sales_receipts sr on sr.id = je.source_id
+            left join refund_receipts rr on rr.id = je.source_id
+            left join receive_payments rp on rp.id = je.source_id
+            left join pay_bills pb on pb.id = je.source_id
             where je.company_id = @company_id
               and le.posting_date >= @date_from
               and le.posting_date <= @date_to
@@ -368,12 +380,15 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var descriptionOrdinal = reader.GetOrdinal("description");
+        var sourceIdOrdinal = reader.GetOrdinal("source_id");
 
         while (await reader.ReadAsync(cancellationToken))
         {
             lines.Add(JournalReportLine.Create(
                 reader.GetString(reader.GetOrdinal("journal_number")),
                 reader.GetString(reader.GetOrdinal("source_type")),
+                reader.IsDBNull(sourceIdOrdinal) ? Guid.Empty : reader.GetGuid(sourceIdOrdinal),
+                reader.GetString(reader.GetOrdinal("reference_number")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
                 reader.GetString(reader.GetOrdinal("party_name")),
                 reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal),

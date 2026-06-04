@@ -32,6 +32,10 @@ public sealed record class JournalReportLineSummary
 
     public string SourceType { get; init; } = string.Empty;
 
+    public Guid SourceId { get; init; }
+
+    public string ReferenceNumber { get; init; } = string.Empty;
+
     public DateOnly PostingDate { get; init; }
 
     public string PartyName { get; init; } = string.Empty;
