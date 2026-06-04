@@ -60,6 +60,9 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                 updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_po_number TEXT NULL;
+            ALTER TABLE quotes ADD COLUMN IF NOT EXISTS entity_number CHAR(11) NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_quotes_company_entity_number
+                ON quotes (company_id, entity_number);
             CREATE UNIQUE INDEX IF NOT EXISTS uq_quotes_company_quote_number
                 ON quotes (company_id, quote_number);
             CREATE INDEX IF NOT EXISTS idx_quotes_company_status
@@ -184,13 +187,23 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        var entityNumber = await Infrastructure.PostgreSQL.Numbering.PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            $"entity-number:all:{input.DocumentDate.Year}",
+            $"EN{input.DocumentDate.Year}",
+            5,
+            1,
+            cancellationToken).ConfigureAwait(false);
+
         Guid quoteId;
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
             command.CommandText = """
                 INSERT INTO quotes (
-                    company_id, quote_number, status, customer_id,
+                    company_id, quote_number, entity_number, status, customer_id,
                     document_date, expiration_date,
                     transaction_currency_code, fx_rate,
                     billing_address_line, billing_city, billing_province_state, billing_postal_code, billing_country,
@@ -201,7 +214,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                     memo_to_customer, internal_note, customer_po_number
                 )
                 VALUES (
-                    @company_id, @quote_number, 'draft', @customer_id,
+                    @company_id, @quote_number, @entity_number, 'draft', @customer_id,
                     @document_date, @expiration_date,
                     @transaction_currency_code, @fx_rate,
                     @billing_address_line, @billing_city, @billing_province_state, @billing_postal_code, @billing_country,
@@ -215,6 +228,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                 """;
             BindUpsertParameters(command, companyId, input, subtotal, discount, tax, total);
             command.Parameters.AddWithValue("quote_number", quoteNumber);
+            command.Parameters.AddWithValue("entity_number", entityNumber);
             quoteId = (Guid)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         }
 

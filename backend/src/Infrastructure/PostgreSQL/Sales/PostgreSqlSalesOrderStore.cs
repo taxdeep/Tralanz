@@ -62,6 +62,9 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
             );
             ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS customer_po_number TEXT NULL;
             ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ NULL;
+            ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS entity_number CHAR(11) NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_orders_company_entity_number
+                ON sales_orders (company_id, entity_number);
             CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_orders_company_so_number
                 ON sales_orders (company_id, sales_order_number);
             CREATE INDEX IF NOT EXISTS idx_sales_orders_company_status
@@ -190,13 +193,23 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        var entityNumber = await Infrastructure.PostgreSQL.Numbering.PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            $"entity-number:all:{input.DocumentDate.Year}",
+            $"EN{input.DocumentDate.Year}",
+            5,
+            1,
+            cancellationToken).ConfigureAwait(false);
+
         Guid soId;
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
             command.CommandText = """
                 INSERT INTO sales_orders (
-                    company_id, sales_order_number, status, customer_id,
+                    company_id, sales_order_number, entity_number, status, customer_id,
                     document_date,
                     transaction_currency_code, fx_rate,
                     billing_address_line, billing_city, billing_province_state, billing_postal_code, billing_country,
@@ -207,7 +220,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                     memo_to_customer, internal_note, source_quote_id, customer_po_number
                 )
                 VALUES (
-                    @company_id, @sales_order_number, 'open', @customer_id,
+                    @company_id, @sales_order_number, @entity_number, 'open', @customer_id,
                     @document_date,
                     @transaction_currency_code, @fx_rate,
                     @billing_address_line, @billing_city, @billing_province_state, @billing_postal_code, @billing_country,
@@ -221,6 +234,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 """;
             BindUpsertParameters(command, companyId, input, subtotal, discount, tax, total);
             command.Parameters.AddWithValue("sales_order_number", soNumber);
+            command.Parameters.AddWithValue("entity_number", entityNumber);
             soId = (Guid)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         }
 
