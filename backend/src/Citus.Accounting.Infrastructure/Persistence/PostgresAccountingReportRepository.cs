@@ -215,7 +215,10 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             where le.company_id = @company_id
               and le.posting_date >= @date_from and le.posting_date <= @date_to
               and a.root_type in ('revenue', 'cost_of_sales', 'expense')
-              and coalesce(je.source_type, '') not in ('invoice', 'bill', 'credit_note', 'vendor_credit')
+              and coalesce(je.source_type, '') not like 'invoice%'
+              and coalesce(je.source_type, '') not like 'bill%'
+              and coalesce(je.source_type, '') not like 'credit_note%'
+              and coalesce(je.source_type, '') not like 'vendor_credit%'
             group by le.account_id
 
             union all
