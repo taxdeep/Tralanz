@@ -10,6 +10,7 @@ using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Companies;
 using Citus.Accounting.Application.Invoices;
 using Citus.Accounting.Application.Queries;
+using Citus.Accounting.Application.Statements;
 using Citus.Accounting.Application.Reconciliation;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
@@ -25,6 +26,7 @@ using Citus.Accounting.Infrastructure.Fx;
 using Citus.Accounting.Infrastructure.Invoices;
 using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
+using Citus.Accounting.Infrastructure.Statements;
 using Citus.Modules.UnitySearch.Application;
 using Citus.Modules.UnitySearch.Application.Contracts;
 using Citus.Modules.UnityAi.Application;
@@ -440,6 +442,7 @@ builder.Services.AddSingleton<ICompanyProfileQuery, PostgresCompanyProfileQuery>
 // free for any company with annual revenue under USD $1M.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 builder.Services.AddSingleton<IInvoicePdfRenderer, QuestPdfInvoiceRenderer>();
+builder.Services.AddSingleton<IStatementPdfRenderer, QuestPdfStatementRenderer>();
 
 // AES-GCM protector for SysAdmin-entered secrets — SMTP password and
 // AI provider API key live in Postgres in encrypted form, decrypted
@@ -3948,6 +3951,80 @@ accounting.MapGet(
         var file = ReportCsvExporter.ExportApAging(MapApAgingReport(report));
         return ToCsvFileResult(file);
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
+
+// Customer open-item statement PDF. Reuses the A/R aging report (filtered to
+// the picked customer) for the open items + totals, joins the customer's
+// contact + the company letterhead, and renders via QuestPDF.
+accounting.MapGet(
+    "/reports/customer-statement/{customerId:guid}/pdf",
+    async (
+        Guid customerId,
+        [AsParameters] ArAgingLookupQuery query,
+        ICompanyProfileQuery companyProfileQuery,
+        ICustomerStore customerStore,
+        IAccountingReportRepository repository,
+        IStatementPdfRenderer renderer,
+        CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var company = await companyProfileQuery.GetByIdAsync(query.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            return Results.NotFound(new { message = "The active company is not provisioned in the accounting core yet." });
+        }
+
+        var customer = await customerStore.GetByIdAsync(query.CompanyId, customerId, cancellationToken);
+        if (customer is null)
+        {
+            return Results.NotFound(new { message = "Customer was not found." });
+        }
+
+        var aging = await repository.GetArAgingAsync(new GetArAgingQuery(query.CompanyId, asOfDate), cancellationToken);
+        var balance = aging?.CustomerRows.FirstOrDefault(row => row.CustomerId == customerId);
+        var baseCurrency = aging?.BaseCurrencyCode ?? company.BaseCurrencyCode;
+
+        var model = StatementRenderModelBuilder.BuildForCustomer(company, customer, balance, asOfDate, baseCurrency);
+        var pdf = renderer.Render(model);
+
+        return Results.File(pdf, "application/pdf", $"customer-statement-{customer.EntityNumber}-{asOfDate:yyyy-MM-dd}.pdf");
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArAgingView);
+
+// Vendor open-item statement PDF (mirror of the customer statement).
+accounting.MapGet(
+    "/reports/vendor-statement/{vendorId:guid}/pdf",
+    async (
+        Guid vendorId,
+        [AsParameters] ApAgingLookupQuery query,
+        ICompanyProfileQuery companyProfileQuery,
+        IVendorStore vendorStore,
+        IAccountingReportRepository repository,
+        IStatementPdfRenderer renderer,
+        CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var company = await companyProfileQuery.GetByIdAsync(query.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            return Results.NotFound(new { message = "The active company is not provisioned in the accounting core yet." });
+        }
+
+        var vendor = await vendorStore.GetByIdAsync(query.CompanyId, vendorId, cancellationToken);
+        if (vendor is null)
+        {
+            return Results.NotFound(new { message = "Vendor was not found." });
+        }
+
+        var aging = await repository.GetApAgingAsync(new GetApAgingQuery(query.CompanyId, asOfDate), cancellationToken);
+        var balance = aging?.VendorRows.FirstOrDefault(row => row.VendorId == vendorId);
+        var baseCurrency = aging?.BaseCurrencyCode ?? company.BaseCurrencyCode;
+
+        var model = StatementRenderModelBuilder.BuildForVendor(company, vendor, balance, asOfDate, baseCurrency);
+        var pdf = renderer.Render(model);
+
+        return Results.File(pdf, "application/pdf", $"vendor-statement-{vendor.EntityNumber}-{asOfDate:yyyy-MM-dd}.pdf");
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApAgingView);
 
 // ---------------------------------------------------------------------------
 // Sales Overview — Cash Flow band (10 past + current + 3 forecast months)

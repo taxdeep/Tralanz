@@ -6,6 +6,8 @@
 
 @inject BusinessShellState ShellState
 @inject ApAgingClient ApAgingClient
+@inject AccountingDocumentReviewClient ReviewClient
+@inject Microsoft.JSInterop.IJSRuntime JS
 
 @* Vendor open-item statement. Stage 1: reuses the proven A/P aging report,
    filtered to the picked vendor (zero new backend / balance math). Stage 2
@@ -33,6 +35,9 @@
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@(_isLoading || !_partyId.HasValue)" OnClick="LoadAsync">
             Run statement
         </CitusButton>
+        <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isDownloadingPdf || !_partyId.HasValue)" OnClick="DownloadPdfAsync">
+            @(_isDownloadingPdf ? "Generating…" : "Download PDF")
+        </CitusButton>
     </Controls>
 </StatementReport>
 
@@ -42,11 +47,39 @@
     private string _baseCurrency = string.Empty;
     private DateTime? _asOfDate = DateTime.Today;
     private bool _isLoading;
+    private bool _isDownloadingPdf;
     private string? _error;
     private AgingPartyRow? _party;
     private IReadOnlyList<AgingOpenItemRow>? _items;
 
     private DateOnly AsOf() => DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date);
+
+    private async Task DownloadPdfAsync()
+    {
+        if (!_partyId.HasValue || _isDownloadingPdf)
+        {
+            return;
+        }
+
+        _isDownloadingPdf = true;
+        _error = null;
+        try
+        {
+            var download = await ReviewClient.GetVendorStatementPdfAsync(ShellState.ActiveCompany.Id, _partyId.Value, AsOf());
+            if (download is null)
+            {
+                _error = "The statement PDF could not be generated. Please try again.";
+                return;
+            }
+
+            var base64 = Convert.ToBase64String(download.Bytes);
+            await JS.InvokeVoidAsync("citusDownloads.saveBinaryFile", download.FileName, base64, "application/pdf");
+        }
+        finally
+        {
+            _isDownloadingPdf = false;
+        }
+    }
 
     private async Task OnPartySelectedAsync(UnitySearchPickerOption option)
     {

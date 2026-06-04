@@ -44,6 +44,61 @@ public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogge
         }
     }
 
+    /// <summary>
+    /// Fetches a customer open-item statement as a PDF byte stream. Caller
+    /// hands the bytes to the browser (citusDownloads.saveBinaryFile).
+    /// </summary>
+    public Task<InvoicePdfDownload?> GetCustomerStatementPdfAsync(
+        CompanyId companyId,
+        Guid customerId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken = default) =>
+        GetStatementPdfAsync(
+            $"accounting/reports/customer-statement/{customerId:D}/pdf?companyId={companyId:D}&asOfDate={asOfDate:yyyy-MM-dd}",
+            $"customer-statement-{customerId:N}.pdf",
+            cancellationToken);
+
+    /// <summary>
+    /// Fetches a vendor open-item statement as a PDF byte stream.
+    /// </summary>
+    public Task<InvoicePdfDownload?> GetVendorStatementPdfAsync(
+        CompanyId companyId,
+        Guid vendorId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken = default) =>
+        GetStatementPdfAsync(
+            $"accounting/reports/vendor-statement/{vendorId:D}/pdf?companyId={companyId:D}&asOfDate={asOfDate:yyyy-MM-dd}",
+            $"vendor-statement-{vendorId:N}.pdf",
+            cancellationToken);
+
+    private async Task<InvoicePdfDownload?> GetStatementPdfAsync(
+        string requestUri,
+        string fallbackFileName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.GetAsync(requestUri, cancellationToken);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+                ?? response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+                ?? fallbackFileName;
+            return new InvoicePdfDownload(bytes, fileName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to download statement PDF from {RequestUri}.", requestUri);
+            return null;
+        }
+    }
+
     public async Task<InvoiceSendOutcome> SendInvoiceAsync(
         CompanyId companyId,
         Guid invoiceId,
