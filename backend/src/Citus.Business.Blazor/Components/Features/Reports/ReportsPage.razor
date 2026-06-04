@@ -1,6 +1,7 @@
 @page "/reports"
 
 @inject BusinessShellState ShellState
+@inject Microsoft.JSInterop.IJSRuntime JS
 
 <PageTitle>Reports | Tralanz Books</PageTitle>
 
@@ -12,6 +13,31 @@
 
 @{
     var groups = FilteredByCategory();
+    var favourites = FavouriteReports();
+}
+
+@if (string.IsNullOrWhiteSpace(_search) && favourites.Count > 0)
+{
+    <CitusFormSection Title="Favourites">
+        <table class="citus-data-table">
+            <tbody>
+                @foreach (var report in favourites)
+                {
+                    <tr>
+                        <td style="width: 2.25rem; vertical-align: top">
+                            <button type="button" title="Remove from favourites"
+                                    @onclick="() => ToggleFavouriteAsync(report.Key)"
+                                    style="background: none; border: 0; cursor: pointer; font-size: 1.05rem; line-height: 1; color: var(--citus-color-warning)">★</button>
+                        </td>
+                        <td>
+                            <a class="citus-link" href="@($"reports/{report.Key}")">@report.Title</a>
+                            <div class="text-fg-subtle text-xs">@report.Description</div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </CitusFormSection>
 }
 
 @if (groups.Count == 0)
@@ -28,6 +54,11 @@ else
                     @foreach (var report in group.Reports)
                     {
                         <tr>
+                            <td style="width: 2.25rem; vertical-align: top">
+                                <button type="button" title="@StarTitle(report.Key)"
+                                        @onclick="() => ToggleFavouriteAsync(report.Key)"
+                                        style="@($"background: none; border: 0; cursor: pointer; font-size: 1.05rem; line-height: 1; color: {StarColor(report.Key)}")">@StarGlyph(report.Key)</button>
+                            </td>
                             <td>
                                 @if (report.IsImplemented)
                                 {
@@ -56,7 +87,71 @@ else
         Subtitle = "Choose a report to run. Report meaning stays backend-owned across the on-screen view and CSV export."
     };
 
+    // Per-browser favourites (localStorage). Not synced across devices — a
+    // server-backed table can replace this without touching the star UI.
+    private const string FavouritesKey = "citus.business.reportFavourites";
+
     private string _search = string.Empty;
+    private HashSet<string> _favourites = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", FavouritesKey);
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                _favourites = raw
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // localStorage unavailable (e.g. prerender / blocked) — favourites stay empty this session.
+        }
+    }
+
+    private bool IsFavourite(string key) => _favourites.Contains(key);
+
+    private string StarGlyph(string key) => IsFavourite(key) ? "★" : "☆";
+
+    private string StarColor(string key) =>
+        IsFavourite(key) ? "var(--citus-color-warning)" : "var(--citus-color-fg-subtle)";
+
+    private string StarTitle(string key) =>
+        IsFavourite(key) ? "Remove from favourites" : "Add to favourites";
+
+    private async Task ToggleFavouriteAsync(string key)
+    {
+        if (!_favourites.Remove(key))
+        {
+            _favourites.Add(key);
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", FavouritesKey, string.Join(',', _favourites));
+        }
+        catch
+        {
+            // Persistence failure is non-fatal; the in-memory toggle still reflects this session.
+        }
+    }
+
+    private IReadOnlyList<ReportDefinition> FavouriteReports() =>
+        _favourites
+            .Select(ReportCatalog.ByKey)
+            .Where(r => r is not null)
+            .Select(r => r!)
+            .OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private IReadOnlyList<(string Category, IReadOnlyList<ReportDefinition> Reports)> FilteredByCategory()
     {
