@@ -146,8 +146,9 @@
             ? sourceType[..^"_reversal".Length]
             : sourceType;
 
-    // Where the Reference# links: a manual journal goes to the journal entry
-    // itself; everything else to its source document.
+    // Where the Reference# links: each source document to its own detail page
+    // (reversals route to the underlying doc via DocType); manual journals and
+    // anything without a dedicated page fall back to the journal entry itself.
     private static string? RefHref(JournalReportLineSummary line)
     {
         if (string.IsNullOrEmpty(line.ReferenceNumber))
@@ -155,11 +156,23 @@
             return null;
         }
 
-        if (string.Equals(line.SourceType, "manual_journal", StringComparison.OrdinalIgnoreCase))
+        var entryHref = line.JournalEntryId == Guid.Empty ? null : $"journal-entry/review/{line.JournalEntryId:D}";
+
+        if (line.SourceId == Guid.Empty)
         {
-            return line.JournalEntryId == Guid.Empty ? null : $"journal-entry/review/{line.JournalEntryId:D}";
+            return entryHref;
         }
 
-        return line.SourceId == Guid.Empty ? null : ReportFormat.DocumentHref(DocType(line.SourceType), line.SourceId);
+        return DocType(line.SourceType).Trim().ToLowerInvariant() switch
+        {
+            "invoice" => $"invoices/{line.SourceId:D}",
+            "bill" => $"bills/{line.SourceId:D}",
+            "expense" => $"expenses/{line.SourceId:D}",
+            "credit_note" => $"credit-memos/{line.SourceId:D}",
+            "vendor_credit" => $"vendor-credits/{line.SourceId:D}",
+            "sales_receipt" => $"sales-receipts/{line.SourceId:D}",
+            "refund_receipt" => $"refund-receipts/{line.SourceId:D}",
+            _ => entryHref
+        };
     }
 }
