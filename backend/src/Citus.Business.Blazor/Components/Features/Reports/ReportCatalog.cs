@@ -38,10 +38,14 @@ public static class ReportCatalog
             "Customer receivables grouped by aging bucket."),
         new ReportDefinition("ar-aging-detail", "A/R Aging Detail", WhoOwesYou,
             "Every open receivable listed under its customer, with per-document aging."),
+        new ReportDefinition("customer-statement", "Customer Statement", WhoOwesYou,
+            "One customer's open items and balance as of a date."),
         new ReportDefinition("ap-aging-summary", "A/P Aging Summary", WhatYouOwe,
             "Vendor payables grouped by aging bucket."),
         new ReportDefinition("ap-aging-detail", "A/P Aging Detail", WhatYouOwe,
             "Every open payable listed under its vendor, with per-document aging."),
+        new ReportDefinition("vendor-statement", "Vendor Statement", WhatYouOwe,
+            "One vendor's open items and balance as of a date."),
     };
 
     public static ReportDefinition? ByKey(string? key) =>

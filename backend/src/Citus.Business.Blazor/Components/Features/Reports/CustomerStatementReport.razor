@@ -1,0 +1,101 @@
+@using Radzen
+@using Radzen.Blazor
+@using Citus.Ui.Shared.Reports
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
+@inject BusinessShellState ShellState
+@inject ArAgingClient ArAgingClient
+
+@* Customer open-item statement. Stage 1: reuses the proven A/R aging report,
+   filtered to the picked customer (zero new backend / balance math). Stage 2
+   swaps in a dedicated party-scoped query carrying the customer's address +
+   email for the PDF / email statement. *@
+
+<StatementReport PartyLabel="Customer"
+                 HasParty="@_partyId.HasValue"
+                 PartyName="@_partyName"
+                 BaseCurrencyCode="@_baseCurrency"
+                 AsOfDate="@_asOfDate"
+                 Party="@_party"
+                 Items="@_items"
+                 IsLoading="_isLoading"
+                 Error="@_error">
+    <Controls>
+        <div style="min-width: 18rem">
+            <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                            SelectedId="@_partyId"
+                            SelectedDisplayText="@_partyName"
+                            OnCustomerSelected="OnPartySelectedAsync"
+                            OnCleared="OnPartyCleared" />
+        </div>
+        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@(_isLoading || !_partyId.HasValue)" OnClick="LoadAsync">
+            Run statement
+        </CitusButton>
+    </Controls>
+</StatementReport>
+
+@code {
+    private Guid? _partyId;
+    private string _partyName = string.Empty;
+    private string _baseCurrency = string.Empty;
+    private DateTime? _asOfDate = DateTime.Today;
+    private bool _isLoading;
+    private string? _error;
+    private AgingPartyRow? _party;
+    private IReadOnlyList<AgingOpenItemRow>? _items;
+
+    private DateOnly AsOf() => DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date);
+
+    private async Task OnPartySelectedAsync(UnitySearchPickerOption option)
+    {
+        _partyId = option.SourceId;
+        _partyName = option.PrimaryText;
+        await LoadAsync();
+    }
+
+    private void OnPartyCleared()
+    {
+        _partyId = null;
+        _partyName = string.Empty;
+        _party = null;
+        _items = null;
+        _error = null;
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!_partyId.HasValue)
+        {
+            _error = "Pick a customer to run the statement.";
+            return;
+        }
+
+        _isLoading = true;
+        _error = null;
+
+        var report = await ArAgingClient.GetReportAsync(ShellState.ActiveCompany.Id, AsOf());
+
+        if (report is null)
+        {
+            _party = null;
+            _items = null;
+            _error = "Customer statement is unavailable until the active company is provisioned in the accounting core and receivable open-item data exists.";
+        }
+        else
+        {
+            _baseCurrency = report.BaseCurrencyCode;
+            _items = report.DetailRows
+                .Where(d => d.CustomerId == _partyId.Value)
+                .Select(AgingReportView.OpenItemFromAr)
+                .ToList();
+            _party = report.CustomerRows
+                .Where(c => c.CustomerId == _partyId.Value)
+                .Select(AgingReportView.PartyRowFromAr)
+                .FirstOrDefault();
+        }
+
+        _isLoading = false;
+    }
+}

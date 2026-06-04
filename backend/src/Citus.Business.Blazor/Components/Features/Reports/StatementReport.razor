@@ -1,0 +1,112 @@
+@using Radzen
+@using Radzen.Blazor
+
+@* Open-item statement (presentational). One party's open items as of a date,
+   with an aging breakdown + total open balance. The Customer/Vendor wrappers
+   own the party picker + data load (reusing the aging report filtered to the
+   picked party) and pass the result in. Stage 2 swaps the data source to a
+   dedicated party-scoped query (adds address/email for the PDF). *@
+
+<ReportShell IsLoading="IsLoading" Error="Error">
+    <Controls>@Controls</Controls>
+    <Body>
+        @if (!HasParty)
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Info"
+                        Message="@($"Pick a {PartyLabel.ToLowerInvariant()} and run the statement to see their open items.")"
+                        ShowIcon="true" />
+        }
+        else
+        {
+            <article class="citus-subpanel">
+                <header class="citus-subpanel__header">
+                    <div>
+                        <h3 class="citus-subpanel__title">@PartyName</h3>
+                        <div class="text-fg-subtle text-xs">Statement of open items as of @AsOfText</div>
+                    </div>
+                    <CitusBadge Color="@(OutstandingTotal > 0m ? "blue" : "green")">
+                        @($"{ReportFormat.Amount(OutstandingTotal)} {BaseCurrencyCode}")
+                    </CitusBadge>
+                </header>
+
+                @if (Party is null || Items is null || Items.Count == 0)
+                {
+                    <p class="text-fg-muted text-sm">No open items for @PartyName as of @AsOfText — the balance is zero.</p>
+                }
+                else
+                {
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                        <CitusStatCard Label="Current" Value="@ReportFormat.Amount(Party.Current)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
+                        <CitusStatCard Label="1-30" Value="@ReportFormat.Amount(Party.Days1To30)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                        <CitusStatCard Label="31-60" Value="@ReportFormat.Amount(Party.Days31To60)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                        <CitusStatCard Label="61-90" Value="@ReportFormat.Amount(Party.Days61To90)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                        <CitusStatCard Label="> 90" Value="@ReportFormat.Amount(Party.DaysOver90)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
+                        <CitusStatCard Label="Total" Value="@ReportFormat.Amount(Party.TotalOutstanding)" Description="Open balance" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
+                    </div>
+
+                    <table class="citus-data-table citus-data-table--compact">
+                        <thead>
+                            <tr>
+                                <th>Document</th>
+                                <th>Doc date</th>
+                                <th>Due date</th>
+                                <th class="text-right">Days past due</th>
+                                <th>Bucket</th>
+                                <th class="text-right">Open amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in Items)
+                            {
+                                <tr>
+                                    <td>
+                                        @{ var href = ReportFormat.DocumentHref(row.SourceType, row.SourceDocumentId); }
+                                        @if (href is not null)
+                                        {
+                                            <a class="citus-link" href="@href">@row.DisplayNumber</a>
+                                        }
+                                        else
+                                        {
+                                            <span>@row.DisplayNumber</span>
+                                        }
+                                    </td>
+                                    <td>@row.DocumentDate.ToString("yyyy-MM-dd")</td>
+                                    <td>@(row.DueDate is null ? "No due date" : row.DueDate.Value.ToString("yyyy-MM-dd"))</td>
+                                    <td class="text-right">@(row.DueDate is null ? "—" : Math.Max(0, row.DaysPastDue).ToString())</td>
+                                    <td>@ReportFormat.AgingBucket(row.AgingBucket)</td>
+                                    <td class="text-right">
+                                        @ReportFormat.Amount(row.SignedOpenAmountBase)
+                                        @if (!string.Equals(row.DocumentCurrencyCode, BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span class="text-fg-subtle text-xs"> (@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode)</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            <tr class="citus-data-table__total">
+                                <td colspan="5">Total open balance</td>
+                                <td class="text-right">@ReportFormat.Amount(OutstandingTotal)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                }
+            </article>
+        }
+    </Body>
+</ReportShell>
+
+@code {
+    [Parameter] public RenderFragment? Controls { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public bool HasParty { get; set; }
+    [Parameter] public string PartyLabel { get; set; } = "Party";
+    [Parameter] public string PartyName { get; set; } = string.Empty;
+    [Parameter] public string BaseCurrencyCode { get; set; } = string.Empty;
+    [Parameter] public DateTime? AsOfDate { get; set; }
+    [Parameter] public AgingPartyRow? Party { get; set; }
+    [Parameter] public IReadOnlyList<AgingOpenItemRow>? Items { get; set; }
+
+    private string AsOfText => (AsOfDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+    private decimal OutstandingTotal => Party?.TotalOutstanding ?? 0m;
+}

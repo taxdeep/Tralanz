@@ -6,9 +6,9 @@ namespace Citus.Business.Blazor.Components.Features.Reports;
 /// Neutral, presentation-only view model for A/R and A/P aging. The two
 /// backend DTOs (ArAgingReportSummary / ApAgingReportSummary) carry the same
 /// shape under Customer/Vendor names; <see cref="FromAr"/> / <see cref="FromAp"/>
-/// map either onto this so the shared <c>AgingReport</c> (summary) and
-/// <c>AgingDetailReport</c> components render once. Keeps the shared report
-/// DTOs untouched.
+/// map either onto this so the shared aging components render once. The
+/// per-row mappers are also reused by the open-item statement (which filters
+/// the aging rows to one picked party). Keeps the shared report DTOs untouched.
 /// </summary>
 public sealed record AgingReportView(
     DateOnly AsOfDate,
@@ -37,30 +37,8 @@ public sealed record AgingReportView(
         r.Days31To60AmountBase,
         r.Days61To90AmountBase,
         r.DaysOver90AmountBase,
-        r.CustomerRows.Select(c => new AgingPartyRow(
-            c.CustomerDisplayName,
-            c.CustomerEntityNumber,
-            c.CustomerIsActive,
-            c.OldestDueDate,
-            c.CurrentAmountBase,
-            c.Days1To30AmountBase,
-            c.Days31To60AmountBase,
-            c.Days61To90AmountBase,
-            c.DaysOver90AmountBase,
-            c.TotalOutstandingAmountBase)).ToList(),
-        r.DetailRows.Select(d => new AgingOpenItemRow(
-            d.CustomerDisplayName,
-            d.CustomerEntityNumber,
-            d.DisplayNumber,
-            d.SourceType,
-            d.SourceDocumentId,
-            d.DocumentDate,
-            d.DueDate,
-            d.DaysPastDue,
-            d.AgingBucket,
-            d.SignedOpenAmountBase,
-            d.SignedOpenAmountTx,
-            d.DocumentCurrencyCode)).ToList());
+        r.CustomerRows.Select(PartyRowFromAr).ToList(),
+        r.DetailRows.Select(OpenItemFromAr).ToList());
 
     public static AgingReportView FromAp(ApAgingReportSummary r) => new(
         r.AsOfDate,
@@ -74,30 +52,60 @@ public sealed record AgingReportView(
         r.Days31To60AmountBase,
         r.Days61To90AmountBase,
         r.DaysOver90AmountBase,
-        r.VendorRows.Select(v => new AgingPartyRow(
-            v.VendorDisplayName,
-            v.VendorEntityNumber,
-            v.VendorIsActive,
-            v.OldestDueDate,
-            v.CurrentAmountBase,
-            v.Days1To30AmountBase,
-            v.Days31To60AmountBase,
-            v.Days61To90AmountBase,
-            v.DaysOver90AmountBase,
-            v.TotalOutstandingAmountBase)).ToList(),
-        r.DetailRows.Select(d => new AgingOpenItemRow(
-            d.VendorDisplayName,
-            d.VendorEntityNumber,
-            d.DisplayNumber,
-            d.SourceType,
-            d.SourceDocumentId,
-            d.DocumentDate,
-            d.DueDate,
-            d.DaysPastDue,
-            d.AgingBucket,
-            d.SignedOpenAmountBase,
-            d.SignedOpenAmountTx,
-            d.DocumentCurrencyCode)).ToList());
+        r.VendorRows.Select(PartyRowFromAp).ToList(),
+        r.DetailRows.Select(OpenItemFromAp).ToList());
+
+    public static AgingPartyRow PartyRowFromAr(ArAgingCustomerSummary c) => new(
+        c.CustomerDisplayName,
+        c.CustomerEntityNumber,
+        c.CustomerIsActive,
+        c.OldestDueDate,
+        c.CurrentAmountBase,
+        c.Days1To30AmountBase,
+        c.Days31To60AmountBase,
+        c.Days61To90AmountBase,
+        c.DaysOver90AmountBase,
+        c.TotalOutstandingAmountBase);
+
+    public static AgingOpenItemRow OpenItemFromAr(ArAgingOpenItemSummary d) => new(
+        d.CustomerDisplayName,
+        d.CustomerEntityNumber,
+        d.DisplayNumber,
+        d.SourceType,
+        d.SourceDocumentId,
+        d.DocumentDate,
+        d.DueDate,
+        d.DaysPastDue,
+        d.AgingBucket,
+        d.SignedOpenAmountBase,
+        d.SignedOpenAmountTx,
+        d.DocumentCurrencyCode);
+
+    public static AgingPartyRow PartyRowFromAp(ApAgingVendorSummary v) => new(
+        v.VendorDisplayName,
+        v.VendorEntityNumber,
+        v.VendorIsActive,
+        v.OldestDueDate,
+        v.CurrentAmountBase,
+        v.Days1To30AmountBase,
+        v.Days31To60AmountBase,
+        v.Days61To90AmountBase,
+        v.DaysOver90AmountBase,
+        v.TotalOutstandingAmountBase);
+
+    public static AgingOpenItemRow OpenItemFromAp(ApAgingOpenItemSummary d) => new(
+        d.VendorDisplayName,
+        d.VendorEntityNumber,
+        d.DisplayNumber,
+        d.SourceType,
+        d.SourceDocumentId,
+        d.DocumentDate,
+        d.DueDate,
+        d.DaysPastDue,
+        d.AgingBucket,
+        d.SignedOpenAmountBase,
+        d.SignedOpenAmountTx,
+        d.DocumentCurrencyCode);
 }
 
 public sealed record AgingPartyRow(

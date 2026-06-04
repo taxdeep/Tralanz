@@ -44,11 +44,17 @@ else
             case "ar-aging-detail":
                 <ArAgingReport Detail="true" />
                 break;
+            case "customer-statement":
+                <CustomerStatementReport />
+                break;
             case "ap-aging-summary":
                 <ApAgingReport />
                 break;
             case "ap-aging-detail":
                 <ApAgingReport Detail="true" />
+                break;
+            case "vendor-statement":
+                <VendorStatementReport />
                 break;
             default:
                 <CitusAlert Severity="CitusAlertSeverity.Warning"
