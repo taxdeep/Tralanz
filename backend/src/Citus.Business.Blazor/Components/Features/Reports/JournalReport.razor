@@ -46,6 +46,7 @@
                                     <th>Date</th>
                                     <th>Type</th>
                                     <th>Reference#</th>
+                                    <th>Name</th>
                                     <th>Description</th>
                                     <th>Account #</th>
                                     <th>Account</th>
@@ -70,6 +71,7 @@
                                                 <span>@line.ReferenceNumber</span>
                                             }
                                         </td>
+                                        <td>@line.PartyName</td>
                                         <td>@line.Description</td>
                                         <td><span class="citus-inline-code">@line.AccountCode</span></td>
                                         <td>@line.AccountName</td>
@@ -78,7 +80,7 @@
                                     </tr>
                                 }
                                 <tr class="citus-data-table__total">
-                                    <td colspan="6">@($"Total for {first.InternalNumber}")</td>
+                                    <td colspan="7">@($"Total for {first.InternalNumber}")</td>
                                     <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Debit))</td>
                                     <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Credit))</td>
                                 </tr>

@@ -340,7 +340,13 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         await using var command = scope.CreateCommand(
             """
-            select coalesce(je.entity_number, je.display_number, '') as internal_number,
+            with je_seq as (
+                select id,
+                       'J' || lpad((row_number() over (order by created_at, id))::text, 5, '0') as internal_number
+                from journal_entries
+                where company_id = @company_id
+            )
+            select s.internal_number,
                    je.id as journal_entry_id,
                    je.source_type,
                    je.source_id,
@@ -358,6 +364,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             join journal_entry_lines jel on jel.journal_entry_id = je.id
             join ledger_entries le on le.journal_entry_line_id = jel.id
             join accounts a on a.id = jel.account_id
+            join je_seq s on s.id = je.id
             left join vendors v on jel.party_type = 'vendor' and v.id = jel.party_id
             left join customers c on jel.party_type = 'customer' and c.id = jel.party_id
             left join invoices i on i.id = je.source_id
@@ -372,7 +379,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             where je.company_id = @company_id
               and le.posting_date >= @date_from
               and le.posting_date <= @date_to
-            order by le.posting_date, internal_number, jel.line_number;
+            order by le.posting_date, s.internal_number, jel.line_number;
             """);
 
         command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
