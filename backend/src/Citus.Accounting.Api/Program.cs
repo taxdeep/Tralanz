@@ -4026,6 +4026,132 @@ accounting.MapGet(
         return Results.File(pdf, "application/pdf", $"vendor-statement-{vendor.EntityNumber}-{asOfDate:yyyy-MM-dd}.pdf");
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApAgingView);
 
+// Email a customer statement (PDF attached). Recipient falls back to the
+// customer's email on file when ToEmail is blank. Reuses the invoice SMTP
+// sender (the email request is document-agnostic).
+accounting.MapPost(
+    "/reports/customer-statement/{customerId:guid}/send",
+    async (
+        Guid customerId,
+        [AsParameters] ArAgingLookupQuery query,
+        StatementSendHttpRequest request,
+        ICompanyProfileQuery companyProfileQuery,
+        ICustomerStore customerStore,
+        IAccountingReportRepository repository,
+        IStatementPdfRenderer renderer,
+        IInvoiceEmailSender emailSender,
+        CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var company = await companyProfileQuery.GetByIdAsync(query.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            return Results.NotFound(new { message = "The active company is not provisioned in the accounting core yet." });
+        }
+
+        var customer = await customerStore.GetByIdAsync(query.CompanyId, customerId, cancellationToken);
+        if (customer is null)
+        {
+            return Results.NotFound(new { message = "Customer was not found." });
+        }
+
+        var toEmail = !string.IsNullOrWhiteSpace(request.ToEmail) ? request.ToEmail.Trim() : customer.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(toEmail) || !toEmail.Contains('@', StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { message = "No recipient email — the customer has no email on file. Enter one to send." });
+        }
+
+        var aging = await repository.GetArAgingAsync(new GetArAgingQuery(query.CompanyId, asOfDate), cancellationToken);
+        var balance = aging?.CustomerRows.FirstOrDefault(row => row.CustomerId == customerId);
+        var baseCurrency = aging?.BaseCurrencyCode ?? company.BaseCurrencyCode;
+
+        var model = StatementRenderModelBuilder.BuildForCustomer(company, customer, balance, asOfDate, baseCurrency);
+        var pdf = renderer.Render(model);
+        var composition = StatementEmailComposer.Compose(model, request.Message);
+
+        var emailRequest = new InvoiceEmailRequest(
+            ToEmail: toEmail,
+            ToDisplayName: customer.DisplayName,
+            CcEmails: SplitEmailList(request.Cc),
+            BccEmails: SplitEmailList(request.Bcc),
+            Subject: composition.Subject,
+            HtmlBody: composition.HtmlBody,
+            PlainTextBody: composition.PlainTextBody,
+            AttachmentFileName: $"customer-statement-{customer.EntityNumber}-{asOfDate:yyyy-MM-dd}.pdf",
+            AttachmentBytes: pdf);
+
+        var sendResult = await emailSender.SendAsync(emailRequest, cancellationToken);
+        if (!sendResult.Succeeded)
+        {
+            return Results.UnprocessableEntity(new { succeeded = false, message = sendResult.ErrorMessage ?? "Email delivery failed." });
+        }
+
+        return Results.Ok(new { succeeded = true, toEmail });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArAgingView).RequireRateLimiting("invoice-send");
+
+// Email a vendor statement (mirror of the customer statement send).
+accounting.MapPost(
+    "/reports/vendor-statement/{vendorId:guid}/send",
+    async (
+        Guid vendorId,
+        [AsParameters] ApAgingLookupQuery query,
+        StatementSendHttpRequest request,
+        ICompanyProfileQuery companyProfileQuery,
+        IVendorStore vendorStore,
+        IAccountingReportRepository repository,
+        IStatementPdfRenderer renderer,
+        IInvoiceEmailSender emailSender,
+        CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var company = await companyProfileQuery.GetByIdAsync(query.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            return Results.NotFound(new { message = "The active company is not provisioned in the accounting core yet." });
+        }
+
+        var vendor = await vendorStore.GetByIdAsync(query.CompanyId, vendorId, cancellationToken);
+        if (vendor is null)
+        {
+            return Results.NotFound(new { message = "Vendor was not found." });
+        }
+
+        var toEmail = !string.IsNullOrWhiteSpace(request.ToEmail) ? request.ToEmail.Trim() : vendor.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(toEmail) || !toEmail.Contains('@', StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { message = "No recipient email — the vendor has no email on file. Enter one to send." });
+        }
+
+        var aging = await repository.GetApAgingAsync(new GetApAgingQuery(query.CompanyId, asOfDate), cancellationToken);
+        var balance = aging?.VendorRows.FirstOrDefault(row => row.VendorId == vendorId);
+        var baseCurrency = aging?.BaseCurrencyCode ?? company.BaseCurrencyCode;
+
+        var model = StatementRenderModelBuilder.BuildForVendor(company, vendor, balance, asOfDate, baseCurrency);
+        var pdf = renderer.Render(model);
+        var composition = StatementEmailComposer.Compose(model, request.Message);
+
+        var emailRequest = new InvoiceEmailRequest(
+            ToEmail: toEmail,
+            ToDisplayName: vendor.DisplayName,
+            CcEmails: SplitEmailList(request.Cc),
+            BccEmails: SplitEmailList(request.Bcc),
+            Subject: composition.Subject,
+            HtmlBody: composition.HtmlBody,
+            PlainTextBody: composition.PlainTextBody,
+            AttachmentFileName: $"vendor-statement-{vendor.EntityNumber}-{asOfDate:yyyy-MM-dd}.pdf",
+            AttachmentBytes: pdf);
+
+        var sendResult = await emailSender.SendAsync(emailRequest, cancellationToken);
+        if (!sendResult.Succeeded)
+        {
+            return Results.UnprocessableEntity(new { succeeded = false, message = sendResult.ErrorMessage ?? "Email delivery failed." });
+        }
+
+        return Results.Ok(new { succeeded = true, toEmail });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApAgingView).RequireRateLimiting("invoice-send");
+
 // ---------------------------------------------------------------------------
 // Sales Overview — Cash Flow band (10 past + current + 3 forecast months)
 // and Income Over Time (accrual-basis revenue chart). Both pull from the

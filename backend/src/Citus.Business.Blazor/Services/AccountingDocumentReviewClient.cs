@@ -99,6 +99,51 @@ public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogge
         }
     }
 
+    public Task<StatementSendOutcome> SendCustomerStatementAsync(
+        CompanyId companyId,
+        Guid customerId,
+        DateOnly asOfDate,
+        StatementSendRequest request,
+        CancellationToken cancellationToken = default) =>
+        PostStatementSendAsync(
+            $"accounting/reports/customer-statement/{customerId:D}/send?companyId={companyId:D}&asOfDate={asOfDate:yyyy-MM-dd}",
+            request,
+            cancellationToken);
+
+    public Task<StatementSendOutcome> SendVendorStatementAsync(
+        CompanyId companyId,
+        Guid vendorId,
+        DateOnly asOfDate,
+        StatementSendRequest request,
+        CancellationToken cancellationToken = default) =>
+        PostStatementSendAsync(
+            $"accounting/reports/vendor-statement/{vendorId:D}/send?companyId={companyId:D}&asOfDate={asOfDate:yyyy-MM-dd}",
+            request,
+            cancellationToken);
+
+    private async Task<StatementSendOutcome> PostStatementSendAsync(
+        string requestUri,
+        StatementSendRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            var body = await response.Content.ReadFromJsonAsync<StatementSendBody>(cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new StatementSendOutcome(true, null, body?.ToEmail);
+            }
+
+            return new StatementSendOutcome(false, body?.Message ?? $"Server returned {(int)response.StatusCode}.", null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to send statement to {RequestUri}.", requestUri);
+            return new StatementSendOutcome(false, ex.Message, null);
+        }
+    }
+
     public async Task<InvoiceSendOutcome> SendInvoiceAsync(
         CompanyId companyId,
         Guid invoiceId,

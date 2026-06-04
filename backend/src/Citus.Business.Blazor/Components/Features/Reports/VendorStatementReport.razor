@@ -38,8 +38,27 @@
         <CitusButton LeadingIcon="IconName.Download" Disabled="@(_isDownloadingPdf || !_partyId.HasValue)" OnClick="DownloadPdfAsync">
             @(_isDownloadingPdf ? "Generating…" : "Download PDF")
         </CitusButton>
+        <CitusButton Disabled="@(!_partyId.HasValue)" OnClick="@(() => _showSend = !_showSend)">
+            Send statement
+        </CitusButton>
     </Controls>
 </StatementReport>
+
+@if (_sentTo is not null && !_showSend)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Success" Message="@($"Statement emailed to {_sentTo}.")" ShowIcon="true" Class="mt-4" />
+}
+
+@if (_showSend && _partyId.HasValue)
+{
+    <div class="mt-4">
+        <StatementSendForm ToPlaceholder="Defaults to the vendor's email on file"
+                           IsSending="_isSending"
+                           Error="@_sendError"
+                           OnSend="DoSendAsync"
+                           OnCancel="@(() => _showSend = false)" />
+    </div>
+}
 
 @code {
     private Guid? _partyId;
@@ -48,9 +67,40 @@
     private DateTime? _asOfDate = DateTime.Today;
     private bool _isLoading;
     private bool _isDownloadingPdf;
+    private bool _showSend;
+    private bool _isSending;
+    private string? _sendError;
+    private string? _sentTo;
     private string? _error;
     private AgingPartyRow? _party;
     private IReadOnlyList<AgingOpenItemRow>? _items;
+
+    private async Task DoSendAsync(StatementSendRequest request)
+    {
+        if (!_partyId.HasValue || _isSending)
+        {
+            return;
+        }
+
+        _isSending = true;
+        _sendError = null;
+        try
+        {
+            var outcome = await ReviewClient.SendVendorStatementAsync(ShellState.ActiveCompany.Id, _partyId.Value, AsOf(), request);
+            if (!outcome.Succeeded)
+            {
+                _sendError = outcome.ErrorMessage ?? "Email delivery failed.";
+                return;
+            }
+
+            _sentTo = outcome.ToEmail;
+            _showSend = false;
+        }
+        finally
+        {
+            _isSending = false;
+        }
+    }
 
     private DateOnly AsOf() => DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date);
 

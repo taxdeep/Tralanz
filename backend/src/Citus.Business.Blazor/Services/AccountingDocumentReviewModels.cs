@@ -18,6 +18,22 @@ internal sealed record InvoiceSendOutcomeBody(
     string? Message,
     DateTimeOffset? SentAt);
 
+public sealed record StatementSendRequest(
+    string? ToEmail,
+    string? Cc,
+    string? Bcc,
+    string? Message);
+
+public sealed record StatementSendOutcome(
+    bool Succeeded,
+    string? ErrorMessage,
+    string? ToEmail);
+
+internal sealed record StatementSendBody(
+    bool Succeeded,
+    string? Message,
+    string? ToEmail);
+
 public sealed record InvoiceSendHistoryEntry(
     Guid Id,
     DateTimeOffset SentAt,

@@ -24,6 +24,14 @@ public sealed record ApAgingLookupQuery(
     CompanyId CompanyId,
     DateOnly? AsOfDate = null);
 
+// Body for the statement-send endpoints. ToEmail is optional — blank falls
+// back to the party's email on file.
+public sealed record StatementSendHttpRequest(
+    string? ToEmail,
+    string? Cc,
+    string? Bcc,
+    string? Message);
+
 public sealed record SalesCashFlowLookupQuery(
     CompanyId CompanyId,
     DateOnly? AsOfDate = null);

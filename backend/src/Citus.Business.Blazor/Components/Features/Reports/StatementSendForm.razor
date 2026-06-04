@@ -1,0 +1,76 @@
+@* Shared compose-and-send form for emailing a statement. The Customer/Vendor
+   statement wrappers toggle it and handle OnSend (which posts to the send
+   endpoint). The PDF is attached server-side. *@
+
+<CitusFormSection Title="Email statement" Class="mb-4">
+    <ChildContent>
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@Error" ShowIcon="true" Class="mb-3" />
+        }
+
+        <CitusFormGrid Columns="2">
+            <CitusFormField Label="To">
+                <input type="email"
+                       class="citus-form-field__input"
+                       placeholder="@ToPlaceholder"
+                       value="@_to"
+                       @oninput="@(e => _to = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@IsSending" />
+            </CitusFormField>
+            <CitusFormField Label="CC (optional, comma-separated)">
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="cfo@example.com, ops@example.com"
+                       value="@_cc"
+                       @oninput="@(e => _cc = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@IsSending" />
+            </CitusFormField>
+            <CitusFormField Label="BCC (optional)">
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="archive@yourcompany.com"
+                       value="@_bcc"
+                       @oninput="@(e => _bcc = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@IsSending" />
+            </CitusFormField>
+            <CitusFormField Label="Message (optional)" Class="md:col-span-2">
+                <textarea class="citus-form-field__input"
+                          rows="4"
+                          placeholder="Anything you want the recipient to read in the email body. The open balance + the PDF are included automatically."
+                          @oninput="@(e => _message = e.Value?.ToString() ?? string.Empty)"
+                          disabled="@IsSending">@_message</textarea>
+            </CitusFormField>
+        </CitusFormGrid>
+
+        <div class="flex items-center gap-3 mt-4">
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@IsSending" OnClick="SubmitAsync">
+                @(IsSending ? "Sending…" : "Send email")
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@IsSending" OnClick="OnCancel">
+                Cancel
+            </CitusButton>
+            <span class="text-fg-subtle text-xs ml-auto">The statement PDF is attached automatically.</span>
+        </div>
+    </ChildContent>
+</CitusFormSection>
+
+@code {
+    [Parameter] public string ToPlaceholder { get; set; } = "recipient@example.com";
+    [Parameter] public bool IsSending { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback<StatementSendRequest> OnSend { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string _to = string.Empty;
+    private string _cc = string.Empty;
+    private string _bcc = string.Empty;
+    private string _message = string.Empty;
+
+    private async Task SubmitAsync() =>
+        await OnSend.InvokeAsync(new StatementSendRequest(
+            NullIfBlank(_to), NullIfBlank(_cc), NullIfBlank(_bcc), NullIfBlank(_message)));
+
+    private static string? NullIfBlank(string value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
