@@ -3868,6 +3868,49 @@ accounting.MapGet(
         return ToCsvFileResult(file);
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsExport);
 
+// Journal report — every posted debit/credit line in a date range, grouped
+// by journal entry in the UI.
+accounting.MapGet(
+    "/reports/journal",
+    async ([AsParameters] JournalLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    {
+        var dateTo = query.DateTo ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var dateFrom = query.DateFrom ?? new DateOnly(dateTo.Year, dateTo.Month, 1);
+
+        var report = await repository.GetJournalReportAsync(
+            new GetJournalReportQuery(query.CompanyId, dateFrom, dateTo),
+            cancellationToken);
+
+        if (report is null)
+        {
+            return Results.NotFound(new { message = "The active company is not provisioned in the accounting core yet." });
+        }
+
+        return Results.Ok(new JournalReportSummary
+        {
+            DateFrom = report.DateFrom,
+            DateTo = report.DateTo,
+            BaseCurrencyCode = report.BaseCurrencyCode,
+            EntryCount = report.EntryCount,
+            LineCount = report.LineCount,
+            TotalDebit = report.TotalDebit,
+            TotalCredit = report.TotalCredit,
+            IsBalanced = report.IsBalanced,
+            Lines = report.Lines.Select(line => new JournalReportLineSummary
+            {
+                JournalNumber = line.JournalNumber,
+                SourceType = line.SourceType,
+                PostingDate = line.PostingDate,
+                PartyName = line.PartyName,
+                Description = line.Description,
+                AccountCode = line.AccountCode,
+                AccountName = line.AccountName,
+                Debit = line.Debit,
+                Credit = line.Credit
+            }).ToList()
+        });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ReportsView);
+
 accounting.MapGet(
     "/reports/ar-aging",
     async ([AsParameters] ArAgingLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>

@@ -34,6 +34,8 @@ public static class ReportCatalog
             "Assets, liabilities, and equity as of a cut-off date."),
         new ReportDefinition("trial-balance", "Trial Balance", BusinessOverview,
             "Debit and credit balance per account as of a date."),
+        new ReportDefinition("journal", "Journal", BusinessOverview,
+            "Every posted debit and credit line in a date range, grouped by entry."),
         new ReportDefinition("ar-aging-summary", "A/R Aging Summary", WhoOwesYou,
             "Customer receivables grouped by aging bucket."),
         new ReportDefinition("ar-aging-detail", "A/R Aging Detail", WhoOwesYou,

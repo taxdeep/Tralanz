@@ -1308,6 +1308,10 @@ public interface IAccountingReportRepository
         GetApAgingQuery query,
         CancellationToken cancellationToken);
 
+    Task<JournalReport?> GetJournalReportAsync(
+        GetJournalReportQuery query,
+        CancellationToken cancellationToken);
+
     Task<SalesCashFlowReport?> GetSalesCashFlowAsync(
         GetSalesCashFlowQuery query,
         CancellationToken cancellationToken);

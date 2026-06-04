@@ -92,6 +92,13 @@ builder.Services.AddHttpClient<IncomeStatementClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<JournalReportClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<BalanceSheetClient>(
         (serviceProvider, client) =>
         {

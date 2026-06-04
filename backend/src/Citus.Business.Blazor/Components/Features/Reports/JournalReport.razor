@@ -1,0 +1,126 @@
+@using Citus.Ui.Shared.Reports
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject JournalReportClient JournalReportClient
+
+<ReportShell IsLoading="_isLoading" Error="@_error">
+    <Controls>
+        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dateFrom" Placeholder="@("From")" />
+        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dateTo" Placeholder="@("To")" />
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+            Run Journal
+        </CitusButton>
+    </Controls>
+    <Body>
+        @if (_report is not null)
+        {
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <CitusStatCard Label="Entries" Value="@_report.EntryCount.ToString()" Description="@($"{_report.LineCount} lines · {_report.DateFrom:yyyy-MM-dd} to {_report.DateTo:yyyy-MM-dd}")" Icon="IconName.FileText" Tone="StatTone.Info" />
+                <CitusStatCard Label="Total debit" Value="@ReportFormat.Amount(_report.TotalDebit)" Description="@($"Base currency {_report.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Success" />
+                <CitusStatCard Label="Total credit" Value="@ReportFormat.Amount(_report.TotalCredit)" Description="@($"Base currency {_report.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Warning" />
+                <CitusStatCard Label="Balance check" Value="@(_report.IsBalanced ? "Balanced" : "Out of balance")" Description="Debits should equal credits." Icon="IconName.CircleCheck" Tone="@(_report.IsBalanced ? StatTone.Success : StatTone.Danger)" />
+            </div>
+
+            @if (_report.LineCount == 0)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" Message="@($"No journal entries were posted between {_report.DateFrom:yyyy-MM-dd} and {_report.DateTo:yyyy-MM-dd}.")" ShowIcon="true" />
+            }
+            else
+            {
+                @foreach (var group in _report.Lines.GroupBy(static line => line.JournalNumber))
+                {
+                    var first = group.First();
+                    <article class="citus-subpanel">
+                        <header class="citus-subpanel__header">
+                            <h3 class="citus-subpanel__title">@first.JournalNumber</h3>
+                            <span class="text-fg-subtle text-xs">@FriendlyType(first.SourceType) · @first.PostingDate.ToString("yyyy-MM-dd")</span>
+                        </header>
+                        <table class="citus-data-table citus-data-table--compact">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th>Account #</th>
+                                    <th>Account</th>
+                                    <th class="text-right">Debit</th>
+                                    <th class="text-right">Credit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var line in group)
+                                {
+                                    <tr>
+                                        <td>@line.PostingDate.ToString("yyyy-MM-dd")</td>
+                                        <td>@FriendlyType(line.SourceType)</td>
+                                        <td>@line.PartyName</td>
+                                        <td>@line.Description</td>
+                                        <td><span class="citus-inline-code">@line.AccountCode</span></td>
+                                        <td>@line.AccountName</td>
+                                        <td class="text-right">@(line.Debit == 0m ? "" : ReportFormat.Amount(line.Debit))</td>
+                                        <td class="text-right">@(line.Credit == 0m ? "" : ReportFormat.Amount(line.Credit))</td>
+                                    </tr>
+                                }
+                                <tr class="citus-data-table__total">
+                                    <td colspan="6">@($"Total for {first.JournalNumber}")</td>
+                                    <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Debit))</td>
+                                    <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Credit))</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </article>
+                }
+            }
+        }
+    </Body>
+</ReportShell>
+
+@code {
+    private JournalReportSummary? _report;
+    private bool _isLoading;
+    private string? _error;
+    private DateTime? _dateFrom = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _dateTo = DateTime.Today;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+
+        var dateFrom = DateOnly.FromDateTime((_dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date);
+        var dateTo = DateOnly.FromDateTime((_dateTo ?? DateTime.Today).Date);
+
+        if (dateFrom > dateTo)
+        {
+            _report = null;
+            _error = "Journal date range is invalid. The start date must be on or before the end date.";
+            _isLoading = false;
+            return;
+        }
+
+        var report = await JournalReportClient.GetReportAsync(ShellState.ActiveCompany.Id, dateFrom, dateTo);
+
+        if (report is null)
+        {
+            _report = null;
+            _error = "Journal is unavailable until the active company is provisioned in the accounting core and ledger data exists.";
+        }
+        else
+        {
+            _report = report;
+        }
+
+        _isLoading = false;
+    }
+
+    private static string FriendlyType(string sourceType) => sourceType switch
+    {
+        "manual_journal" => "Journal Entry",
+        _ => System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(sourceType.Replace('_', ' '))
+    };
+}

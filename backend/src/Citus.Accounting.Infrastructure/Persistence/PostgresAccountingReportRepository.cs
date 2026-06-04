@@ -319,6 +319,73 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             rows);
     }
 
+    public async Task<JournalReport?> GetJournalReportAsync(
+        GetJournalReportQuery query,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(scope, query.CompanyId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(baseCurrencyCode))
+        {
+            return null;
+        }
+
+        var lines = new List<JournalReportLine>();
+
+        await using var command = scope.CreateCommand(
+            """
+            select coalesce(je.display_number, je.entity_number, '') as journal_number,
+                   je.source_type,
+                   le.posting_date,
+                   coalesce(v.display_name, c.display_name, '') as party_name,
+                   jel.description,
+                   a.code as account_code,
+                   a.name as account_name,
+                   jel.debit,
+                   jel.credit
+            from journal_entries je
+            join journal_entry_lines jel on jel.journal_entry_id = je.id
+            join ledger_entries le on le.journal_entry_line_id = jel.id
+            join accounts a on a.id = jel.account_id
+            left join vendors v on jel.party_type = 'vendor' and v.id = jel.party_id
+            left join customers c on jel.party_type = 'customer' and c.id = jel.party_id
+            where je.company_id = @company_id
+              and le.posting_date >= @date_from
+              and le.posting_date <= @date_to
+            order by le.posting_date, journal_number, jel.line_number;
+            """);
+
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+        command.Parameters.AddWithValue("date_from", query.DateFrom);
+        command.Parameters.AddWithValue("date_to", query.DateTo);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var descriptionOrdinal = reader.GetOrdinal("description");
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            lines.Add(JournalReportLine.Create(
+                reader.GetString(reader.GetOrdinal("journal_number")),
+                reader.GetString(reader.GetOrdinal("source_type")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
+                reader.GetString(reader.GetOrdinal("party_name")),
+                reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal),
+                reader.GetString(reader.GetOrdinal("account_code")),
+                reader.GetString(reader.GetOrdinal("account_name")),
+                reader.GetFieldValue<decimal>(reader.GetOrdinal("debit")),
+                reader.GetFieldValue<decimal>(reader.GetOrdinal("credit"))));
+        }
+
+        return JournalReport.Create(query.CompanyId, query.DateFrom, query.DateTo, baseCurrencyCode, lines);
+    }
+
     public async Task<BalanceSheetReport?> GetBalanceSheetAsync(
         GetBalanceSheetQuery query,
         CancellationToken cancellationToken)

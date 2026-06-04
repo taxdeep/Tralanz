@@ -21,6 +21,11 @@ public sealed record ArAgingLookupQuery(
     CompanyId CompanyId,
     DateOnly? AsOfDate = null);
 
+public sealed record JournalLookupQuery(
+    CompanyId CompanyId,
+    DateOnly? DateFrom = null,
+    DateOnly? DateTo = null);
+
 public sealed record ApAgingLookupQuery(
     CompanyId CompanyId,
     DateOnly? AsOfDate = null);
