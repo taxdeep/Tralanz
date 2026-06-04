@@ -36,8 +36,12 @@ public static class ReportCatalog
             "Debit and credit balance per account as of a date."),
         new ReportDefinition("ar-aging-summary", "A/R Aging Summary", WhoOwesYou,
             "Customer receivables grouped by aging bucket."),
+        new ReportDefinition("ar-aging-detail", "A/R Aging Detail", WhoOwesYou,
+            "Every open receivable listed under its customer, with per-document aging."),
         new ReportDefinition("ap-aging-summary", "A/P Aging Summary", WhatYouOwe,
             "Vendor payables grouped by aging bucket."),
+        new ReportDefinition("ap-aging-detail", "A/P Aging Detail", WhatYouOwe,
+            "Every open payable listed under its vendor, with per-document aging."),
     };
 
     public static ReportDefinition? ByKey(string? key) =>

@@ -4,20 +4,38 @@
 @inject ApAgingClient ApAgingClient
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
-<AgingReport View="_view"
-             IsLoading="_isLoading"
-             IsExporting="_isExporting"
-             Error="_error"
-             RunLabel="Run A/P Aging"
-             PartyLabel="Vendor"
-             PartyCountLabel="Vendors"
-             ChartTitle="Open AP"
-             EmptyMessage="@_emptyMessage"
-             @bind-AsOfDate="_asOfDate"
-             OnRun="LoadAsync"
-             OnExport="ExportAsync" />
+@if (Detail)
+{
+    <AgingDetailReport View="_view"
+                       IsLoading="_isLoading"
+                       IsExporting="_isExporting"
+                       Error="_error"
+                       RunLabel="Run A/P Aging Detail"
+                       PartyLabel="Vendor"
+                       EmptyMessage="@_emptyMessage"
+                       @bind-AsOfDate="_asOfDate"
+                       OnRun="LoadAsync"
+                       OnExport="ExportAsync" />
+}
+else
+{
+    <AgingReport View="_view"
+                 IsLoading="_isLoading"
+                 IsExporting="_isExporting"
+                 Error="_error"
+                 RunLabel="Run A/P Aging"
+                 PartyLabel="Vendor"
+                 PartyCountLabel="Vendors"
+                 ChartTitle="Open AP"
+                 EmptyMessage="@_emptyMessage"
+                 @bind-AsOfDate="_asOfDate"
+                 OnRun="LoadAsync"
+                 OnExport="ExportAsync" />
+}
 
 @code {
+    [Parameter] public bool Detail { get; set; }
+
     private AgingReportView? _view;
     private bool _isLoading;
     private bool _isExporting;
@@ -43,7 +61,7 @@
         }
         else
         {
-            _view = MapView(report);
+            _view = AgingReportView.FromAp(report);
             _emptyMessage = $"No open payable items were found for this company as of {report.AsOfDate:yyyy-MM-dd}.";
         }
 
@@ -65,41 +83,4 @@
 
         _isExporting = false;
     }
-
-    private static AgingReportView MapView(ApAgingReportSummary r) => new(
-        r.AsOfDate,
-        r.BaseCurrencyCode,
-        r.VendorCount,
-        r.OpenItemCount,
-        r.TotalOutstandingAmountBase,
-        r.TotalOverdueAmountBase,
-        r.CurrentAmountBase,
-        r.Days1To30AmountBase,
-        r.Days31To60AmountBase,
-        r.Days61To90AmountBase,
-        r.DaysOver90AmountBase,
-        r.VendorRows.Select(v => new AgingPartyRow(
-            v.VendorDisplayName,
-            v.VendorEntityNumber,
-            v.VendorIsActive,
-            v.OldestDueDate,
-            v.CurrentAmountBase,
-            v.Days1To30AmountBase,
-            v.Days31To60AmountBase,
-            v.Days61To90AmountBase,
-            v.DaysOver90AmountBase,
-            v.TotalOutstandingAmountBase)).ToList(),
-        r.DetailRows.Select(d => new AgingOpenItemRow(
-            d.VendorDisplayName,
-            d.VendorEntityNumber,
-            d.DisplayNumber,
-            d.SourceType,
-            d.SourceDocumentId,
-            d.DocumentDate,
-            d.DueDate,
-            d.DaysPastDue,
-            d.AgingBucket,
-            d.SignedOpenAmountBase,
-            d.SignedOpenAmountTx,
-            d.DocumentCurrencyCode)).ToList());
 }
