@@ -14,6 +14,7 @@
             <RadzenCheckBox @bind-Value="_includeZeroRows" /> Include zero-balance accounts
         </label>
         <RadzenDropDown TValue="string" @bind-Value="_basis" Data="@_basisOptions" Style="width: 9rem" />
+        <RadzenDropDown TValue="string" @bind-Value="_compare" Data="@_compareOptions" Style="width: 11rem" />
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isLoading" OnClick="LoadAsync">
             Run Profit and Loss
         </CitusButton>
@@ -26,13 +27,17 @@
 {
     <p class="text-fg-subtle text-xs mb-3">Cash basis — invoiced/billed amounts are recognised as their payments are received/paid; direct expenses and manual entries stay at their posting date.</p>
 }
+@if (_incomeStatement is not null && _comparison is not null)
+{
+    <p class="text-fg-subtle text-xs mb-3">Comparison column: @_compare (@_comparisonRangeLabel).</p>
+}
 @if (_incomeStatement is not null)
 {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <CitusStatCard Label="Revenue" Value="@ReportFormat.Amount(_incomeStatement.TotalRevenue)" Description="@($"Range {_incomeStatement.DateFrom:yyyy-MM-dd} to {_incomeStatement.DateTo:yyyy-MM-dd}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Success" />
         <CitusStatCard Label="Gross profit" Value="@ReportFormat.Amount(_incomeStatement.GrossProfit)" Description="@($"After cost of sales in {_incomeStatement.BaseCurrencyCode}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
         <CitusStatCard Label="Expenses" Value="@ReportFormat.Amount(_incomeStatement.TotalExpenses)" Description="Operating expense accounts in the selected range." Icon="IconName.Wallet" Tone="StatTone.Warning" />
-        <CitusStatCard Label="Net income" Value="@ReportFormat.Amount(_incomeStatement.NetIncome)" Description="@($"Company base currency {_incomeStatement.BaseCurrencyCode}")" Icon="IconName.BuildingBank" Tone="@(_incomeStatement.NetIncome >= 0m ? StatTone.Success : StatTone.Danger)" />
+        <CitusStatCard Label="Net income" Value="@ReportFormat.Amount(_incomeStatement.NetIncome)" Description="@(_comparison is null ? $"Company base currency {_incomeStatement.BaseCurrencyCode}" : $"vs {ReportFormat.Amount(_comparison.NetIncome)} ({_compare})")" Icon="IconName.BuildingBank" Tone="@(_incomeStatement.NetIncome >= 0m ? StatTone.Success : StatTone.Danger)" />
     </div>
 
     @if (_incomeStatement.AccountCount == 0)
@@ -46,10 +51,17 @@
             <article class="citus-subpanel">
                 <header class="citus-subpanel__header">
                     <h3 class="citus-subpanel__title">@reportSection.Title</h3>
-                    <CitusBadge Color="@TagColor(reportSection.Tone)">@ReportFormat.Amount(reportSection.Total)</CitusBadge>
+                    <div class="flex items-center gap-2">
+                        <CitusBadge Color="@TagColor(reportSection.Tone)">@ReportFormat.Amount(reportSection.Total)</CitusBadge>
+                        @if (_comparison is not null)
+                        {
+                            <span class="text-fg-subtle text-xs">vs @ReportFormat.Amount(reportSection.ComparisonTotal)</span>
+                        }
+                    </div>
                 </header>
 
-                @if (reportSection.Rows.Count == 0)
+                @{ var mergedRows = MergeRows(reportSection.Rows, _comparison is null ? null : reportSection.ComparisonRows); }
+                @if (mergedRows.Count == 0)
                 {
                     <p class="text-fg-muted text-sm">No accounts in this section for the selected range.</p>
                 }
@@ -57,15 +69,29 @@
                 {
                     <table class="citus-data-table citus-data-table--compact">
                         <thead>
-                            <tr><th>Code</th><th>Account</th><th class="text-right">Amount</th></tr>
+                            <tr>
+                                <th>Code</th>
+                                <th>Account</th>
+                                <th class="text-right">Amount</th>
+                                @if (_comparison is not null)
+                                {
+                                    <th class="text-right">@_compare</th>
+                                    <th class="text-right">Change</th>
+                                }
+                            </tr>
                         </thead>
                         <tbody>
-                            @foreach (var row in reportSection.Rows)
+                            @foreach (var row in mergedRows)
                             {
                                 <tr>
                                     <td><span class="citus-inline-code">@row.Code</span></td>
                                     <td>@row.Name</td>
-                                    <td class="text-right">@ReportFormat.Amount(row.DisplayAmount)</td>
+                                    <td class="text-right">@ReportFormat.Amount(row.Current)</td>
+                                    @if (_comparison is not null)
+                                    {
+                                        <td class="text-right">@ReportFormat.Amount(row.Comparison)</td>
+                                        <td class="text-right">@ReportFormat.Amount(row.Current - row.Comparison)</td>
+                                    }
                                 </tr>
                             }
                         </tbody>
@@ -80,11 +106,15 @@
 
 @code {
     private IncomeStatementReportSummary? _incomeStatement;
+    private IncomeStatementReportSummary? _comparison;
+    private string _comparisonRangeLabel = string.Empty;
     private bool _isLoading;
     private bool _isExporting;
     private bool _includeZeroRows;
     private string _basis = "Accrual";
     private readonly string[] _basisOptions = { "Accrual", "Cash" };
+    private string _compare = "No comparison";
+    private readonly string[] _compareOptions = { "No comparison", "Previous year", "Previous period" };
     private string? _error;
     private DateTime? _dateFrom = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private DateTime? _dateTo = DateTime.Today;
@@ -102,6 +132,7 @@
         if (dateFrom > dateTo)
         {
             _incomeStatement = null;
+            _comparison = null;
             _error = "Profit and Loss date range is invalid. The start date must be on or before the end date.";
             _isLoading = false;
             return;
@@ -113,11 +144,25 @@
         if (report is null)
         {
             _incomeStatement = null;
+            _comparison = null;
             _error = "Profit and Loss is unavailable until the active company is provisioned in the accounting core and date-range report data exists.";
+            _isLoading = false;
+            return;
+        }
+
+        _incomeStatement = report;
+
+        var comparisonRange = ComparisonRange(dateFrom, dateTo);
+        if (comparisonRange is { } range)
+        {
+            _comparison = await IncomeStatementClient.GetReportAsync(
+                ShellState.ActiveCompany.Id, range.From, range.To, _includeZeroRows, _basis.ToLowerInvariant());
+            _comparisonRangeLabel = $"{range.From:yyyy-MM-dd} to {range.To:yyyy-MM-dd}";
         }
         else
         {
-            _incomeStatement = report;
+            _comparison = null;
+            _comparisonRangeLabel = string.Empty;
         }
 
         _isLoading = false;
@@ -150,7 +195,29 @@
         _isExporting = false;
     }
 
-    private sealed record SectionBlock(string Title, StatTone Tone, decimal Total, IReadOnlyList<IncomeStatementAccountSummary> Rows);
+    private (DateOnly From, DateOnly To)? ComparisonRange(DateOnly from, DateOnly to) => _compare switch
+    {
+        "Previous year" => (from.AddYears(-1), to.AddYears(-1)),
+        "Previous period" => PreviousPeriod(from, to),
+        _ => null
+    };
+
+    private static (DateOnly From, DateOnly To) PreviousPeriod(DateOnly from, DateOnly to)
+    {
+        var spanDays = to.DayNumber - from.DayNumber;
+        var prevTo = from.AddDays(-1);
+        return (prevTo.AddDays(-spanDays), prevTo);
+    }
+
+    private sealed record SectionBlock(
+        string Title,
+        StatTone Tone,
+        decimal Total,
+        decimal ComparisonTotal,
+        IReadOnlyList<IncomeStatementAccountSummary> Rows,
+        IReadOnlyList<IncomeStatementAccountSummary> ComparisonRows);
+
+    private sealed record MergedRow(string Code, string Name, decimal Current, decimal Comparison);
 
     private IEnumerable<SectionBlock> GetSections()
     {
@@ -159,12 +226,40 @@
             return Array.Empty<SectionBlock>();
         }
 
+        var empty = (IReadOnlyList<IncomeStatementAccountSummary>)Array.Empty<IncomeStatementAccountSummary>();
+
         return
         [
-            new SectionBlock("Revenue", StatTone.Success, _incomeStatement.TotalRevenue, _incomeStatement.RevenueRows),
-            new SectionBlock("Cost Of Sales", StatTone.Warning, _incomeStatement.TotalCostOfSales, _incomeStatement.CostOfSalesRows),
-            new SectionBlock("Expenses", StatTone.Info, _incomeStatement.TotalExpenses, _incomeStatement.ExpenseRows)
+            new SectionBlock("Revenue", StatTone.Success, _incomeStatement.TotalRevenue, _comparison?.TotalRevenue ?? 0m, _incomeStatement.RevenueRows, _comparison?.RevenueRows ?? empty),
+            new SectionBlock("Cost Of Sales", StatTone.Warning, _incomeStatement.TotalCostOfSales, _comparison?.TotalCostOfSales ?? 0m, _incomeStatement.CostOfSalesRows, _comparison?.CostOfSalesRows ?? empty),
+            new SectionBlock("Expenses", StatTone.Info, _incomeStatement.TotalExpenses, _comparison?.TotalExpenses ?? 0m, _incomeStatement.ExpenseRows, _comparison?.ExpenseRows ?? empty)
         ];
+    }
+
+    private static IReadOnlyList<MergedRow> MergeRows(
+        IReadOnlyList<IncomeStatementAccountSummary> current,
+        IReadOnlyList<IncomeStatementAccountSummary>? comparison)
+    {
+        var map = new Dictionary<string, MergedRow>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in current)
+        {
+            map[row.Code] = new MergedRow(row.Code, row.Name, row.DisplayAmount, 0m);
+        }
+
+        if (comparison is not null)
+        {
+            foreach (var row in comparison)
+            {
+                map[row.Code] = map.TryGetValue(row.Code, out var existing)
+                    ? existing with { Comparison = row.DisplayAmount }
+                    : new MergedRow(row.Code, row.Name, 0m, row.DisplayAmount);
+            }
+        }
+
+        return map.Values
+            .OrderBy(static r => r.Code, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string TagColor(StatTone tone) => tone switch
