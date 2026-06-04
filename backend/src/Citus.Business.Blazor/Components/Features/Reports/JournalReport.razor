@@ -29,14 +29,14 @@
             }
             else
             {
-                @foreach (var group in _report.Lines.GroupBy(static line => line.JournalNumber))
+                @foreach (var group in _report.Lines.GroupBy(static line => line.JournalEntryId))
                 {
                     var first = group.First();
                     <article class="citus-subpanel">
                         <header class="citus-subpanel__header">
                             <div>
                                 <div class="text-fg-subtle text-xs">Internal #</div>
-                                <h3 class="citus-subpanel__title">@first.JournalNumber</h3>
+                                <h3 class="citus-subpanel__title">@first.InternalNumber</h3>
                             </div>
                             <span class="text-fg-subtle text-xs">@FriendlyType(first.SourceType) · @first.PostingDate.ToString("yyyy-MM-dd")</span>
                         </header>
@@ -60,7 +60,7 @@
                                         <td>@line.PostingDate.ToString("yyyy-MM-dd")</td>
                                         <td>@FriendlyType(line.SourceType)</td>
                                         <td>
-                                            @{ var href = line.SourceId == Guid.Empty || string.IsNullOrEmpty(line.ReferenceNumber) ? null : ReportFormat.DocumentHref(DocType(line.SourceType), line.SourceId); }
+                                            @{ var href = RefHref(line); }
                                             @if (href is not null)
                                             {
                                                 <a class="citus-link" href="@href">@line.ReferenceNumber</a>
@@ -78,7 +78,7 @@
                                     </tr>
                                 }
                                 <tr class="citus-data-table__total">
-                                    <td colspan="6">@($"Total for {first.JournalNumber}")</td>
+                                    <td colspan="6">@($"Total for {first.InternalNumber}")</td>
                                     <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Debit))</td>
                                     <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Credit))</td>
                                 </tr>
@@ -143,4 +143,21 @@
         sourceType.EndsWith("_reversal", StringComparison.OrdinalIgnoreCase)
             ? sourceType[..^"_reversal".Length]
             : sourceType;
+
+    // Where the Reference# links: a manual journal goes to the journal entry
+    // itself; everything else to its source document.
+    private static string? RefHref(JournalReportLineSummary line)
+    {
+        if (string.IsNullOrEmpty(line.ReferenceNumber))
+        {
+            return null;
+        }
+
+        if (string.Equals(line.SourceType, "manual_journal", StringComparison.OrdinalIgnoreCase))
+        {
+            return line.JournalEntryId == Guid.Empty ? null : $"journal-entry/review/{line.JournalEntryId:D}";
+        }
+
+        return line.SourceId == Guid.Empty ? null : ReportFormat.DocumentHref(DocType(line.SourceType), line.SourceId);
+    }
 }

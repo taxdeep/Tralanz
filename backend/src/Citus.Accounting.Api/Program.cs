@@ -3898,7 +3898,8 @@ accounting.MapGet(
             IsBalanced = report.IsBalanced,
             Lines = report.Lines.Select(line => new JournalReportLineSummary
             {
-                JournalNumber = line.JournalNumber,
+                InternalNumber = line.InternalNumber,
+                JournalEntryId = line.JournalEntryId,
                 SourceType = line.SourceType,
                 SourceId = line.SourceId,
                 ReferenceNumber = line.ReferenceNumber,

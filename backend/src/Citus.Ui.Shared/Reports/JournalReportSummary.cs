@@ -28,7 +28,9 @@ public sealed record class JournalReportSummary
 
 public sealed record class JournalReportLineSummary
 {
-    public string JournalNumber { get; init; } = string.Empty;
+    public string InternalNumber { get; init; } = string.Empty;
+
+    public Guid JournalEntryId { get; init; }
 
     public string SourceType { get; init; } = string.Empty;
 

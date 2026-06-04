@@ -340,11 +340,13 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         await using var command = scope.CreateCommand(
             """
-            select coalesce(je.display_number, je.entity_number, '') as journal_number,
+            select coalesce(je.entity_number, je.display_number, '') as internal_number,
+                   je.id as journal_entry_id,
                    je.source_type,
                    je.source_id,
                    coalesce(i.invoice_number, b.bill_number, cn.credit_note_number, vc.vendor_credit_number,
-                            e.expense_number, sr.receipt_number, rr.refund_number, rp.payment_number, pb.payment_number, '') as reference_number,
+                            e.expense_number, sr.receipt_number, rr.refund_number, rp.payment_number, pb.payment_number,
+                            je.display_number, '') as reference_number,
                    le.posting_date,
                    coalesce(v.display_name, c.display_name, '') as party_name,
                    jel.description,
@@ -370,7 +372,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             where je.company_id = @company_id
               and le.posting_date >= @date_from
               and le.posting_date <= @date_to
-            order by le.posting_date, journal_number, jel.line_number;
+            order by le.posting_date, internal_number, jel.line_number;
             """);
 
         command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
@@ -385,7 +387,8 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
         while (await reader.ReadAsync(cancellationToken))
         {
             lines.Add(JournalReportLine.Create(
-                reader.GetString(reader.GetOrdinal("journal_number")),
+                reader.GetString(reader.GetOrdinal("internal_number")),
+                reader.GetGuid(reader.GetOrdinal("journal_entry_id")),
                 reader.GetString(reader.GetOrdinal("source_type")),
                 reader.IsDBNull(sourceIdOrdinal) ? Guid.Empty : reader.GetGuid(sourceIdOrdinal),
                 reader.GetString(reader.GetOrdinal("reference_number")),

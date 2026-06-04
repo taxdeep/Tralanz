@@ -14,7 +14,9 @@ public sealed record class GetJournalReportQuery(
 /// </summary>
 public sealed record class JournalReportLine
 {
-    public string JournalNumber { get; init; } = string.Empty;
+    public string InternalNumber { get; init; } = string.Empty;
+
+    public Guid JournalEntryId { get; init; }
 
     public string SourceType { get; init; } = string.Empty;
 
@@ -37,7 +39,8 @@ public sealed record class JournalReportLine
     public decimal Credit { get; init; }
 
     public static JournalReportLine Create(
-        string journalNumber,
+        string internalNumber,
+        Guid journalEntryId,
         string sourceType,
         Guid sourceId,
         string? referenceNumber,
@@ -50,7 +53,8 @@ public sealed record class JournalReportLine
         decimal credit) =>
         new()
         {
-            JournalNumber = journalNumber.Trim(),
+            InternalNumber = internalNumber.Trim(),
+            JournalEntryId = journalEntryId,
             SourceType = sourceType.Trim(),
             SourceId = sourceId,
             ReferenceNumber = (referenceNumber ?? string.Empty).Trim(),
@@ -105,7 +109,7 @@ public sealed record class JournalReport
             DateFrom = dateFrom,
             DateTo = dateTo,
             BaseCurrencyCode = baseCurrencyCode.Trim().ToUpperInvariant(),
-            EntryCount = rows.Select(static row => row.JournalNumber).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            EntryCount = rows.Select(static row => row.JournalEntryId).Distinct().Count(),
             LineCount = rows.Length,
             TotalDebit = Round6(rows.Sum(static row => row.Debit)),
             TotalCredit = Round6(rows.Sum(static row => row.Credit)),
