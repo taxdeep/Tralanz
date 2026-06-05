@@ -31,15 +31,7 @@
                         EmptyIcon="IconName.FileInvoice"
                         EmptyTitle="No invoices for this company yet"
                         EmptyMessage="Use 'New invoice' to compose one. Posted invoices appear here ordered by document date.">
-        <RadzenDataGrid TItem="InvoiceListRow"
-                        Data="@_invoices"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowColumnResize="true"
-                        AllowPaging="true"
-                        PageSize="50"
-                        FilterMode="FilterMode.Simple"
-                        class="citus-radzen-grid">
+        <CitusDataGrid TItem="InvoiceListRow" Data="@_invoices">
             <Columns>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.DisplayNumber)" Title="Invoice" Width="180px">
                     <Template Context="invoice">
@@ -74,7 +66,7 @@
                     <Template Context="invoice">@invoice.TotalAmount.ToString("N2") @invoice.Currency</Template>
                 </RadzenDataGridColumn>
             </Columns>
-        </RadzenDataGrid>
+        </CitusDataGrid>
     </CitusAsyncBoundary>
     </ChildContent>
 </CitusFormSection>

@@ -1,0 +1,45 @@
+@*
+    CitusDataGrid — thin wrapper over RadzenDataGrid that bakes in the standard
+    Citus list-grid configuration (sorting, column resize, client paging at 50,
+    simple filter mode, the citus-radzen-grid skin). Callers pass Data plus a
+    <Columns> fragment of <RadzenDataGridColumn TItem="..."> exactly as before.
+
+    Why: ~12 list pages repeated the same 6-attribute RadzenDataGrid header.
+    Centralizing it here makes the future server-paging migration (audit P-06 /
+    Batch 5) a single-file change instead of touching every list page.
+*@
+@typeparam TItem
+@using Radzen
+@using Radzen.Blazor
+
+<RadzenDataGrid TItem="TItem"
+                Data="@Data"
+                AllowSorting="@AllowSorting"
+                AllowFiltering="@AllowFiltering"
+                AllowColumnResize="true"
+                AllowPaging="true"
+                PageSize="@PageSize"
+                FilterMode="FilterMode.Simple"
+                class="@CssClass">
+    <Columns>
+        @Columns
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    [Parameter, EditorRequired] public IEnumerable<TItem> Data { get; set; } = default!;
+
+    [Parameter] public RenderFragment? Columns { get; set; }
+
+    [Parameter] public int PageSize { get; set; } = 50;
+
+    [Parameter] public bool AllowSorting { get; set; } = true;
+
+    [Parameter] public bool AllowFiltering { get; set; } = false;
+
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass => string.IsNullOrWhiteSpace(Class)
+        ? "citus-radzen-grid"
+        : $"citus-radzen-grid {Class}";
+}
