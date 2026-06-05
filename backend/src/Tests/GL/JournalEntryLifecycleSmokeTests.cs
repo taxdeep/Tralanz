@@ -1,3 +1,4 @@
+using Citus.Accounting.Infrastructure.Persistence;
 using Engines.FX.FxRateLookup;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Company;
@@ -310,6 +311,118 @@ public sealed class JournalEntryLifecycleSmokeTests
             await CleanupClosedPrimaryBookAsync(fixture.ConnectionFactory, CompanyId, governanceBookId, CancellationToken.None);
             await CleanupFixtureAsync(fixture);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // P0-1 (C1) atomicity. When the lifecycle store runs INSIDE an
+    // accounting unit-of-work (the document-Reverse path), it must join
+    // that transaction — so a failure after the reversal JE is written
+    // rolls EVERYTHING back (no orphan compensation JE, original stays
+    // posted). These two tests drive the ambient path directly: one forces
+    // a mid-flight failure and asserts a full rollback, the other lets the
+    // UoW commit and asserts the reversal landed durably. The pre-existing
+    // ReverseAsync_* tests already cover the standalone (own-connection)
+    // fallback (ambient accessor null).
+    // ------------------------------------------------------------------
+    [SkippableFact]
+    public async Task ReverseInsideFailingUnitOfWork_RollsBackEntireReverse_C1()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            var ambient = new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor();
+            var (unitOfWork, lifecycleStore) = BuildAmbientReverseHarness(ambient);
+
+            // Reverse the posted entry inside a UoW that throws AFTER the
+            // reversal JE + status flip have been written on the ambient tx.
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                unitOfWork.ExecuteAsync<int>(async ct =>
+                {
+                    await lifecycleStore.ReverseAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, ct);
+                    throw new InvalidOperationException("Simulated downstream failure after the reversal JE was written.");
+                }, CancellationToken.None));
+
+            // The original entry must still be posted — the status flip rolled back.
+            var originalReview = await fixture.ReviewStore.GetAsync(CompanyId, fixture.Posted.JournalEntryId, CancellationToken.None);
+            Assert.NotNull(originalReview);
+            Assert.Equal("posted", originalReview!.Status);
+            Assert.Null(originalReview.ReversedAt);
+
+            // And NO compensation reversal JE may have survived the rollback.
+            Assert.Equal(0L, await CountCompensationJournalsAsync(fixture, "manual_journal_reversal"));
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    [SkippableFact]
+    public async Task ReverseInsideCommittingUnitOfWork_CommitsAtomically_C1()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            var ambient = new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor();
+            var (unitOfWork, lifecycleStore) = BuildAmbientReverseHarness(ambient);
+
+            // The outer UoW owns the commit (the store does NOT commit itself
+            // on the ambient path); the reversal must be durably visible after.
+            var lifecycle = await unitOfWork.ExecuteAsync(
+                ct => lifecycleStore.ReverseAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, ct),
+                CancellationToken.None);
+
+            var originalReview = await fixture.ReviewStore.GetAsync(CompanyId, fixture.Posted.JournalEntryId, CancellationToken.None);
+            Assert.NotNull(originalReview);
+            Assert.Equal("reversed", originalReview!.Status);
+            Assert.NotNull(originalReview.ReversedAt);
+
+            var compensationReview = await fixture.ReviewStore.GetAsync(CompanyId, lifecycle.CompensationJournalEntryId, CancellationToken.None);
+            Assert.NotNull(compensationReview);
+            Assert.Equal("manual_journal_reversal", compensationReview!.SourceType);
+            Assert.Equal("posted", compensationReview.Status);
+            Assert.Equal(1L, await CountCompensationJournalsAsync(fixture, "manual_journal_reversal"));
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    // Builds a UoW + lifecycle store that share ONE ambient accessor instance,
+    // so the store joins the UoW's connection+transaction (the C1 mechanism).
+    private static (PostgresUnitOfWork UnitOfWork, PostgreSqlJournalEntryLifecycleStore LifecycleStore) BuildAmbientReverseHarness(
+        SharedKernel.Persistence.AmbientDatabaseTransactionAccessor ambient)
+    {
+        var connectionString = GetConnectionString();
+        var infraConnections = new PostgreSqlConnectionFactory(connectionString);
+        var numberLookup = new PostgreSqlJournalEntryNumberLookup(infraConnections);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infraConnections, numberLookup, ambient);
+        var unitOfWork = new PostgresUnitOfWork(
+            new PostgresConnectionFactory(connectionString),
+            new PostgresExecutionContextAccessor(),
+            ambient);
+        return (unitOfWork, lifecycleStore);
+    }
+
+    private static async Task<long> CountCompensationJournalsAsync(LifecycleFixture fixture, string sourceType)
+    {
+        await using var connection = await fixture.ConnectionFactory.OpenAsync(CancellationToken.None);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select count(*)
+            from journal_entries
+            where company_id = @company_id
+              and source_id = @source_id
+              and source_type = @source_type;
+            """;
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
+        command.Parameters.AddWithValue("source_id", fixture.DocumentId);
+        command.Parameters.AddWithValue("source_type", sourceType);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(CancellationToken.None));
     }
 
     private static async Task<LifecycleFixture> CreateFixtureAsync(DateOnly? journalDateOverride = null)
