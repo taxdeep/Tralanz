@@ -55,7 +55,7 @@
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.Status)" Title="Status" Width="100px">
                     <Template Context="row">
-                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                        <CitusDocumentStatusBadge Status="@row.Status" />
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.SourcePurchaseOrderNumber)" Title="Source PO" Width="140px">
@@ -102,20 +102,6 @@
         }
         finally { _isLoading = false; }
     }
-
-    private static string StatusColor(string status) => status switch
-    {
-        "posted" => "green",
-        "voided" => "default",
-        _ => "default"
-    };
-
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "posted" => "Posted",
-        "voided" => "Voided",
-        _ => status
-    };
 
     private static string HumanizeMethod(string method) => method switch
     {

@@ -51,7 +51,7 @@
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.Status)" Title="Status" Width="120px">
                     <Template Context="row">
-                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                        <CitusDocumentStatusBadge Status="@row.Status" />
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.CustomerPoNumber)" Title="Customer PO" Width="160px">
@@ -109,24 +109,6 @@
         }
         finally { _isLoading = false; }
     }
-
-    private static string StatusColor(string status) => status switch
-    {
-        "open" => "blue",
-        "confirmed" => "geekblue",
-        "invoiced" => "green",
-        "cancelled" => "default",
-        _ => "default"
-    };
-
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "open" => "Open",
-        "confirmed" => "Confirmed",
-        "invoiced" => "Invoiced",
-        "cancelled" => "Cancelled",
-        _ => status
-    };
 
     private sealed record SalesOrderRow(
         Guid Id,

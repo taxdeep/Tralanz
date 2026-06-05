@@ -180,9 +180,7 @@ else
                             <td>@row.TaskNo</td>
                             <td>@row.Title</td>
                             <td>
-                                <CitusBadge Color="@StatusBadgeColor(row.Status)">
-                                    @StatusLabel(row.Status)
-                                </CitusBadge>
+                                <CitusDocumentStatusBadge Status="@row.Status.ToString()" />
                             </td>
                             <td>@DateCell(row)</td>
                             <td class="text-right">@FormatNumber(row.BillableValue)</td>
@@ -346,26 +344,6 @@ else
         if (value > 0m) return "color: var(--citus-color-success);";
         return string.Empty;
     }
-
-    private static string StatusLabel(TaskStatus status) => status switch
-    {
-        TaskStatus.Open => "Open",
-        TaskStatus.Completed => "Completed",
-        TaskStatus.Billed => "Billed",
-        TaskStatus.Canceled => "Canceled",
-        TaskStatus.PartiallyBilled => "Partially billed",
-        _ => status.ToString(),
-    };
-
-    private static string StatusBadgeColor(TaskStatus status) => status switch
-    {
-        TaskStatus.Open => "blue",
-        TaskStatus.Completed => "green",
-        TaskStatus.Billed => "gold",
-        TaskStatus.Canceled => "default",
-        TaskStatus.PartiallyBilled => "blue",
-        _ => "default",
-    };
 
     private static TaskMarginReportResult Empty(TaskMarginReportMode mode, string baseCurrency) => new()
     {

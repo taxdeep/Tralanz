@@ -59,6 +59,10 @@
         // normalize before passing.
         "partially_billed" => "blue",
         "partiallybilled" => "blue",
+        // Sales-order downstream lifecycle (confirmed = committed but not yet
+        // invoiced; invoiced = fully billed → settled, same green as paid).
+        "confirmed" => "geekblue",
+        "invoiced" => "green",
         "reversed" => "orange",
         "voided" => "default",
         "cancelled" => "default",
@@ -81,6 +85,8 @@
         "closed" => "Closed",
         "completed" => "Completed",
         "billed" => "Billed",
+        "confirmed" => "Confirmed",
+        "invoiced" => "Invoiced",
         "reversed" => "Reversed",
         "voided" => "Voided",
         "cancelled" => "Cancelled",

@@ -99,7 +99,7 @@ else
     }
 
     <div class="flex flex-wrap gap-2 mb-4">
-        <CitusBadge Color="@StatusBadgeColor(_task.Status)">@StatusLabel(_task.Status)</CitusBadge>
+        <CitusDocumentStatusBadge Status="@_task.Status.ToString()" />
         <CitusBadge Color="@("default")">@_task.CurrencyCode</CitusBadge>
         @if (_task.ServiceDate.HasValue)
         {
@@ -599,26 +599,6 @@ else
             _isBusy = false;
         }
     }
-
-    private static string StatusLabel(TaskStatus status) => status switch
-    {
-        TaskStatus.Open => "Open",
-        TaskStatus.Completed => "Completed",
-        TaskStatus.Billed => "Billed",
-        TaskStatus.Canceled => "Canceled",
-        TaskStatus.PartiallyBilled => "Partially billed",
-        _ => status.ToString(),
-    };
-
-    private static string StatusBadgeColor(TaskStatus status) => status switch
-    {
-        TaskStatus.Open => "blue",
-        TaskStatus.Completed => "green",
-        TaskStatus.Billed => "gold",
-        TaskStatus.Canceled => "default",
-        TaskStatus.PartiallyBilled => "blue",
-        _ => "default",
-    };
 
     private static string RelatedDocLabel(string documentType) => documentType switch
     {
