@@ -11,13 +11,16 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
 
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly Engines.Numbering.JournalEntry.IJournalEntryNumberLookup _journalEntryNumberLookup;
+    private readonly SharedKernel.Persistence.AmbientDatabaseTransactionAccessor _ambient;
 
     public PostgreSqlJournalEntryLifecycleStore(
         PostgreSqlConnectionFactory connections,
-        Engines.Numbering.JournalEntry.IJournalEntryNumberLookup journalEntryNumberLookup)
+        Engines.Numbering.JournalEntry.IJournalEntryNumberLookup journalEntryNumberLookup,
+        SharedKernel.Persistence.AmbientDatabaseTransactionAccessor ambient)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _journalEntryNumberLookup = journalEntryNumberLookup ?? throw new ArgumentNullException(nameof(journalEntryNumberLookup));
+        _ambient = ambient ?? throw new ArgumentNullException(nameof(ambient));
     }
 
     public Task<JournalEntryLifecycleResult> VoidAsync(
@@ -57,11 +60,33 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         string actionLabel,
         CancellationToken cancellationToken)
     {
+        // P0-1 (C1): when an outer accounting unit-of-work is in flight (the
+        // document-Reverse path), join its transaction — run the lifecycle once
+        // on the ambient connection with NO local commit (the outer UoW owns
+        // commit) and NO local retry. A serialization failure here must bubble
+        // to PostgresUnitOfWork's own retry, which re-runs the whole reverse
+        // closure; retrying just this leg inside a transaction someone else owns
+        // would be incorrect. Standalone callers (the JE Void endpoint, tests)
+        // see a null accessor and keep their own connection + retry below.
+        if (_ambient.Current is { } ambient)
+        {
+            return await ApplyLifecycleCoreAsync(
+                ambient.Connection,
+                ambient.Transaction,
+                companyId,
+                journalEntryId,
+                userId,
+                originalStatus,
+                compensationSourceType,
+                actionLabel,
+                cancellationToken);
+        }
+
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
             try
             {
-                return await ApplyLifecycleAsync(
+                return await ApplyLifecycleOwnConnectionAsync(
                     companyId,
                     journalEntryId,
                     userId,
@@ -79,7 +104,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         throw new InvalidOperationException("The journal-entry lifecycle retry loop exited unexpectedly.");
     }
 
-    private async Task<JournalEntryLifecycleResult> ApplyLifecycleAsync(
+    private async Task<JournalEntryLifecycleResult> ApplyLifecycleOwnConnectionAsync(
         CompanyId companyId,
         Guid journalEntryId,
         UserId userId,
@@ -91,6 +116,32 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        var result = await ApplyLifecycleCoreAsync(
+            connection,
+            transaction,
+            companyId,
+            journalEntryId,
+            userId,
+            originalStatus,
+            compensationSourceType,
+            actionLabel,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    private async Task<JournalEntryLifecycleResult> ApplyLifecycleCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        Guid journalEntryId,
+        UserId userId,
+        string originalStatus,
+        string? compensationSourceType,
+        string actionLabel,
+        CancellationToken cancellationToken)
+    {
         var original = await LoadOriginalAsync(connection, transaction, companyId, journalEntryId, cancellationToken)
             ?? throw new JournalEntryLifecycleException(
                 "not_found",
@@ -115,7 +166,8 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
 
         if (existingCompensation is not null)
         {
-            await transaction.CommitAsync(cancellationToken);
+            // P0-1 (C1): no commit here — the own-connection wrapper (standalone)
+            // or the outer PostgresUnitOfWork (ambient reverse) owns the commit.
             return new JournalEntryLifecycleResult(
                 original.Id,
                 original.DisplayNumber,
@@ -412,8 +464,8 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             }
         }
 
-        await transaction.CommitAsync(cancellationToken);
-
+        // P0-1 (C1): no commit here — the own-connection wrapper (standalone) or
+        // the outer PostgresUnitOfWork (ambient reverse) owns the commit.
         return new JournalEntryLifecycleResult(
             original.Id,
             original.DisplayNumber,

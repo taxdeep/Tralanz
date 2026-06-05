@@ -344,7 +344,7 @@ public sealed class JournalEntryLifecycleSmokeTests
         var draftStore = new PostgreSqlJournalEntryDraftStore(connectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(connectionFactory);
         var postingStore = new PostgreSqlJournalEntryPostingStore(connectionFactory, numberLookup);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(connectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(connectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
         var fxSelectionService = new FxRateSelectionService(new PostgreSqlFxRateStore(connectionFactory));
         var companyCurrencyStore = new PostgreSqlCompanyCurrencyProvisioningStore(connectionFactory);
         var companyCurrencyWorkflow = new CompanyCurrencyGovernanceWorkflow(companyCurrencyStore);

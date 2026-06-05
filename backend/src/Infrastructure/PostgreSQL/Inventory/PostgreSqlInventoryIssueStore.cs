@@ -9,15 +9,18 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
 {
     private readonly PostgreSqlConnectionFactory _connections;
     private readonly IInventoryFoundationStore _foundationStore;
+    private readonly SharedKernel.Persistence.AmbientDatabaseTransactionAccessor _ambient;
     private readonly SemaphoreSlim _schemaLock = new(1, 1);
     private volatile bool _schemaEnsured;
 
     public PostgreSqlInventoryIssueStore(
         PostgreSqlConnectionFactory connections,
-        IInventoryFoundationStore foundationStore)
+        IInventoryFoundationStore foundationStore,
+        SharedKernel.Persistence.AmbientDatabaseTransactionAccessor ambient)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _foundationStore = foundationStore ?? throw new ArgumentNullException(nameof(foundationStore));
+        _ambient = ambient ?? throw new ArgumentNullException(nameof(ambient));
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -649,9 +652,29 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
 
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
 
-        await using var connection = await _connections.OpenAsync(cancellationToken);
+        // P0-1 (C1): full-atomic, hard-fail. Join the outer accounting reverse
+        // transaction when present so this inventory subledger restore commits
+        // (or rolls back) atomically with the AR/revenue reversal JE and the
+        // open-item updates. When ambient we borrow the outer connection/tx and
+        // never commit/rollback/dispose it — PostgresUnitOfWork owns the whole
+        // transaction. Standalone callers keep their own connection + tx.
+        NpgsqlConnection connection;
+        NpgsqlTransaction transaction;
+        bool ownsConnection;
+        if (_ambient.Current is { } ambient)
+        {
+            connection = ambient.Connection;
+            transaction = ambient.Transaction;
+            ownsConnection = false;
+        }
+        else
+        {
+            connection = await _connections.OpenAsync(cancellationToken);
+            ownsConnection = true;
+            transaction = await connection.BeginTransactionAsync(cancellationToken);
+        }
+
         await EnsureSchemaAsync(connection, cancellationToken, allowCreate: false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
         {
@@ -689,7 +712,10 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
 
             if (existingReversedAt.HasValue)
             {
-                await transaction.CommitAsync(cancellationToken);
+                if (ownsConnection)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
                 return new InventorySalesIssueReverseSummary(
                     SalesIssueDocumentId: salesIssueDocumentId,
                     InvoiceId: invoiceId,
@@ -956,7 +982,10 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
                 }
             }
 
-            await transaction.CommitAsync(cancellationToken);
+            if (ownsConnection)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             return new InventorySalesIssueReverseSummary(
                 SalesIssueDocumentId: salesIssueDocumentId,
@@ -969,8 +998,28 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (ownsConnection)
+            {
+                try
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                }
+                catch
+                {
+                    // Preserve the original failure; rollback can fail if the
+                    // connection is already broken.
+                }
+            }
+
             throw;
+        }
+        finally
+        {
+            if (ownsConnection)
+            {
+                await transaction.DisposeAsync();
+                await connection.DisposeAsync();
+            }
         }
     }
 

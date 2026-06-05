@@ -191,7 +191,8 @@ public sealed class JournalEntryPersistenceSmokeTests
             var executionContextAccessor = new PostgresExecutionContextAccessor();
             var unitOfWork = new PostgresUnitOfWork(
                 accountingConnectionFactory,
-                executionContextAccessor);
+                executionContextAccessor,
+                new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
             var writer = new PostgresJournalEntryWriter(
                 accountingConnectionFactory,
                 executionContextAccessor);

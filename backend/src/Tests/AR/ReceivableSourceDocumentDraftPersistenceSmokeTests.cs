@@ -636,7 +636,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
@@ -1508,7 +1508,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
@@ -1663,7 +1663,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid revenueAccountId = default;
         Guid receivableControlAccountId = default;
@@ -1906,7 +1906,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
@@ -2137,7 +2137,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var invoiceRepository = new PostgresInvoiceDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
@@ -2414,7 +2414,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
@@ -2761,7 +2761,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var creditNoteRepository = new PostgresCreditNoteDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
@@ -3060,7 +3060,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
@@ -3413,7 +3413,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid receivableControlAccountId = default;
         Guid revenueAccountId = default;
@@ -3632,7 +3632,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var adjustmentHandler = new PostArOpenItemAdjustmentCommandHandler(
             openItemRepository,
             postingEngine,
-            new PostgresUnitOfWork(connectionFactory, executionContextAccessor));
+            new PostgresUnitOfWork(connectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
 
         Guid revenueAccountId = default;
         Guid writeOffAccountId = default;

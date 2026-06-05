@@ -281,7 +281,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         var connectionString = GetConnectionString();
         var connectionFactory = new PostgresConnectionFactory(connectionString);
         var executionContextAccessor = new PostgresExecutionContextAccessor();
-        var unitOfWork = new PostgresUnitOfWork(connectionFactory, executionContextAccessor);
+        var unitOfWork = new PostgresUnitOfWork(connectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
         var documentRepository = new PostgresFxRevaluationDocumentRepository(connectionFactory, executionContextAccessor);
         var applyRepository = new PostgresFxRevaluationApplyRepository(connectionFactory, executionContextAccessor);
         var postingEngine = new DefaultPostingEngine(

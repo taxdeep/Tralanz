@@ -229,7 +229,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                     new AccountingPostingFragmentBuilder(),
                     new DefaultJournalAggregator(),
                     new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor)),
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
 
             var companyId = CompanyId.FromOrdinal(1);
             var userId = UserId.FromOrdinal(1);
@@ -401,7 +401,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                     new AccountingPostingFragmentBuilder(),
                     new DefaultJournalAggregator(),
                     new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor)),
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
                 accountingConnectionFactory,
                 executionContextAccessor);
@@ -542,13 +542,13 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                     new AccountingPostingFragmentBuilder(),
                     new DefaultJournalAggregator(),
                     new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor)),
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
                 accountingConnectionFactory,
                 executionContextAccessor);
             var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
 
             var companyId = CompanyId.FromOrdinal(1);
             var userId = UserId.FromOrdinal(1);
@@ -714,20 +714,20 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 clearingPolicyRepository,
                 new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 postingEngine,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
                 accountingConnectionFactory,
                 executionContextAccessor);
             var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementPostingHandler = new PostReceiptGrIrSettlementJournalCommandHandler(
                 new PostgresReceiptGrIrSettlementPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 postingEngine,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementClearingHandler = new ClearReceiptGrIrSettlementOpenItemCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
 
             var companyId = CompanyId.FromOrdinal(1);
             var userId = UserId.FromOrdinal(1);
@@ -924,23 +924,23 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 clearingPolicyRepository,
                 new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 postingEngine,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
                 accountingConnectionFactory,
                 executionContextAccessor);
             var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementPostingHandler = new PostReceiptGrIrSettlementJournalCommandHandler(
                 new PostgresReceiptGrIrSettlementPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 postingEngine,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementClearingHandler = new ClearReceiptGrIrSettlementOpenItemCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementClearingReversalHandler = new ReverseReceiptGrIrSettlementOpenItemClearingCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
 
             var companyId = CompanyId.FromOrdinal(1);
             var userId = UserId.FromOrdinal(1);
@@ -1162,20 +1162,20 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 clearingPolicyRepository,
                 new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 postingEngine,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
                 accountingConnectionFactory,
                 executionContextAccessor);
             var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementPostingHandler = new PostReceiptGrIrSettlementJournalCommandHandler(
                 new PostgresReceiptGrIrSettlementPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 postingEngine,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
             var settlementClearingHandler = new ClearReceiptGrIrSettlementOpenItemCommandHandler(
                 settlementStore,
-                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
 
             var companyId = CompanyId.FromOrdinal(1);
             var userId = UserId.FromOrdinal(1);

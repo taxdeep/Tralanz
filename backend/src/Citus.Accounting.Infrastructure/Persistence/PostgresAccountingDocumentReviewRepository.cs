@@ -1614,58 +1614,50 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 StringComparison.Ordinal);
         if (salesIssueCogsReverseAttempted)
         {
-            try
+            // P0-1 (C1): full-atomic, hard-fail. ReverseForInvoiceAsync now joins
+            // the outer reverse unit-of-work via the shared ambient transaction,
+            // and the compensating COGS JE posts on that same transaction, so any
+            // failure here must propagate and roll back the ENTIRE reverse — no
+            // swallowed error, no parked drift. (Previously these two halves ran
+            // on their own transactions under a soft-failure catch; eliminating
+            // that partial-commit window is exactly what C1 set out to fix.)
+            var lane = await _inventoryShipmentStore!.GetInvoiceLaneSummaryAsync(
+                companyId,
+                request.DocumentId,
+                cancellationToken);
+
+            foreach (var issue in lane.RecentIssues)
             {
-                var lane = await _inventoryShipmentStore!.GetInvoiceLaneSummaryAsync(
+                if (!string.Equals(issue.Status, "posted", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var subledgerResult = await _inventoryIssueStore!.ReverseForInvoiceAsync(
                     companyId,
+                    issue.DocumentId,
                     request.DocumentId,
+                    actorId!.Value,
                     cancellationToken);
 
-                foreach (var issue in lane.RecentIssues)
+                // Always post-or-probe the compensating COGS JE, even when
+                // AlreadyReversed=true — the handler's own idempotency probe
+                // surfaces the prior JE id. The two halves are independently
+                // idempotent.
+                await _salesIssueCogsReverseHandler!.HandleAsync(
+                    new PostSalesIssueCogsReverseCommand(
+                        companyId,
+                        actorId!.Value,
+                        issue.DocumentId,
+                        request.DocumentId),
+                    cancellationToken);
+
+                salesIssueCogsReverseProcessed++;
+                if (!subledgerResult.AlreadyReversed)
                 {
-                    if (!string.Equals(issue.Status, "posted", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        var subledgerResult = await _inventoryIssueStore!.ReverseForInvoiceAsync(
-                            companyId,
-                            issue.DocumentId,
-                            request.DocumentId,
-                            actorId!.Value,
-                            cancellationToken);
-
-                        // Always post-or-probe the compensating COGS JE,
-                        // even when AlreadyReversed=true — the handler's
-                        // own idempotency probe surfaces the prior JE id.
-                        // The two halves are independently idempotent.
-                        await _salesIssueCogsReverseHandler!.HandleAsync(
-                            new PostSalesIssueCogsReverseCommand(
-                                companyId,
-                                actorId!.Value,
-                                issue.DocumentId,
-                                request.DocumentId),
-                            cancellationToken);
-
-                        salesIssueCogsReverseProcessed++;
-                        if (!subledgerResult.AlreadyReversed)
-                        {
-                            salesIssueCogsReverseTotalQty += subledgerResult.TotalQuantityRestored;
-                            salesIssueCogsReverseTotalCostBase += subledgerResult.TotalCostBaseRestored;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        salesIssueCogsReverseSkipped++;
-                        salesIssueCogsReverseError ??= ex.Message;
-                    }
+                    salesIssueCogsReverseTotalQty += subledgerResult.TotalQuantityRestored;
+                    salesIssueCogsReverseTotalCostBase += subledgerResult.TotalCostBaseRestored;
                 }
-            }
-            catch (Exception ex)
-            {
-                salesIssueCogsReverseError = ex.Message;
             }
         }
 

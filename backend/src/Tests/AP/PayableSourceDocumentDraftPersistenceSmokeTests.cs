@@ -1597,7 +1597,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid expenseAccountId = default;
         Guid payableControlAccountId = default;
@@ -1750,7 +1750,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
@@ -1981,7 +1981,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
@@ -2243,7 +2243,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
@@ -2520,7 +2520,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
@@ -2881,7 +2881,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var vendorCreditRepository = new PostgresVendorCreditDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
@@ -3180,7 +3180,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
@@ -3533,7 +3533,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
-        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor());
 
         Guid payableControlAccountId = default;
         Guid expenseAccountId = default;
@@ -3752,7 +3752,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var adjustmentHandler = new PostApOpenItemAdjustmentCommandHandler(
             openItemRepository,
             postingEngine,
-            new PostgresUnitOfWork(connectionFactory, executionContextAccessor));
+            new PostgresUnitOfWork(connectionFactory, executionContextAccessor, new SharedKernel.Persistence.AmbientDatabaseTransactionAccessor()));
 
         Guid expenseAccountId = default;
         Guid unmappedExpenseAccountId = default;

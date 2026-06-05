@@ -9,13 +9,16 @@ public sealed class PostgresUnitOfWork : IUnitOfWork
 
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+    private readonly SharedKernel.Persistence.AmbientDatabaseTransactionAccessor _ambientAccessor;
 
     public PostgresUnitOfWork(
         PostgresConnectionFactory connections,
-        PostgresExecutionContextAccessor executionContextAccessor)
+        PostgresExecutionContextAccessor executionContextAccessor,
+        SharedKernel.Persistence.AmbientDatabaseTransactionAccessor ambientAccessor)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
+        _ambientAccessor = ambientAccessor ?? throw new ArgumentNullException(nameof(ambientAccessor));
     }
 
     public async Task<T> ExecuteAsync<T>(
@@ -34,6 +37,10 @@ public sealed class PostgresUnitOfWork : IUnitOfWork
             await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             _executionContextAccessor.Current = new PostgresExecutionContext(connection, transaction);
+            // P0-1 (C1): mirror-publish the same connection+transaction on the
+            // shared accessor so stores in Infrastructure.PostgreSQL (which can't
+            // see the internal PostgresExecutionContext) join this transaction.
+            _ambientAccessor.Current = new SharedKernel.Persistence.AmbientDatabaseTransaction(connection, transaction);
 
             try
             {
@@ -54,6 +61,7 @@ public sealed class PostgresUnitOfWork : IUnitOfWork
             finally
             {
                 _executionContextAccessor.Current = null;
+                _ambientAccessor.Current = null;
             }
         }
 

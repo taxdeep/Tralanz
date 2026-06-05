@@ -121,6 +121,12 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddSingleton(new PostgresConnectionFactory(connectionString));
 builder.Services.AddSingleton(new PostgreSqlConnectionFactory(connectionString));
 builder.Services.AddSingleton<PostgresExecutionContextAccessor>();
+// P0-1 (C1): shared ambient-transaction accessor. PostgresUnitOfWork publishes
+// its open (connection, transaction) here so stores in the lower
+// Infrastructure.PostgreSQL layer (JE lifecycle reverse, inventory issue
+// reverse) can join the outer reverse transaction instead of opening their own
+// — making the whole document-Reverse flow atomic. AsyncLocal-backed → Singleton.
+builder.Services.AddSingleton<SharedKernel.Persistence.AmbientDatabaseTransactionAccessor>();
 builder.Services.AddSingleton(new PlatformPostgresConnectionFactory(connectionString));
 builder.Services.Configure<BusinessSessionOptions>(builder.Configuration.GetSection(BusinessSessionOptions.SectionName));
 builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
