@@ -35,7 +35,7 @@ else
         <CitusStatCard Label="Deposit #" Value="@_doc.DisplayNumber" Description="@_doc.DepositDate.ToString("yyyy-MM-dd")"
                        Icon="IconName.Receipt" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_doc.Status)" />
         <CitusStatCard Label="Total" Value="@($"{_doc.TotalAmount:N2} {_doc.TransactionCurrencyCode}")"
                        Description="@($"{_doc.Items.Count} item(s)")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -160,12 +160,5 @@ else
         "draft" => "Not posted yet.",
         "posted" => "Holding cleared; bank credited.",
         _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "posted" => StatTone.Success,
-        _ => StatTone.Neutral
     };
 }

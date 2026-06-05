@@ -35,7 +35,7 @@ else
         <CitusStatCard Label="Transfer #" Value="@_doc.DisplayNumber" Description="@_doc.TransferDate.ToString("yyyy-MM-dd")"
                        Icon="IconName.ArrowRight" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_doc.Status)" />
         <CitusStatCard Label="From" Value="@($"{_doc.Amount:N2} {_doc.FromCurrencyCode}")"
                        Description="@ResolveAccountLabel(_doc.FromAccountId)"
                        Icon="IconName.Coin" Tone="StatTone.Warning" />
@@ -165,12 +165,5 @@ else
         "draft" => "Not posted yet.",
         "posted" => "Funds moved.",
         _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "posted" => StatTone.Success,
-        _ => StatTone.Neutral
     };
 }
