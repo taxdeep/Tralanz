@@ -23,7 +23,7 @@ namespace Tests.CompanyAccess;
 /// </summary>
 public sealed class InventoryIdempotencySmokeTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task SameCompany_SameKey_SecondInsertRaisesIdempotencyViolation()
     {
         var seed = await SeedScenarioAsync();
@@ -58,7 +58,7 @@ public sealed class InventoryIdempotencySmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task DifferentCompanies_SameKey_BothInsertsSucceed()
     {
         var seed = await SeedScenarioAsync();
@@ -82,7 +82,7 @@ public sealed class InventoryIdempotencySmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task NullKey_NoConstraintApplied_MultipleInsertsSucceed()
     {
         var seed = await SeedScenarioAsync();
@@ -226,9 +226,13 @@ public sealed class InventoryIdempotencySmokeTests
         await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static string BuildEntityNumber()
     {

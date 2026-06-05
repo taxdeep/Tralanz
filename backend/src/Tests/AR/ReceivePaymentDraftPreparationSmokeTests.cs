@@ -16,7 +16,7 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
 
-    [Fact]
+    [SkippableFact]
     public async Task PrepareDraftAsync_PersistsDraftWithCustomerCurrency()
     {
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -203,9 +203,13 @@ public sealed class ReceivePaymentDraftPreparationSmokeTests
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static async Task<(Guid OpenItemId, decimal OpenAmountTx)> LoadOpenItemAsync(
         PostgreSqlConnectionFactory connectionFactory,

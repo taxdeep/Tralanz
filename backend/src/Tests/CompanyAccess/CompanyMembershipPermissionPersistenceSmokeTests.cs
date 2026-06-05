@@ -6,7 +6,7 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanyMembershipPermissionPersistenceSmokeTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task SavePermissionsAsync_AppendsMembershipPermissionAuditLog()
     {
         var companyId = CompanyId.FromOrdinal(101);
@@ -65,9 +65,13 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
         }
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static async Task SeedAsync(
         PostgreSqlConnectionFactory connectionFactory,

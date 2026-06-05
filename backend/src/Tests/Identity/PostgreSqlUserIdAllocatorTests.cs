@@ -6,7 +6,7 @@ namespace Tests.Identity;
 
 public sealed class PostgreSqlUserIdAllocatorTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_FirstCall_ReturnsOrdinalOne()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();
@@ -32,7 +32,7 @@ public sealed class PostgreSqlUserIdAllocatorTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_SequentialCalls_IncrementOrdinal()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();
@@ -61,7 +61,7 @@ public sealed class PostgreSqlUserIdAllocatorTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_TransactionRollback_NoGap()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();

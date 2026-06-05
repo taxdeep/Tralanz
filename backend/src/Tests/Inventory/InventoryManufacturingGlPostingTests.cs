@@ -30,7 +30,7 @@ namespace Tests.Inventory;
 /// </summary>
 public sealed class InventoryManufacturingGlPostingTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task ProducesBalancedTwoLineJeOnInventoryAssetAccount()
     {
         var seed = await SeedScenarioAsync();
@@ -61,7 +61,7 @@ public sealed class InventoryManufacturingGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Idempotent_SecondAppendReturnsExistingJeWithoutInsert()
     {
         var seed = await SeedScenarioAsync();
@@ -88,7 +88,7 @@ public sealed class InventoryManufacturingGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task SameTxRollback_PosterWritesAreUndoneWhenCallerRollsBack()
     {
         var seed = await SeedScenarioAsync();
@@ -126,7 +126,7 @@ public sealed class InventoryManufacturingGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task MissingInventoryAssetSystemRole_AppendThrowsBeforeAnyInsert()
     {
         var seed = await SeedScenarioAsync(pinInventoryAssetSystemRole: false);
@@ -156,7 +156,7 @@ public sealed class InventoryManufacturingGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ZeroOrNegativeAmount_AppendThrowsInsteadOfPostingDegenerateJe()
     {
         var seed = await SeedScenarioAsync();
@@ -456,9 +456,13 @@ public sealed class InventoryManufacturingGlPostingTests
         await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static async Task<NpgsqlConnection> OpenWithBypassAsync(PostgreSqlConnectionFactory connections)
     {

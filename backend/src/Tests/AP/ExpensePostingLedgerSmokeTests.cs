@@ -8,7 +8,7 @@ namespace Tests.AP;
 
 public sealed class ExpensePostingLedgerSmokeTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task CreateAsync_ForeignCurrencyExpense_WritesBalancedBaseLedger()
     {
         var connectionString = GetConnectionString();
@@ -106,9 +106,13 @@ public sealed class ExpensePostingLedgerSmokeTests
         }
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static async Task<(CompanyId CompanyId, string BaseCurrencyCode)> ReadFirstCompanyAsync(
         string connectionString,

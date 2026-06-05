@@ -20,7 +20,7 @@ public sealed class JournalEntryPersistenceSmokeTests
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly UserId UserId = UserId.FromOrdinal(1);
 
-    [Fact]
+    [SkippableFact]
     public async Task SaveDraftAndPost_PersistsManualJournalAndLedgerTruth()
     {
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -140,7 +140,7 @@ public sealed class JournalEntryPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task WriteAsync_RejectsNewPostingLockedByPrimaryBookClosedPeriod()
     {
         var setupConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -224,9 +224,13 @@ public sealed class JournalEntryPersistenceSmokeTests
         }
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static async Task CleanupAsync(
         PostgreSqlConnectionFactory connectionFactory,

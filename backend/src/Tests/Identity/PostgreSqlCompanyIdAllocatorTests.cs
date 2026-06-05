@@ -6,7 +6,7 @@ namespace Tests.Identity;
 
 public sealed class PostgreSqlCompanyIdAllocatorTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_FirstCall_ReturnsOrdinalOne()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();
@@ -32,7 +32,7 @@ public sealed class PostgreSqlCompanyIdAllocatorTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_IndependentFromUserCounter()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();

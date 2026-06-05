@@ -17,7 +17,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
     private const string RevaluationCurrencyCode = "CHF";
 
-    [Fact]
+    [SkippableFact]
     public async Task PreparePostAndPrepareNextPeriodUnwindAsync_UpdatesOpenItemBaseAndBuildsDraft()
     {
         var fixture = await CreateFixtureAsync();
@@ -147,7 +147,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task PostCascadeUnwindAsync_RewindsDescendantsBackToOriginalCarryingBase()
     {
         var fixture = await CreateFixtureAsync();
@@ -477,9 +477,13 @@ public sealed class FxRevaluationWorkflowSmokeTests
         return prepared.DocumentId;
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     // Tests share the same primary book + remeasurement policy, and the
     // policy is inserted with effective_from = first asOfDate seen. If a

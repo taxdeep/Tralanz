@@ -41,9 +41,13 @@ public static class TestDbSchemaSync
     /// <summary>Test-project connection string. Mirrors the same env-var
     /// fallback the individual suites use so any one of them can call
     /// us without coordination.</summary>
-    public static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    public static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     /// <summary>Apply every pending migration once per process. Safe to
     /// call from a <c>[ModuleInitializer]</c> or directly inside a

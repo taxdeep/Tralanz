@@ -6,7 +6,7 @@ namespace Tests.Identity;
 
 public sealed class PostgreSqlEntityNumberAllocatorTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_FirstCall_ReturnsOrdinalOne()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();
@@ -36,7 +36,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_DifferentCompanies_HaveIndependentCounters()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();
@@ -72,7 +72,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_DifferentYears_HaveIndependentCounters()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();
@@ -107,7 +107,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_TransactionRollback_NoGap()
     {
         var baseConn = IdentityTestSchema.GetConnectionString();
@@ -145,7 +145,7 @@ public sealed class PostgreSqlEntityNumberAllocatorTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Allocate_RequiresTransaction()
     {
         var allocator = new PostgreSqlEntityNumberAllocator();

@@ -6,7 +6,7 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanySessionContextWorkflowTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task GetAsync_ReturnsPreferredActiveCompanyFromMembershipTruth()
     {
         var userId = UserId.FromOrdinal(101);
@@ -51,7 +51,7 @@ public sealed class CompanySessionContextWorkflowTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetAsync_ReturnsNullWhenUserHasNoActiveMemberships()
     {
         var userId = UserId.FromOrdinal(101);
@@ -74,7 +74,7 @@ public sealed class CompanySessionContextWorkflowTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetAsync_IncludesMembershipPermissionTokensInUserRoles()
     {
         var userId = UserId.FromOrdinal(101);
@@ -111,7 +111,7 @@ public sealed class CompanySessionContextWorkflowTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetAsync_DoesNotLeakPermissionTokensFromOtherCompanyMemberships()
     {
         var userId = UserId.FromOrdinal(101);
@@ -162,9 +162,13 @@ public sealed class CompanySessionContextWorkflowTests
         }
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static string BuildEntityNumber()
     {

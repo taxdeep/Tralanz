@@ -18,7 +18,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
     private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
 
-    [Fact]
+    [SkippableFact]
     public async Task SaveDraftAsync_PersistsInvoiceAndCreditNoteDrafts()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -121,7 +121,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task SaveDraftAsync_WithSalesTaxV2Enabled_ComputesEngineTaxAndWritesSnapshot()
     {
         // S2.1 proof point: with the SalesTaxV2 flag on, the engine — not
@@ -205,7 +205,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task SaveDraftAsync_RejectsPostedInvoiceAndCreditNoteUpdates()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -315,7 +315,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetSourceDocumentAsync_ReturnsJournalEntryLinkForInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -392,7 +392,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetSourceDocumentAsync_ReturnsForeignCurrencyJournalEntryLinkForInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -515,7 +515,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetSourceDocumentAsync_ReturnsForeignCurrencyJournalEntryLinkForReceivePayment()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -628,7 +628,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_UnappliesForeignCurrencyReceivePaymentBeforeMarkingReversed()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -889,7 +889,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetSourceDocumentAsync_ReturnsReversedJournalEntryLifecycleForInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -962,7 +962,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetLifecyclePreviewAsync_ReturnsActionPreviewForPostedInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -1032,7 +1032,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task GetLifecycleActionPreviewAsync_ReturnsVoidActionPreviewForPostedInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -1108,7 +1108,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task AttemptVoidAsync_RejectsPostedInvoiceWithBlockedByPolicy()
     {
         // PR-6b (C-2): per the locked Tralanz business rules, posted
@@ -1186,7 +1186,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task AttemptReverseAsync_SubmitsGovernedRequestForPostedInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -1323,7 +1323,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ExecuteReverseRequestAsync_BlocksWhenInvoiceStillHasArOpenItemTruth()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -1500,7 +1500,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_RecordsJournalEntryReversalForSubmittedInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -1654,7 +1654,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_RecordsForeignCurrencyJournalEntryReversalForSubmittedInvoice()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -1898,7 +1898,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_UnappliesPostedReceivePaymentBeforeMarkingReversed()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -2129,7 +2129,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_AllowsInvoiceReverseAfterBlockingReceivePaymentIsUnapplied()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -2405,7 +2405,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_AllowsForeignCurrencyInvoiceReverseAfterBlockingReceivePaymentIsUnapplied()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -2753,7 +2753,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_AllowsCreditNoteReverseAfterBlockingCreditApplicationIsUnapplied()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -3051,7 +3051,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_AllowsForeignCurrencyCreditNoteReverseAfterBlockingCreditApplicationIsUnapplied()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -3406,7 +3406,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CompleteReverseRequestExecutionAsync_UnappliesPostedCreditApplicationBeforeMarkingReversed()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -3614,7 +3614,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task RequestAdjustmentAsync_RecordsGovernedWriteOffRequestWithoutChangingArOpenItemTruth()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -3886,9 +3886,13 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         return accountId;
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     private static async Task<Guid> CreateRevenueAccountAsync(
         PostgresConnectionFactory connectionFactory,

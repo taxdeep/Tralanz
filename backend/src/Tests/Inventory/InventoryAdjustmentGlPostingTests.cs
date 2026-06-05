@@ -28,7 +28,7 @@ namespace Tests.Inventory;
 /// </summary>
 public sealed class InventoryAdjustmentGlPostingTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task Gain_ProducesDrInventoryCrAdjustmentInBaseCurrency()
     {
         var seed = await SeedScenarioAsync();
@@ -55,7 +55,7 @@ public sealed class InventoryAdjustmentGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Loss_ProducesDrAdjustmentCrInventoryInBaseCurrency()
     {
         var seed = await SeedScenarioAsync();
@@ -79,7 +79,7 @@ public sealed class InventoryAdjustmentGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task WriteOff_UsesSameDrCrShapeAsLoss()
     {
         var seed = await SeedScenarioAsync();
@@ -103,7 +103,7 @@ public sealed class InventoryAdjustmentGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Idempotent_SecondAppendReturnsExistingJeWithoutInsert()
     {
         var seed = await SeedScenarioAsync();
@@ -133,7 +133,7 @@ public sealed class InventoryAdjustmentGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task SameTxRollback_PosterWritesAreUndoneWhenCallerRollsBack()
     {
         var seed = await SeedScenarioAsync();
@@ -177,7 +177,7 @@ public sealed class InventoryAdjustmentGlPostingTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task MissingAdjustmentSystemRole_AppendThrowsBeforeAnyInsert()
     {
         var seed = await SeedScenarioAsync(pinAdjustmentSystemRole: false);
@@ -492,9 +492,13 @@ public sealed class InventoryAdjustmentGlPostingTests
         await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
-    private static string GetConnectionString() =>
-        Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
-        ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString), "DB-backed test skipped: set CITUS_POSTGRESQL_INTEGRATION_TEST_DB to a dedicated test database to run it.");
+
+        return connectionString!;
+    }
 
     // M13 RLS bypass for test connections. The test role (citus_app)
     // is non-bypassrls, so without setting this GUC every INSERT into
