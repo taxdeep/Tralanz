@@ -55,15 +55,7 @@ else
                             EmptyIcon="IconName.BuildingStore"
                             EmptyTitle="No vendors yet"
                             EmptyMessage="Create one with the New vendor button. Vendor master data unblocks bills, expenses, and AP aging.">
-            <RadzenDataGrid TItem="VendorRow"
-                            Data="@_rows"
-                            AllowSorting="true"
-                            AllowFiltering="false"
-                            AllowColumnResize="true"
-                            AllowPaging="true"
-                            PageSize="50"
-                            FilterMode="FilterMode.Simple"
-                            class="citus-radzen-grid">
+            <CitusDataGrid TItem="VendorRow" Data="@_rows">
                 <Columns>
                     <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.VendorId)" Title="Vendor ID" Width="180px">
                         <Template Context="row">
@@ -94,7 +86,7 @@ else
                         </Template>
                     </RadzenDataGridColumn>
                 </Columns>
-            </RadzenDataGrid>
+            </CitusDataGrid>
         </CitusAsyncBoundary>
     </CitusFormSection>
 }

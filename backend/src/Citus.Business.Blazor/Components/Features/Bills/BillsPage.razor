@@ -33,15 +33,7 @@
                         EmptyIcon="IconName.Receipt"
                         EmptyTitle="No bills yet"
                         EmptyMessage="Click New bill to record one. Drafts stay local until you Post them.">
-        <RadzenDataGrid TItem="BillRow"
-                        Data="@_rows"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowColumnResize="true"
-                        AllowPaging="true"
-                        PageSize="50"
-                        FilterMode="FilterMode.Simple"
-                        class="citus-radzen-grid">
+        <CitusDataGrid TItem="BillRow" Data="@_rows">
             <Columns>
                 <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.BillNumber)" Title="Bill #" Width="180px">
                     <Template Context="row">
@@ -73,7 +65,7 @@
                     <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
                 </RadzenDataGridColumn>
             </Columns>
-        </RadzenDataGrid>
+        </CitusDataGrid>
     </CitusAsyncBoundary>
     </ChildContent>
 </CitusFormSection>

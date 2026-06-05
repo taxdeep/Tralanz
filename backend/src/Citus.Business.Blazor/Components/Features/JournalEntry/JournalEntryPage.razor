@@ -66,15 +66,7 @@
             }
             else if (_recentEntries.Count > 0)
             {
-                <RadzenDataGrid TItem="JournalEntryReviewListItemSummary"
-                                Data="@_recentEntries"
-                                AllowSorting="true"
-                                AllowFiltering="true"
-                                AllowColumnResize="true"
-                                AllowPaging="true"
-                                PageSize="25"
-                                FilterMode="FilterMode.Simple"
-                                class="citus-radzen-grid">
+                <CitusDataGrid TItem="JournalEntryReviewListItemSummary" Data="@_recentEntries" AllowFiltering="true" PageSize="25">
                     <Columns>
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
                                               Property="@nameof(JournalEntryReviewListItemSummary.DisplayNumber)"
@@ -131,7 +123,7 @@
                                               Property="@nameof(JournalEntryReviewListItemSummary.LineCount)"
                                               Title="Lines" TextAlign="TextAlign.Right" Width="90px" />
                     </Columns>
-                </RadzenDataGrid>
+                </CitusDataGrid>
             }
             </ChildContent>
         </CitusFormSection>

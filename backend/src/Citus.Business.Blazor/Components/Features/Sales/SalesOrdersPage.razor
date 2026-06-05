@@ -24,15 +24,7 @@
                         EmptyIcon="IconName.Receipt"
                         EmptyTitle="No sales orders yet"
                         EmptyMessage="Sales Orders are usually created by accepting a Quote, but you can also create one directly here.">
-        <RadzenDataGrid TItem="SalesOrderRow"
-                        Data="@_rows"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowColumnResize="true"
-                        AllowPaging="true"
-                        PageSize="50"
-                        FilterMode="FilterMode.Simple"
-                        class="citus-radzen-grid">
+        <CitusDataGrid TItem="SalesOrderRow" Data="@_rows">
             <Columns>
                 <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.SalesOrderNumber)" Title="SO ID" Width="180px">
                     <Template Context="row">
@@ -73,7 +65,7 @@
                     <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
                 </RadzenDataGridColumn>
             </Columns>
-        </RadzenDataGrid>
+        </CitusDataGrid>
     </CitusAsyncBoundary>
 </CitusFormSection>
 

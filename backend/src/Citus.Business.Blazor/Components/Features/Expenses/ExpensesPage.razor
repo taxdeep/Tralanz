@@ -24,15 +24,7 @@
                         EmptyIcon="IconName.Wallet"
                         EmptyTitle="No expenses yet"
                         EmptyMessage="Use New expense to record a payment that has already happened (cash / cheque / wire / credit-card).">
-        <RadzenDataGrid TItem="ExpenseRow"
-                        Data="@_rows"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowColumnResize="true"
-                        AllowPaging="true"
-                        PageSize="50"
-                        FilterMode="FilterMode.Simple"
-                        class="citus-radzen-grid">
+        <CitusDataGrid TItem="ExpenseRow" Data="@_rows">
             <Columns>
                 <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.ExpenseNumber)" Title="Expense #" Width="200px">
                     <Template Context="row">
@@ -65,7 +57,7 @@
                     <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
                 </RadzenDataGridColumn>
             </Columns>
-        </RadzenDataGrid>
+        </CitusDataGrid>
     </CitusAsyncBoundary>
 </CitusFormSection>
 

@@ -34,15 +34,7 @@
                         EmptyIcon="IconName.FileText"
                         EmptyTitle="No quotes yet"
                         EmptyMessage="Click New quote to draft your first one. Drafts stay private until you Send them.">
-        <RadzenDataGrid TItem="QuoteRow"
-                        Data="@_rows"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowColumnResize="true"
-                        AllowPaging="true"
-                        PageSize="50"
-                        FilterMode="FilterMode.Simple"
-                        class="citus-radzen-grid">
+        <CitusDataGrid TItem="QuoteRow" Data="@_rows">
             <Columns>
                 <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.QuoteNumber)" Title="Quote ID" Width="200px">
                     <Template Context="row">
@@ -83,7 +75,7 @@
                     <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
                 </RadzenDataGridColumn>
             </Columns>
-        </RadzenDataGrid>
+        </CitusDataGrid>
     </CitusAsyncBoundary>
     </ChildContent>
 </CitusFormSection>

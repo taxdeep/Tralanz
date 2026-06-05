@@ -33,15 +33,7 @@
                         EmptyIcon="IconName.FileText"
                         EmptyTitle="No purchase orders yet"
                         EmptyMessage="Click New PO to commit to a vendor purchase. POs convert into Bills (or Expenses) when the vendor invoices you.">
-        <RadzenDataGrid TItem="PurchaseOrderRow"
-                        Data="@_rows"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowColumnResize="true"
-                        AllowPaging="true"
-                        PageSize="50"
-                        FilterMode="FilterMode.Simple"
-                        class="citus-radzen-grid">
+        <CitusDataGrid TItem="PurchaseOrderRow" Data="@_rows">
             <Columns>
                 <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.PurchaseOrderNumber)" Title="PO #" Width="200px">
                     <Template Context="row">
@@ -70,7 +62,7 @@
                     <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
                 </RadzenDataGridColumn>
             </Columns>
-        </RadzenDataGrid>
+        </CitusDataGrid>
     </CitusAsyncBoundary>
     </ChildContent>
 </CitusFormSection>
