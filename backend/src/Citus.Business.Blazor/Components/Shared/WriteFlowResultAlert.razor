@@ -10,7 +10,7 @@
 
 @if (Result is not null)
 {
-    <CitusAlert Severity="@(Result.IsStubbed ? CitusAlertSeverity.Warning : CitusAlertSeverity.Info)"
+    <CitusAlert Severity="@(Result.IsStubbed ? CitusAlertSeverity.Warning : (Result.Succeeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Info))"
                 ShowIcon="true"
                 Class="mb-4">
         <MessageTemplate>
