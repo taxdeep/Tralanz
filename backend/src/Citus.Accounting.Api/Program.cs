@@ -7835,7 +7835,7 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 static string? ValidateQuoteInput(QuoteUpsertHttpRequest request)
 {
@@ -12716,7 +12716,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-settlement/journal-reconciliation/refresh",
@@ -12736,7 +12736,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-settlement/purchase-variance/refresh",
@@ -12756,7 +12756,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 accounting.MapGet(
     "/receipts/{documentId:guid}/grir-settlement/purchase-variance/lines",
@@ -12958,7 +12958,7 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
 // -----------------------------------------------------------------------
 // M3 — Sales Issue → COGS posting bridge (Inventory V1 plan).
