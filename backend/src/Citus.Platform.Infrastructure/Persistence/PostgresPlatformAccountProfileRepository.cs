@@ -23,7 +23,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
     private const string TotpPendingEnrollmentStatus = "pending";
     private const string TotpActiveEnrollmentStatus = "active";
     private const string TotpRevokedEnrollmentStatus = "revoked";
-    private const string TotpEnrollmentIssuer = "Citus";
+    private const string TotpEnrollmentIssuer = "Tralanz";
     private const string MfaRecoveryRequestedStatus = "requested";
     private const string MfaRecoveryApprovedStatus = "approved";
     private readonly PlatformTotpSecretProtector totpSecretProtector = new(configuration);
