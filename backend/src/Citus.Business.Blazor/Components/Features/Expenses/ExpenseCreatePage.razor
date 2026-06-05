@@ -3,6 +3,7 @@
 @using Radzen
 @using Radzen.Blazor
 @using Microsoft.AspNetCore.WebUtilities
+@using Citus.Modules.UnitySearch.Blazor
 
 @inject BusinessShellState ShellState
 @inject VendorClient VendorClient
@@ -82,16 +83,12 @@ else
                     <CitusFormField Label="Payee">
                         @if (_payeeKind == "vendor")
                         {
-                            <RadzenDropDown TValue="Guid?"
-                                            Data="@_vendors"
-                                            @bind-Value="_payeeId"
-                                            TextProperty="DisplayName"
-                                            ValueProperty="Id"
-                                            Placeholder="Who did you pay?"
-                                            AllowFiltering="true"
-                                            AllowClear="true"
-                                            Class="citus-control-full"
-                                            Change="@(_ => OnPayeeChanged())" />
+                            <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                          SelectedId="@_payeeId"
+                                          SelectedDisplayText="@_payeeDisplay"
+                                          Placeholder="Who did you pay?"
+                                          OnVendorSelected="OnPayeeSelected"
+                                          OnCleared="OnPayeeCleared" />
                         }
                         else
                         {
@@ -335,6 +332,7 @@ else
 
     private string _payeeKind = "vendor";
     private Guid? _payeeId;
+    private string _payeeDisplay = string.Empty;
     private string _payeeNameFreeform = string.Empty;
 
     private Guid? _paymentAccountId;
@@ -489,6 +487,7 @@ else
         _copiedFromExpenseId = source.Id;
         _payeeKind = source.PayeeKind;
         _payeeId = source.PayeeId;
+        _payeeDisplay = _vendors.FirstOrDefault(v => v.Id == source.PayeeId)?.DisplayName ?? string.Empty;
         _payeeNameFreeform = source.PayeeNameFreeform ?? string.Empty;
         _paymentAccountId = source.PaymentAccountId;
         _paymentMethod = source.PaymentMethod;
@@ -579,7 +578,20 @@ else
     private void OnPayeeKindChanged(ChangeEventArgs args)
     {
         _payeeKind = args.Value?.ToString() ?? "vendor";
-        if (_payeeKind != "vendor") _payeeId = null;
+        if (_payeeKind != "vendor") { _payeeId = null; _payeeDisplay = string.Empty; }
+    }
+
+    private void OnPayeeSelected(UnitySearchPickerOption option)
+    {
+        _payeeId = option.SourceId;
+        _payeeDisplay = option.DisplayText;
+        OnPayeeChanged();
+    }
+
+    private void OnPayeeCleared()
+    {
+        _payeeId = null;
+        _payeeDisplay = string.Empty;
     }
 
     private void OnPayeeChanged()
