@@ -94,21 +94,12 @@ else
             <div class="lg:col-span-8">
                 <CitusFormGrid Columns="2">
                     <CitusFormField Label="Supplier" Required="true">
-                        @* AllowFiltering is OFF: Radzen 5.0.0's filter path initializes
-                           Radzen.Blazor.DynamicLinqCustomTypeProvider, which calls a
-                           ParsingConfig.CustomTypeProvider overload removed in the pinned
-                           System.Linq.Dynamic.Core 1.6.4 -> MissingMethodException crashes
-                           the circuit on first keystroke. Re-enable once the Radzen /
-                           System.Linq.Dynamic.Core versions are aligned (app-wide issue). *@
-                        <RadzenDropDown TValue="Guid?"
-                                        Data="@_vendors"
-                                        @bind-Value="_vendorId"
-                                        TextProperty="DisplayName"
-                                        ValueProperty="Id"
-                                        Placeholder="Choose a supplier…"
-                                        AllowFiltering="false"
-                                        Class="citus-control-full"
-                                        Change="@(_ => OnVendorChanged())" />
+                        <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                      SelectedId="@_vendorId"
+                                      SelectedDisplayText="@_vendorDisplay"
+                                      Placeholder="Search vendors…"
+                                      OnVendorSelected="OnVendorSelected"
+                                      OnCleared="OnVendorCleared" />
                     </CitusFormField>
 
                     <CitusFormField Label="Source PO">
@@ -365,6 +356,7 @@ else
     private Dictionary<Guid, ItemSummary> _itemsById = new();
 
     private Guid? _vendorId;
+    private string _vendorDisplay = string.Empty;
     private Guid? _paymentTermId;
     private Guid? _sourcePurchaseOrderId;
     private string? _sourcePurchaseOrderNumber;
@@ -505,6 +497,7 @@ else
 
         _copiedFromBillId = source.Id;
         _vendorId = source.VendorId;
+        _vendorDisplay = _vendors.FirstOrDefault(v => v.Id == source.VendorId)?.DisplayName ?? string.Empty;
         _paymentTermId = source.PaymentTermId;
         _sourcePurchaseOrderId = null;       // see XML doc above
         _sourcePurchaseOrderNumber = null;
@@ -588,6 +581,7 @@ else
             Subtitle = $"Status: {bill.Status}"
         };
         _vendorId = bill.VendorId;
+        _vendorDisplay = _vendors.FirstOrDefault(v => v.Id == bill.VendorId)?.DisplayName ?? string.Empty;
         _paymentTermId = bill.PaymentTermId;
         _sourcePurchaseOrderId = bill.SourcePurchaseOrderId;
         _sourcePurchaseOrderNumber = bill.SourcePurchaseOrderNumber;
@@ -632,6 +626,19 @@ else
             }
         }
         if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void OnVendorSelected(UnitySearchPickerOption option)
+    {
+        _vendorId = option.SourceId;
+        _vendorDisplay = option.DisplayText;
+        OnVendorChanged();
+    }
+
+    private void OnVendorCleared()
+    {
+        _vendorId = null;
+        _vendorDisplay = string.Empty;
     }
 
     private void OnVendorChanged()

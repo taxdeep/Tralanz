@@ -3,6 +3,7 @@
 
 @using Radzen
 @using Radzen.Blazor
+@using Citus.Modules.UnitySearch.Blazor
 
 @inject BusinessShellState ShellState
 @inject CustomerClient CustomerClient
@@ -52,15 +53,12 @@ else
             <CitusFormSection Title="Customer">
                 <CitusFormGrid Columns="2">
                     <CitusFormField Label="Customer">
-                        <RadzenDropDown TValue="Guid?"
-                                        Data="@_customers"
-                                        @bind-Value="_customerId"
-                                        TextProperty="DisplayName"
-                                        ValueProperty="Id"
-                                        Placeholder="Select a customer…"
-                                        AllowFiltering="true"
-                                        Class="citus-control-full"
-                                        Change="@(_ => OnCustomerChanged())" />
+                        <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                        SelectedId="@_customerId"
+                                        SelectedDisplayText="@_customerDisplay"
+                                        Placeholder="Search customers…"
+                                        OnCustomerSelected="OnCustomerSelected"
+                                        OnCleared="OnCustomerCleared" />
                     </CitusFormField>
                     <CitusFormField Label="Source quote">
                         <div class="text-fg-muted text-sm">
@@ -279,6 +277,7 @@ else
     private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
 
     private Guid? _customerId;
+    private string _customerDisplay = string.Empty;
     private string _billingAddressLine = string.Empty;
     private string _billingCity = string.Empty;
     private string _billingProvinceState = string.Empty;
@@ -367,6 +366,7 @@ else
             Subtitle = $"Status: {so.Status}"
         };
         _customerId = so.CustomerId;
+        _customerDisplay = _customers.FirstOrDefault(c => c.Id == so.CustomerId)?.DisplayName ?? string.Empty;
         _billingAddressLine = so.BillingAddressLine ?? string.Empty;
         _billingCity = so.BillingCity ?? string.Empty;
         _billingProvinceState = so.BillingProvinceState ?? string.Empty;
@@ -397,6 +397,19 @@ else
             AccountCode = l.AccountCode
         }).ToList();
         if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void OnCustomerSelected(UnitySearchPickerOption option)
+    {
+        _customerId = option.SourceId;
+        _customerDisplay = option.DisplayText;
+        OnCustomerChanged();
+    }
+
+    private void OnCustomerCleared()
+    {
+        _customerId = null;
+        _customerDisplay = string.Empty;
     }
 
     private void OnCustomerChanged()

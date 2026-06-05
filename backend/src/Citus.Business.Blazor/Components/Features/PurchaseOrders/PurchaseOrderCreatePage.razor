@@ -3,6 +3,7 @@
 
 @using Radzen
 @using Radzen.Blazor
+@using Citus.Modules.UnitySearch.Blazor
 
 @inject BusinessShellState ShellState
 @inject VendorClient VendorClient
@@ -62,15 +63,12 @@ else
             <CitusFormSection Title="Vendor">
                 <CitusFormGrid Columns="2">
                     <CitusFormField Label="Vendor">
-                        <RadzenDropDown TValue="Guid?"
-                                        Data="@_vendors"
-                                        @bind-Value="_vendorId"
-                                        TextProperty="DisplayName"
-                                        ValueProperty="Id"
-                                        Placeholder="Choose a supplier…"
-                                        AllowFiltering="true"
-                                        Class="citus-control-full"
-                                        Change="@(_ => OnVendorChanged())" />
+                        <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                      SelectedId="@_vendorId"
+                                      SelectedDisplayText="@_vendorDisplay"
+                                      Placeholder="Search vendors…"
+                                      OnVendorSelected="OnVendorSelected"
+                                      OnCleared="OnVendorCleared" />
                     </CitusFormField>
                 </CitusFormGrid>
             </CitusFormSection>
@@ -298,6 +296,7 @@ else
     private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
 
     private Guid? _vendorId;
+    private string _vendorDisplay = string.Empty;
     private Guid? _paymentTermId;
     private DateTime? _orderDate = DateTime.Today;
     private DateTime? _expectedDeliveryDate;
@@ -452,6 +451,7 @@ else
             Subtitle = $"Status: {po.Status}"
         };
         _vendorId = po.VendorId;
+        _vendorDisplay = _vendors.FirstOrDefault(v => v.Id == po.VendorId)?.DisplayName ?? string.Empty;
         _paymentTermId = po.PaymentTermId;
         _orderDate = po.OrderDate.ToDateTime(TimeOnly.MinValue);
         _expectedDeliveryDate = po.ExpectedDeliveryDate?.ToDateTime(TimeOnly.MinValue);
@@ -482,6 +482,19 @@ else
             TaxCodeId = l.TaxCodeId
         }).ToList();
         if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void OnVendorSelected(UnitySearchPickerOption option)
+    {
+        _vendorId = option.SourceId;
+        _vendorDisplay = option.DisplayText;
+        OnVendorChanged();
+    }
+
+    private void OnVendorCleared()
+    {
+        _vendorId = null;
+        _vendorDisplay = string.Empty;
     }
 
     private void OnVendorChanged()
