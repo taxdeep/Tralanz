@@ -13978,6 +13978,13 @@ app.MapPost(
         if (providedBytes.Length != configuredBytes.Length ||
             !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes))
         {
+            // P0-6 (C12) audit: a caller presented a non-matching bootstrap
+            // token — log the source so repeated probing is visible. Never
+            // log the token bytes.
+            logger.LogWarning(
+                "AUDIT internal-ai-trigger rejected (bad token): endpoint={Endpoint} remoteIp={RemoteIp}",
+                "distill-unitysearch",
+                httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
             return Results.Unauthorized();
         }
 
@@ -13985,6 +13992,23 @@ app.MapPost(
         {
             return Results.BadRequest(new { message = "companyId query parameter is required." });
         }
+
+        // P0-6 (C12) audit: record every authorized cross-tenant trigger so an
+        // operator can trace who distilled which company. tokenFp is a short
+        // SHA-256 prefix — enough to correlate across rotations without
+        // persisting the secret. NOTE: these /internal/ai/* endpoints are
+        // guarded only by the bootstrap token and accept an arbitrary
+        // companyId, so they MUST be bound to the internal/loopback interface
+        // (not publicly routable). Full SysAdmin-host migration is the tracked
+        // P1 follow-up.
+        var tokenFingerprint = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(providedBytes)).ToLowerInvariant()[..12];
+        logger.LogInformation(
+            "AUDIT internal-ai-trigger authorized: endpoint={Endpoint} company={CompanyId} tokenFp={TokenFingerprint} remoteIp={RemoteIp}",
+            "distill-unitysearch",
+            companyId.Value,
+            tokenFingerprint,
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
 
         try
         {
@@ -14052,6 +14076,11 @@ app.MapPost(
         if (providedBytes.Length != configuredBytes.Length
             || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes))
         {
+            // P0-6 (C12) audit: non-matching bootstrap token — log the source.
+            logger.LogWarning(
+                "AUDIT internal-ai-trigger rejected (bad token): endpoint={Endpoint} remoteIp={RemoteIp}",
+                "backfill-search-doc-embeddings",
+                httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
             return Results.Unauthorized();
         }
 
@@ -14059,6 +14088,17 @@ app.MapPost(
         {
             return Results.BadRequest(new { message = "companyId query parameter is required." });
         }
+
+        // P0-6 (C12) audit: trace every authorized cross-tenant trigger (see
+        // the distillation endpoint above for the full network-binding note).
+        var tokenFingerprint = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(providedBytes)).ToLowerInvariant()[..12];
+        logger.LogInformation(
+            "AUDIT internal-ai-trigger authorized: endpoint={Endpoint} company={CompanyId} tokenFp={TokenFingerprint} remoteIp={RemoteIp}",
+            "backfill-search-doc-embeddings",
+            companyId.Value,
+            tokenFingerprint,
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
 
         try
         {
