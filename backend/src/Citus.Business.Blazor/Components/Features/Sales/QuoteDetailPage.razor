@@ -46,7 +46,7 @@ else
                        Icon="IconName.FileText" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_quote.Status)"
                        Description="@StatusHint(_quote.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_quote.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_quote.Status)" />
         <CitusStatCard Label="Total" Value="@($"{_quote.TotalAmount:N2} {_quote.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_quote.SubtotalAmount:N2} − discount {_quote.DiscountAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -295,17 +295,5 @@ else
         "converted" => "Converted to a Sales Order.",
         "void" => "Voided.",
         _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "pending" => StatTone.Info,
-        "accepted" => StatTone.Success,
-        "rejected" => StatTone.Danger,
-        "expired" => StatTone.Warning,
-        "converted" => StatTone.Primary,
-        "void" => StatTone.Neutral,
-        _ => StatTone.Neutral
     };
 }

@@ -44,7 +44,7 @@ else
         <CitusStatCard Label="PO #" Value="@_po.PurchaseOrderNumber" Description="@_po.VendorName"
                        Icon="IconName.FileText" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_po.Status)" Description="@StatusHint(_po.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_po.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_po.Status)" />
         <CitusStatCard Label="Total" Value="@($"{_po.TotalAmount:N2} {_po.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_po.SubtotalAmount:N2} − discount {_po.DiscountAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -309,15 +309,5 @@ else
         "cancelled" => "Cancelled.",
         "void" => "Voided.",
         _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "open" => StatTone.Info,
-        "closed" => StatTone.Success,
-        "cancelled" => StatTone.Neutral,
-        "void" => StatTone.Neutral,
-        _ => StatTone.Neutral
     };
 }

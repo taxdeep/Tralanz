@@ -37,7 +37,7 @@ else
         <CitusStatCard Label="Credit #" Value="@_doc.DisplayNumber" Description="@_vendorName"
                        Icon="IconName.FileText" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_doc.Status)" />
         <CitusStatCard Label="Total" Value="@($"{_doc.TotalAmount:N2} {_doc.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_doc.SubtotalAmount:N2} + tax {_doc.TaxAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -197,14 +197,5 @@ else
         "voided" => "Voided.",
         "reversed" => "Reversed.",
         _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "posted" => StatTone.Success,
-        "voided" => StatTone.Neutral,
-        "reversed" => StatTone.Warning,
-        _ => StatTone.Neutral
     };
 }

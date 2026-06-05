@@ -94,4 +94,40 @@
         "void" => "Void",
         _ => status ?? string.Empty,
     };
+
+    // Canonical document-status -> CitusStatCard tone (single source of truth
+    // for the StatCard Tone vocabulary, mirroring ResolveColor for badges).
+    // NOTE: posted -> Success here is SETTLED-document semantics. AP/AR docs
+    // (Bill, Invoice) and the refund receipt deliberately keep a LOCAL StatusTone
+    // (posted -> Info / Warning = "awaiting payment" / "money-out caution") and
+    // do NOT call this — that drift is intentional, not a bug.
+    public static StatTone ResolveTone(string? status) => (status ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "draft" => StatTone.Neutral,
+        "submitted" => StatTone.Info,
+        "open" => StatTone.Info,
+        "pending" => StatTone.Info,
+        "partially_paid" => StatTone.Info,
+        "partially_applied" => StatTone.Info,
+        "partially_billed" => StatTone.Info,
+        "partiallybilled" => StatTone.Info,
+        "posted" => StatTone.Success,
+        "paid" => StatTone.Success,
+        "closed" => StatTone.Success,
+        "completed" => StatTone.Success,
+        "confirmed" => StatTone.Success,
+        "invoiced" => StatTone.Success,
+        "accepted" => StatTone.Success,
+        "converted" => StatTone.Primary,
+        "billed" => StatTone.Warning,
+        "reversed" => StatTone.Warning,
+        "amended" => StatTone.Warning,
+        "expired" => StatTone.Warning,
+        "rejected" => StatTone.Danger,
+        "voided" => StatTone.Neutral,
+        "cancelled" => StatTone.Neutral,
+        "canceled" => StatTone.Neutral,
+        "void" => StatTone.Neutral,
+        _ => StatTone.Neutral,
+    };
 }

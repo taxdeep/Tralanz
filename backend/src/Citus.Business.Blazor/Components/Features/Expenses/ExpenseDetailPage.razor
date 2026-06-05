@@ -38,7 +38,7 @@ else
                        Icon="IconName.Wallet" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_expense.Status)"
                        Description="@(_expense.VoidedAt is { } v ? $"Voided {v.ToLocalTime():yyyy-MM-dd HH:mm}" : "Posted")"
-                       Icon="IconName.Eye" Tone="@StatusTone(_expense.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_expense.Status)" />
         <CitusStatCard Label="Total" Value="@($"{_expense.TotalAmount:N2} {_expense.TransactionCurrencyCode}")"
                        Description="@($"Paid via {HumanizeMethod(_expense.PaymentMethod)}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -282,12 +282,5 @@ else
         "eft" => "EFT",
         "other" => "Other",
         _ => method
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "posted" => StatTone.Success,
-        "voided" => StatTone.Neutral,
-        _ => StatTone.Neutral
     };
 }

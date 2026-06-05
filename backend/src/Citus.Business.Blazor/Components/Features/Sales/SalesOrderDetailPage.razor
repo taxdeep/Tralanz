@@ -47,7 +47,7 @@ else
         <CitusStatCard Label="Sales Order" Value="@_so.SalesOrderNumber" Description="@_so.CustomerName"
                        Icon="IconName.Receipt" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_so.Status)" Description="@StatusHint(_so.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_so.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_so.Status)" />
         <CitusStatCard Label="Total" Value="@($"{_so.TotalAmount:N2} {_so.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_so.SubtotalAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -581,15 +581,6 @@ else
         "invoiced" => "Customer has been billed.",
         "cancelled" => "Cancelled.",
         _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "open" => StatTone.Info,
-        "confirmed" => StatTone.Success,
-        "invoiced" => StatTone.Success,
-        "cancelled" => StatTone.Neutral,
-        _ => StatTone.Neutral
     };
 
     private static bool HasAddress(SalesOrderRecordDto so) =>

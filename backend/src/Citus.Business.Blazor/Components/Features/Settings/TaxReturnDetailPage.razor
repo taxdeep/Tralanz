@@ -30,7 +30,7 @@ else
         <CitusStatCard Label="Filing #" Value="@_doc.DisplayNumber" Description="@_doc.TaxRegime"
                        Icon="IconName.FileText" Tone="StatTone.Primary" />
         <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_doc.Status)" />
         <CitusStatCard Label="Period" Value="@($"{_doc.PeriodStart:yyyy-MM-dd} → {_doc.PeriodEnd:yyyy-MM-dd}")"
                        Description="@HumanizeFrequency(_doc.FilingFrequency)"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
@@ -158,14 +158,6 @@ else
         "posted" => "Period locked; net moved to filing-side row.",
         "amended" => "Superseded by an amendment.",
         _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "posted" => StatTone.Success,
-        "amended" => StatTone.Warning,
-        _ => StatTone.Neutral
     };
 
     private static string HumanizeFrequency(string freq) => freq switch
