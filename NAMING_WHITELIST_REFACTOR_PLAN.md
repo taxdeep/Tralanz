@@ -2,6 +2,8 @@
 
 This document is the temporary execution plan for bringing the current Citus codebase into the approved naming whitelist before adding more accounting features.
 
+> **Status (2026-06-04)** — confirmed as the operative naming direction (supersedes the older "preserve `Citus.*` forever" strangler note). New code MUST use the approved roots below. Migrating the existing `Citus.*` projects into them is a **scheduled structural batch, not yet executed** — see `AUDIT_2026-06-04.md` → Batch 5. Database identifiers (`citus_*`) are out of scope.
+
 ## 1. Active Naming Constraints
 
 Approved root categories:

@@ -6,10 +6,15 @@ domain (GL / AR / AP / Inventory) and ships two Blazor Server shells —
 `Citus.Business.Blazor` (the operator-facing books) and
 `Citus.SysAdmin.Blazor` (tenant / first-company provisioning).
 
-> **Naming note** — internal projects still carry the legacy `Citus.*` and
-> `citus_*` prefixes. The product name flipping to **Tralanz Books** is being
-> applied strangler-style: brand-neutral technical layers stay, branded
-> shells and user-visible copy migrate over time.
+> **Naming note** — the product is **Tralanz Books**; internal projects still
+> carry the legacy `Citus.*` / `citus_*` prefixes. The approved end-state is the
+> whitelist root layout in
+> [`NAMING_WHITELIST_REFACTOR_PLAN.md`](NAMING_WHITELIST_REFACTOR_PLAN.md): new
+> code lands in the whitelist roots (`Web`, `Modules`, `Engines`,
+> `Infrastructure`, `SharedKernel`, …), and the existing `Citus.*` projects are
+> migrated into them in a dedicated structural batch. User-visible copy migrates
+> to Tralanz eagerly; technical `Citus.*` names stay until that batch runs.
+> Database identifiers (`citus_*`) are not renamed.
 
 ## Deployment paths
 
