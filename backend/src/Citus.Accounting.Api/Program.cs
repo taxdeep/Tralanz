@@ -7,6 +7,7 @@ using static Citus.Accounting.Api.InventoryItemRequestMapper;
 using static Citus.Accounting.Api.Authorization.EndpointApprovalAuthorityHelpers;
 using static Citus.Accounting.Api.Endpoints.Support.ReviewMappers;
 using static Citus.Accounting.Api.Endpoints.Support.BusinessSessionEndpointHelpers;
+using static Citus.Accounting.Api.Endpoints.Support.EndpointRequestHelpers;
 using Citus.Accounting.Api.Initialization;
 using Citus.Accounting.Api.Tasks;
 using Citus.Accounting.Application;
@@ -5555,52 +5556,6 @@ accounting.MapPost(
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsTaxEdit);
 
-static TaxCodeSetUpsertInput MapTaxCodeSetInput(TaxCodeSetUpsertHttpRequest request)
-    => new(
-        Code: request.Code!.Trim(),
-        Name: request.Name!.Trim(),
-        AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
-        IsActive: request.IsActive ?? true,
-        Members: (request.Members ?? Array.Empty<TaxCodeSetMemberHttpRequest>())
-            .Select((m, i) => new TaxCodeSetMemberInput(m.RuleId, m.Sequence > 0 ? m.Sequence : i + 1, m.IsCompound))
-            .ToList());
-
-static string? ValidateTaxCodeSetInput(TaxCodeSetUpsertHttpRequest request)
-{
-    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
-    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
-    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
-    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
-    if (!TaxCodeAppliesTo.IsValid(request.AppliesTo?.Trim().ToLowerInvariant())) return "Applies-to must be sales, purchase, or both.";
-    var members = request.Members ?? Array.Empty<TaxCodeSetMemberHttpRequest>();
-    if (members.Count == 0) return "A Tax Code must contain at least one Tax Rule.";
-    if (members.Select(m => m.RuleId).Distinct().Count() != members.Count) return "A Tax Rule can appear at most once in a Tax Code.";
-    return null;
-}
-
-static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
-{
-    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
-    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
-    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
-    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
-    if (request.RatePercent is null || request.RatePercent < 0m) return "Rate must be 0 or greater.";
-    if (request.RatePercent > 100m) return "Rate must be 100 or lower.";
-    if (string.IsNullOrWhiteSpace(request.AppliesTo) || !TaxCodeAppliesTo.IsValid(request.AppliesTo.Trim().ToLowerInvariant()))
-    {
-        return "Applies to must be 'sales', 'purchase', or 'both'.";
-    }
-    if (string.IsNullOrWhiteSpace(request.RegistrationNumber))
-    {
-        return "Tax registration number is required.";
-    }
-    if (request.RegistrationNumber.Length > 64)
-    {
-        return "Registration number must be 64 characters or fewer.";
-    }
-    return null;
-}
-
 // ===========================================================================
 // Payment terms catalog (per-company)
 //
@@ -5715,17 +5670,6 @@ accounting.MapPost(
         var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
-
-static string? ValidatePaymentTermInput(PaymentTermUpsertHttpRequest request)
-{
-    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
-    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
-    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
-    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
-    if (request.NetDays is null || request.NetDays < 0) return "Net days must be 0 or greater.";
-    if (request.NetDays > 3650) return "Net days must be 3650 or fewer.";
-    return null;
-}
 
 // ===========================================================================
 // Sales-side pre-billing documents: Quotes (estimates) + Sales Orders.
@@ -6391,111 +6335,16 @@ accounting.MapPost(
         }
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.InventoryStockAdjust);
 
-static string? ValidateQuoteInput(QuoteUpsertHttpRequest request)
-{
-    if (request.CustomerId == Guid.Empty) return "Customer is required.";
-    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
-    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
-    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
-    if (!QuoteTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
-    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
-    foreach (var line in request.Lines)
-    {
-        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
-        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
-    }
-    return null;
-}
-
 // ---------------------------------------------------------------------------
 // Maps an InvoiceTemplate domain record into the wire shape that the
 // Settings UI consumes. Flat structure (no nested config object) so a
 // JSON typed-deserialize on the client stays trivial.
 // ---------------------------------------------------------------------------
-static object MapInvoiceTemplate(InvoiceTemplate template) => new
-{
-    template.Id,
-    template.CompanyId,
-    template.Name,
-    template.IsDefault,
-    template.Config.LogoUrl,
-    template.Config.PrimaryColorHex,
-    template.Config.AccentColorHex,
-    template.Config.Tagline,
-    template.Config.Greeting,
-    template.Config.PaymentInstructions,
-    template.Config.FooterNote,
-    template.Config.ShowTaxColumn,
-    template.Config.EmailSubjectTemplate,
-    template.Config.EmailBodyTemplate,
-    template.CreatedAt,
-    template.UpdatedAt,
-};
-
 // ---------------------------------------------------------------------------
 // Validates and maps the wire-format upsert request into the Application-
 // layer InvoiceTemplateConfig. Returns the parsed config plus a non-null
 // error string when validation fails.
 // ---------------------------------------------------------------------------
-static (InvoiceTemplateConfig Config, string? Error) TryReadInvoiceTemplateConfig(
-    InvoiceTemplateUpsertHttpRequest request)
-{
-    var defaults = InvoiceTemplateConfig.Default;
-
-    var primary = string.IsNullOrWhiteSpace(request.PrimaryColorHex)
-        ? defaults.PrimaryColorHex
-        : request.PrimaryColorHex!.Trim();
-    if (!IsValidHexColor(primary))
-    {
-        return (defaults, $"Primary color '{primary}' is not a valid hex color (expected #RRGGBB).");
-    }
-
-    var accent = string.IsNullOrWhiteSpace(request.AccentColorHex)
-        ? defaults.AccentColorHex
-        : request.AccentColorHex!.Trim();
-    if (!IsValidHexColor(accent))
-    {
-        return (defaults, $"Accent color '{accent}' is not a valid hex color (expected #RRGGBB).");
-    }
-
-    var config = new InvoiceTemplateConfig(
-        LogoUrl: TrimToNull(request.LogoUrl),
-        PrimaryColorHex: primary,
-        AccentColorHex: accent,
-        Tagline: TrimToNull(request.Tagline),
-        Greeting: request.Greeting?.Trim() ?? defaults.Greeting,
-        PaymentInstructions: request.PaymentInstructions?.Trim() ?? string.Empty,
-        FooterNote: request.FooterNote?.Trim() ?? defaults.FooterNote,
-        ShowTaxColumn: request.ShowTaxColumn ?? defaults.ShowTaxColumn,
-        EmailSubjectTemplate: string.IsNullOrWhiteSpace(request.EmailSubjectTemplate)
-            ? defaults.EmailSubjectTemplate
-            : request.EmailSubjectTemplate!.Trim(),
-        EmailBodyTemplate: request.EmailBodyTemplate?.Trim() ?? string.Empty);
-
-    return (config, null);
-}
-
-static bool IsValidHexColor(string value)
-{
-    if (string.IsNullOrWhiteSpace(value)) return false;
-    if (!value.StartsWith('#')) return false;
-    if (value.Length is not (4 or 7 or 9)) return false;
-    for (var i = 1; i < value.Length; i++)
-    {
-        var c = value[i];
-        var ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-        if (!ok) return false;
-    }
-    return true;
-}
-
-static string? TrimToNull(string? value)
-{
-    if (string.IsNullOrWhiteSpace(value)) return null;
-    var trimmed = value.Trim();
-    return trimmed.Length == 0 ? null : trimmed;
-}
-
 // ---------------------------------------------------------------------------
 // Synthesizes a stand-in invoice projection for the template preview
 // endpoint so the editor can render a real PDF before any actual invoice
@@ -6503,124 +6352,6 @@ static string? TrimToNull(string? value)
 // sample data ("INV-PREVIEW", "Acme Co.") so an operator who downloads
 // it doesn't mistake the preview for a real document.
 // ---------------------------------------------------------------------------
-static InvoiceReviewProjection BuildSampleInvoiceProjection(string currencyCode)
-{
-    var documentDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
-    return new InvoiceReviewProjection(
-        DisplayNumber: "INV-PREVIEW",
-        EntityNumber: "EN0000PREVIEW",
-        DocumentDate: documentDate,
-        DueDate: documentDate.AddDays(30),
-        Status: "preview",
-        CounterpartyDisplayName: "Acme Co.",
-        TransactionCurrencyCode: string.IsNullOrWhiteSpace(currencyCode) ? "USD" : currencyCode,
-        SubtotalAmount: 175m,
-        TaxAmount: 22.75m,
-        TotalAmount: 197.75m,
-        Memo: "Sample preview — replace with real invoice content when sending.",
-        Lines:
-        [
-            new InvoiceReviewLineProjection(1, "Design retainer (sample)", 1m, 100m, 100m, 13m),
-            new InvoiceReviewLineProjection(2, "Hosting (sample)", 3m, 25m, 75m, 9.75m),
-        ]);
-}
-
-static QuoteUpsertInput MapQuoteInput(QuoteUpsertHttpRequest request) => new(
-    CustomerId: request.CustomerId,
-    DocumentDate: request.DocumentDate,
-    ExpirationDate: request.ExpirationDate,
-    TransactionCurrencyCode: request.TransactionCurrencyCode,
-    FxRate: request.FxRate,
-    BillingAddressLine: request.BillingAddressLine,
-    BillingCity: request.BillingCity,
-    BillingProvinceState: request.BillingProvinceState,
-    BillingPostalCode: request.BillingPostalCode,
-    BillingCountry: request.BillingCountry,
-    ShippingAddressLine: request.ShippingAddressLine,
-    ShippingCity: request.ShippingCity,
-    ShippingProvinceState: request.ShippingProvinceState,
-    ShippingPostalCode: request.ShippingPostalCode,
-    ShippingCountry: request.ShippingCountry,
-    ShipVia: request.ShipVia,
-    ShippingDate: request.ShippingDate,
-    TrackingNo: request.TrackingNo,
-    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
-    DiscountKind: request.DiscountKind,
-    DiscountValue: request.DiscountValue,
-    ShippingAmount: request.ShippingAmount,
-    ShippingTaxCodeId: request.ShippingTaxCodeId,
-    MemoToCustomer: request.MemoToCustomer,
-    InternalNote: request.InternalNote,
-    CustomerPoNumber: string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
-    Lines: (request.Lines ?? Array.Empty<QuoteLineHttpRequest>())
-        .Select(l => new QuoteLineInput(
-            Sequence: l.Sequence,
-            ServiceDate: l.ServiceDate,
-            ItemId: l.ItemId,
-            Description: l.Description ?? string.Empty,
-            Quantity: l.Quantity,
-            UnitPrice: l.UnitPrice,
-            TaxCodeId: l.TaxCodeId,
-            AccountCode: l.AccountCode))
-        .ToArray(),
-    ExpectedUpdatedAt: request.ExpectedUpdatedAt);
-
-static string? ValidateSalesOrderInput(SalesOrderUpsertHttpRequest request)
-{
-    if (request.CustomerId == Guid.Empty) return "Customer is required.";
-    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
-    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
-    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
-    if (!QuoteTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
-    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
-    foreach (var line in request.Lines)
-    {
-        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
-        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
-    }
-    return null;
-}
-
-static SalesOrderUpsertInput MapSalesOrderInput(SalesOrderUpsertHttpRequest request) => new(
-    CustomerId: request.CustomerId,
-    DocumentDate: request.DocumentDate,
-    TransactionCurrencyCode: request.TransactionCurrencyCode,
-    FxRate: request.FxRate,
-    BillingAddressLine: request.BillingAddressLine,
-    BillingCity: request.BillingCity,
-    BillingProvinceState: request.BillingProvinceState,
-    BillingPostalCode: request.BillingPostalCode,
-    BillingCountry: request.BillingCountry,
-    ShippingAddressLine: request.ShippingAddressLine,
-    ShippingCity: request.ShippingCity,
-    ShippingProvinceState: request.ShippingProvinceState,
-    ShippingPostalCode: request.ShippingPostalCode,
-    ShippingCountry: request.ShippingCountry,
-    ShipVia: request.ShipVia,
-    ShippingDate: request.ShippingDate,
-    TrackingNo: request.TrackingNo,
-    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
-    DiscountKind: request.DiscountKind,
-    DiscountValue: request.DiscountValue,
-    ShippingAmount: request.ShippingAmount,
-    ShippingTaxCodeId: request.ShippingTaxCodeId,
-    MemoToCustomer: request.MemoToCustomer,
-    InternalNote: request.InternalNote,
-    SourceQuoteId: request.SourceQuoteId,
-    CustomerPoNumber: string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
-    Lines: (request.Lines ?? Array.Empty<SalesOrderLineHttpRequest>())
-        .Select(l => new SalesOrderLineInput(
-            Sequence: l.Sequence,
-            ServiceDate: l.ServiceDate,
-            ItemId: l.ItemId,
-            Description: l.Description ?? string.Empty,
-            Quantity: l.Quantity,
-            UnitPrice: l.UnitPrice,
-            TaxCodeId: l.TaxCodeId,
-            AccountCode: l.AccountCode))
-        .ToArray(),
-    ExpectedUpdatedAt: request.ExpectedUpdatedAt);
-
 // ===========================================================================
 // Bills (vendor invoices) — AP-side document lifecycle.
 //
@@ -6802,25 +6533,6 @@ accounting.MapPost(
         }
     });
 
-static string? ValidateBillInput(BillUpsertHttpRequest request)
-{
-    if (string.IsNullOrWhiteSpace(request.BillNumber)) return "Bill number is required (use the supplier's invoice number).";
-    if (request.BillNumber.Length > 64) return "Bill number must be 64 characters or fewer.";
-    if (request.VendorId == Guid.Empty) return "Vendor is required.";
-    if (string.IsNullOrWhiteSpace(request.DocumentCurrencyCode)) return "Document currency is required.";
-    if (request.DocumentCurrencyCode.Length != 3) return "Document currency must be a 3-letter code.";
-    if (request.DueDate < request.BillDate) return "Due date cannot be before bill date.";
-    if (request.FxRate is { } rate && rate <= 0m) return "Exchange rate must be greater than zero.";
-    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
-    foreach (var line in request.Lines)
-    {
-        if (line.ExpenseAccountId == Guid.Empty) return "Each line must point to a category account.";
-        if (line.LineAmount < 0m) return "Line amount must be 0 or greater.";
-        if (line.TaxAmount is { } tax && tax < 0m) return "Tax amount must be 0 or greater.";
-    }
-    return null;
-}
-
 /// <summary>
 /// Runs <see cref="ITaskLineLinkValidator"/> against the distinct
 /// non-null Task ids on a bill / expense upsert. No-ops when no lines
@@ -6828,50 +6540,6 @@ static string? ValidateBillInput(BillUpsertHttpRequest request)
 /// the first invalid link — the route catches it and returns 400 with
 /// the validator's user-facing message.
 /// </summary>
-static async Task ValidateBillExpenseTaskLinksAsync(
-    ITaskLineLinkValidator validator,
-    CompanyId companyId,
-    IEnumerable<Guid?> lineTaskIds,
-    CancellationToken cancellationToken)
-{
-    var distinct = lineTaskIds
-        .Where(static id => id.HasValue && id.Value != Guid.Empty)
-        .Select(static id => id!.Value)
-        .Distinct()
-        .ToArray();
-    foreach (var taskId in distinct)
-    {
-        await validator.ValidateAsync(companyId, taskId, cancellationToken);
-    }
-}
-
-static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
-    new(
-        BillNumber: request.BillNumber,
-        VendorId: request.VendorId,
-        BillDate: request.BillDate,
-        DueDate: request.DueDate,
-        DocumentCurrencyCode: request.DocumentCurrencyCode,
-        FxRate: request.FxRate,
-        Memo: request.Memo,
-        PaymentTermId: request.PaymentTermId,
-        SourcePurchaseOrderId: request.SourcePurchaseOrderId,
-        SourcePurchaseOrderNumber: request.SourcePurchaseOrderNumber,
-        Lines: (request.Lines ?? Array.Empty<BillLineHttpRequest>())
-            .Select(l => new BillLineInput(
-                LineNumber: l.LineNumber,
-                ExpenseAccountId: l.ExpenseAccountId,
-                Description: l.Description ?? string.Empty,
-                LineAmount: l.LineAmount,
-                TaxCodeId: l.TaxCodeId,
-                TaxAmount: l.TaxAmount ?? 0m,
-                TaskId: l.TaskId))
-            .ToArray(),
-        ExpectedUpdatedAt: request.ExpectedUpdatedAt,
-        // Copy A3 Phase 2: thread the source bill id through so the
-        // store writes the bill_copied audit_log row.
-        CopiedFromBillId: request.CopiedFromBillId);
-
 // ===========================================================================
 // Purchase Orders (AP-side, /ap/purchase-orders) — pre-bill commitments.
 //
@@ -7089,64 +6757,6 @@ accounting.MapPost(
         return Results.Ok(savedBill);
     });
 
-static string? ValidatePurchaseOrderInput(PurchaseOrderUpsertHttpRequest request)
-{
-    if (request.VendorId == Guid.Empty) return "Vendor is required.";
-    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
-    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
-    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? PurchaseOrderTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
-    if (!PurchaseOrderTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
-    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
-    foreach (var line in request.Lines)
-    {
-        if (line.ExpenseAccountId is null && line.ItemId is null)
-            return "Each line must have a category (Item-mode lines land with the Inventory batch).";
-        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
-        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
-    }
-    return null;
-}
-
-static PurchaseOrderUpsertInput MapPurchaseOrderInput(PurchaseOrderUpsertHttpRequest request) => new(
-    VendorId: request.VendorId,
-    OrderDate: request.OrderDate,
-    ExpectedDeliveryDate: request.ExpectedDeliveryDate,
-    TransactionCurrencyCode: request.TransactionCurrencyCode,
-    FxRate: request.FxRate,
-    BillingAddressLine: request.BillingAddressLine,
-    BillingCity: request.BillingCity,
-    BillingProvinceState: request.BillingProvinceState,
-    BillingPostalCode: request.BillingPostalCode,
-    BillingCountry: request.BillingCountry,
-    ShippingAddressLine: request.ShippingAddressLine,
-    ShippingCity: request.ShippingCity,
-    ShippingProvinceState: request.ShippingProvinceState,
-    ShippingPostalCode: request.ShippingPostalCode,
-    ShippingCountry: request.ShippingCountry,
-    ShipVia: request.ShipVia,
-    ShippingDate: request.ShippingDate,
-    TrackingNo: request.TrackingNo,
-    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? PurchaseOrderTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
-    DiscountKind: request.DiscountKind,
-    DiscountValue: request.DiscountValue,
-    ShippingAmount: request.ShippingAmount,
-    ShippingTaxCodeId: request.ShippingTaxCodeId,
-    MemoToSupplier: request.MemoToSupplier,
-    InternalNote: request.InternalNote,
-    PaymentTermId: request.PaymentTermId,
-    Lines: (request.Lines ?? Array.Empty<PurchaseOrderLineHttpRequest>())
-        .Select(l => new PurchaseOrderLineInput(
-            Sequence: l.Sequence,
-            ServiceDate: l.ServiceDate,
-            ItemId: l.ItemId,
-            ExpenseAccountId: l.ExpenseAccountId,
-            Description: l.Description ?? string.Empty,
-            Quantity: l.Quantity,
-            UnitPrice: l.UnitPrice,
-            TaxCodeId: l.TaxCodeId))
-        .ToArray(),
-    ExpectedUpdatedAt: request.ExpectedUpdatedAt);
-
 // ===========================================================================
 // Expenses (AP-side, /ap/expenses) — cash outflows.
 //
@@ -7356,72 +6966,6 @@ accounting.MapPost(
         return Results.Ok(savedExpense);
     });
 
-static string? ValidateExpenseInput(ExpenseUpsertHttpRequest request)
-{
-    if (!ExpensePayeeKind.IsValid(request.PayeeKind))
-        return "Payee kind must be 'vendor', 'employee', or 'other'.";
-    if (request.PayeeId is null && string.IsNullOrWhiteSpace(request.PayeeNameFreeform))
-        return "Payee is required (pick a vendor / employee or enter a free-form name).";
-    if (request.PaymentAccountId == Guid.Empty)
-        return "Payment account is required.";
-    if (!ExpensePaymentMethod.IsValid(request.PaymentMethod))
-        return "Invalid payment method.";
-
-    var refValidation = ExpensePaymentMethod.ValidateReferenceFields(request.PaymentMethod, request.ChequeNumber, request.RefNo);
-    if (refValidation is not null) return refValidation;
-
-    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
-    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
-    if (request.FxRate is { } rate && rate <= 0m) return "Exchange rate must be greater than zero.";
-
-    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? ExpenseTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
-    if (!ExpenseTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
-
-    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
-    foreach (var line in request.Lines)
-    {
-        if (line.ExpenseAccountId == Guid.Empty) return "Each line must point to a category account.";
-        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
-        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
-    }
-    return null;
-}
-
-static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => new(
-    PayeeKind: request.PayeeKind,
-    PayeeId: request.PayeeId,
-    PayeeNameFreeform: request.PayeeNameFreeform ?? string.Empty,
-    PaymentAccountId: request.PaymentAccountId,
-    PaymentMethod: request.PaymentMethod,
-    ChequeNumber: string.IsNullOrWhiteSpace(request.ChequeNumber) ? null : request.ChequeNumber.Trim(),
-    RefNo: string.IsNullOrWhiteSpace(request.RefNo) ? null : request.RefNo.Trim(),
-    TransactionCurrencyCode: request.TransactionCurrencyCode,
-    FxRate: request.FxRate,
-    PaymentDate: request.PaymentDate,
-    SourcePurchaseOrderId: request.SourcePurchaseOrderId,
-    SourcePurchaseOrderNumber: request.SourcePurchaseOrderNumber,
-    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? ExpenseTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
-    DiscountKind: request.DiscountKind,
-    DiscountValue: request.DiscountValue,
-    Memo: request.Memo,
-    InternalNote: request.InternalNote,
-    Lines: (request.Lines ?? Array.Empty<ExpenseLineHttpRequest>())
-        .Select(l => new ExpenseLineInput(
-            Sequence: l.Sequence,
-            ServiceDate: l.ServiceDate,
-            ItemId: l.ItemId,
-            ExpenseAccountId: l.ExpenseAccountId,
-            Description: l.Description ?? string.Empty,
-            Quantity: l.Quantity,
-            UnitPrice: l.UnitPrice,
-            TaxCodeId: l.TaxCodeId,
-            TaskId: l.TaskId,
-            TaxCodeSetId: l.TaxCodeSetId))
-        .ToArray(),
-    // Copy A3 Phase 1: thread through to the store so it writes the
-    // expense_copied audit_log row alongside the regular CREATE.
-    CopiedFromExpenseId: request.CopiedFromExpenseId);
-
 // ===========================================================================
 // Bank Reconciliation
 //
@@ -7515,22 +7059,6 @@ accounting.MapPost(
             return Results.BadRequest(new { message = ex.Message });
         }
     });
-
-static string? ValidateBankReconciliationRequest(BankReconciliationCompleteHttpRequest request)
-{
-    if (request.BankAccountId == Guid.Empty) return "Statement account is required.";
-    if (request.StatementDate == default) return "Statement date is required.";
-    if (request.LedgerEntryIds is null || request.LedgerEntryIds.Count == 0) return "Select at least one ledger entry.";
-    if (request.LedgerEntryIds.Any(id => id == Guid.Empty)) return "Selected ledger entries must be valid ids.";
-    return null;
-}
-
-static string? ValidateBankReconciliationDraftOpen(BankReconciliationDraftOpenHttpRequest request)
-{
-    if (request.BankAccountId == Guid.Empty) return "Statement account is required.";
-    if (request.StatementDate == default) return "Statement date is required.";
-    return null;
-}
 
 // ===========================================================================
 // R-1: Bank reconciliation DRAFT lifecycle endpoints.
@@ -7948,27 +7476,6 @@ accounting.MapGet(
         }
     });
 
-static IResult? RequireBankReconciliationAuthority(
-    BusinessSessionContext? session,
-    string transitionCode)
-{
-    var decision = BusinessApprovalAuthority.EvaluateBankReconciliationAccess(session, transitionCode);
-    if (decision.Allowed)
-    {
-        return null;
-    }
-
-    return Results.Json(
-        new
-        {
-            message = decision.Message,
-            outcomeCode = decision.OutcomeCode
-        },
-        statusCode: decision.OutcomeCode == "blocked_session_required"
-            ? StatusCodes.Status401Unauthorized
-            : StatusCodes.Status403Forbidden);
-}
-
 // ===========================================================================
 // Chart of Accounts (per-company)
 //
@@ -8207,25 +7714,6 @@ accounting.MapPost(
             ? Results.NotFound(new { message = "Account not found or system-protected." })
             : Results.Ok(updated);
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.GlAccountEdit);
-
-static string? ValidateAccountInput(AccountUpsertHttpRequest request)
-{
-    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
-    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
-    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
-    if (request.Name.Length > 200) return "Name must be 200 characters or fewer.";
-    if (string.IsNullOrWhiteSpace(request.RootType) || !AccountRootType.IsValid(request.RootType.Trim().ToLowerInvariant()))
-    {
-        return "Root type must be one of: asset, liability, equity, revenue, cost_of_sales, expense.";
-    }
-    if (request.DetailType is { Length: > 80 }) return "Detail type must be 80 characters or fewer.";
-    if (!string.IsNullOrWhiteSpace(request.CurrencyCode))
-    {
-        var c = request.CurrencyCode.Trim();
-        if (c.Length != 3) return "Currency code must be exactly 3 letters (ISO 4217).";
-    }
-    return null;
-}
 
 // ===========================================================================
 // CoA starter templates
@@ -12960,15 +12448,6 @@ accounting.MapPost(
 // one persistent memo line on the credit_notes row. Future iteration
 // adds explicit columns for these once the credit_notes schema is
 // extended; for V1 this is a lossless round-trip via memo.
-static string? BuildCreditMemoMemo(CreditMemoSaveAndPostHttpRequest request)
-{
-    var parts = new List<string>();
-    if (!string.IsNullOrWhiteSpace(request.Reason)) parts.Add($"Reason: {request.Reason.Trim()}");
-    if (!string.IsNullOrWhiteSpace(request.AppliedToInvoiceNumber)) parts.Add($"Applied to {request.AppliedToInvoiceNumber.Trim()}");
-    if (!string.IsNullOrWhiteSpace(request.Memo)) parts.Add(request.Memo.Trim());
-    return parts.Count == 0 ? null : string.Join(" — ", parts);
-}
-
 accounting.MapPost(
     "/vendor-credits/save-and-post",
     async (
@@ -13066,15 +12545,6 @@ accounting.MapPost(
             return AccountingOperationBadRequest(ex);
         }
     }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorCreditPost);
-
-static string? BuildVendorCreditMemo(VendorCreditSaveAndPostHttpRequest request)
-{
-    var parts = new List<string>();
-    if (!string.IsNullOrWhiteSpace(request.Reason)) parts.Add($"Reason: {request.Reason.Trim()}");
-    if (!string.IsNullOrWhiteSpace(request.AppliedToBillNumber)) parts.Add($"Applied to {request.AppliedToBillNumber.Trim()}");
-    if (!string.IsNullOrWhiteSpace(request.Memo)) parts.Add(request.Memo.Trim());
-    return parts.Count == 0 ? null : string.Join(" — ", parts);
-}
 
 accounting.MapPost(
     "/bank-transfers/save-and-post",
