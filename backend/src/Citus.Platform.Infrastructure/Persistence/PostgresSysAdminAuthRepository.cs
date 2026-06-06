@@ -34,6 +34,11 @@ public sealed class PostgresSysAdminAuthRepository(
             alter table sysadmin_accounts
               add column if not exists display_name text not null default '';
 
+            alter table sysadmin_accounts
+              add column if not exists must_change_password boolean not null default false;
+            alter table sysadmin_accounts
+              add column if not exists password_changed_at timestamptz;
+
             create table if not exists sysadmin_sessions (
               id uuid primary key default gen_random_uuid(),
               sysadmin_account_id char(7) not null references sysadmin_accounts(id) on delete cascade,
@@ -136,13 +141,15 @@ public sealed class PostgresSysAdminAuthRepository(
                   email,
                   display_name,
                   password_hash,
-                  status
+                  status,
+                  must_change_password
                 )
                 values (
                   @email,
                   @display_name,
                   @password_hash,
-                  'active'
+                  'active',
+                  true
                 );
                 """;
             insertCommand.Parameters.AddWithValue("email", normalizedEmail);
@@ -382,7 +389,8 @@ public sealed class PostgresSysAdminAuthRepository(
             Email = account.Email,
             DisplayName = account.DisplayName,
             Roles = ["sysadmin"],
-            ExpiresAtUtc = expiresAtUtc
+            ExpiresAtUtc = expiresAtUtc,
+            MustChangePassword = account.MustChangePassword
         };
     }
 
@@ -441,7 +449,8 @@ public sealed class PostgresSysAdminAuthRepository(
             Email = session.Email,
             DisplayName = session.DisplayName,
             Roles = ["sysadmin"],
-            ExpiresAtUtc = session.ExpiresAtUtc
+            ExpiresAtUtc = session.ExpiresAtUtc,
+            MustChangePassword = session.MustChangePassword
         };
     }
 
@@ -520,6 +529,8 @@ public sealed class PostgresSysAdminAuthRepository(
                 """
                 update sysadmin_accounts
                 set password_hash = @password_hash,
+                    must_change_password = false,
+                    password_changed_at = @updated_at,
                     updated_at = @updated_at
                 where id = @id;
                 """;
@@ -633,7 +644,8 @@ public sealed class PostgresSysAdminAuthRepository(
                    email,
                    coalesce(nullif(display_name, ''), email) as display_name,
                    password_hash,
-                   status
+                   status,
+                   must_change_password
             from sysadmin_accounts
             where lower(email) = @email
             limit 1;
@@ -651,7 +663,8 @@ public sealed class PostgresSysAdminAuthRepository(
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("display_name")).Trim(),
             reader.GetString(reader.GetOrdinal("password_hash")).Trim(),
-            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant());
+            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+            reader.GetBoolean(reader.GetOrdinal("must_change_password")));
     }
 
     private static async Task<SysAdminAccountRecord?> ReadAccountByIdAsync(
@@ -668,7 +681,8 @@ public sealed class PostgresSysAdminAuthRepository(
                    email,
                    coalesce(nullif(display_name, ''), email) as display_name,
                    password_hash,
-                   status
+                   status,
+                   must_change_password
             from sysadmin_accounts
             where id = @id
             for update;
@@ -686,7 +700,8 @@ public sealed class PostgresSysAdminAuthRepository(
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("display_name")).Trim(),
             reader.GetString(reader.GetOrdinal("password_hash")).Trim(),
-            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant());
+            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+            reader.GetBoolean(reader.GetOrdinal("must_change_password")));
     }
 
     private static async Task<SysAdminSetupStatus> ReadSetupStatusAsync(
@@ -726,6 +741,7 @@ public sealed class PostgresSysAdminAuthRepository(
                    account.email,
                    coalesce(nullif(account.display_name, ''), account.email) as display_name,
                    account.status as account_status,
+                   account.must_change_password,
                    session.expires_at,
                    session.revoked_at
             from sysadmin_sessions session
@@ -751,7 +767,8 @@ public sealed class PostgresSysAdminAuthRepository(
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("expires_at")),
             reader.IsDBNull(reader.GetOrdinal("revoked_at"))
                 ? null
-                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("revoked_at")));
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("revoked_at")),
+            reader.GetBoolean(reader.GetOrdinal("must_change_password")));
     }
 
     private sealed record SysAdminAccountRecord(
@@ -759,7 +776,8 @@ public sealed class PostgresSysAdminAuthRepository(
         string Email,
         string DisplayName,
         string PasswordHash,
-        string Status);
+        string Status,
+        bool MustChangePassword);
 
     private sealed record SysAdminSessionRecord(
         Guid SessionId,
@@ -768,7 +786,8 @@ public sealed class PostgresSysAdminAuthRepository(
         string DisplayName,
         string AccountStatus,
         DateTimeOffset ExpiresAtUtc,
-        DateTimeOffset? RevokedAtUtc);
+        DateTimeOffset? RevokedAtUtc,
+        bool MustChangePassword);
 
     private static string? ValidateSecret(string secret, string? currentPassword)
     {

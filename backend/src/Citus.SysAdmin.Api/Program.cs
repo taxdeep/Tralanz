@@ -1676,6 +1676,12 @@ static async ValueTask<object?> RequireSysAdminSessionAsync(
         return Results.Unauthorized();
     }
 
+    // H14: the must-change-password state is surfaced on the session summary and
+    // enforced by the SysAdmin UI (LoginPage redirects a flagged account to the
+    // rotate-password page on first login). A server-side 403 gate was considered
+    // but omitted to avoid any chance of locking the operator out of the rotate
+    // flow itself before the Blazor shell's data-load paths are runtime-verified
+    // against a flagged session; it can be layered on later once that's tested.
     httpContext.Items[typeof(SysAdminAuthSessionSummary)] = ToSessionSummaryFromValidation(validation);
     return await next(context);
 }
@@ -1720,7 +1726,8 @@ static SysAdminAuthSessionSummary ToSessionSummaryFromAuthentication(SysAdminAut
         Email = result.Email,
         DisplayName = result.DisplayName,
         Roles = result.Roles,
-        ExpiresAtUtc = result.ExpiresAtUtc
+        ExpiresAtUtc = result.ExpiresAtUtc,
+        MustChangePassword = result.MustChangePassword
     };
 
 static SysAdminAuthSessionSummary ToSessionSummaryFromValidation(SysAdminSessionValidationResult result) =>
@@ -1730,7 +1737,8 @@ static SysAdminAuthSessionSummary ToSessionSummaryFromValidation(SysAdminSession
         Email = result.Email,
         DisplayName = result.DisplayName,
         Roles = result.Roles,
-        ExpiresAtUtc = result.ExpiresAtUtc
+        ExpiresAtUtc = result.ExpiresAtUtc,
+        MustChangePassword = result.MustChangePassword
     };
 
 static NotificationReadinessSummary ToNotificationReadinessSummary(PlatformNotificationReadinessReport state) =>

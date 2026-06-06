@@ -13390,7 +13390,7 @@ accounting.MapPost(
                 IsDefault: request.IsDefault),
             cancellationToken);
         return Results.Ok(inserted);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerEdit);
 
 accounting.MapPut(
     "/customers/{customerId:guid}/shipping-address-book/{addressId:guid}",
@@ -13419,7 +13419,7 @@ accounting.MapPut(
                 IsDefault: request.IsDefault),
             cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerEdit);
 
 accounting.MapDelete(
     "/customers/{customerId:guid}/shipping-address-book/{addressId:guid}",
@@ -13435,7 +13435,7 @@ accounting.MapDelete(
 
         var removed = await store.DeleteAsync(session.ActiveCompanyId, customerId, addressId, cancellationToken);
         return removed ? Results.NoContent() : Results.NotFound();
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerEdit);
 
 accounting.MapPost(
     "/customers/{customerId:guid}/shipping-address-book/{addressId:guid}/set-default",
@@ -13451,7 +13451,7 @@ accounting.MapPost(
 
         var updated = await store.SetDefaultAsync(session.ActiveCompanyId, customerId, addressId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ArCustomerEdit);
 
 accounting.MapGet(
     "/customers/{customerId:guid}/open-receivables",
@@ -13692,7 +13692,7 @@ accounting.MapPost(
                 IsDefault: request.IsDefault),
             cancellationToken);
         return Results.Ok(inserted);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorEdit);
 
 accounting.MapPut(
     "/vendors/{vendorId:guid}/shipping-address-book/{addressId:guid}",
@@ -13721,7 +13721,7 @@ accounting.MapPut(
                 IsDefault: request.IsDefault),
             cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorEdit);
 
 accounting.MapDelete(
     "/vendors/{vendorId:guid}/shipping-address-book/{addressId:guid}",
@@ -13737,7 +13737,7 @@ accounting.MapDelete(
 
         var removed = await store.DeleteAsync(session.ActiveCompanyId, vendorId, addressId, cancellationToken);
         return removed ? Results.NoContent() : Results.NotFound();
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorEdit);
 
 accounting.MapPost(
     "/vendors/{vendorId:guid}/shipping-address-book/{addressId:guid}/set-default",
@@ -13753,7 +13753,7 @@ accounting.MapPost(
 
         var updated = await store.SetDefaultAsync(session.ActiveCompanyId, vendorId, addressId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
-    });
+    }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.ApVendorEdit);
 
 accounting.MapGet(
     "/vendors/{vendorId:guid}/open-payables",

@@ -19,4 +19,6 @@ public sealed record class SysAdminAuthenticationResult
     public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
 
     public DateTimeOffset ExpiresAtUtc { get; init; }
+
+    public bool MustChangePassword { get; init; }
 }

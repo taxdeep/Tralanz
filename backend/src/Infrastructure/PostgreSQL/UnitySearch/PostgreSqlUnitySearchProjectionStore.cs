@@ -18,138 +18,15 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
 
     private readonly ConcurrentDictionary<CompanyId, DateTimeOffset> _companyRefreshTimestamps = new();
     private readonly ConcurrentDictionary<CompanyId, SemaphoreSlim> _companyLocks = new();
-    private int _schemaEnsured;
 
-    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    public Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        if (Volatile.Read(ref _schemaEnsured) == 1)
-        {
-            return;
-        }
-
-        await using var connection = await connections.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            create table if not exists search_documents (
-              company_id char(7) not null,
-              entity_type text not null,
-              source_id uuid not null,
-              group_key text not null,
-              primary_text text not null,
-              secondary_text text not null default '',
-              search_text text not null,
-              search_vector tsvector null,
-              exact_code_norm text not null default '',
-              navigation_href text not null default '',
-              metadata_json jsonb not null default '{}'::jsonb,
-              effective_date date null,
-              amount numeric(18, 6) null,
-              is_active boolean not null default true,
-              is_voided boolean not null default false,
-              rank_boost numeric(18, 6) not null default 0,
-              version bigint not null default 1,
-              -- Batch-2 isolation columns. See SearchDocumentRecord doc
-              -- comment for the role of each: module on/off, permission
-              -- gate, per-user assignee scope.
-              module_key text not null default 'core',
-              required_permissions text[] not null default array[]::text[],
-              owner_user_id char(7) null,
-              visibility_scope text not null default 'company',
-              -- Batch-7 override: when visibility_scope='assignee_only'
-              -- and the caller holds this permission token, the row is
-              -- visible even if owner_user_id doesn't match. Lets us
-              -- model "task.view (only mine)" vs "task.view.all
-              -- (everyone)" without doubling the index.
-              visibility_override_permission text null,
-              updated_at timestamptz not null default now(),
-              primary key (company_id, entity_type, source_id)
-            );
-
-            -- In-place upgrade for deployments that pre-date Batch 2.
-            -- Each ADD COLUMN IF NOT EXISTS is idempotent so re-running
-            -- the bootstrap is safe.
-            alter table search_documents
-              add column if not exists module_key text not null default 'core';
-            alter table search_documents
-              add column if not exists required_permissions text[] not null default array[]::text[];
-            alter table search_documents
-              add column if not exists owner_user_id char(7) null;
-            alter table search_documents
-              add column if not exists visibility_scope text not null default 'company';
-            alter table search_documents
-              add column if not exists visibility_override_permission text null;
-
-            create index if not exists ix_search_documents_company_group
-              on search_documents (company_id, group_key, entity_type);
-
-            create index if not exists ix_search_documents_company_exact_code
-              on search_documents (company_id, exact_code_norm);
-
-            create index if not exists ix_search_documents_search_vector
-              on search_documents using gin (search_vector);
-
-            create index if not exists ix_search_documents_company_module
-              on search_documents (company_id, module_key);
-
-            create index if not exists ix_search_documents_company_owner
-              on search_documents (company_id, owner_user_id)
-              where owner_user_id is not null;
-
-            -- Numeric-amount lookup path. The topbar's amount search resolves
-            -- "11039.18" to a JE / Invoice / Bill via doc.amount; B-tree on
-            -- (company_id, amount) keeps the L1 exact and L2 tolerance probes
-            -- index-only even on multi-million-row charts.
-            create index if not exists ix_search_documents_company_amount
-              on search_documents (company_id, amount)
-              where amount is not null;
-
-            -- Per-user (per-company) priors keyed by query class. When a
-            -- numeric_decimal query matches both a JE and a Bill at the
-            -- same amount, the SQL ranker uses these counts as a tiebreaker.
-            -- Cold-start defaults live in the SQL formula directly — this
-            -- table only stores the user's *learned* deviation from default.
-            create table if not exists search_query_class_priors (
-              company_id char(7) not null,
-              user_id char(7) not null,
-              query_class text not null,
-              entity_type text not null,
-              click_count bigint not null default 0,
-              last_clicked_at_utc timestamptz null,
-              primary key (company_id, user_id, query_class, entity_type)
-            );
-
-            create index if not exists ix_search_query_class_priors_lookup
-              on search_query_class_priors (company_id, user_id, query_class);
-
-            create table if not exists search_recent_queries (
-              company_id char(7) not null,
-              user_id char(7) not null,
-              context text not null,
-              query_text text not null,
-              used_at_utc timestamptz not null,
-              primary key (company_id, user_id, context, query_text)
-            );
-
-            create index if not exists ix_search_recent_queries_lookup
-              on search_recent_queries (company_id, user_id, context, used_at_utc desc);
-
-            create table if not exists search_click_stats (
-              company_id char(7) not null,
-              user_id char(7) not null,
-              context text not null,
-              entity_type text not null,
-              source_id uuid not null,
-              click_count integer not null default 0,
-              last_clicked_at_utc timestamptz not null,
-              primary key (company_id, user_id, context, entity_type, source_id)
-            );
-
-            create index if not exists ix_search_click_stats_lookup
-              on search_click_stats (company_id, user_id, context, last_clicked_at_utc desc);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        Volatile.Write(ref _schemaEnsured, 1);
+        // H16: runtime DDL removed. search_documents / search_query_class_priors /
+        // search_recent_queries / search_click_stats and all their columns + indexes
+        // are created authoritatively by deploy/migrations (2026-05-14 + 2026-05-23),
+        // which cover prod (gate already off), dev/CI (TestDbSchemaSync auto-applies),
+        // and tests. No ALTER TABLE at runtime.
+        return Task.CompletedTask;
     }
 
     /// <summary>

@@ -266,6 +266,13 @@
             ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session);
             await JS.InvokeVoidAsync("citusSysAdminAuth.setSessionToken", response.SessionToken);
 
+            if (response.Session.MustChangePassword)
+            {
+                await Message.WarningAsync("You must change your password before using the console.");
+                NavigationManager.NavigateTo("security");
+                return;
+            }
+
             var setupStatus = await SysAdminAuthenticationClient.GetSetupStatusAsync();
             if (setupStatus is not null)
             {
