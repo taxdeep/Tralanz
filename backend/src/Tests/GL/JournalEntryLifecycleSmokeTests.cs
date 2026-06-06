@@ -393,6 +393,93 @@ public sealed class JournalEntryLifecycleSmokeTests
         }
     }
 
+    // ------------------------------------------------------------------
+    // P-21 — illegal lifecycle transitions are rejected. The lifecycle
+    // store guards every Void/Reverse with a single status check: only a
+    // 'posted' journal entry may enter the flow (see
+    // PostgreSqlJournalEntryLifecycleStore.ApplyLifecycleCoreAsync). These
+    // tests drive the reachable non-posted states from the fixture's
+    // posted JE and assert the guard fires with error code
+    // 'invalid_document_status' — NOT a silent second compensation JE.
+    // ------------------------------------------------------------------
+    [SkippableFact]
+    public async Task ReverseAsync_RejectsAlreadyReversedJournalEntry_P21()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            // First reverse succeeds and flips the original to 'reversed'.
+            await fixture.LifecycleWorkflow.ReverseAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, CancellationToken.None);
+
+            // A second reverse must be rejected by the status guard — no
+            // double-reverse, no second compensation JE.
+            var exception = await Assert.ThrowsAsync<JournalEntryLifecycleException>(() =>
+                fixture.LifecycleWorkflow.ReverseAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, CancellationToken.None));
+            Assert.Equal("invalid_document_status", exception.ErrorCode);
+
+            // Exactly one reversal compensation JE exists (the first one).
+            Assert.Equal(1L, await CountCompensationJournalsAsync(fixture, "manual_journal_reversal"));
+
+            // The original stays 'reversed' (the rejected second attempt
+            // changed nothing).
+            var originalReview = await fixture.ReviewStore.GetAsync(CompanyId, fixture.Posted.JournalEntryId, CancellationToken.None);
+            Assert.NotNull(originalReview);
+            Assert.Equal("reversed", originalReview!.Status);
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    [SkippableFact]
+    public async Task VoidAsync_RejectsAlreadyVoidedJournalEntry_P21()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            // First void succeeds and flips the original to 'voided'.
+            await fixture.LifecycleWorkflow.VoidAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, CancellationToken.None);
+
+            // A second void hits a non-posted ('voided') entry → rejected.
+            var exception = await Assert.ThrowsAsync<JournalEntryLifecycleException>(() =>
+                fixture.LifecycleWorkflow.VoidAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, CancellationToken.None));
+            Assert.Equal("invalid_document_status", exception.ErrorCode);
+
+            Assert.Equal(1L, await CountCompensationJournalsAsync(fixture, "manual_journal_void"));
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    [SkippableFact]
+    public async Task ReverseAsync_RejectsNonPostedJournalEntry_P21()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            // Void first so the entry is in a non-posted ('voided') state.
+            await fixture.LifecycleWorkflow.VoidAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, CancellationToken.None);
+
+            // Reversing a non-posted entry must be rejected by the same
+            // status guard, and must NOT create a reversal compensation JE.
+            var exception = await Assert.ThrowsAsync<JournalEntryLifecycleException>(() =>
+                fixture.LifecycleWorkflow.ReverseAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, CancellationToken.None));
+            Assert.Equal("invalid_document_status", exception.ErrorCode);
+
+            Assert.Equal(0L, await CountCompensationJournalsAsync(fixture, "manual_journal_reversal"));
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
     // Builds a UoW + lifecycle store that share ONE ambient accessor instance,
     // so the store joins the UoW's connection+transaction (the C1 mechanism).
     private static (PostgresUnitOfWork UnitOfWork, PostgreSqlJournalEntryLifecycleStore LifecycleStore) BuildAmbientReverseHarness(
