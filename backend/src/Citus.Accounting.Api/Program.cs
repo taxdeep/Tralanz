@@ -1,5 +1,6 @@
 using Citus.Accounting.Api;
 using Citus.Accounting.Api.Endpoints;
+using Citus.Accounting.Api.Startup;
 using static Citus.Accounting.Api.AccountingEndpointHelpers;
 using static Citus.Accounting.Api.CompanyCurrencyResponseMapper;
 using static Citus.Accounting.Api.InventoryItemRequestMapper;
@@ -99,41 +100,9 @@ builder.Host.UseDefaultServiceProvider(static (_, options) =>
     options.ValidateOnBuild = true;
 });
 
-// Optional exception monitoring. Active only when Sentry:Dsn is set —
-// SentryClient.Init no-ops on empty DSN, so the SDK costs nothing when
-// the operator hasn't enrolled a Sentry project. Release tag tracks
-// the auto-bumped Citus version (so an alert on v 0.00.000.0000.05.4M
-// stays linked to that exact build); the environment tag follows
-// ASPNETCORE_ENVIRONMENT (Development / Staging / Production).
-//
-// See deploy/SENTRY.md for how to set Sentry__Dsn on the host.
-builder.WebHost.UseSentry(options =>
-{
-    options.Dsn = builder.Configuration["Sentry:Dsn"]
-        ?? Environment.GetEnvironmentVariable("SENTRY_DSN")
-        ?? string.Empty;
-    options.Release = builder.Configuration["CITUS_APP_VERSION"]
-        ?? Environment.GetEnvironmentVariable("CITUS_APP_VERSION");
-    options.Environment = builder.Environment.EnvironmentName;
-    options.AttachStacktrace = true;
-    // Don't sample request bodies / cookies / IP — accounting payloads
-    // contain customer + amount data. Operators who want full PII can
-    // flip this in a custom override.
-    options.SendDefaultPii = false;
-    // 100% tracing on a single-tenant pilot is fine. Bump to a sample
-    // rate once traffic ramps up.
-    options.TracesSampleRate = 1.0;
-});
+builder.UseAccountingSentry();
 
-var connectionString =
-    builder.Configuration["CITUS_ACCOUNTING_DB"] ??
-    builder.Configuration.GetConnectionString("AccountingCore");
-
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException(
-        "A PostgreSQL connection string is required. Configure ConnectionStrings:AccountingCore or CITUS_ACCOUNTING_DB.");
-}
+var connectionString = builder.ResolveAccountingConnectionString();
 
 builder.Services.AddSingleton(new PostgresConnectionFactory(connectionString));
 builder.Services.AddSingleton(new PostgreSqlConnectionFactory(connectionString));
@@ -715,60 +684,7 @@ builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCen
     missingDomain: "sales-tax filing calendar not yet exposed",
     sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
 
-// HTTP-layer rate limiting on /auth/login. The application already has
-// account-level lockout (PostgresPlatformLoginLockoutPolicy) which kicks
-// in after N consecutive failures for the SAME username — but that's
-// orthogonal to the network-speed brute-force threat where an attacker
-// rotates usernames against a single IP. This middleware caps any
-// single IP at 5 login attempts per 60 seconds, then returns 429 for
-// the rest of the window. The same partition fires when an account is
-// already locked (so the lockout response itself can't be probed at
-// network speed for timing leaks). Other /auth/* routes are not
-// rate-limited here — /auth/session and /auth/logout aren't useful
-// brute-force vectors.
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("auth-login", httpContext =>
-    {
-        var partitionKey = httpContext.Connection.RemoteIpAddress?.ToString()
-            ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey,
-            _ => new FixedWindowRateLimiterOptions
-            {
-                Window = TimeSpan.FromSeconds(60),
-                PermitLimit = 5,
-                QueueLimit = 0,
-                AutoReplenishment = true
-            });
-    });
-    // P0-5c (C10): rate-limit invoice email send per (user, company) to
-    // prevent an authenticated user from blasting customer mailboxes (or
-    // exhausting the platform's SMTP reputation budget) via the
-    // /document-review/invoice/{id}/send endpoint. The window is generous
-    // for legitimate operator use (one invoice every two minutes is well
-    // above the realistic billing pace) and cuts off abuse fast.
-    options.AddPolicy("invoice-send", httpContext =>
-    {
-        var userId = (string?)httpContext.Request.Headers[BusinessSessionHeaders.UserId]
-            ?? (string?)httpContext.Request.Headers[BusinessSessionHeaderNames.LegacyUserId];
-        var companyId = (string?)httpContext.Request.Headers[BusinessSessionHeaders.ActiveCompanyId]
-            ?? (string?)httpContext.Request.Headers[BusinessSessionHeaderNames.LegacyActiveCompanyId];
-        var partitionKey = string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(companyId)
-            ? (httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous")
-            : $"{companyId}|{userId}";
-        return RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey,
-            _ => new FixedWindowRateLimiterOptions
-            {
-                Window = TimeSpan.FromHours(1),
-                PermitLimit = 30,
-                QueueLimit = 0,
-                AutoReplenishment = true
-            });
-    });
-});
+builder.Services.AddAccountingRateLimiting();
 
 var app = builder.Build();
 
