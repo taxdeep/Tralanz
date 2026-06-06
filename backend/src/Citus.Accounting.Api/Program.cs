@@ -137,16 +137,10 @@ await AccountingSchemaBootstrapper.ApplyIfEnabledAsync(app);
 // First-Company-Wizard owners).
 // ---------------------------------------------------------------------------
 
-// Sentry request tracing. No-op when Sentry:Dsn is unset; otherwise
-// captures one transaction per request with the route template, the
-// 4xx/5xx status, and any unhandled exception that propagates up.
-app.UseSentryTracing();
-
-// Rate limiter must run before any rate-limited endpoint dispatches.
-// Stage-0 setup: only /auth/login is partitioned today (see auth-login
-// policy in builder.Services.AddRateLimiter above). UseRateLimiter() is
-// a no-op for endpoints that don't opt in via RequireRateLimiting.
-app.UseRateLimiter();
+// HTTP middleware pipeline: forwarded headers, security headers, generic
+// exception handling, HSTS, Sentry tracing, rate limiting, and the
+// /internal/* network guard. See AccountingMiddlewareExtensions.
+app.UseAccountingPipeline();
 
 app.MapPost(
     "/auth/login",
@@ -12562,7 +12556,7 @@ app.MapPost(
         catch (Exception ex)
         {
             logger.LogError(ex, "Distillation trigger failed for {CompanyId}", companyId);
-            return Results.Problem(detail: ex.Message, statusCode: 500);
+            return Results.Problem(detail: "The internal AI trigger failed.", statusCode: 500);
         }
     });
 
@@ -12651,7 +12645,7 @@ app.MapPost(
         catch (Exception ex)
         {
             logger.LogError(ex, "Doc-embedding back-fill trigger failed for {CompanyId}", companyId);
-            return Results.Problem(detail: ex.Message, statusCode: 500);
+            return Results.Problem(detail: "The internal AI trigger failed.", statusCode: 500);
         }
     });
 
