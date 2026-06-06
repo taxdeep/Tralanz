@@ -84,6 +84,18 @@ using GlJournalEntryLifecycleWorkflow = Modules.GL.JournalEntry.JournalEntryLife
 
 var builder = WebApplication.CreateBuilder(args);
 
+// P0 (Program.cs refactor safety net): force DI lifetime + buildability
+// validation in EVERY environment. The host enables these by default only in
+// Development, so a captive dependency (a Singleton capturing a Scoped) or an
+// unconstructable registration would otherwise stay invisible until it broke
+// in Production. Forcing them on makes the staged Program.cs refactor fail
+// fast at startup / in CI instead of at runtime.
+builder.Host.UseDefaultServiceProvider(static (_, options) =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
+
 // Optional exception monitoring. Active only when Sentry:Dsn is set —
 // SentryClient.Init no-ops on empty DSN, so the SDK costs nothing when
 // the operator hasn't enrolled a Sentry project. Release tag tracks
