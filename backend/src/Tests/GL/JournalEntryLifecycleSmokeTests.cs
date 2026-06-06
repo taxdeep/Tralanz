@@ -289,10 +289,12 @@ public sealed class JournalEntryLifecycleSmokeTests
 
         try
         {
-            if (!await BookGovernanceTablesExistAsync(fixture.ConnectionFactory, CancellationToken.None))
-            {
-                return;
-            }
+            // P-22: skip visibly (not a silent green pass) when the book-governance
+            // tables aren't present in the test DB, so an absent schema can never
+            // masquerade as a passing closed-period guard test.
+            Skip.IfNot(
+                await BookGovernanceTablesExistAsync(fixture.ConnectionFactory, CancellationToken.None),
+                "Book-governance tables are not present in this test database; cannot exercise the closed-primary-book reverse guard.");
 
             await SeedClosedPrimaryBookAsync(
                 fixture.ConnectionFactory,
