@@ -38,6 +38,119 @@ public static class TestDbSchemaSync
     private static readonly SemaphoreSlim _gate = new(1, 1);
     private static volatile bool _applied;
 
+    /// <summary>
+    /// Auto-apply pending <c>deploy/migrations/*.sql</c> ONCE per test assembly
+    /// at load time, so DB-backed suites self-heal after new migrations land
+    /// instead of tripping <c>42703 "column X does not exist"</c> against a
+    /// migration-behind dev DB. Guards on the test-DB env var and swallows all
+    /// errors, so non-DB / skipped runs (and any sync hiccup) are unaffected —
+    /// the assembly always finishes loading. Each test project that links this
+    /// file gets its own initializer; the <c>_applied</c>/<c>_gate</c> guard in
+    /// <see cref="EnsureMigrationsAppliedAsync"/> keeps it idempotent in-process.
+    /// </summary>
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void AutoApplyPendingMigrations()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB")))
+        {
+            return;
+        }
+
+        try
+        {
+            // FULLY SYNCHRONOUS apply. A ModuleInitializer runs during assembly
+            // load, where blocking on async work (even via Task.Run) can deadlock
+            // on a cold/starved threadpool — so we use sync Npgsql calls only.
+            ApplyPendingMigrationsSync();
+        }
+        catch
+        {
+            // Never block assembly load on a migration-sync hiccup; the
+            // individual DB tests surface a clearer error if the schema is
+            // genuinely wrong.
+        }
+    }
+
+    private static void ApplyPendingMigrationsSync()
+    {
+        if (_applied) return;
+        _gate.Wait();
+        try
+        {
+            if (_applied) return;
+
+            var migrationsDir = FindMigrationsDir();
+            if (migrationsDir is null) return;
+
+            using var connection = new NpgsqlConnection(GetConnectionString());
+            connection.Open();
+
+            using (var ddl = connection.CreateCommand())
+            {
+                ddl.CommandText =
+                    "create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now());";
+                ddl.ExecuteNonQuery();
+            }
+
+            var applied = new HashSet<string>(StringComparer.Ordinal);
+            using (var query = connection.CreateCommand())
+            {
+                query.CommandText = "select name from schema_migrations;";
+                using var reader = query.ExecuteReader();
+                while (reader.Read())
+                {
+                    applied.Add(reader.GetString(0));
+                }
+            }
+
+            foreach (var file in Directory.GetFiles(migrationsDir, "*.sql").OrderBy(p => p, StringComparer.Ordinal))
+            {
+                var name = Path.GetFileName(file);
+                if (applied.Contains(name)) continue;
+
+                try
+                {
+                    using (var apply = connection.CreateCommand())
+                    {
+                        apply.CommandText = File.ReadAllText(file);
+                        apply.ExecuteNonQuery();
+                    }
+
+                    using var record = connection.CreateCommand();
+                    record.CommandText = "insert into schema_migrations(name) values (@n) on conflict do nothing;";
+                    record.Parameters.AddWithValue("n", name);
+                    record.ExecuteNonQuery();
+                }
+                catch (PostgresException ex)
+                {
+                    // The failed migration may have left an aborted transaction
+                    // open on the shared connection (its trailing COMMIT never
+                    // ran), which would cascade 25P02 into every later migration.
+                    // Roll back so the next one starts clean.
+                    try
+                    {
+                        using var rollback = connection.CreateCommand();
+                        rollback.CommandText = "rollback;";
+                        rollback.ExecuteNonQuery();
+                    }
+                    catch
+                    {
+                        // No open transaction to roll back — fine.
+                    }
+
+                    Console.Error.WriteLine(
+                        $"[TestDbSchemaSync] {name} failed ({ex.SqlState}): {ex.MessageText}");
+                }
+            }
+
+            _applied = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     /// <summary>Test-project connection string. Mirrors the same env-var
     /// fallback the individual suites use so any one of them can call
     /// us without coordination.</summary>
@@ -133,6 +246,20 @@ public static class TestDbSchemaSync
             }
             catch (PostgresException ex)
             {
+                // Roll back any aborted transaction the failed migration left
+                // open on the shared connection, so it doesn't cascade 25P02
+                // into every later migration (see ApplyPendingMigrationsSync).
+                try
+                {
+                    await using var rollback = connection.CreateCommand();
+                    rollback.CommandText = "rollback;";
+                    await rollback.ExecuteNonQueryAsync(cancellationToken);
+                }
+                catch
+                {
+                    // No open transaction to roll back — fine.
+                }
+
                 // Soft-fail: log and continue. The migration stays
                 // NOT recorded so a later run retries it once the
                 // shape mismatch is fixed in the migration file.
