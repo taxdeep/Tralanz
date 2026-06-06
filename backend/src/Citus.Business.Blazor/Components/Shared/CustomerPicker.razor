@@ -63,13 +63,7 @@
                             @onmouseover="@(() => _highlightedIndex = i)">
                         <span class="citus-customer-picker__option-copy">
                             <span class="citus-customer-picker__option-primary">@RenderHighlight(row.DisplayName)</span>
-                            <span class="citus-customer-picker__option-secondary">
-                                @row.EntityNumber
-                                @if (!string.IsNullOrWhiteSpace(row.DefaultCurrencyCode))
-                                {
-                                    <span> - @row.DefaultCurrencyCode</span>
-                                }
-                            </span>
+                            <span class="citus-customer-picker__option-secondary">@FormatOptionSecondary(row)</span>
                         </span>
                         <span class="citus-customer-picker__option-kind">Customer</span>
                     </button>
@@ -344,6 +338,19 @@
         string.IsNullOrWhiteSpace(row.DefaultCurrencyCode)
             ? row.DisplayName
             : $"{row.DisplayName} - {row.DefaultCurrencyCode}";
+
+    // Dropdown option detail line: "CustomerID - Customer name | Currency",
+    // where CustomerID is the operator-facing CUS-NNNNNN code (not the EN....
+    // platform entity number). Degrades gracefully when a field is missing.
+    private static string FormatOptionSecondary(CustomerSummary row)
+    {
+        var head = string.IsNullOrWhiteSpace(row.CustomerNumber)
+            ? row.DisplayName
+            : $"{row.CustomerNumber} - {row.DisplayName}";
+        return string.IsNullOrWhiteSpace(row.DefaultCurrencyCode)
+            ? head
+            : $"{head} | {row.DefaultCurrencyCode}";
+    }
 
     private RenderFragment RenderHighlight(string text) => builder =>
     {
