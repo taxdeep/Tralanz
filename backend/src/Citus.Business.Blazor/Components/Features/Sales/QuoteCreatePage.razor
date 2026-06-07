@@ -55,6 +55,12 @@ else
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8 flex flex-col gap-6">
             <CitusFormSection Title="Customer">
+                @if (!string.IsNullOrWhiteSpace(_quoteNumber))
+                {
+                    <CitusFormField Label="Quote no." Class="mb-4">
+                        <div class="citus-inline-code">@_quoteNumber</div>
+                    </CitusFormField>
+                }
                 <CitusFormGrid Columns="2">
                     <CitusFormField Label="Customer">
                         <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
@@ -67,35 +73,54 @@ else
                     <CitusFormField Label="Email">
                         <CitusInput TValue="string" @bind-Value="_email" Placeholder="customer@example.com" />
                     </CitusFormField>
+                    <CitusFormField Label="Estimate date">
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_documentDate" Class="citus-control-full" />
+                    </CitusFormField>
+                    <CitusFormField Label="Expiration date">
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_expirationDate" Class="citus-control-full" />
+                    </CitusFormField>
+                    <CitusFormField Label="Transaction currency">
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Placeholder="USD"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </CitusFormField>
+                    <CitusFormField Label="Exchange rate">
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </CitusFormField>
                 </CitusFormGrid>
-            </CitusFormSection>
 
-            <CitusFormSection Title="Address">
-                <HeaderActions>
-                    <CitusButton Variant="CitusButtonVariant.Ghost"
-                                 Size="CitusButtonSize.Small"
-                                 LeadingIcon="IconName.Pencil"
-                                 OnClick="OpenAddressDrawer">Edit</CitusButton>
-                </HeaderActions>
-                <ChildContent>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <h3 class="text-fg-muted text-xs font-medium mb-2 uppercase">Billing</h3>
-                        <AddressDisplay Address="_billing" EmptyHint="No billing address set." />
+                <div class="mt-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-fg-muted text-sm font-medium m-0">Address</h3>
+                        <CitusButton Variant="CitusButtonVariant.Ghost"
+                                     Size="CitusButtonSize.Small"
+                                     LeadingIcon="IconName.Pencil"
+                                     OnClick="OpenAddressDrawer">Edit</CitusButton>
                     </div>
-                    <div>
-                        <h3 class="text-fg-muted text-xs font-medium mb-2 uppercase">Shipping</h3>
-                        @if (_shippingMode == ShippingMode.SameAsBilling)
-                        {
-                            <p class="text-fg-muted text-sm m-0">Same as billing</p>
-                        }
-                        else
-                        {
-                            <AddressDisplay Address="_shipping" EmptyHint="No shipping address set." />
-                        }
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="text-fg-muted text-xs font-medium mb-2 uppercase">Billing</h4>
+                            <AddressDisplay Address="_billing" EmptyHint="No billing address set." />
+                        </div>
+                        <div>
+                            <h4 class="text-fg-muted text-xs font-medium mb-2 uppercase">Shipping</h4>
+                            @if (_shippingMode == ShippingMode.SameAsBilling)
+                            {
+                                <p class="text-fg-muted text-sm m-0">Same as billing</p>
+                            }
+                            else
+                            {
+                                <AddressDisplay Address="_shipping" EmptyHint="No shipping address set." />
+                            }
+                        </div>
                     </div>
                 </div>
-                </ChildContent>
             </CitusFormSection>
 
             <CitusDrawer @bind-IsOpen="_addressDrawerOpen"
@@ -207,35 +232,6 @@ else
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Document">
-                @if (!string.IsNullOrWhiteSpace(_quoteNumber))
-                {
-                    <CitusFormField Label="Quote no.">
-                        <div class="citus-inline-code">@_quoteNumber</div>
-                    </CitusFormField>
-                }
-                <CitusFormField Label="Estimate date" Class="@(string.IsNullOrWhiteSpace(_quoteNumber) ? null : "mt-4")">
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                      @bind-Value="_documentDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Expiration date" Class="mt-4">
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                      @bind-Value="_expirationDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Transaction currency" Class="mt-4">
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Placeholder="USD"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                </CitusFormField>
-                <CitusFormField Label="Exchange rate" Class="mt-4">
-                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                  QuoteCurrencyCode="@_currency"
-                                  @bind-Rate="_fxRate" />
-                </CitusFormField>
-            </CitusFormSection>
-
             <CitusFormSection Title="Discount + shipping">
                 <CitusFormField Label="Discount">
                     <div class="flex gap-2">
