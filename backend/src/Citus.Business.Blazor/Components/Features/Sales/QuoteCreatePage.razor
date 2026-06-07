@@ -197,10 +197,7 @@ else
             </CitusFormSection>
 
             <CitusFormSection Title="Message + notes">
-                <CitusFormField Label="Customer PO #">
-                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (carries through to SO + Invoice)" MaxLength="64" />
-                </CitusFormField>
-                <CitusFormField Label="Message displayed on quote" Class="mt-4">
+                <CitusFormField Label="Message displayed on quote">
                     <CitusInput TValue="string" @bind-Value="_memoToCustomer" Placeholder="Visible to the customer." />
                 </CitusFormField>
                 <CitusFormField Label="Internal note" Class="mt-4">

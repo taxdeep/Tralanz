@@ -3112,9 +3112,15 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-customer-picker__input {
     flex: 1;
     min-width: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
+    /* The high-specificity defensive `input:not([type=…])… { border: 1px }`
+       rule above otherwise overrides these and leaks a second border (and,
+       on focus, a second focus ring) onto this inner <input>, doubling it
+       against the __control box — the "ghosting". !important pins it off,
+       the same approach the unity-picker / topbar inputs already use. */
+    border: 0 !important;
+    outline: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
     color: var(--citus-color-fg);
     font: inherit;
     padding: var(--citus-space-1) 0;
