@@ -62,8 +62,7 @@
                             @onclick="@(() => SelectAsync(row))"
                             @onmouseover="@(() => _highlightedIndex = i)">
                         <span class="citus-customer-picker__option-copy">
-                            <span class="citus-customer-picker__option-primary">@RenderHighlight(row.DisplayName)</span>
-                            <span class="citus-customer-picker__option-secondary">@FormatOptionSecondary(row)</span>
+                            <span class="citus-customer-picker__option-primary">@RenderOptionLine(row)</span>
                         </span>
                         <span class="citus-customer-picker__option-kind">Customer</span>
                     </button>
@@ -339,18 +338,25 @@
             ? row.DisplayName
             : $"{row.DisplayName} - {row.DefaultCurrencyCode}";
 
-    // Dropdown option detail line: "CustomerID - Customer name | Currency",
+    // Dropdown option, single line: "CustomerID - Customer name | Currency",
     // where CustomerID is the operator-facing CUS-NNNNNN code (not the EN....
-    // platform entity number). Degrades gracefully when a field is missing.
-    private static string FormatOptionSecondary(CustomerSummary row)
+    // platform entity number). The name keeps the type-ahead match highlight;
+    // the code prefix and currency suffix are omitted when absent.
+    private RenderFragment RenderOptionLine(CustomerSummary row) => builder =>
     {
-        var head = string.IsNullOrWhiteSpace(row.CustomerNumber)
-            ? row.DisplayName
-            : $"{row.CustomerNumber} - {row.DisplayName}";
-        return string.IsNullOrWhiteSpace(row.DefaultCurrencyCode)
-            ? head
-            : $"{head} | {row.DefaultCurrencyCode}";
-    }
+        var seq = 0;
+        if (!string.IsNullOrWhiteSpace(row.CustomerNumber))
+        {
+            builder.AddContent(seq++, $"{row.CustomerNumber} - ");
+        }
+
+        builder.AddContent(seq++, RenderHighlight(row.DisplayName));
+
+        if (!string.IsNullOrWhiteSpace(row.DefaultCurrencyCode))
+        {
+            builder.AddContent(seq++, $" | {row.DefaultCurrencyCode}");
+        }
+    };
 
     private RenderFragment RenderHighlight(string text) => builder =>
     {
