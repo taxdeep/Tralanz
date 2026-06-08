@@ -3899,6 +3899,12 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-form-actions__extra { display: flex; align-items: center; gap: var(--citus-space-2); }
 .citus-form-actions__error { color: var(--citus-color-danger); font-size: var(--citus-text-sm); margin-inline-end: var(--citus-space-2); }
 
+/* Opt-in modifier: cluster the ExtraContent (e.g. a "Save draft" button) on
+   the right next to the primary action instead of the default left position
+   (the base rule puts margin-left:auto on __primary, which packs extra left). */
+.citus-form-actions--save-right .citus-form-actions__extra { margin-left: auto; }
+.citus-form-actions--save-right .citus-form-actions__primary { margin-left: 0; }
+
 .citus-stat-card-grid {
   display: grid;
   gap: var(--citus-space-4);

@@ -52,8 +52,7 @@
 }
 else
 {
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-8 flex flex-col gap-6">
+    <div class="flex flex-col gap-6">
             <CitusFormSection Title="Customer">
                 @if (!string.IsNullOrWhiteSpace(_quoteNumber))
                 {
@@ -221,44 +220,45 @@ else
                 </ChildContent>
             </CitusFormSection>
 
-            <CitusFormSection Title="Message + notes">
-                <CitusFormField Label="Message displayed on quote">
-                    <CitusInput TValue="string" @bind-Value="_memoToCustomer" Placeholder="Visible to the customer." />
-                </CitusFormField>
-                <CitusFormField Label="Internal note" Class="mt-4">
-                    <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
-                </CitusFormField>
-            </CitusFormSection>
-        </div>
-
-        <aside class="lg:col-span-4 flex flex-col gap-6">
             <CitusFormSection Title="Discount + shipping">
-                <CitusFormField Label="Discount">
-                    <div class="flex gap-2">
-                        <select class="citus-form-field__input citus-inline-control--sm"
-                                value="@(_discountKind ?? "")"
-                                @onchange="OnDiscountKindChanged">
-                            <option value="">None</option>
-                            <option value="percent">Percent</option>
-                            <option value="amount">Amount</option>
-                        </select>
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
-                    </div>
-                </CitusFormField>
-                <CitusFormField Label="Shipping amount" Class="mt-4">
-                    <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
-                </CitusFormField>
+                <CitusFormGrid Columns="2">
+                    <CitusFormField Label="Discount">
+                        <div class="flex gap-2">
+                            <select class="citus-form-field__input citus-inline-control--sm"
+                                    value="@(_discountKind ?? "")"
+                                    @onchange="OnDiscountKindChanged">
+                                <option value="">None</option>
+                                <option value="percent">Percent</option>
+                                <option value="amount">Amount</option>
+                            </select>
+                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
+                        </div>
+                    </CitusFormField>
+                    <CitusFormField Label="Shipping amount">
+                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
+                    </CitusFormField>
+                </CitusFormGrid>
             </CitusFormSection>
 
-            <CitusFormSection Title="Totals">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                </CitusKeyValueTable>
-            </CitusFormSection>
-        </aside>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <CitusFormSection Title="Message + notes">
+                    <CitusFormField Label="Message displayed on quote">
+                        <CitusInput TValue="string" @bind-Value="_memoToCustomer" Placeholder="Visible to the customer." />
+                    </CitusFormField>
+                    <CitusFormField Label="Internal note" Class="mt-4">
+                        <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
+                    </CitusFormField>
+                </CitusFormSection>
+
+                <CitusFormSection Title="Totals">
+                    <CitusKeyValueTable>
+                        <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                    </CitusKeyValueTable>
+                </CitusFormSection>
+            </div>
     </div>
 
     @* Sticky Send / Save draft / Cancel — Send is the primary, Save
@@ -266,6 +266,7 @@ else
        "Send" button is hidden once the quote is past Draft (matches
        the original inline footer's @if guard). *@
     <CitusFormActions Sticky="true"
+                      Class="citus-form-actions--save-right"
                       PrimaryLabel="Send"
                       IsSaving="@_isSaving"
                       Disabled="@(!(_status == "draft" || _quoteId is null))"
