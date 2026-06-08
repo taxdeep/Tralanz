@@ -184,7 +184,6 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         CancellationToken cancellationToken)
     {
         var (subtotal, discount, tax, total) = ComputeTotals(input);
-        var quoteNumber = GenerateQuoteNumber();
 
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -196,6 +195,20 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
             $"entity-number:all:{input.DocumentDate.Year}",
             $"EN{input.DocumentDate.Year}",
             5,
+            1,
+            cancellationToken).ConfigureAwait(false);
+
+        // Sequential per-company quote number (QT-000001) from the shared
+        // company_numbering_sequences "quote-display" scope (the BusinessNumbering
+        // catalog default prefix is QT-), replacing the legacy random
+        // QUO{year}{rand}. A prefix configured in Settings -> Numbering wins.
+        var quoteNumber = await Infrastructure.PostgreSQL.Numbering.PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "quote-display",
+            "QT-",
+            6,
             1,
             cancellationToken).ConfigureAwait(false);
 
@@ -556,17 +569,6 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         command.Parameters.AddWithValue("memo_to_customer", (object?)input.MemoToCustomer ?? DBNull.Value);
         command.Parameters.AddWithValue("internal_note", (object?)input.InternalNote ?? DBNull.Value);
         command.Parameters.AddWithValue("customer_po_number", (object?)input.CustomerPoNumber ?? DBNull.Value);
-    }
-
-    /// <summary>
-    /// QUO{4-digit-year}{8-digit-random}. Uniqueness enforced by the
-    /// per-company composite index; collisions retry from the caller.
-    /// </summary>
-    private static string GenerateQuoteNumber()
-    {
-        var year = DateTime.UtcNow.Year;
-        var seed = Random.Shared.Next(0, 100_000_000);
-        return $"QUO{year:0000}{seed:00000000}";
     }
 
     private const string SelectQuoteColumns = """
