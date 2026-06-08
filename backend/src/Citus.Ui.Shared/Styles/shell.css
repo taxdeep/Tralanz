@@ -3245,14 +3245,14 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 .citus-tax-picker__control {
+    /* Visual frame (border / radius / background / padding / min-height) is
+       owned by the inner input (the unified defensive input rule), matching
+       .citus-account-picker__control. Declaring a frame here too produced a
+       double border ("ghosting") against the input's own border, in both the
+       standalone field and data-table cells. Keep layout props only. */
     display: flex;
     align-items: center;
     gap: var(--citus-space-1);
-    background: var(--citus-color-bg-elevated);
-    border: 1px solid var(--citus-color-border);
-    border-radius: var(--citus-radius-sm);
-    padding: 0 var(--citus-space-1) 0 var(--citus-space-2);
-    min-height: var(--citus-input-height);
     cursor: text;
 }
 
