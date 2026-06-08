@@ -241,7 +241,7 @@ else
                    amount (QuickBooks-style); each value appears once instead of a
                    separate input card + a read-only row. Bindings +
                    Subtotal/DiscountAmount/Total are unchanged. *@
-                <CitusFormSection Title="Totals">
+                <CitusFormSection Title="Summary">
                     <div class="citus-quote-totals">
                         <div class="citus-quote-totals__row">
                             <span class="citus-quote-totals__label">Subtotal</span>
@@ -258,10 +258,13 @@ else
                                 <span class="citus-quote-totals__amount">−@FormatAmount(DiscountAmount)</span>
                             </div>
                         </div>
-                        <div class="citus-quote-totals__row">
-                            <span class="citus-quote-totals__label">Tax</span>
-                            <span class="citus-quote-totals__amount">@FormatAmount(TaxAmount)</span>
-                        </div>
+                        @foreach (var taxRow in TaxBreakdown)
+                        {
+                            <div class="citus-quote-totals__row">
+                                <span class="citus-quote-totals__label">@taxRow.Label</span>
+                                <span class="citus-quote-totals__amount">@FormatAmount(taxRow.Amount)</span>
+                            </div>
+                        }
                         <div class="citus-quote-totals__row">
                             <span class="citus-quote-totals__label">Shipping</span>
                             <div class="citus-quote-totals__controls">
@@ -340,32 +343,45 @@ else
         : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
         : 0m;
 
-    // Estimate-only tax preview. Sales orders don't post tax, so this is a
-    // display figure computed from each line's selected Tax Code (tax_code_sets
-    // member rates): inclusive mode extracts the embedded portion, exclusive adds it.
-    private decimal TaxAmount => _lines.Sum(ComputeLineTax);
+    // Estimate-only per-rule tax breakdown across all lines (e.g. GST 3.00 /
+    // PST-BC 4.20), aggregated from each line's selected Tax Code member rules.
+    // Sales orders don't post tax; inclusive mode extracts the embedded portion.
+    private decimal TaxAmount => TaxBreakdown.Sum(t => t.Amount);
 
-    private decimal ComputeLineTax(LineDraft line)
+    private IReadOnlyList<(string Label, decimal Amount)> TaxBreakdown
     {
-        if (line.TaxCodeSetId is not { } setId) return 0m;
-        var set = _taxCodeSets.FirstOrDefault(s => s.Id == setId);
-        if (set is null || set.Members.Count == 0) return 0m;
-        var amount = Math.Round(line.Quantity * line.UnitPrice, 4);
-        if (amount == 0m) return 0m;
-
-        if (string.Equals(_taxMode, "inclusive", StringComparison.OrdinalIgnoreCase))
+        get
         {
-            var combined = set.Members.Sum(m => m.RatePercent) / 100m;
-            return combined <= -1m ? 0m : Math.Round(amount - amount / (1m + combined), 4);
-        }
+            var inclusive = string.Equals(_taxMode, "inclusive", StringComparison.OrdinalIgnoreCase);
+            var byRule = new Dictionary<Guid, (string Label, int Seq, decimal Amount)>();
+            foreach (var line in _lines)
+            {
+                if (line.TaxCodeSetId is not { } setId) continue;
+                var set = _taxCodeSets.FirstOrDefault(s => s.Id == setId);
+                if (set is null || set.Members.Count == 0) continue;
+                var amount = Math.Round(line.Quantity * line.UnitPrice, 4);
+                if (amount == 0m) continue;
 
-        decimal tax = 0m;
-        foreach (var member in set.Members.OrderBy(m => m.Sequence))
-        {
-            var taxable = member.IsCompound ? amount + tax : amount;
-            tax += Math.Round(taxable * member.RatePercent / 100m, 4);
+                var taxBase = amount;
+                if (inclusive)
+                {
+                    var combined = set.Members.Sum(m => m.RatePercent) / 100m;
+                    taxBase = combined <= -1m ? 0m : amount / (1m + combined);
+                }
+
+                decimal running = 0m;
+                foreach (var member in set.Members.OrderBy(m => m.Sequence))
+                {
+                    var taxable = (!inclusive && member.IsCompound) ? taxBase + running : taxBase;
+                    var memberTax = Math.Round(taxable * member.RatePercent / 100m, 4);
+                    running += memberTax;
+                    byRule[member.RuleId] = byRule.TryGetValue(member.RuleId, out var ex)
+                        ? (ex.Label, ex.Seq, ex.Amount + memberTax)
+                        : (member.RuleCode, member.Sequence, memberTax);
+                }
+            }
+            return byRule.Values.OrderBy(v => v.Seq).Select(v => (v.Label, v.Amount)).ToList();
         }
-        return tax;
     }
 
     private decimal Total => Math.Round(
