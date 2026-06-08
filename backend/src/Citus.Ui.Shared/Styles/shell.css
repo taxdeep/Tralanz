@@ -3969,6 +3969,13 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 .citus-discount-toggle button.is-active { background: var(--citus-color-primary); color: #fff; }
 
+/* Line product picker: keep Radzen's clear (x) icon hidden until the cell is
+   hovered or focused, so a row's product can still be cleared without an
+   always-visible x cluttering every line. */
+.citus-line-product .rz-dropdown-clear-icon { visibility: hidden; }
+.citus-line-product:hover .rz-dropdown-clear-icon,
+.citus-line-product:focus-within .rz-dropdown-clear-icon { visibility: visible; }
+
 .citus-stat-card-grid {
   display: grid;
   gap: var(--citus-space-4);
