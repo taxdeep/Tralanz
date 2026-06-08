@@ -264,14 +264,11 @@ else
                         <div class="citus-quote-totals__row">
                             <span class="citus-quote-totals__label">Discount</span>
                             <div class="citus-quote-totals__controls">
-                                <select class="citus-form-field__input citus-inline-control--sm"
-                                        value="@(_discountKind ?? "")"
-                                        @onchange="OnDiscountKindChanged">
-                                    <option value="">None</option>
-                                    <option value="percent">%</option>
-                                    <option value="amount">$</option>
-                                </select>
-                                <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-quote-totals__input" />
+                                <RadzenNumeric TValue="decimal?" Value="@_discountValue" Change="@OnDiscountValueChanged" Format="0.##" Class="citus-quote-totals__input" />
+                                <div class="citus-discount-toggle" role="group" aria-label="Discount type">
+                                    <button type="button" class="@(_discountKind != "amount" ? "is-active" : null)" @onclick="@(() => SetDiscountKind("percent"))">%</button>
+                                    <button type="button" class="@(_discountKind == "amount" ? "is-active" : null)" @onclick="@(() => SetDiscountKind("amount"))">$</button>
+                                </div>
                                 <span class="citus-quote-totals__amount">−@FormatAmount(DiscountAmount)</span>
                             </div>
                         </div>
@@ -586,10 +583,14 @@ else
     private void OnTaxModeChanged(ChangeEventArgs args) =>
         _taxMode = args.Value?.ToString() ?? "exclusive";
 
-    private void OnDiscountKindChanged(ChangeEventArgs args)
+    private void SetDiscountKind(string kind) => _discountKind = kind;
+
+    private void OnDiscountValueChanged(decimal? value)
     {
-        var raw = args.Value?.ToString();
-        _discountKind = string.IsNullOrWhiteSpace(raw) ? null : raw;
+        _discountValue = value;
+        // First value entered defaults the kind to percent (the toggle shows %
+        // by default); an empty value keeps kind null = no discount, as before.
+        if (value is not null && _discountKind is null) _discountKind = "percent";
     }
 
     private void OpenAddressDrawer()

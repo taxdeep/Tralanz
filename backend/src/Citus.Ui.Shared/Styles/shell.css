@@ -3947,6 +3947,28 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     white-space: nowrap;
 }
 
+/* Discount %/$ segmented toggle inside the totals panel (quote / sales order). */
+.citus-discount-toggle {
+    display: inline-flex;
+    border: 1px solid var(--citus-color-border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.citus-discount-toggle button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    padding: 0 0.45rem;
+    min-width: 1.5rem;
+    height: 1.6rem;
+    font-size: var(--citus-text-xs);
+    color: var(--citus-color-fg-muted);
+    cursor: pointer;
+}
+.citus-discount-toggle button.is-active { background: var(--citus-color-primary); color: #fff; }
+
 .citus-stat-card-grid {
   display: grid;
   gap: var(--citus-space-4);

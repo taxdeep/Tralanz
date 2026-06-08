@@ -137,13 +137,14 @@ else
                 <table class="citus-data-table citus-data-table--compact">
                     <thead>
                         <tr>
-                            <th style="width: 3rem">#</th>
+                            <th style="width: 2rem"></th>
+                            <th style="width: 2.5rem">#</th>
                             <th style="width: 14rem">Product / Service</th>
                             <th>Description</th>
                             <th style="width: 6rem" class="text-right">Qty</th>
                             <th style="width: 8rem" class="text-right">Rate</th>
-                            <th style="width: 9rem">Tax</th>
                             <th style="width: 8rem" class="text-right">Amount</th>
+                            <th style="width: 9rem">Tax</th>
                             <th style="width: 3rem"></th>
                         </tr>
                     </thead>
@@ -152,7 +153,15 @@ else
                         {
                             var index = i;
                             var line = _lines[index];
-                            <tr>
+                            <tr @key="line"
+                                ondragover="event.preventDefault()"
+                                @ondrop="@(() => OnDropRow(index))"
+                                class="@(_dragIndex == index ? "citus-line-row--dragging" : null)">
+                                <td class="citus-line-grip" draggable="true" title="Drag to reorder"
+                                    @ondragstart="@(() => _dragIndex = index)"
+                                    @ondragend="@(() => _dragIndex = null)">
+                                    <i class="ti ti-grip-vertical" aria-hidden="true"></i>
+                                </td>
                                 <td>@(index + 1)</td>
                                 <td>
                                     <RadzenDropDown TValue="Guid?"
@@ -163,7 +172,18 @@ else
                                                     ValueProperty="Id"
                                                     AllowFiltering="true"
                                                     AllowClear="true"
-                                                    Class="citus-control-full" />
+                                                    Class="citus-control-full">
+                                        <Template Context="item">
+                                            @{ var it = (ItemSummary)item; }
+                                            <div class="citus-item-option">
+                                                <span>@it.Name</span>
+                                                @if (!string.IsNullOrWhiteSpace(it.ItemCode))
+                                                {
+                                                    <span class="citus-item-option__code">@it.ItemCode</span>
+                                                }
+                                            </div>
+                                        </Template>
+                                    </RadzenDropDown>
                                 </td>
                                 <td>
                                     <CitusInput TValue="string"
@@ -180,6 +200,7 @@ else
                                                    Change="@(v => UpdateLine(index, l => l with { UnitPrice = v }))"
                                                    Format="0.0000" Class="citus-control-full" />
                                 </td>
+                                <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
                                 <td>
                                     <RadzenDropDown TValue="Guid?"
                                                     Data="@_taxCodes"
@@ -190,10 +211,9 @@ else
                                                     AllowClear="true"
                                                     Class="citus-control-full" />
                                 </td>
-                                <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
                                 <td>
                                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
-                                                 OnClick="@(() => RemoveLine(index))">×</CitusButton>
+                                                 OnClick="@(() => RemoveLine(index))"><i class="ti ti-trash" aria-hidden="true"></i></CitusButton>
                                 </td>
                             </tr>
                         }
@@ -206,26 +226,6 @@ else
                 </ChildContent>
             </CitusFormSection>
 
-            <CitusFormSection Title="Discount + shipping">
-                <CitusFormGrid Columns="2">
-                    <CitusFormField Label="Discount">
-                        <div class="flex gap-2">
-                            <select class="citus-form-field__input citus-inline-control--sm"
-                                    value="@(_discountKind ?? "")"
-                                    @onchange="OnDiscountKindChanged">
-                                <option value="">None</option>
-                                <option value="percent">Percent</option>
-                                <option value="amount">Amount</option>
-                            </select>
-                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
-                        </div>
-                    </CitusFormField>
-                    <CitusFormField Label="Shipping amount">
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
-                    </CitusFormField>
-                </CitusFormGrid>
-            </CitusFormSection>
-
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <CitusFormSection Title="Notes">
                     <CitusFormField Label="Message displayed on sales order">
@@ -236,13 +236,39 @@ else
                     </CitusFormField>
                 </CitusFormSection>
 
+                @* Totals — Discount + Shipping inputs inline next to the computed
+                   amount (QuickBooks-style); each value appears once instead of a
+                   separate input card + a read-only row. Bindings +
+                   Subtotal/DiscountAmount/Total are unchanged. *@
                 <CitusFormSection Title="Totals">
-                    <CitusKeyValueTable>
-                        <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                    </CitusKeyValueTable>
+                    <div class="citus-quote-totals">
+                        <div class="citus-quote-totals__row">
+                            <span class="citus-quote-totals__label">Subtotal</span>
+                            <span class="citus-quote-totals__amount">@FormatAmount(Subtotal)</span>
+                        </div>
+                        <div class="citus-quote-totals__row">
+                            <span class="citus-quote-totals__label">Discount</span>
+                            <div class="citus-quote-totals__controls">
+                                <RadzenNumeric TValue="decimal?" Value="@_discountValue" Change="@OnDiscountValueChanged" Format="0.##" Class="citus-quote-totals__input" />
+                                <div class="citus-discount-toggle" role="group" aria-label="Discount type">
+                                    <button type="button" class="@(_discountKind != "amount" ? "is-active" : null)" @onclick="@(() => SetDiscountKind("percent"))">%</button>
+                                    <button type="button" class="@(_discountKind == "amount" ? "is-active" : null)" @onclick="@(() => SetDiscountKind("amount"))">$</button>
+                                </div>
+                                <span class="citus-quote-totals__amount">−@FormatAmount(DiscountAmount)</span>
+                            </div>
+                        </div>
+                        <div class="citus-quote-totals__row">
+                            <span class="citus-quote-totals__label">Shipping</span>
+                            <div class="citus-quote-totals__controls">
+                                <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-quote-totals__input" />
+                                <span class="citus-quote-totals__amount">@FormatAmount(_shippingAmount ?? 0m)</span>
+                            </div>
+                        </div>
+                        <div class="citus-quote-totals__row citus-quote-totals__row--total">
+                            <span class="citus-quote-totals__label">Total</span>
+                            <strong class="citus-quote-totals__amount">@FormatAmount(Total) @_currency</strong>
+                        </div>
+                    </div>
                 </CitusFormSection>
             </div>
     </div>
@@ -447,6 +473,20 @@ else
 
     private void AddLine() => _lines.Add(new LineDraft());
 
+    // Frontend-only drag-to-reorder: the grip cell is the drag source, each
+    // row is the drop target. Sequence is still assigned from list order at
+    // save time, so the payload / backend contract is unchanged.
+    private int? _dragIndex;
+    private void OnDropRow(int targetIndex)
+    {
+        if (_dragIndex is not { } src) return;
+        _dragIndex = null;
+        if (src == targetIndex || src < 0 || src >= _lines.Count || targetIndex < 0 || targetIndex >= _lines.Count) return;
+        var moved = _lines[src];
+        _lines.RemoveAt(src);
+        _lines.Insert(targetIndex, moved);
+    }
+
     private void RemoveLine(int index)
     {
         if (index < 0 || index >= _lines.Count) return;
@@ -459,10 +499,14 @@ else
     private void OnTaxModeChanged(ChangeEventArgs args) =>
         _taxMode = args.Value?.ToString() ?? "exclusive";
 
-    private void OnDiscountKindChanged(ChangeEventArgs args)
+    private void SetDiscountKind(string kind) => _discountKind = kind;
+
+    private void OnDiscountValueChanged(decimal? value)
     {
-        var raw = args.Value?.ToString();
-        _discountKind = string.IsNullOrWhiteSpace(raw) ? null : raw;
+        _discountValue = value;
+        // First value entered defaults the kind to percent (the toggle shows %
+        // by default); an empty value keeps kind null = no discount, as before.
+        if (value is not null && _discountKind is null) _discountKind = "percent";
     }
 
     private async Task SaveAsync()
