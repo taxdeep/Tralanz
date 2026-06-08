@@ -3928,6 +3928,25 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     font-weight: 600;
 }
 
+/* Line-item rows: drag-to-reorder grip + product-option layout (name left,
+   item code on the right). */
+.citus-line-grip { cursor: grab; color: var(--citus-color-fg-subtle); text-align: center; }
+.citus-line-grip:active { cursor: grabbing; }
+.citus-line-row--dragging { opacity: 0.45; }
+.citus-item-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    width: 100%;
+}
+.citus-item-option__code {
+    color: var(--citus-color-fg-muted);
+    font-style: italic;
+    font-size: var(--citus-text-xs);
+    white-space: nowrap;
+}
+
 .citus-stat-card-grid {
   display: grid;
   gap: var(--citus-space-4);
