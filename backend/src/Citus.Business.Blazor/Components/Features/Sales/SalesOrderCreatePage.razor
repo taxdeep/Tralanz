@@ -48,9 +48,14 @@
 }
 else
 {
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-8 flex flex-col gap-6">
+    <div class="flex flex-col gap-6">
             <CitusFormSection Title="Customer">
+                @if (!string.IsNullOrWhiteSpace(_soNumber))
+                {
+                    <CitusFormField Label="Sales order no." Class="mb-4">
+                        <div class="citus-inline-code">@_soNumber</div>
+                    </CitusFormField>
+                }
                 <CitusFormGrid Columns="2">
                     <CitusFormField Label="Customer">
                         <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
@@ -65,22 +70,34 @@ else
                             @(string.IsNullOrEmpty(_sourceQuoteNumber) ? "Created directly (no source quote)" : $"From quote {_sourceQuoteNumber}")
                         </div>
                     </CitusFormField>
+                    <CitusFormField Label="Document date">
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_documentDate" Class="citus-control-full" />
+                    </CitusFormField>
+                    @* Customer PO# — the customer's own purchase-order reference. Optional but
+                       carried through to the downstream Invoice + Shipment + Packing Slip so the
+                       customer's AP can match payments back to their procurement record. *@
+                    <CitusFormField Label="Customer PO #">
+                        <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's own purchase-order reference (optional)" MaxLength="64" />
+                    </CitusFormField>
+                    <CitusFormField Label="Transaction currency">
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </CitusFormField>
+                    <CitusFormField Label="Exchange rate">
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </CitusFormField>
                 </CitusFormGrid>
-                @* Customer PO# — the customer's own purchase-order reference. Optional but
-                   carried through to the downstream Invoice + Shipment + Packing Slip so the
-                   customer's AP can match payments back to their procurement record. *@
-                <CitusFormField Label="Customer PO #" Class="mt-4">
-                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's own purchase-order reference (optional)" MaxLength="64" />
-                </CitusFormField>
-            </CitusFormSection>
 
-            <CitusFormSection Title="Address">
+                <h3 class="text-fg-muted text-sm font-medium m-0 mt-6 mb-3">Address</h3>
                 @* Address layout is an interleaved 2-col grid: row 1 is
                    labeled (billing / shipping address line); rows 2-4 are
                    unlabeled compound 2-col groups (city+state, postal+country)
-                   that align vertically under the labeled row. Keeping the
-                   raw grid intact preserves that interleave — splitting it
-                   into CitusFormFields would break the visual alignment. *@
+                   that align vertically under the labeled row. *@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label class="text-sm font-medium block mb-1">Billing address</label>
@@ -189,68 +206,45 @@ else
                 </ChildContent>
             </CitusFormSection>
 
-            <CitusFormSection Title="Notes">
-                <CitusFormField Label="Message displayed on sales order">
-                    <CitusInput TValue="string" @bind-Value="_memoToCustomer" />
-                </CitusFormField>
-                <CitusFormField Label="Internal note" Class="mt-4">
-                    <CitusInput TValue="string" @bind-Value="_internalNote" />
-                </CitusFormField>
-            </CitusFormSection>
-        </div>
-
-        <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Document">
-                @if (!string.IsNullOrWhiteSpace(_soNumber))
-                {
-                    <CitusFormField Label="Sales order no.">
-                        <div class="citus-inline-code">@_soNumber</div>
-                    </CitusFormField>
-                }
-                <CitusFormField Label="Document date" Class="@(string.IsNullOrWhiteSpace(_soNumber) ? null : "mt-4")">
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                      @bind-Value="_documentDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Transaction currency" Class="mt-4">
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                </CitusFormField>
-                <CitusFormField Label="Exchange rate" Class="mt-4">
-                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                  QuoteCurrencyCode="@_currency"
-                                  @bind-Rate="_fxRate" />
-                </CitusFormField>
-            </CitusFormSection>
-
             <CitusFormSection Title="Discount + shipping">
-                <CitusFormField Label="Discount">
-                    <div class="flex gap-2">
-                        <select class="citus-form-field__input citus-inline-control--sm"
-                                value="@(_discountKind ?? "")"
-                                @onchange="OnDiscountKindChanged">
-                            <option value="">None</option>
-                            <option value="percent">Percent</option>
-                            <option value="amount">Amount</option>
-                        </select>
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
-                    </div>
-                </CitusFormField>
-                <CitusFormField Label="Shipping amount" Class="mt-4">
-                    <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
-                </CitusFormField>
+                <CitusFormGrid Columns="2">
+                    <CitusFormField Label="Discount">
+                        <div class="flex gap-2">
+                            <select class="citus-form-field__input citus-inline-control--sm"
+                                    value="@(_discountKind ?? "")"
+                                    @onchange="OnDiscountKindChanged">
+                                <option value="">None</option>
+                                <option value="percent">Percent</option>
+                                <option value="amount">Amount</option>
+                            </select>
+                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
+                        </div>
+                    </CitusFormField>
+                    <CitusFormField Label="Shipping amount">
+                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
+                    </CitusFormField>
+                </CitusFormGrid>
             </CitusFormSection>
 
-            <CitusFormSection Title="Totals">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                </CitusKeyValueTable>
-            </CitusFormSection>
-        </aside>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <CitusFormSection Title="Notes">
+                    <CitusFormField Label="Message displayed on sales order">
+                        <CitusInput TValue="string" @bind-Value="_memoToCustomer" />
+                    </CitusFormField>
+                    <CitusFormField Label="Internal note" Class="mt-4">
+                        <CitusInput TValue="string" @bind-Value="_internalNote" />
+                    </CitusFormField>
+                </CitusFormSection>
+
+                <CitusFormSection Title="Totals">
+                    <CitusKeyValueTable>
+                        <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
+                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
+                    </CitusKeyValueTable>
+                </CitusFormSection>
+            </div>
     </div>
 
     @* Sticky Save / Cancel — pinned to viewport bottom while the
