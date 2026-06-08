@@ -3905,6 +3905,29 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-form-actions--save-right .citus-form-actions__extra { margin-left: auto; }
 .citus-form-actions--save-right .citus-form-actions__primary { margin-left: 0; }
 
+/* Totals panel with inline Discount + Shipping inputs (quote / sales order).
+   Each row: label on the left, then (for editable rows) the input controls and
+   the computed amount clustered on the right, so a value shows once instead of
+   in a separate input card plus a read-only totals row. */
+.citus-quote-totals { display: flex; flex-direction: column; gap: var(--citus-space-2); }
+.citus-quote-totals__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    font-size: var(--citus-text-sm);
+}
+.citus-quote-totals__label { color: var(--citus-color-fg-muted); white-space: nowrap; }
+.citus-quote-totals__controls { display: flex; align-items: center; gap: var(--citus-space-2); }
+.citus-quote-totals__input { width: 6rem; }
+.citus-quote-totals__amount { min-width: 5rem; text-align: right; white-space: nowrap; }
+.citus-quote-totals__row--total {
+    border-top: 1px solid var(--citus-color-border);
+    padding-top: var(--citus-space-2);
+    margin-top: var(--citus-space-1);
+    font-weight: 600;
+}
+
 .citus-stat-card-grid {
   display: grid;
   gap: var(--citus-space-4);

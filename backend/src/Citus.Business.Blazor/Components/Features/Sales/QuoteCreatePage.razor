@@ -220,26 +220,6 @@ else
                 </ChildContent>
             </CitusFormSection>
 
-            <CitusFormSection Title="Discount + shipping">
-                <CitusFormGrid Columns="2">
-                    <CitusFormField Label="Discount">
-                        <div class="flex gap-2">
-                            <select class="citus-form-field__input citus-inline-control--sm"
-                                    value="@(_discountKind ?? "")"
-                                    @onchange="OnDiscountKindChanged">
-                                <option value="">None</option>
-                                <option value="percent">Percent</option>
-                                <option value="amount">Amount</option>
-                            </select>
-                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
-                        </div>
-                    </CitusFormField>
-                    <CitusFormField Label="Shipping amount">
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
-                    </CitusFormField>
-                </CitusFormGrid>
-            </CitusFormSection>
-
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <CitusFormSection Title="Message + notes">
                     <CitusFormField Label="Message displayed on quote">
@@ -250,13 +230,43 @@ else
                     </CitusFormField>
                 </CitusFormSection>
 
+                @* Totals — Discount + Shipping inputs sit inline on their own
+                   rows next to the computed amount (QuickBooks-style), so each
+                   value appears once instead of being duplicated across a
+                   separate "Discount + shipping" card and the totals readout.
+                   Bindings + Subtotal/DiscountAmount/Total are unchanged. *@
                 <CitusFormSection Title="Totals">
-                    <CitusKeyValueTable>
-                        <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
-                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                    </CitusKeyValueTable>
+                    <div class="citus-quote-totals">
+                        <div class="citus-quote-totals__row">
+                            <span class="citus-quote-totals__label">Subtotal</span>
+                            <span class="citus-quote-totals__amount">@FormatAmount(Subtotal)</span>
+                        </div>
+                        <div class="citus-quote-totals__row">
+                            <span class="citus-quote-totals__label">Discount</span>
+                            <div class="citus-quote-totals__controls">
+                                <select class="citus-form-field__input citus-inline-control--sm"
+                                        value="@(_discountKind ?? "")"
+                                        @onchange="OnDiscountKindChanged">
+                                    <option value="">None</option>
+                                    <option value="percent">%</option>
+                                    <option value="amount">$</option>
+                                </select>
+                                <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-quote-totals__input" />
+                                <span class="citus-quote-totals__amount">−@FormatAmount(DiscountAmount)</span>
+                            </div>
+                        </div>
+                        <div class="citus-quote-totals__row">
+                            <span class="citus-quote-totals__label">Shipping</span>
+                            <div class="citus-quote-totals__controls">
+                                <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-quote-totals__input" />
+                                <span class="citus-quote-totals__amount">@FormatAmount(_shippingAmount ?? 0m)</span>
+                            </div>
+                        </div>
+                        <div class="citus-quote-totals__row citus-quote-totals__row--total">
+                            <span class="citus-quote-totals__label">Total</span>
+                            <strong class="citus-quote-totals__amount">@FormatAmount(Total) @_currency</strong>
+                        </div>
+                    </div>
                 </CitusFormSection>
             </div>
     </div>
