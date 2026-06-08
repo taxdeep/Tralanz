@@ -85,9 +85,11 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                 quantity        NUMERIC(18,4) NOT NULL DEFAULT 0,
                 unit_price      NUMERIC(18,4) NOT NULL DEFAULT 0,
                 tax_code_id     UUID NULL,
+                tax_code_set_id UUID NULL,
                 account_code    TEXT NULL,
                 line_total      NUMERIC(18,4) NOT NULL DEFAULT 0
             );
+            ALTER TABLE quote_lines ADD COLUMN IF NOT EXISTS tax_code_set_id UUID NULL;
             CREATE INDEX IF NOT EXISTS idx_quote_lines_quote
                 ON quote_lines (quote_id, sequence);
             """;
@@ -409,7 +411,8 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, quote_id, sequence, service_date, item_id, description,
-                   quantity, unit_price, tax_code_id, account_code, line_total
+                   quantity, unit_price, tax_code_id, account_code, line_total,
+                   tax_code_set_id
               FROM quote_lines
              WHERE quote_id = @quote_id
              ORDER BY sequence;
@@ -428,6 +431,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                 Quantity: reader.GetDecimal(6),
                 UnitPrice: reader.GetDecimal(7),
                 TaxCodeId: reader.IsDBNull(8) ? null : reader.GetGuid(8),
+                TaxCodeSetId: reader.IsDBNull(11) ? null : reader.GetGuid(11),
                 AccountCode: reader.IsDBNull(9) ? null : reader.GetString(9),
                 LineTotal: reader.GetDecimal(10)));
         }
@@ -451,10 +455,10 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
             command.CommandText = """
                 INSERT INTO quote_lines (
                     quote_id, sequence, service_date, item_id, description,
-                    quantity, unit_price, tax_code_id, account_code, line_total)
+                    quantity, unit_price, tax_code_id, tax_code_set_id, account_code, line_total)
                 VALUES (
                     @quote_id, @sequence, @service_date, @item_id, @description,
-                    @quantity, @unit_price, @tax_code_id, @account_code, @line_total);
+                    @quantity, @unit_price, @tax_code_id, @tax_code_set_id, @account_code, @line_total);
                 """;
             command.Parameters.AddWithValue("quote_id", quoteId);
             command.Parameters.AddWithValue("sequence", line.Sequence);
@@ -465,6 +469,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
             command.Parameters.AddWithValue("quantity", line.Quantity);
             command.Parameters.AddWithValue("unit_price", line.UnitPrice);
             command.Parameters.AddWithValue("tax_code_id", (object?)line.TaxCodeId ?? DBNull.Value);
+            command.Parameters.AddWithValue("tax_code_set_id", (object?)line.TaxCodeSetId ?? DBNull.Value);
             command.Parameters.AddWithValue("account_code", (object?)line.AccountCode ?? DBNull.Value);
             command.Parameters.AddWithValue("line_total", Math.Round(line.Quantity * line.UnitPrice, 4));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

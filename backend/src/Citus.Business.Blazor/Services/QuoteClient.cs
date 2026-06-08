@@ -256,6 +256,7 @@ public sealed record QuoteLineDto(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode,
     decimal LineTotal);
 
@@ -300,6 +301,7 @@ public sealed record QuoteLinePayload(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode);
 
 public sealed record QuoteMutationOutcome(

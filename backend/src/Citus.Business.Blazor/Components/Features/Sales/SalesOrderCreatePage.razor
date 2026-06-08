@@ -9,6 +9,7 @@
 @inject CustomerClient CustomerClient
 @inject ItemClient ItemClient
 @inject TaxCodeClient TaxCodeClient
+@inject TaxCodeSetClient TaxCodeSetClient
 @inject SalesOrderClient SalesOrderClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
@@ -203,9 +204,9 @@ else
                                 <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
                                 <td>
                                     <RadzenDropDown TValue="Guid?"
-                                                    Data="@_taxCodes"
-                                                    Value="@line.TaxCodeId"
-                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
+                                                    Data="@_taxCodeSets"
+                                                    Value="@line.TaxCodeSetId"
+                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeSetId = v as Guid? }))"
                                                     TextProperty="Code"
                                                     ValueProperty="Id"
                                                     AllowClear="true"
@@ -295,6 +296,7 @@ else
     private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
     private IReadOnlyList<ItemSummary> _items = Array.Empty<ItemSummary>();
     private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
+    private IReadOnlyList<TaxCodeSetSummary> _taxCodeSets = Array.Empty<TaxCodeSetSummary>();
 
     private Guid? _customerId;
     private string _customerDisplay = string.Empty;
@@ -357,10 +359,12 @@ else
             var customersTask = CustomerClient.ListAsync();
             var itemsTask = ItemClient.ListAsync();
             var taxTask = TaxCodeClient.ListAsync(appliesTo: "sales");
-            await Task.WhenAll(customersTask, itemsTask, taxTask);
+            var taxSetTask = TaxCodeSetClient.ListAsync(appliesTo: "sales");
+            await Task.WhenAll(customersTask, itemsTask, taxTask, taxSetTask);
             _customers = customersTask.Result;
             _items = itemsTask.Result;
             _taxCodes = taxTask.Result;
+            _taxCodeSets = taxSetTask.Result;
 
             _salesOrderId = SalesOrderId;
             if (SalesOrderId is { } id)
@@ -414,6 +418,7 @@ else
             Quantity = l.Quantity,
             UnitPrice = l.UnitPrice,
             TaxCodeId = l.TaxCodeId,
+            TaxCodeSetId = l.TaxCodeSetId,
             AccountCode = l.AccountCode
         }).ToList();
         if (_lines.Count == 0) _lines.Add(new LineDraft());
@@ -468,6 +473,7 @@ else
         current.Quantity = updated.Quantity;
         current.UnitPrice = updated.UnitPrice;
         current.TaxCodeId = updated.TaxCodeId;
+        current.TaxCodeSetId = updated.TaxCodeSetId;
         current.AccountCode = updated.AccountCode;
     }
 
@@ -559,6 +565,7 @@ else
                         Quantity: l.Quantity,
                         UnitPrice: l.UnitPrice,
                         TaxCodeId: l.TaxCodeId,
+                        TaxCodeSetId: l.TaxCodeSetId,
                         AccountCode: l.AccountCode))
                     .ToArray(),
                 ExpectedUpdatedAt: _salesOrderId is null ? null : _expectedUpdatedAt);
@@ -603,6 +610,7 @@ else
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
         public Guid? TaxCodeId { get; set; }
+        public Guid? TaxCodeSetId { get; set; }
         public string? AccountCode { get; set; }
     }
 }

@@ -87,12 +87,14 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 quantity        NUMERIC(18,4) NOT NULL DEFAULT 0,
                 unit_price      NUMERIC(18,4) NOT NULL DEFAULT 0,
                 tax_code_id     UUID NULL,
+                tax_code_set_id UUID NULL,
                 account_code    TEXT NULL,
                 line_total      NUMERIC(18,4) NOT NULL DEFAULT 0,
                 reserved_qty    NUMERIC(18,4) NOT NULL DEFAULT 0,
                 backorder_qty   NUMERIC(18,4) NOT NULL DEFAULT 0,
                 shipped_qty     NUMERIC(18,4) NOT NULL DEFAULT 0
             );
+            ALTER TABLE sales_order_lines ADD COLUMN IF NOT EXISTS tax_code_set_id UUID NULL;
             ALTER TABLE sales_order_lines ADD COLUMN IF NOT EXISTS reserved_qty  NUMERIC(18,4) NOT NULL DEFAULT 0;
             ALTER TABLE sales_order_lines ADD COLUMN IF NOT EXISTS backorder_qty NUMERIC(18,4) NOT NULL DEFAULT 0;
             ALTER TABLE sales_order_lines ADD COLUMN IF NOT EXISTS shipped_qty   NUMERIC(18,4) NOT NULL DEFAULT 0;
@@ -817,7 +819,8 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         command.CommandText = """
             SELECT id, sales_order_id, sequence, service_date, item_id, description,
                    quantity, unit_price, tax_code_id, account_code, line_total,
-                   reserved_qty, backorder_qty, shipped_qty
+                   reserved_qty, backorder_qty, shipped_qty,
+                   tax_code_set_id
               FROM sales_order_lines
              WHERE sales_order_id = @so_id
              ORDER BY sequence;
@@ -836,6 +839,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 Quantity: reader.GetDecimal(6),
                 UnitPrice: reader.GetDecimal(7),
                 TaxCodeId: reader.IsDBNull(8) ? null : reader.GetGuid(8),
+                TaxCodeSetId: reader.IsDBNull(14) ? null : reader.GetGuid(14),
                 AccountCode: reader.IsDBNull(9) ? null : reader.GetString(9),
                 LineTotal: reader.GetDecimal(10),
                 ReservedQty: reader.GetDecimal(11),
@@ -862,10 +866,10 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
             command.CommandText = """
                 INSERT INTO sales_order_lines (
                     sales_order_id, sequence, service_date, item_id, description,
-                    quantity, unit_price, tax_code_id, account_code, line_total)
+                    quantity, unit_price, tax_code_id, tax_code_set_id, account_code, line_total)
                 VALUES (
                     @so_id, @sequence, @service_date, @item_id, @description,
-                    @quantity, @unit_price, @tax_code_id, @account_code, @line_total);
+                    @quantity, @unit_price, @tax_code_id, @tax_code_set_id, @account_code, @line_total);
                 """;
             command.Parameters.AddWithValue("so_id", salesOrderId);
             command.Parameters.AddWithValue("sequence", line.Sequence);
@@ -876,6 +880,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
             command.Parameters.AddWithValue("quantity", line.Quantity);
             command.Parameters.AddWithValue("unit_price", line.UnitPrice);
             command.Parameters.AddWithValue("tax_code_id", (object?)line.TaxCodeId ?? DBNull.Value);
+            command.Parameters.AddWithValue("tax_code_set_id", (object?)line.TaxCodeSetId ?? DBNull.Value);
             command.Parameters.AddWithValue("account_code", (object?)line.AccountCode ?? DBNull.Value);
             command.Parameters.AddWithValue("line_total", Math.Round(line.Quantity * line.UnitPrice, 4));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

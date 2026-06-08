@@ -306,6 +306,7 @@ public static class EndpointRequestHelpers
                 Quantity: l.Quantity,
                 UnitPrice: l.UnitPrice,
                 TaxCodeId: l.TaxCodeId,
+                TaxCodeSetId: l.TaxCodeSetId,
                 AccountCode: l.AccountCode))
             .ToArray(),
         ExpectedUpdatedAt: request.ExpectedUpdatedAt);
@@ -362,6 +363,7 @@ public static class EndpointRequestHelpers
                 Quantity: l.Quantity,
                 UnitPrice: l.UnitPrice,
                 TaxCodeId: l.TaxCodeId,
+                TaxCodeSetId: l.TaxCodeSetId,
                 AccountCode: l.AccountCode))
             .ToArray(),
         ExpectedUpdatedAt: request.ExpectedUpdatedAt);

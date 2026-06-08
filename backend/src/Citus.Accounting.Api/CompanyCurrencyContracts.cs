@@ -98,6 +98,7 @@ public sealed record QuoteLineHttpRequest(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode);
 
 public sealed record QuoteStatusHttpRequest(string? Status);
@@ -142,6 +143,7 @@ public sealed record SalesOrderLineHttpRequest(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode);
 
 public sealed record SalesOrderStatusHttpRequest(string? Status);

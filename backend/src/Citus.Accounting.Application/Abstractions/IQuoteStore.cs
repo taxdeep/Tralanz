@@ -138,6 +138,7 @@ public sealed record QuoteLineRecord(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode,
     decimal LineTotal);
 
@@ -182,6 +183,7 @@ public sealed record QuoteLineInput(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode);
 
 public static class QuoteStatus

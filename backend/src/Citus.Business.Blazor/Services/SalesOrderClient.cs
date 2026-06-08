@@ -324,6 +324,7 @@ public sealed record SalesOrderLineDto(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode,
     decimal LineTotal,
     decimal ReservedQty = 0m,
@@ -371,6 +372,7 @@ public sealed record SalesOrderLinePayload(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
+    Guid? TaxCodeSetId,
     string? AccountCode);
 
 public sealed record SalesOrderMutationOutcome(

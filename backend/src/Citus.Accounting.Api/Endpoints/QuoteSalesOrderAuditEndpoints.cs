@@ -305,6 +305,7 @@ internal static class QuoteSalesOrderAuditEndpoints
                             Quantity: l.Quantity,
                             UnitPrice: l.UnitPrice,
                             TaxCodeId: l.TaxCodeId,
+                            TaxCodeSetId: l.TaxCodeSetId,
                             AccountCode: l.AccountCode))
                         .ToArray());
 
