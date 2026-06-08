@@ -264,11 +264,11 @@ else
                         <div class="citus-quote-totals__row">
                             <span class="citus-quote-totals__label">Discount</span>
                             <div class="citus-quote-totals__controls">
-                                <RadzenNumeric TValue="decimal?" Value="@_discountValue" Change="@OnDiscountValueChanged" Format="0.##" Class="citus-quote-totals__input" />
                                 <div class="citus-discount-toggle" role="group" aria-label="Discount type">
                                     <button type="button" class="@(_discountKind != "amount" ? "is-active" : null)" @onclick="@(() => SetDiscountKind("percent"))">%</button>
                                     <button type="button" class="@(_discountKind == "amount" ? "is-active" : null)" @onclick="@(() => SetDiscountKind("amount"))">$</button>
                                 </div>
+                                <RadzenNumeric TValue="decimal?" Value="@_discountValue" Change="@OnDiscountValueChanged" Format="0.##" Class="citus-quote-totals__input" />
                                 <span class="citus-quote-totals__amount">−@FormatAmount(DiscountAmount)</span>
                             </div>
                         </div>
