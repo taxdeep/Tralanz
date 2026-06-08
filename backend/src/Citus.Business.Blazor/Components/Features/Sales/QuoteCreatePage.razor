@@ -186,7 +186,7 @@ else
                                                     TextProperty="Name"
                                                     ValueProperty="Id"
                                                     AllowFiltering="true"
-                                                    AllowClear="true"
+                                                    AllowClear="false"
                                                     Class="citus-control-full">
                                         <Template Context="item">
                                             @{ var it = (ItemSummary)item; }
@@ -272,6 +272,10 @@ else
                                 <RadzenNumeric TValue="decimal?" Value="@_discountValue" Change="@OnDiscountValueChanged" Format="0.##" Class="citus-quote-totals__input" />
                                 <span class="citus-quote-totals__amount">−@FormatAmount(DiscountAmount)</span>
                             </div>
+                        </div>
+                        <div class="citus-quote-totals__row">
+                            <span class="citus-quote-totals__label">Tax</span>
+                            <span class="citus-quote-totals__amount">@FormatAmount(TaxAmount)</span>
                         </div>
                         <div class="citus-quote-totals__row">
                             <span class="citus-quote-totals__label">Shipping</span>
@@ -370,7 +374,39 @@ else
         _discountKind == "percent" && _discountValue is { } pct ? Math.Round(Subtotal * pct / 100m, 4)
         : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
         : 0m;
-    private decimal Total => Math.Round(Subtotal - DiscountAmount + (_shippingAmount ?? 0m), 4);
+
+    // Estimate-only tax preview. Quotes don't post tax, so this is a display
+    // figure computed from each line's selected Tax Code (tax_code_sets member
+    // rates): inclusive mode extracts the embedded portion, exclusive adds it.
+    private decimal TaxAmount => _lines.Sum(ComputeLineTax);
+
+    private decimal ComputeLineTax(LineDraft line)
+    {
+        if (line.TaxCodeSetId is not { } setId) return 0m;
+        var set = _taxCodeSets.FirstOrDefault(s => s.Id == setId);
+        if (set is null || set.Members.Count == 0) return 0m;
+        var amount = Math.Round(line.Quantity * line.UnitPrice, 4);
+        if (amount == 0m) return 0m;
+
+        if (string.Equals(_taxMode, "inclusive", StringComparison.OrdinalIgnoreCase))
+        {
+            var combined = set.Members.Sum(m => m.RatePercent) / 100m;
+            return combined <= -1m ? 0m : Math.Round(amount - amount / (1m + combined), 4);
+        }
+
+        decimal tax = 0m;
+        foreach (var member in set.Members.OrderBy(m => m.Sequence))
+        {
+            var taxable = member.IsCompound ? amount + tax : amount;
+            tax += Math.Round(taxable * member.RatePercent / 100m, 4);
+        }
+        return tax;
+    }
+
+    private decimal Total => Math.Round(
+        Subtotal - DiscountAmount
+        + (string.Equals(_taxMode, "inclusive", StringComparison.OrdinalIgnoreCase) ? 0m : TaxAmount)
+        + (_shippingAmount ?? 0m), 4);
 
     protected override async Task OnInitializedAsync()
     {
