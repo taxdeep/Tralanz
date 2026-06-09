@@ -3906,6 +3906,16 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
   .citus-task-customer-row { grid-template-columns: 4fr 1fr 5fr; }
 }
 
+/* New-expense top rows: 35% / 35% / 30%; single column on phones. */
+.citus-expense-row {
+  display: grid;
+  gap: var(--citus-space-4);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 768px) {
+  .citus-expense-row { grid-template-columns: 7fr 7fr 6fr; }
+}
+
 /* Read-only field value shown in place of an input (e.g. a derived currency). */
 .citus-form-field__static {
   padding: 0.4375rem 0;

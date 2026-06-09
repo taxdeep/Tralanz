@@ -69,99 +69,107 @@
 }
 else
 {
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-8 flex flex-col gap-6">
-            <CitusFormSection Title="Payee + payment">
-                <CitusFormGrid Columns="2">
-                    <CitusFormField Label="Payee kind">
-                        <select class="citus-form-field__input" value="@_payeeKind" @onchange="OnPayeeKindChanged">
-                            <option value="vendor">Vendor</option>
-                            <option value="employee">Employee</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </CitusFormField>
-                    <CitusFormField Label="Payee">
-                        @if (_payeeKind == "vendor")
-                        {
-                            <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                          SelectedId="@_payeeId"
-                                          SelectedDisplayText="@_payeeDisplay"
-                                          Placeholder="Who did you pay?"
-                                          OnVendorSelected="OnPayeeSelected"
-                                          OnCleared="OnPayeeCleared" />
-                        }
-                        else
-                        {
-                            <CitusInput TValue="string" @bind-Value="_payeeNameFreeform" Placeholder="Payee name" />
-                        }
-                    </CitusFormField>
+    <div class="flex flex-col gap-6">
+        <CitusFormSection Title="Payee + payment">
+            @* Line 1: Payee (35%) + Currency (35%) + Payment date (30%). *@
+            <div class="citus-expense-row">
+                <CitusFormField Label="Payee">
+                    @if (_payeeKind == "vendor")
+                    {
+                        <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                      SelectedId="@_payeeId"
+                                      SelectedDisplayText="@_payeeDisplay"
+                                      Placeholder="Who did you pay?"
+                                      OnVendorSelected="OnPayeeSelected"
+                                      OnCleared="OnPayeeCleared" />
+                    }
+                    else
+                    {
+                        <CitusInput TValue="string" @bind-Value="_payeeNameFreeform" Placeholder="Payee name" />
+                    }
+                    <CitusButton Variant="CitusButtonVariant.Link" Size="CitusButtonSize.Small" OnClick="TogglePayeeKind">
+                        @(_payeeKind == "vendor" ? "Not a vendor? Enter a name" : "Pick a vendor instead")
+                    </CitusButton>
+                </CitusFormField>
 
-                    <CitusFormField Label="Paid from (account)">
-                        <RadzenDropDown TValue="Guid?"
-                                        Data="@_paymentAccountOptions"
-                                        @bind-Value="_paymentAccountId"
-                                        TextProperty="Label"
-                                        ValueProperty="Id"
-                                        Placeholder="Select bank / cash / credit card…"
-                                        AllowFiltering="true"
-                                        Class="citus-control-full"
-                                        Change="@(_ => OnPaymentAccountChanged())" />
-                        @if (_paymentAccountId is { } accId)
-                        {
-                            var acct = _paymentAccountOptions.FirstOrDefault(a => a.Id == accId);
-                            if (acct is not null)
-                            {
-                                <p class="text-fg-subtle text-xs mt-1">
-                                    @HumanizeDetailType(acct.DetailType) · @acct.CurrencyCode
-                                </p>
-                            }
-                        }
-                    </CitusFormField>
+                <CitusFormField Label="Currency">
+                    @* Transaction currency follows the selected vendor; this inline editor
+                       shows "1 <cur> = <rate> <base>", or "Base currency — no FX rate needed". *@
+                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date))"
+                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                  QuoteCurrencyCode="@_currency"
+                                  @bind-Rate="_fxRate" />
+                </CitusFormField>
 
-                    <CitusFormField Label="Payment date">
-                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_paymentDate" Class="citus-control-full" />
-                    </CitusFormField>
+                <CitusFormField Label="Payment date">
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                      @bind-Value="_paymentDate" Class="citus-control-full" />
+                </CitusFormField>
+            </div>
 
-                    <CitusFormField Label="Payment method">
-                        <select class="citus-form-field__input" value="@_paymentMethod" @onchange="OnPaymentMethodChanged">
-                            <option value="cash">Cash</option>
-                            <option value="cheque">Cheque</option>
-                            <option value="credit_card">Credit Card</option>
-                            <option value="wire">Wire</option>
-                            <option value="direct_deposit">Direct Deposit</option>
-                            <option value="eft">EFT</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </CitusFormField>
+            @* Line 2: Payment method (35%) + Paid from (35%) + Reference (30%). *@
+            <div class="citus-expense-row mt-4">
+                <CitusFormField Label="Payment method">
+                    <select class="citus-form-field__input" value="@_paymentMethod" @onchange="OnPaymentMethodChanged">
+                        <option value="cash">Cash</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="credit_card">Credit Card</option>
+                        <option value="wire">Wire</option>
+                        <option value="direct_deposit">Direct Deposit</option>
+                        <option value="eft">EFT</option>
+                        <option value="other">Other</option>
+                    </select>
+                </CitusFormField>
 
-                    <div>
-                        @* Conditional reference-number block — label text +
-                           required-asterisk vary per payment method, so kept
-                           as raw markup (same pattern as RefundReceipt). *@
-                        @if (_paymentMethod == "cheque")
+                <CitusFormField Label="Paid from (account)">
+                    <RadzenDropDown TValue="Guid?"
+                                    Data="@_paymentAccountOptions"
+                                    @bind-Value="_paymentAccountId"
+                                    TextProperty="Label"
+                                    ValueProperty="Id"
+                                    Placeholder="Select bank / cash / credit card…"
+                                    AllowFiltering="true"
+                                    Class="citus-control-full"
+                                    Change="@(_ => OnPaymentAccountChanged())" />
+                    @if (_paymentAccountId is { } accId)
+                    {
+                        var acct = _paymentAccountOptions.FirstOrDefault(a => a.Id == accId);
+                        if (acct is not null)
                         {
-                            <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
-                            <CitusInput TValue="string" @bind-Value="_chequeNumber" Placeholder="e.g. 1042" />
+                            <p class="text-fg-subtle text-xs mt-1">
+                                @HumanizeDetailType(acct.DetailType) · @acct.CurrencyCode
+                            </p>
                         }
-                        else if (_paymentMethod is "wire" or "direct_deposit" or "eft")
-                        {
-                            <label class="text-sm font-medium block mb-1">Reference # <span class="text-fg-danger">*</span></label>
-                            <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Bank trace / SWIFT MT103 / etc." />
-                        }
-                        else if (_paymentMethod is "credit_card" or "other")
-                        {
-                            <label class="text-sm font-medium block mb-1">Reference #</label>
-                            <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Optional" />
-                        }
-                        else
-                        {
-                            <label class="text-sm font-medium block mb-1">&nbsp;</label>
-                            <div class="text-fg-muted text-sm">Cash payments don't need a reference.</div>
-                        }
-                    </div>
-                </CitusFormGrid>
-            </CitusFormSection>
+                    }
+                </CitusFormField>
+
+                <div>
+                    @* Conditional reference-number block — label text +
+                       required-asterisk vary per payment method, so kept
+                       as raw markup (same pattern as RefundReceipt). *@
+                    @if (_paymentMethod == "cheque")
+                    {
+                        <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
+                        <CitusInput TValue="string" @bind-Value="_chequeNumber" Placeholder="e.g. 1042" />
+                    }
+                    else if (_paymentMethod is "wire" or "direct_deposit" or "eft")
+                    {
+                        <label class="text-sm font-medium block mb-1">Reference # <span class="text-fg-danger">*</span></label>
+                        <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Bank trace / SWIFT MT103 / etc." />
+                    }
+                    else if (_paymentMethod is "credit_card" or "other")
+                    {
+                        <label class="text-sm font-medium block mb-1">Reference #</label>
+                        <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Optional" />
+                    }
+                    else
+                    {
+                        <label class="text-sm font-medium block mb-1">&nbsp;</label>
+                        <div class="text-fg-muted text-sm">Cash payments don't need a reference.</div>
+                    }
+                </div>
+            </div>
+        </CitusFormSection>
 
             <CitusFormSection Title="Lines">
                 <HeaderActions>
@@ -257,6 +265,21 @@ else
                 </ChildContent>
             </CitusFormSection>
 
+        <CitusFormSection Title="Discount">
+            <div class="flex gap-2">
+                <select class="citus-form-field__input citus-inline-control--sm"
+                        value="@(_discountKind ?? "")"
+                        @onchange="OnDiscountKindChanged">
+                    <option value="">None</option>
+                    <option value="percent">Percent</option>
+                    <option value="amount">Amount</option>
+                </select>
+                <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
+            </div>
+        </CitusFormSection>
+
+        @* Line 3: Notes (50%) + Totals (50%). *@
+        <div class="citus-form-grid citus-form-grid--cols-2">
             <CitusFormSection Title="Notes">
                 <CitusFormField Label="Memo">
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the expense record." />
@@ -264,35 +287,6 @@ else
                 <CitusFormField Label="Internal note" Class="mt-4">
                     <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
                 </CitusFormField>
-            </CitusFormSection>
-        </div>
-
-        <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Currency">
-                <CitusFormField Label="Transaction currency">
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                </CitusFormField>
-                <CitusFormField Label="Exchange rate" Class="mt-4">
-                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date))"
-                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                  QuoteCurrencyCode="@_currency"
-                                  @bind-Rate="_fxRate" />
-                </CitusFormField>
-            </CitusFormSection>
-
-            <CitusFormSection Title="Discount">
-                <div class="flex gap-2">
-                    <select class="citus-form-field__input citus-inline-control--sm"
-                            value="@(_discountKind ?? "")"
-                            @onchange="OnDiscountKindChanged">
-                        <option value="">None</option>
-                        <option value="percent">Percent</option>
-                        <option value="amount">Amount</option>
-                    </select>
-                    <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
-                </div>
             </CitusFormSection>
 
             <CitusFormSection Title="Totals">
@@ -308,7 +302,7 @@ else
                     }
                 </CitusKeyValueTable>
             </CitusFormSection>
-        </aside>
+        </div>
     </div>
 
     @* Sticky Save / Cancel — pinned to viewport bottom while the
@@ -575,10 +569,22 @@ else
         _ => detailType ?? "—"
     };
 
-    private void OnPayeeKindChanged(ChangeEventArgs args)
+    // Default payee is a vendor (search picker). The small "Not a vendor?" link
+    // toggles to a free-text payee (recorded with payee_kind 'other'), preserving
+    // the ability to pay a non-vendor without the prominent kind dropdown.
+    private void TogglePayeeKind()
     {
-        _payeeKind = args.Value?.ToString() ?? "vendor";
-        if (_payeeKind != "vendor") { _payeeId = null; _payeeDisplay = string.Empty; }
+        if (_payeeKind == "vendor")
+        {
+            _payeeKind = "other";
+            _payeeId = null;
+            _payeeDisplay = string.Empty;
+        }
+        else
+        {
+            _payeeKind = "vendor";
+            _payeeNameFreeform = string.Empty;
+        }
     }
 
     private void OnPayeeSelected(UnitySearchPickerOption option)
