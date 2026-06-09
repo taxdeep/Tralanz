@@ -12,19 +12,18 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_so is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_so.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="sales-orders"
                          Variant="CitusButtonVariant.Ghost"
                          LeadingIcon="IconName.ArrowLeft">
             Back to sales orders
         </CitusLinkButton>
-        @if (_so is not null && IsEditable(_so.Status))
-        {
-            <CitusLinkButton Href="@($"sales-orders/{_so.Id:D}/edit")"
-                             LeadingIcon="IconName.Pencil">
-                Edit
-            </CitusLinkButton>
-        }
     </Actions>
 </CitusPageHeader>
 
@@ -43,11 +42,29 @@ else if (_so is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Sales Order" Value="@_so.SalesOrderNumber" Description="@_so.CustomerName"
-                       Icon="IconName.Receipt" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_so.Status)" Description="@StatusHint(_so.Status)"
-                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_so.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Customer">
+            <CitusKeyValueTable>
+                @if (!string.IsNullOrWhiteSpace(_so.CustomerNumber))
+                {
+                    <CitusKeyValueRow Label="Customer Reference #"><span class="citus-inline-code">@_so.CustomerNumber</span></CitusKeyValueRow>
+                }
+                <CitusKeyValueRow Label="Name">@_so.CustomerName</CitusKeyValueRow>
+                @if (!string.IsNullOrWhiteSpace(_so.CustomerPoNumber))
+                {
+                    <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_so.CustomerPoNumber</span></CitusKeyValueRow>
+                }
+                @if (HasAddress(_so))
+                {
+                    <CitusKeyValueRow Label="Billing address">@FormatAddress(_so.BillingAddressLine, _so.BillingCity, _so.BillingProvinceState, _so.BillingPostalCode, _so.BillingCountry)</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_so.ShippingAddressLine))
+                    {
+                        <CitusKeyValueRow Label="Shipping address">@FormatAddress(_so.ShippingAddressLine, _so.ShippingCity, _so.ShippingProvinceState, _so.ShippingPostalCode, _so.ShippingCountry)</CitusKeyValueRow>
+                    }
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total" Value="@($"{_so.TotalAmount:N2} {_so.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_so.SubtotalAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -55,72 +72,7 @@ else
                        Value="@(_so.SourceQuoteNumber ?? "Direct")"
                        Description="@(_so.SourceQuoteId is null ? "Created directly." : "Converted from quote.")"
                        Icon="IconName.FileText" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
-
-    <CitusActionsPanel>
-        @if (_so.Status == "open")
-        {
-            @* M5 iter 1: confirming reserves on-hand stock per line and
-               flips status to 'confirmed'. Items with backorder_mode=
-               'disallow' fail with a precise shortage message. *@
-            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConfirmAsync">
-                <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
-                <span>Confirm</span>
-            </CitusButton>
-
-            @* Direct-invoice path stays available for SOs that don't
-               need reservation tracking (services, single-shot). The new
-               invoice carries this SO's id as a back-link, which drives
-               the M3 iter 3 auto-COGS bridge on post. *@
-            <CitusLinkButton Href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")"
-                             Variant="CitusButtonVariant.Ghost"
-                             LeadingIcon="IconName.FileInvoice">
-                Create Invoice
-            </CitusLinkButton>
-
-            @* Manual mark — for "I billed this in another system". *@
-            <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
-                Mark Invoiced
-            </CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
-                Cancel
-            </CitusButton>
-        }
-        else if (_so.Status == "confirmed")
-        {
-            @* Confirmed: reservations are in place. Operator goes
-               straight to invoicing, or can still mark / cancel. M5
-               iter 5 will wire reservation release on cancel. *@
-            <CitusLinkButton Href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")"
-                             Variant="CitusButtonVariant.Primary"
-                             LeadingIcon="IconName.FileInvoice">
-                Create Invoice
-            </CitusLinkButton>
-            <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
-                Mark Invoiced
-            </CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
-                Cancel
-            </CitusButton>
-            @if (_so.ConfirmedAt is { } confirmedAt)
-            {
-                <span class="text-fg-subtle text-xs">Confirmed @confirmedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm").</span>
-            }
-        }
-        else if (_so.Status == "invoiced")
-        {
-            <span class="text-fg-muted text-sm">Invoiced as <strong>@_so.InvoiceNumber</strong>.</span>
-        }
-        @if (_so.SourceQuoteId is { } quoteId)
-        {
-            <CitusLinkButton Href="@($"quotes/{quoteId:D}")"
-                             Variant="CitusButtonVariant.Ghost">
-                View source quote
-            </CitusLinkButton>
-        }
-    </CitusActionsPanel>
+    </div>
 
     @* M5 iter 3: standalone customer deposit. Available while the SO is
        not yet billed — captures a prepayment that lands as a Customer
@@ -277,20 +229,6 @@ else
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Customer">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Name">@_so.CustomerName</CitusKeyValueRow>
-                    @if (!string.IsNullOrWhiteSpace(_so.CustomerPoNumber))
-                    {
-                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_so.CustomerPoNumber</span></CitusKeyValueRow>
-                    }
-                    @if (HasAddress(_so))
-                    {
-                        <CitusKeyValueRow Label="Billing address">@FormatAddress(_so.BillingAddressLine, _so.BillingCity, _so.BillingProvinceState, _so.BillingPostalCode, _so.BillingCountry)</CitusKeyValueRow>
-                    }
-                </CitusKeyValueTable>
-            </CitusFormSection>
-
             <CitusFormSection Title="Totals">
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_so.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
@@ -301,6 +239,69 @@ else
             </CitusFormSection>
         </aside>
     </div>
+
+    @if (HasAnyAction(_so))
+    {
+        <div class="citus-form-actions citus-form-actions--sticky citus-detail-actions">
+            @if (IsEditable(_so.Status))
+            {
+                <CitusLinkButton Href="@($"sales-orders/{_so.Id:D}/edit")"
+                                 Variant="CitusButtonVariant.Ghost"
+                                 LeadingIcon="IconName.Pencil">
+                    Edit
+                </CitusLinkButton>
+            }
+            @if (_so.Status == "open")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConfirmAsync">
+                    <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
+                    <span>Confirm</span>
+                </CitusButton>
+                <CitusLinkButton Href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")"
+                                 Variant="CitusButtonVariant.Ghost"
+                                 LeadingIcon="IconName.FileInvoice">
+                    Create Invoice
+                </CitusLinkButton>
+                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
+                    Mark Invoiced
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Danger="true" Disabled="_isMutating" OnClick="CancelAsync">
+                    Cancel
+                </CitusButton>
+            }
+            else if (_so.Status == "confirmed")
+            {
+                <CitusLinkButton Href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")"
+                                 Variant="CitusButtonVariant.Primary"
+                                 LeadingIcon="IconName.FileInvoice">
+                    Create Invoice
+                </CitusLinkButton>
+                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
+                    Mark Invoiced
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Danger="true" Disabled="_isMutating" OnClick="CancelAsync">
+                    Cancel
+                </CitusButton>
+                @if (_so.ConfirmedAt is { } confirmedAt)
+                {
+                    <span class="text-fg-subtle text-xs">Confirmed @confirmedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm").</span>
+                }
+            }
+            else if (_so.Status == "invoiced")
+            {
+                <span class="text-fg-muted text-sm">Invoiced as <strong>@_so.InvoiceNumber</strong>.</span>
+            }
+            @if (_so.SourceQuoteId is { } quoteId)
+            {
+                <CitusLinkButton Href="@($"quotes/{quoteId:D}")"
+                                 Variant="CitusButtonVariant.Ghost">
+                    View source quote
+                </CitusLinkButton>
+            }
+        </div>
+    }
 }
 
 @code {
@@ -355,8 +356,7 @@ else
         _header = new PageHeaderModel
         {
             Eyebrow = "Sales & Get Paid",
-            Title = _so.SalesOrderNumber,
-            Subtitle = $"{_so.CustomerName} · {HumanizeStatus(_so.Status)}"
+            Title = _so.SalesOrderNumber
         };
     }
 
@@ -565,23 +565,12 @@ else
 
     private static bool IsEditable(string status) => status is "open";
 
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "open" => "Open",
-        "confirmed" => "Confirmed",
-        "invoiced" => "Invoiced",
-        "cancelled" => "Cancelled",
-        _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "open" => "Awaiting confirmation or direct billing.",
-        "confirmed" => "Stock reserved; awaiting fulfillment / billing.",
-        "invoiced" => "Customer has been billed.",
-        "cancelled" => "Cancelled.",
-        _ => string.Empty
-    };
+    // The sticky action bar renders only when at least one control applies:
+    // open/confirmed carry the lifecycle buttons, invoiced shows the invoice
+    // number, and any SO converted from a quote keeps the "View source quote" link.
+    private static bool HasAnyAction(SalesOrderRecordDto so) =>
+        so.Status is "open" or "confirmed" or "invoiced"
+        || so.SourceQuoteId is not null;
 
     private static bool HasAddress(SalesOrderRecordDto so) =>
         !string.IsNullOrWhiteSpace(so.BillingAddressLine) || !string.IsNullOrWhiteSpace(so.BillingCity);

@@ -278,6 +278,7 @@ public sealed record SalesOrderRecordDto(
     string Status,
     Guid CustomerId,
     string CustomerName,
+    string? CustomerNumber,
     DateOnly DocumentDate,
     string TransactionCurrencyCode,
     decimal? FxRate,

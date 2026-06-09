@@ -971,6 +971,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     private const string SelectSalesOrderColumns = """
         SELECT s.id, s.company_id, s.sales_order_number, s.status, s.customer_id,
                COALESCE(c.display_name, '') AS customer_name,
+               COALESCE(c.customer_number, '') AS customer_number,
                s.document_date,
                s.transaction_currency_code, s.fx_rate,
                s.billing_address_line, s.billing_city, s.billing_province_state, s.billing_postal_code, s.billing_country,
@@ -1013,6 +1014,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         Status: reader.GetString(reader.GetOrdinal("status")),
         CustomerId: reader.GetGuid(reader.GetOrdinal("customer_id")),
         CustomerName: reader.GetString(reader.GetOrdinal("customer_name")),
+        CustomerNumber: ReadNullableString(reader, "customer_number"),
         DocumentDate: DateOnly.FromDateTime(reader.GetDateTime(reader.GetOrdinal("document_date"))),
         TransactionCurrencyCode: reader.GetString(reader.GetOrdinal("transaction_currency_code")),
         FxRate: ReadNullableDecimal(reader, "fx_rate"),

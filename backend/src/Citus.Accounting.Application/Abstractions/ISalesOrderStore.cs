@@ -149,6 +149,7 @@ public sealed record SalesOrderRecord(
     string Status,
     Guid CustomerId,
     string CustomerName,
+    string? CustomerNumber,
     DateOnly DocumentDate,
     string TransactionCurrencyCode,
     decimal? FxRate,
