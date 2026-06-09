@@ -115,7 +115,9 @@ else
                                     OnCleared="OnCustomerCleared" />
                 </CitusFormField>
                 <CitusFormField Label="Currency">
-                    <div class="citus-form-field__static">@_currency</div>
+                    @* Currency is customer-driven: show an em-dash until a customer
+                       is picked, then the customer's default (set in OnCustomerSelected). *@
+                    <div class="citus-form-field__static">@(_customerId is null ? "—" : _currency)</div>
                 </CitusFormField>
                 <CitusFormField Label="Description (optional)">
                     <CitusInput TValue="string" @bind-Value="_description" Placeholder="Optional" />
