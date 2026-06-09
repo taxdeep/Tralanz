@@ -40,25 +40,25 @@ else if (_quote is null)
 }
 else
 {
-    <CitusFormSection Title="Customer">
-        <CitusKeyValueTable>
-            @if (!string.IsNullOrWhiteSpace(_quote.CustomerNumber))
-            {
-                <CitusKeyValueRow Label="Customer Reference #"><span class="citus-inline-code">@_quote.CustomerNumber</span></CitusKeyValueRow>
-            }
-            <CitusKeyValueRow Label="Name">@_quote.CustomerName</CitusKeyValueRow>
-            @if (HasAddress(_quote))
-            {
-                <CitusKeyValueRow Label="Billing address">@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</CitusKeyValueRow>
-                @if (!string.IsNullOrWhiteSpace(_quote.ShippingAddressLine))
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Customer">
+            <CitusKeyValueTable>
+                @if (!string.IsNullOrWhiteSpace(_quote.CustomerNumber))
                 {
-                    <CitusKeyValueRow Label="Shipping address">@FormatAddress(_quote.ShippingAddressLine, _quote.ShippingCity, _quote.ShippingProvinceState, _quote.ShippingPostalCode, _quote.ShippingCountry)</CitusKeyValueRow>
+                    <CitusKeyValueRow Label="Customer Reference #"><span class="citus-inline-code">@_quote.CustomerNumber</span></CitusKeyValueRow>
                 }
-            }
-        </CitusKeyValueTable>
-    </CitusFormSection>
+                <CitusKeyValueRow Label="Name">@_quote.CustomerName</CitusKeyValueRow>
+                @if (HasAddress(_quote))
+                {
+                    <CitusKeyValueRow Label="Billing address">@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</CitusKeyValueRow>
+                    @if (!string.IsNullOrWhiteSpace(_quote.ShippingAddressLine))
+                    {
+                        <CitusKeyValueRow Label="Shipping address">@FormatAddress(_quote.ShippingAddressLine, _quote.ShippingCity, _quote.ShippingProvinceState, _quote.ShippingPostalCode, _quote.ShippingCountry)</CitusKeyValueRow>
+                    }
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
 
-    <CitusStatCardGrid Columns="2">
         <CitusStatCard Label="Total" Value="@($"{_quote.TotalAmount:N2} {_quote.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_quote.SubtotalAmount:N2} − discount {_quote.DiscountAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -66,7 +66,7 @@ else
                        Value="@(_quote.ExpirationDate?.ToString("yyyy-MM-dd") ?? "—")"
                        Description="@($"Issued {_quote.DocumentDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
