@@ -12,7 +12,6 @@
 @inject TaskClient TaskClient
 @inject ItemClient ItemClient
 @inject UomClient UomClient
-@inject CustomerClient CustomerClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
@@ -97,19 +96,14 @@ else
                        requiring it here avoids the round-trip back through
                        PUT /tasks/{id}. The DB column stays nullable so legacy
                        rows and future internal-only flows still parse. *@
-                    <select class="citus-form-field__input"
-                            value="@(_customerId?.ToString("D") ?? string.Empty)"
-                            @onchange="OnCustomerChanged">
-                        <option value="">— Select a customer —</option>
-                        @foreach (var customer in _customers)
-                        {
-                            <option value="@customer.Id.ToString("D")">
-                                @(string.IsNullOrWhiteSpace(customer.CustomerNumber)
-                                    ? customer.DisplayName
-                                    : $"{customer.CustomerNumber} — {customer.DisplayName}")
-                            </option>
-                        }
-                    </select>
+                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                    SelectedId="@_customerId"
+                                    SelectedDisplayText="@_customerDisplay"
+                                    Placeholder="Search customers…"
+                                    SourceRoute="/tasks/new"
+                                    OnCustomerSelected="OnCustomerSelected"
+                                    OnCleared="OnCustomerCleared" />
                 </CitusFormField>
                 <CitusFormField Label="Currency">
                     <CitusInput TValue="string" @bind-Value="_currency" Placeholder="@ShellState.ActiveCompany.BaseCurrencyCode" />
@@ -274,10 +268,8 @@ else
     private Dictionary<string, UomSummary> _uomsByCode = new(StringComparer.OrdinalIgnoreCase);
     private const int DefaultUomPrecision = 2;
 
-    // Customer list backs the dropdown + drives the currency auto-update on
-    // pick. Keyed by Id so the OnCustomerChanged handler resolves quickly.
-    private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
-    private Dictionary<Guid, CustomerSummary> _customersById = new();
+    // Selected customer's display text, shown in the searchable CustomerPicker.
+    private string _customerDisplay = string.Empty;
 
     private List<LineDraft> _lines = new() { new LineDraft() };
 
@@ -288,7 +280,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode ?? "USD";
-        await Task.WhenAll(LoadItemsAsync(), LoadCustomersAsync(), LoadUomsAsync());
+        await Task.WhenAll(LoadItemsAsync(), LoadUomsAsync());
         _isLoading = false;
     }
 
@@ -337,38 +329,23 @@ else
         }
     }
 
-    private async Task LoadCustomersAsync()
+    private void OnCustomerSelected(UnitySearchPickerOption option)
     {
-        try
+        _customerId = option.SourceId;
+        _customerDisplay = option.DisplayText;
+        // Customer's default currency wins on pick (carried on the option's
+        // SecondaryText) — matches the Bill / Invoice flow. The operator can
+        // still override the Currency field for a non-default-currency task.
+        if (!string.IsNullOrWhiteSpace(option.SecondaryText))
         {
-            var customers = await CustomerClient.ListAsync(includeInactive: false);
-            _customers = customers;
-            _customersById = customers.ToDictionary(c => c.Id);
-        }
-        catch
-        {
-            _customers = Array.Empty<CustomerSummary>();
-            _customersById = new();
+            _currency = option.SecondaryText;
         }
     }
 
-    private void OnCustomerChanged(ChangeEventArgs e)
+    private void OnCustomerCleared()
     {
-        var raw = e.Value?.ToString();
-        if (string.IsNullOrWhiteSpace(raw) || !Guid.TryParse(raw, out var id))
-        {
-            _customerId = null;
-            return;
-        }
-        _customerId = id;
-        // Customer's default currency wins on pick — matches the Bill /
-        // Invoice flow. Operator can still override the Currency field
-        // manually if the task is billable in a non-default currency.
-        if (_customersById.TryGetValue(id, out var customer)
-            && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
-        {
-            _currency = customer.DefaultCurrencyCode;
-        }
+        _customerId = null;
+        _customerDisplay = string.Empty;
     }
 
     private void OnItemPicked(int index, UnitySearchPickerOption option)
