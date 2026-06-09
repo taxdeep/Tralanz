@@ -12,7 +12,17 @@
         {
             <span class="citus-page-header__eyebrow">@Model.Eyebrow</span>
         }
-        <h1 class="citus-page-header__title">@Model.Title</h1>
+        @if (TitleSuffix is null)
+        {
+            <h1 class="citus-page-header__title">@Model.Title</h1>
+        }
+        else
+        {
+            <div class="citus-page-header__title-line">
+                <h1 class="citus-page-header__title">@Model.Title</h1>
+                @TitleSuffix
+            </div>
+        }
         @if (!string.IsNullOrWhiteSpace(Model.Subtitle))
         {
             <p class="citus-page-header__subtitle">@Model.Subtitle</p>
@@ -30,4 +40,6 @@
     public PageHeaderModel Model { get; set; } = new();
 
     [Parameter] public RenderFragment? Actions { get; set; }
+
+    [Parameter] public RenderFragment? TitleSuffix { get; set; }
 }

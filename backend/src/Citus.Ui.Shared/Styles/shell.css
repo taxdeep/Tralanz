@@ -3905,6 +3905,18 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 .citus-form-actions--save-right .citus-form-actions__extra { margin-left: auto; }
 .citus-form-actions--save-right .citus-form-actions__primary { margin-left: 0; }
 
+/* Detail-page sticky action bar: cluster every button on the right
+   (overrides the base .citus-form-actions justify-content: space-between). */
+.citus-detail-actions { justify-content: flex-end; }
+
+/* Page-header title with a trailing status badge on one centered line. */
+.citus-page-header__title-line {
+  display: flex;
+  align-items: center;
+  gap: var(--citus-space-3);
+  flex-wrap: wrap;
+}
+
 /* Totals panel with inline Discount + Shipping inputs (quote / sales order).
    Each row: label on the left, then (for editable rows) the input controls and
    the computed amount clustered on the right, so a value shows once instead of

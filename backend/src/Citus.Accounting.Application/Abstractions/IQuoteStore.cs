@@ -94,6 +94,7 @@ public sealed record QuoteRecord(
     string Status,
     Guid CustomerId,
     string CustomerName,
+    string? CustomerNumber,
     DateOnly DocumentDate,
     DateOnly? ExpirationDate,
     string TransactionCurrencyCode,

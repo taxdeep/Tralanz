@@ -574,6 +574,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     private const string SelectQuoteColumns = """
         SELECT q.id, q.company_id, q.quote_number, q.status, q.customer_id,
                COALESCE(c.display_name, '') AS customer_name,
+               COALESCE(c.customer_number, '') AS customer_number,
                q.document_date, q.expiration_date,
                q.transaction_currency_code, q.fx_rate,
                q.billing_address_line, q.billing_city, q.billing_province_state, q.billing_postal_code, q.billing_country,
@@ -610,6 +611,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         Status: reader.GetString(reader.GetOrdinal("status")),
         CustomerId: reader.GetGuid(reader.GetOrdinal("customer_id")),
         CustomerName: reader.GetString(reader.GetOrdinal("customer_name")),
+        CustomerNumber: ReadNullableString(reader, "customer_number"),
         DocumentDate: DateOnly.FromDateTime(reader.GetDateTime(reader.GetOrdinal("document_date"))),
         ExpirationDate: ReadNullableDate(reader, "expiration_date"),
         TransactionCurrencyCode: reader.GetString(reader.GetOrdinal("transaction_currency_code")),

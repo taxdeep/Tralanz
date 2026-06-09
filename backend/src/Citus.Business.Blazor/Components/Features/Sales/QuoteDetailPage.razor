@@ -8,19 +8,18 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_quote is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_quote.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="quotes"
                          Variant="CitusButtonVariant.Ghost"
                          LeadingIcon="IconName.ArrowLeft">
             Back to quotes
         </CitusLinkButton>
-        @if (_quote is not null && IsEditable(_quote.Status))
-        {
-            <CitusLinkButton Href="@($"quotes/{_quote.Id:D}/edit")"
-                             LeadingIcon="IconName.Pencil">
-                Edit
-            </CitusLinkButton>
-        }
     </Actions>
 </CitusPageHeader>
 
@@ -41,12 +40,25 @@ else if (_quote is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Quote ID" Value="@_quote.QuoteNumber" Description="@_quote.CustomerName"
-                       Icon="IconName.FileText" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_quote.Status)"
-                       Description="@StatusHint(_quote.Status)"
-                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_quote.Status)" />
+    <CitusFormSection Title="Customer">
+        <CitusKeyValueTable>
+            @if (!string.IsNullOrWhiteSpace(_quote.CustomerNumber))
+            {
+                <CitusKeyValueRow Label="Customer Reference #"><span class="citus-inline-code">@_quote.CustomerNumber</span></CitusKeyValueRow>
+            }
+            <CitusKeyValueRow Label="Name">@_quote.CustomerName</CitusKeyValueRow>
+            @if (HasAddress(_quote))
+            {
+                <CitusKeyValueRow Label="Billing address">@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</CitusKeyValueRow>
+                @if (!string.IsNullOrWhiteSpace(_quote.ShippingAddressLine))
+                {
+                    <CitusKeyValueRow Label="Shipping address">@FormatAddress(_quote.ShippingAddressLine, _quote.ShippingCity, _quote.ShippingProvinceState, _quote.ShippingPostalCode, _quote.ShippingCountry)</CitusKeyValueRow>
+                }
+            }
+        </CitusKeyValueTable>
+    </CitusFormSection>
+
+    <CitusStatCardGrid Columns="2">
         <CitusStatCard Label="Total" Value="@($"{_quote.TotalAmount:N2} {_quote.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_quote.SubtotalAmount:N2} − discount {_quote.DiscountAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -55,38 +67,6 @@ else
                        Description="@($"Issued {_quote.DocumentDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
     </CitusStatCardGrid>
-
-    <CitusActionsPanel>
-        @if (_quote.Status == "draft")
-        {
-            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("pending", "Quote sent."))">Send</CitusButton>
-        }
-        @if (_quote.Status == "pending")
-        {
-            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("accepted", "Marked as accepted."))">Mark Accepted</CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("rejected", "Marked as rejected."))">Mark Rejected</CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("expired", "Marked as expired."))">Mark Expired</CitusButton>
-        }
-        @if (_quote.Status == "accepted")
-        {
-            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertAsync">
-                Convert to Sales Order
-            </CitusButton>
-        }
-        @if (_quote.Status == "converted" && _quote.ConvertedSalesOrderId is { } soId)
-        {
-            <CitusLinkButton Href="@($"sales-orders/{soId:D}")">Open Sales Order</CitusLinkButton>
-        }
-        @if (!IsTerminal(_quote.Status))
-        {
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("void", "Quote voided."))">Void</CitusButton>
-        }
-    </CitusActionsPanel>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
@@ -136,24 +116,6 @@ else
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Customer">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Name">@_quote.CustomerName</CitusKeyValueRow>
-                    @if (!string.IsNullOrWhiteSpace(_quote.CustomerPoNumber))
-                    {
-                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_quote.CustomerPoNumber</span></CitusKeyValueRow>
-                    }
-                    @if (HasAddress(_quote))
-                    {
-                        <CitusKeyValueRow Label="Billing address">@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</CitusKeyValueRow>
-                        @if (!string.IsNullOrWhiteSpace(_quote.ShippingAddressLine))
-                        {
-                            <CitusKeyValueRow Label="Shipping address">@FormatAddress(_quote.ShippingAddressLine, _quote.ShippingCity, _quote.ShippingProvinceState, _quote.ShippingPostalCode, _quote.ShippingCountry)</CitusKeyValueRow>
-                        }
-                    }
-                </CitusKeyValueTable>
-            </CitusFormSection>
-
             <CitusFormSection Title="Totals">
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@_quote.SubtotalAmount.ToString("N2")</CitusKeyValueRow>
@@ -165,6 +127,49 @@ else
             </CitusFormSection>
         </aside>
     </div>
+
+    @if (HasAnyAction(_quote))
+    {
+        <div class="citus-form-actions citus-form-actions--sticky citus-detail-actions">
+            @if (IsEditable(_quote.Status))
+            {
+                <CitusLinkButton Href="@($"quotes/{_quote.Id:D}/edit")"
+                                 Variant="CitusButtonVariant.Ghost"
+                                 LeadingIcon="IconName.Pencil">
+                    Edit
+                </CitusLinkButton>
+            }
+            @if (_quote.Status == "draft")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("pending", "Quote sent."))">Send</CitusButton>
+            }
+            @if (_quote.Status == "pending")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("accepted", "Marked as accepted."))">Mark Accepted</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("rejected", "Marked as rejected."))">Mark Rejected</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("expired", "Marked as expired."))">Mark Expired</CitusButton>
+            }
+            @if (_quote.Status == "accepted")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertAsync">
+                    Convert to Sales Order
+                </CitusButton>
+            }
+            @if (_quote.Status == "converted" && _quote.ConvertedSalesOrderId is { } soId)
+            {
+                <CitusLinkButton Href="@($"sales-orders/{soId:D}")">Open Sales Order</CitusLinkButton>
+            }
+            @if (!IsTerminal(_quote.Status))
+            {
+                <CitusButton Variant="CitusButtonVariant.Ghost" Danger="true" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("void", "Quote voided."))">Void</CitusButton>
+            }
+        </div>
+    }
 }
 
 @code {
@@ -212,8 +217,7 @@ else
         _header = new PageHeaderModel
         {
             Eyebrow = "Sales & Get Paid",
-            Title = _quote.QuoteNumber,
-            Subtitle = $"{_quote.CustomerName} · {HumanizeStatus(_quote.Status)}"
+            Title = _quote.QuoteNumber
         };
     }
 
@@ -259,6 +263,13 @@ else
     private static bool IsEditable(string status) => status is "draft" or "pending";
     private static bool IsTerminal(string status) => status is "rejected" or "converted" or "void";
 
+    // The sticky action bar renders only when at least one button applies:
+    // !IsTerminal covers Edit / status-change / Void (draft, pending, accepted,
+    // expired); converted keeps the "Open Sales Order" link.
+    private static bool HasAnyAction(QuoteRecordDto quote) =>
+        !IsTerminal(quote.Status)
+        || (quote.Status == "converted" && quote.ConvertedSalesOrderId is not null);
+
     private static bool HasAddress(QuoteRecordDto quote) =>
         !string.IsNullOrWhiteSpace(quote.BillingAddressLine) || !string.IsNullOrWhiteSpace(quote.BillingCity);
 
@@ -272,28 +283,4 @@ else
         if (!string.IsNullOrWhiteSpace(country)) parts.Add(country);
         return parts.Count == 0 ? "—" : string.Join(", ", parts);
     }
-
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "draft" => "Draft",
-        "pending" => "Pending",
-        "accepted" => "Accepted",
-        "rejected" => "Rejected",
-        "expired" => "Expired",
-        "converted" => "Converted",
-        "void" => "Void",
-        _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "draft" => "Not sent yet.",
-        "pending" => "Awaiting customer.",
-        "accepted" => "Ready to convert.",
-        "rejected" => "Customer declined.",
-        "expired" => "Past expiration date.",
-        "converted" => "Converted to a Sales Order.",
-        "void" => "Voided.",
-        _ => string.Empty
-    };
 }
