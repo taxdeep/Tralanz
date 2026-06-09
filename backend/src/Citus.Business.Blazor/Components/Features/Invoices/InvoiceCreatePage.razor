@@ -128,17 +128,44 @@
                     </div>
                 </div>
             </div>
-            @* Billing (left) + Shipping (right) addresses — free-text, pre-filled
-               from the selected customer and editable per invoice. *@
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                <CitusFormField Label="Billing address">
-                    <RadzenTextArea @bind-Value="_billingAddress" Rows="3" Placeholder="Pre-filled from the customer; editable" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Shipping address">
-                    <RadzenTextArea @bind-Value="_shippingAddress" Rows="3" Placeholder="Pre-filled from the customer; editable" Class="citus-control-full" />
-                </CitusFormField>
+            @* Billing + shipping addresses — same shared AddressEditor as Quote
+               and Sales Order; composed into this invoice's free-text address on save. *@
+            <div class="flex items-center justify-between mt-4 mb-3">
+                <h3 class="text-fg-muted text-sm font-medium m-0">Address</h3>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             Size="CitusButtonSize.Small"
+                             LeadingIcon="IconName.Pencil"
+                             OnClick="OpenAddressDrawer">Edit</CitusButton>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h4 class="text-fg-muted text-xs font-medium mb-2 uppercase">Billing</h4>
+                    <AddressDisplay Address="_billing" EmptyHint="No billing address set." />
+                </div>
+                <div>
+                    <h4 class="text-fg-muted text-xs font-medium mb-2 uppercase">Shipping</h4>
+                    @if (_shippingMode == ShippingMode.SameAsBilling)
+                    {
+                        <p class="text-fg-muted text-sm m-0">Same as billing</p>
+                    }
+                    else
+                    {
+                        <AddressDisplay Address="_shipping" EmptyHint="No shipping address set." />
+                    }
+                </div>
             </div>
         </CitusFormSection>
+
+        <CitusDrawer @bind-IsOpen="_addressDrawerOpen"
+                     Title="Edit address"
+                     Width="CitusDrawerWidth.Medium"
+                     IsDirty="@AddressDraftIsDirty"
+                     OnSave="SaveAddressDrawer">
+            <AddressEditor @bind-Billing="_draftBilling"
+                           @bind-Shipping="_draftShipping"
+                           @bind-Mode="_draftMode"
+                           CustomerId="@(_customerId == Guid.Empty ? null : (Guid?)_customerId)" />
+        </CitusDrawer>
 
         <CitusFormSection Title="Lines">
             <HeaderActions>
@@ -341,10 +368,22 @@
     // Editable invoice number. Pre-filled with the peeked next auto number
     // on a new invoice; on edit it shows the assigned number (read-only).
     private string _invoiceNumber = string.Empty;
-    // Free-text billing / shipping address. Pre-filled from the selected
-    // customer (OnCustomerSelected) or the source on edit/copy; editable.
-    private string _billingAddress = string.Empty;
-    private string _shippingAddress = string.Empty;
+    // Billing / shipping address — shared AddressEditor model (same as Quote /
+    // Sales Order). Composed into the invoice's free-text address on save.
+    private AddressDraft _billing = AddressDraft.Empty;
+    private AddressDraft _shipping = AddressDraft.Empty;
+    private ShippingMode _shippingMode = ShippingMode.SameAsBilling;
+
+    // Drawer working copies — committed to _billing/_shipping/_shippingMode on Save.
+    private bool _addressDrawerOpen;
+    private AddressDraft _draftBilling = AddressDraft.Empty;
+    private AddressDraft _draftShipping = AddressDraft.Empty;
+    private ShippingMode _draftMode = ShippingMode.SameAsBilling;
+
+    private bool AddressDraftIsDirty =>
+        _draftBilling != _billing ||
+        _draftShipping != _shipping ||
+        _draftMode != _shippingMode;
     private string _customerPoNumber = string.Empty;
     /// <summary>
     /// Back-link to the source Sales Order, populated when the page is
@@ -534,8 +573,11 @@
         _dueDate = DateTime.Today.AddDays(30);
         _fxRate = null;
         _memo = source.Memo ?? string.Empty;
-        _billingAddress = source.BillingAddress ?? string.Empty;
-        _shippingAddress = source.ShippingAddress ?? string.Empty;
+        _billing = new AddressDraft { AddressLine = source.BillingAddress };
+        _shipping = new AddressDraft { AddressLine = source.ShippingAddress };
+        _shippingMode = (_shipping.IsEmpty || _shipping == _billing)
+            ? ShippingMode.SameAsBilling
+            : ShippingMode.Different;
         _customerPoNumber = string.Empty;
         _salesOrderId = null;
         _salesOrderNumber = null;
@@ -609,8 +651,11 @@
 
         _editInvoiceId = source.Id;
         _invoiceNumber = source.DisplayNumber;
-        _billingAddress = source.BillingAddress ?? string.Empty;
-        _shippingAddress = source.ShippingAddress ?? string.Empty;
+        _billing = new AddressDraft { AddressLine = source.BillingAddress };
+        _shipping = new AddressDraft { AddressLine = source.ShippingAddress };
+        _shippingMode = (_shipping.IsEmpty || _shipping == _billing)
+            ? ShippingMode.SameAsBilling
+            : ShippingMode.Different;
 
         var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
         _customerId = source.CustomerId;
@@ -885,26 +930,50 @@
             {
                 _currency = customer.DefaultCurrencyCode;
             }
-            // Pre-fill both addresses from the customer; the operator can edit
-            // (e.g. a different ship-to) per invoice.
-            var formatted = FormatCustomerAddress(customer);
-            if (!string.IsNullOrWhiteSpace(formatted))
+            // Pre-fill billing from the customer master (only when the operator
+            // hasn't already entered one); shipping defaults to "same as billing".
+            if (_billing.IsEmpty)
             {
-                _billingAddress = formatted;
-                _shippingAddress = formatted;
+                _billing = new AddressDraft
+                {
+                    AddressLine = customer.AddressLine,
+                    City = customer.City,
+                    ProvinceState = customer.ProvinceState,
+                    PostalCode = customer.PostalCode,
+                    Country = customer.Country,
+                };
             }
         }
     }
 
-    private static string FormatCustomerAddress(CustomerSummary c)
+    private void OpenAddressDrawer()
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(c.AddressLine)) parts.Add(c.AddressLine!.Trim());
-        var locality = string.Join(" ", new[] { c.City, c.ProvinceState, c.PostalCode }
-            .Where(static s => !string.IsNullOrWhiteSpace(s)).Select(static s => s!.Trim()));
-        if (!string.IsNullOrWhiteSpace(locality)) parts.Add(locality);
-        if (!string.IsNullOrWhiteSpace(c.Country)) parts.Add(c.Country!.Trim());
-        return string.Join("\n", parts);
+        _draftBilling = _billing;
+        _draftShipping = _shipping;
+        _draftMode = _shippingMode;
+        _addressDrawerOpen = true;
+    }
+
+    private void SaveAddressDrawer()
+    {
+        _billing = _draftBilling;
+        _shipping = _draftShipping;
+        _shippingMode = _draftMode;
+        _addressDrawerOpen = false;
+    }
+
+    // The invoice persists a single free-text address; compose the structured
+    // editor draft into "line, city, province, postal, country".
+    private static string? ComposeAddress(AddressDraft a)
+    {
+        if (a.IsEmpty) return null;
+        var parts = new List<string>(5);
+        if (!string.IsNullOrWhiteSpace(a.AddressLine)) parts.Add(a.AddressLine!.Trim());
+        if (!string.IsNullOrWhiteSpace(a.City)) parts.Add(a.City!.Trim());
+        if (!string.IsNullOrWhiteSpace(a.ProvinceState)) parts.Add(a.ProvinceState!.Trim());
+        if (!string.IsNullOrWhiteSpace(a.PostalCode)) parts.Add(a.PostalCode!.Trim());
+        if (!string.IsNullOrWhiteSpace(a.Country)) parts.Add(a.Country!.Trim());
+        return parts.Count == 0 ? null : string.Join(", ", parts);
     }
 
     private void OnCustomerCleared()
@@ -1043,8 +1112,8 @@
                 FxRate = _fxRate,
                 Memo = _memo.Trim(),
                 InvoiceNumber = string.IsNullOrWhiteSpace(_invoiceNumber) ? null : _invoiceNumber.Trim(),
-                BillingAddress = string.IsNullOrWhiteSpace(_billingAddress) ? null : _billingAddress.Trim(),
-                ShippingAddress = string.IsNullOrWhiteSpace(_shippingAddress) ? null : _shippingAddress.Trim(),
+                BillingAddress = ComposeAddress(_billing),
+                ShippingAddress = ComposeAddress(_shippingMode == ShippingMode.SameAsBilling ? _billing : _shipping),
                 CustomerPoNumber = _customerPoNumber.Trim(),
                 SalesOrderId = _salesOrderId,
                 Lines = meaningful.Select((l, idx) => new InvoiceLineDraft
