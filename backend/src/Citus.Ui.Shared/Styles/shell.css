@@ -150,11 +150,33 @@
 }
 
 .citus-nav-menu__group-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-2);
+    width: 100%;
     padding: var(--citus-space-2) var(--citus-space-5);
     color: var(--citus-color-fg-subtle);
     font-size: var(--citus-text-xs);
+    font-family: inherit;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color 120ms ease;
+}
+
+.citus-nav-menu__group-title:hover {
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-nav-menu__group-chevron {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0.75;
 }
 
 .citus-nav-menu__items {

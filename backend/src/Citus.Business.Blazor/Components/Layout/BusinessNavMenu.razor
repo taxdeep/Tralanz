@@ -33,20 +33,31 @@
         }
 
         <div class="citus-nav-menu__group">
-            <div class="citus-nav-menu__group-title">@navSection.Title</div>
-            <ul class="citus-nav-menu__items">
-                @foreach (var item in visibleItems)
-                {
-                    <li>
-                        <NavLink class="citus-nav-menu__link"
-                                 href="@item.Href"
-                                 Match="NavLinkMatch.Prefix">
-                            <CitusIcon Name="item.Icon" Size="IconSize.Action" />
-                            <span class="citus-nav-menu__label">@item.Title</span>
-                        </NavLink>
-                    </li>
-                }
-            </ul>
+            <button type="button"
+                    class="citus-nav-menu__group-title"
+                    aria-expanded="@(!IsCollapsed(navSection.Title))"
+                    @onclick="() => ToggleSection(navSection.Title)">
+                <span class="citus-nav-menu__group-title-text">@navSection.Title</span>
+                <span class="citus-nav-menu__group-chevron">
+                    <CitusIcon Name="@(IsCollapsed(navSection.Title) ? IconName.ChevronRight : IconName.ChevronDown)" Size="IconSize.Inline" />
+                </span>
+            </button>
+            @if (!IsCollapsed(navSection.Title))
+            {
+                <ul class="citus-nav-menu__items">
+                    @foreach (var item in visibleItems)
+                    {
+                        <li>
+                            <NavLink class="citus-nav-menu__link"
+                                     href="@item.Href"
+                                     Match="NavLinkMatch.Prefix">
+                                <CitusIcon Name="item.Icon" Size="IconSize.Action" />
+                                <span class="citus-nav-menu__label">@item.Title</span>
+                            </NavLink>
+                        </li>
+                    }
+                </ul>
+            }
         </div>
     }
 </nav>
@@ -65,4 +76,19 @@
     }
 
     private void HandleShellChanged() => InvokeAsync(StateHasChanged);
+
+    // Per-section collapse state, keyed by section title. Held in memory so it
+    // persists while navigating (this nav lives in the persistent layout) and
+    // resets to all-expanded on a full page reload.
+    private readonly HashSet<string> _collapsedSections = new();
+
+    private bool IsCollapsed(string title) => _collapsedSections.Contains(title);
+
+    private void ToggleSection(string title)
+    {
+        if (!_collapsedSections.Add(title))
+        {
+            _collapsedSections.Remove(title);
+        }
+    }
 }
