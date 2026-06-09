@@ -3896,6 +3896,23 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
   .citus-form-grid--cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
+/* New-task Header row: Customer (40%) + Currency (10%, read-only) + Description (50%). */
+.citus-task-customer-row {
+  display: grid;
+  gap: var(--citus-space-4);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 768px) {
+  .citus-task-customer-row { grid-template-columns: 4fr 1fr 5fr; }
+}
+
+/* Read-only field value shown in place of an input (e.g. a derived currency). */
+.citus-form-field__static {
+  padding: 0.4375rem 0;
+  color: var(--citus-color-fg);
+  font-weight: 500;
+}
+
 .citus-form-field__required { color: var(--citus-color-danger); margin-inline-start: 0.15em; }
 .citus-form-field__hint { font-size: var(--citus-text-xs); color: var(--citus-color-fg-subtle); }
 .citus-form-field__error { font-size: var(--citus-text-xs); color: var(--citus-color-danger); }

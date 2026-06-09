@@ -95,34 +95,32 @@ else
                 </CitusFormField>
             </CitusFormGrid>
 
-            @* Line 2: Customer + Currency share the left half (currency follows the
-               picked customer's default); Description fills the right half. *@
-            <CitusFormGrid Columns="2" Class="mt-4">
-                <div class="citus-form-grid citus-form-grid--cols-2">
-                    <CitusFormField Label="Customer" Required="true">
-                        @* Customer is required at create-time so the task is
-                           immediately billable — TaskDetailPage's "Create invoice"
-                           affordance only appears when customer_id is set, and
-                           requiring it here avoids the round-trip back through
-                           PUT /tasks/{id}. The DB column stays nullable so legacy
-                           rows and future internal-only flows still parse. *@
-                        <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                        SelectedId="@_customerId"
-                                        SelectedDisplayText="@_customerDisplay"
-                                        Placeholder="Search customers…"
-                                        SourceRoute="/tasks/new"
-                                        OnCustomerSelected="OnCustomerSelected"
-                                        OnCleared="OnCustomerCleared" />
-                    </CitusFormField>
-                    <CitusFormField Label="Currency">
-                        <CitusInput TValue="string" @bind-Value="_currency" Placeholder="@ShellState.ActiveCompany.BaseCurrencyCode" />
-                    </CitusFormField>
-                </div>
+            @* Line 2: Customer (40%) + Currency (10%, read-only — follows the picked
+               customer's default) + Description (50%). *@
+            <div class="citus-task-customer-row mt-4">
+                <CitusFormField Label="Customer" Required="true">
+                    @* Customer is required at create-time so the task is
+                       immediately billable — TaskDetailPage's "Create invoice"
+                       affordance only appears when customer_id is set, and
+                       requiring it here avoids the round-trip back through
+                       PUT /tasks/{id}. The DB column stays nullable so legacy
+                       rows and future internal-only flows still parse. *@
+                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                    SelectedId="@_customerId"
+                                    SelectedDisplayText="@_customerDisplay"
+                                    Placeholder="Search customers…"
+                                    SourceRoute="/tasks/new"
+                                    OnCustomerSelected="OnCustomerSelected"
+                                    OnCleared="OnCustomerCleared" />
+                </CitusFormField>
+                <CitusFormField Label="Currency">
+                    <div class="citus-form-field__static">@_currency</div>
+                </CitusFormField>
                 <CitusFormField Label="Description (optional)">
                     <CitusInput TValue="string" @bind-Value="_description" Placeholder="Optional" />
                 </CitusFormField>
-            </CitusFormGrid>
+            </div>
         </CitusFormSection>
 
         <CitusFormSection Title="Items">
