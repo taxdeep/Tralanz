@@ -190,7 +190,6 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         CancellationToken cancellationToken)
     {
         var (subtotal, discount, tax, total) = ComputeTotals(input);
-        var soNumber = GenerateSalesOrderNumber();
 
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -202,6 +201,20 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
             $"entity-number:all:{input.DocumentDate.Year}",
             $"EN{input.DocumentDate.Year}",
             5,
+            1,
+            cancellationToken).ConfigureAwait(false);
+
+        // Sequential per-company sales-order number (SO-000001) from the shared
+        // company_numbering_sequences "sales-order-display" scope (the
+        // BusinessNumbering catalog default prefix is SO-), replacing the legacy
+        // random SO{year}{rand}. A prefix configured in Settings -> Numbering wins.
+        var soNumber = await Infrastructure.PostgreSQL.Numbering.PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "sales-order-display",
+            "SO-",
+            6,
             1,
             cancellationToken).ConfigureAwait(false);
 
@@ -956,16 +969,6 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         command.Parameters.AddWithValue("internal_note", (object?)input.InternalNote ?? DBNull.Value);
         command.Parameters.AddWithValue("source_quote_id", (object?)input.SourceQuoteId ?? DBNull.Value);
         command.Parameters.AddWithValue("customer_po_number", (object?)input.CustomerPoNumber ?? DBNull.Value);
-    }
-
-    /// <summary>
-    /// SO{4-digit-year}{8-digit-random}.
-    /// </summary>
-    private static string GenerateSalesOrderNumber()
-    {
-        var year = DateTime.UtcNow.Year;
-        var seed = Random.Shared.Next(0, 100_000_000);
-        return $"SO{year:0000}{seed:00000000}";
     }
 
     private const string SelectSalesOrderColumns = """
