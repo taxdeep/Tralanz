@@ -4,6 +4,7 @@
 @inject InvoiceClient InvoiceClient
 @inject AccountClient AccountClient
 @inject CustomerClient CustomerClient
+@inject SalesOrderClient SalesOrderClient
 @inject NavigationManager Navigation
 @inject BusinessWriteFlowClient WriteFlow
 @inject CitusToastService Message
@@ -28,6 +29,12 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_invoice is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_invoice.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="invoices"
                          Variant="CitusButtonVariant.Ghost"
@@ -52,19 +59,48 @@ else if (_invoice is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Invoice #" Value="@_invoice.DisplayNumber" Description="@_customerName"
-                       Icon="IconName.FileInvoice" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_invoice.Status)" Description="@StatusHint(_invoice.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_invoice.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Customer">
+            <CitusKeyValueTable>
+                @if (!string.IsNullOrWhiteSpace(_customerNumber))
+                {
+                    <CitusKeyValueRow Label="Customer Reference #"><span class="citus-inline-code">@_customerNumber</span></CitusKeyValueRow>
+                }
+                <CitusKeyValueRow Label="Name">@_customerName</CitusKeyValueRow>
+                @if (!string.IsNullOrWhiteSpace(_invoice.CustomerPoNumber))
+                {
+                    <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_invoice.CustomerPoNumber</span></CitusKeyValueRow>
+                }
+                @if (!string.IsNullOrWhiteSpace(_invoice.BillingAddress))
+                {
+                    <CitusKeyValueRow Label="Billing address">@_invoice.BillingAddress</CitusKeyValueRow>
+                }
+                @if (!string.IsNullOrWhiteSpace(_invoice.ShippingAddress))
+                {
+                    <CitusKeyValueRow Label="Shipping address">@_invoice.ShippingAddress</CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total" Value="@($"{_invoice.TotalAmount:N2} {_invoice.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_invoice.SubtotalAmount:N2} + tax {_invoice.TaxAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
-        <CitusStatCard Label="@(_invoice.DueDate.HasValue ? "Due" : "Receipt")"
-                       Value="@(_invoice.DueDate?.ToString("yyyy-MM-dd") ?? "On receipt")"
-                       Description="@($"Issued {_invoice.DocumentDate:yyyy-MM-dd}")"
-                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+
+        @if (_invoice.SalesOrderId is { } srcSoId)
+        {
+            <CitusStatCard Label="Source"
+                           Value="@(_sourceSalesOrderNumber ?? "Sales order")"
+                           Description="Converted from sales order — open"
+                           Icon="IconName.FileText" Tone="StatTone.Primary"
+                           OnClick="@(() => Navigation.NavigateTo($"sales-orders/{srcSoId:D}"))" />
+        }
+        else
+        {
+            <CitusStatCard Label="Source" Value="Direct"
+                           Description="Created directly."
+                           Icon="IconName.FileText" Tone="StatTone.Neutral" />
+        }
+    </div>
 
     @* Actions relocated to a sticky bottom bar (see end of this block). *@
 
@@ -111,7 +147,6 @@ else
         <aside class="lg:col-span-4 flex flex-col gap-6">
             <CitusFormSection Title="Document">
                 <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Invoice no."><span class="citus-inline-code">@_invoice.DisplayNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_invoice.EntityNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Document date">@_invoice.DocumentDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     @if (_invoice.DueDate is { } due)
@@ -122,15 +157,6 @@ else
                     @if (!string.Equals(_invoice.TransactionCurrencyCode, _invoice.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                     {
                         <CitusKeyValueRow Label="Base currency">@_invoice.BaseCurrencyCode</CitusKeyValueRow>
-                    }
-                    <CitusKeyValueRow Label="Customer">@_customerName</CitusKeyValueRow>
-                    @if (!string.IsNullOrWhiteSpace(_invoice.CustomerPoNumber))
-                    {
-                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_invoice.CustomerPoNumber</span></CitusKeyValueRow>
-                    }
-                    @if (_invoice.SalesOrderId is { } soId)
-                    {
-                        <CitusKeyValueRow Label="From SO"><a class="citus-link" href="@($"sales-orders/{soId:D}")">View source SO</a></CitusKeyValueRow>
                     }
                 </CitusKeyValueTable>
             </CitusFormSection>
@@ -203,6 +229,8 @@ else
 
     private InvoiceRecordDto? _invoice;
     private string _customerName = "—";
+    private string? _customerNumber;
+    private string? _sourceSalesOrderNumber;
     private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
     private bool _isLoading = true;
     private string? _error;
@@ -235,6 +263,15 @@ else
             {
                 var customer = await CustomerClient.GetByIdAsync(_invoice.CustomerId);
                 _customerName = customer?.DisplayName ?? "—";
+                _customerNumber = customer?.CustomerNumber;
+
+                // Resolve the source SO's display number for the clickable
+                // "Source" card (the invoice DTO carries the id, not the number).
+                _sourceSalesOrderNumber = null;
+                if (_invoice.SalesOrderId is { } soId)
+                {
+                    _sourceSalesOrderNumber = (await SalesOrderClient.GetByIdAsync(soId))?.SalesOrderNumber;
+                }
             }
             ApplyHeader();
         }
@@ -257,8 +294,7 @@ else
         _header = new PageHeaderModel
         {
             Eyebrow = "Sales & Get Paid",
-            Title = _invoice.DisplayNumber,
-            Subtitle = $"{_customerName} · {HumanizeStatus(_invoice.Status)}"
+            Title = _invoice.DisplayNumber
         };
     }
 
@@ -365,40 +401,4 @@ else
         }
         finally { _isReDrafting = false; }
     }
-
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "draft" => "Draft",
-        "submitted" => "Submitted",
-        "posted" => "Posted",
-        "partially_paid" => "Partially paid",
-        "paid" => "Paid",
-        "voided" => "Voided",
-        "reversed" => "Reversed",
-        _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "draft" => "Not posted yet.",
-        "submitted" => "Awaiting approval / posting.",
-        "posted" => "Awaiting payment.",
-        "partially_paid" => "Some receipts received.",
-        "paid" => "Fully settled.",
-        "voided" => "Voided.",
-        "reversed" => "Reversed.",
-        _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "submitted" => StatTone.Info,
-        "posted" => StatTone.Info,
-        "partially_paid" => StatTone.Info,
-        "paid" => StatTone.Success,
-        "voided" => StatTone.Neutral,
-        "reversed" => StatTone.Warning,
-        _ => StatTone.Neutral
-    };
 }
