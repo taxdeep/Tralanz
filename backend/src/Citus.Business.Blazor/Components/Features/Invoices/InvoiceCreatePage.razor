@@ -36,7 +36,15 @@
     <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
 }
 
-@if (_isFromCopy)
+@if (_isRevise)
+{
+    @* Reverse-&-re-draft "Edit": the original posted invoice was reversed
+       and this is its replacement draft. SO-linked invoices keep the SO
+       link + lock the SO-derived fields. *@
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
+                Message="Revising a reversed invoice — correct the lines and re-post as a new invoice. Fields carried from a linked sales order stay locked; you can still add new lines." />
+}
+else if (_isFromCopy)
 {
     @* Copy A3 Phase 2: prefilled from another invoice. The source is
        untouched; this is a fresh draft the operator can revise. *@
@@ -73,15 +81,27 @@
                         }
                     </CitusFormField>
                     <CitusFormField Label="Customer">
-                        <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                           UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                           Placeholder="Search customers…"
-                                           Take="8"
-                                           SourceRoute="/invoices/new"
-                                           SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
-                                           SelectedDisplayText="@_customerDisplay"
-                                           OnCustomerSelected="OnCustomerSelected"
-                                           OnCleared="OnCustomerCleared" />
+                        @* Locked to the SO's customer when this invoice is
+                           SO-linked (Q1) — you can't re-bill an SO to a
+                           different customer. *@
+                        @if (_soLocked)
+                        {
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                                <span>@(string.IsNullOrWhiteSpace(_customerDisplay) ? "—" : _customerDisplay)</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                               Placeholder="Search customers…"
+                                               Take="8"
+                                               SourceRoute="/invoices/new"
+                                               SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
+                                               SelectedDisplayText="@_customerDisplay"
+                                               OnCustomerSelected="OnCustomerSelected"
+                                               OnCleared="OnCustomerCleared" />
+                        }
                     </CitusFormField>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <CitusFormField Label="Sales order">
@@ -215,6 +235,7 @@
                                                    SourceRoute="/invoices/new"
                                                    SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
                                                    SelectedDisplayText="@line.ItemDisplay"
+                                                   Disabled="@line.Locked"
                                                    OnItemSelected="@(option => OnItemPicked(i, option))"
                                                    OnCleared="@(() => OnItemCleared(i))" />
                             </td>
@@ -225,6 +246,7 @@
                                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                Context="invoice.line.category"
+                                               Disabled="@line.Locked"
                                                SelectedId="@line.AccountId"
                                                SelectedDisplayText="@GetAccountLabel(line.AccountId)"
                                                Placeholder="Pick a category…"
@@ -232,8 +254,8 @@
                                                OnCleared="@(() => Update(i, l => l with { AccountId = null, AccountCode = string.Empty, AccountDisplay = string.Empty }))" />
                             </td>
                             <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Disabled="@line.Locked" Class="citus-control-full" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Disabled="@line.Locked" Class="citus-control-full" /></td>
                             <td>
                                 <RadzenDropDown TValue="Guid?"
                                                 Data="@_taxCodeSets"
@@ -247,7 +269,7 @@
                             </td>
                             <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
                             <td>
-                                <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
+                                <button type="button" class="citus-icon-button" title="@(line.Locked ? "SO-derived line — locked" : "Remove line")" disabled="@line.Locked" @onclick="() => RemoveLine(i)">
                                     <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
                                 </button>
                             </td>
@@ -343,6 +365,13 @@
     [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromInvoiceId { get; set; }
 
     /// <summary>
+    /// Revise source invoice id (?reviseFrom={id}) — the posted-invoice
+    /// "Edit" = reverse &amp; re-draft flow. Like copy, but PRESERVES the
+    /// source SO link (Q2) and locks the SO-derived lines (Q1).
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "reviseFrom")] public Guid? ReviseFromInvoiceId { get; set; }
+
+    /// <summary>
     /// Route param for the edit flow (/invoices/{id}/edit). When set, the
     /// page loads that draft and saves via PUT (stays a draft) instead of
     /// the create-and-post path.
@@ -423,7 +452,11 @@
         // the page is opened via "Bill this task" (FromTaskId path). The
         // submit projection passes it to the wire shape so the post
         // handler can flip the source tasks Completed -> Billed.
-        Guid? TaskId = null)
+        Guid? TaskId = null,
+        // Q1: SO-derived lines lock their item / category / qty / unit price
+        // (the SO defines the commitment). Set true for the lines carried
+        // from a source Sales Order; operator-added lines stay false/editable.
+        bool Locked = false)
     {
         public bool HasContent =>
             ItemId != Guid.Empty
@@ -455,6 +488,15 @@
     private const int DefaultUomPrecision = 2;
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
+
+    // True when this invoice is tied to a source Sales Order. While true the
+    // Customer and the SO-derived lines are locked (the SO defines the
+    // commitment); the operator may still ADD new lines. See Q1 decision.
+    private bool _soLocked => _salesOrderId is not null;
+
+    // Drives the "revising a reversed invoice" banner — set by the
+    // reverse-&-re-draft "Edit" path (PrefillFromReviseSourceAsync).
+    private bool _isRevise;
 
     // R2: Tax Codes (bundles) for the per-line tax dropdown (Code-only).
     private IReadOnlyList<TaxCodeSetSummary> _taxCodeSets = Array.Empty<TaxCodeSetSummary>();
@@ -519,6 +561,10 @@
         else if (ParseTaskIds(FromTaskIds) is { Count: > 0 } taskIds)
         {
             await PrefillFromMultipleTasksAsync(taskIds);
+        }
+        else if (ReviseFromInvoiceId is { } reviseId && reviseId != Guid.Empty)
+        {
+            await PrefillFromReviseSourceAsync(reviseId);
         }
         else if (CopyFromInvoiceId is { } copyId && copyId != Guid.Empty)
         {
@@ -630,6 +676,101 @@
     }
 
     /// <summary>
+    /// Revise (the posted-invoice "Edit" = reverse &amp; re-draft flow). The
+    /// detail page reverses the original, then routes here with ?reviseFrom=.
+    /// Pre-fills like Copy, but with two SO-specific behaviours:
+    ///   • Q2 — PRESERVES the source SO link, so the replacement invoice
+    ///     stays tied to its sales order (Copy deliberately drops it).
+    ///   • Q1 — when SO-linked, the carried lines load Locked (item /
+    ///     category / qty / unit price read-only) and the Customer locks;
+    ///     the operator can still ADD new lines before re-posting.
+    /// Heuristic: there's no per-line "from SO" flag in the read DTO, so for
+    /// an SO-linked invoice every carried line is treated as SO-derived.
+    /// </summary>
+    private async Task PrefillFromReviseSourceAsync(Guid sourceInvoiceId)
+    {
+        InvoiceRecordDto? source;
+        try
+        {
+            source = await InvoiceClient.GetByIdAsync(sourceInvoiceId, ShellState.ActiveCompany.Id);
+        }
+        catch
+        {
+            return;
+        }
+        if (source is null)
+        {
+            _validation = "The invoice you're revising is not visible in this company. The form is blank.";
+            return;
+        }
+
+        var customer = await CustomerClient.GetByIdAsync(source.CustomerId);
+        _isRevise = true;
+        _customerId = source.CustomerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = source.TransactionCurrencyCode;
+        _documentDate = DateTime.Today;
+        _dueDate = DateTime.Today.AddDays(30);
+        _fxRate = null;
+        _memo = source.Memo ?? string.Empty;
+        _customerPoNumber = source.CustomerPoNumber ?? string.Empty;
+        _billing = new AddressDraft { AddressLine = source.BillingAddress };
+        _shipping = new AddressDraft { AddressLine = source.ShippingAddress };
+        _shippingMode = (_shipping.IsEmpty || _shipping == _billing)
+            ? ShippingMode.SameAsBilling
+            : ShippingMode.Different;
+
+        // Q2: keep the source SO link (Copy nulls it). Resolve the SO number
+        // for the read-only "From SO …" display (the invoice DTO omits it).
+        _salesOrderId = source.SalesOrderId;
+        _salesOrderNumber = null;
+        if (source.SalesOrderId is { } soId)
+        {
+            try { _salesOrderNumber = (await SalesOrderClient.GetByIdAsync(soId))?.SalesOrderNumber; }
+            catch { /* display-only — leave null on a transient lookup failure */ }
+        }
+
+        // Q1: lock the carried lines when SO-linked; operator adds new lines.
+        var lockSoLines = source.SalesOrderId is not null;
+        _lines.Clear();
+        foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+        {
+            var accountDisplay = line.RevenueAccountId is { } rid && _accountsById.TryGetValue(rid, out var acct)
+                ? $"{acct.Code}  {acct.Name}"
+                : string.Empty;
+            var accountCode = line.RevenueAccountId is { } rid2 && _accountsById.TryGetValue(rid2, out var acct2)
+                ? acct2.Code
+                : string.Empty;
+            _lines.Add(new InvoiceLineEditState(
+                ItemId: Guid.Empty,
+                ItemDisplay: string.Empty,
+                Description: line.Description ?? string.Empty,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                AccountId: line.RevenueAccountId,
+                AccountDisplay: accountDisplay,
+                AccountCode: accountCode,
+                TaxCodeId: null,            // read DTO doesn't surface tax codes yet — operator re-picks (v1)
+                TaxCode: string.Empty,
+                TaskId: null,
+                Locked: lockSoLines));
+        }
+        // Trailing blank (unlocked) line so the operator can append straight away.
+        if (_lines.Count == 0 || _lines[^1].HasContent)
+        {
+            _lines.Add(new InvoiceLineEditState());
+        }
+
+        _header = _header with
+        {
+            Title = $"Revise {source.DisplayNumber}",
+            Subtitle = source.SalesOrderId is not null
+                ? "Original reversed. SO-linked fields are locked; add lines if needed, then re-post."
+                : "Original reversed. Correct and re-post as a new invoice."
+        };
+    }
+
+    /// <summary>
     /// Edit mode (/invoices/{id}/edit): load an existing DRAFT into the
     /// form, keeping its id / number / dates / PO / SO so a save updates
     /// the same draft in place (PUT) instead of creating a new one.
@@ -679,6 +820,8 @@
         _salesOrderId = source.SalesOrderId;
         _salesOrderNumber = null;
 
+        // Q1: when this draft is SO-linked, lock the SO-derived lines.
+        var lockSoLines = source.SalesOrderId is not null;
         _lines.Clear();
         foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
         {
@@ -699,7 +842,8 @@
                 AccountCode: accountCode,
                 TaxCodeId: null,            // read DTO doesn't surface tax codes yet — operator re-picks (v1)
                 TaxCode: string.Empty,
-                TaskId: line.TaskId));
+                TaskId: line.TaskId,
+                Locked: lockSoLines));
         }
         if (_lines.Count == 0) _lines.Add(new InvoiceLineEditState());
 
@@ -995,7 +1139,8 @@
                 AccountDisplay: accountDisplay,
                 AccountCode: accountCode,
                 TaxCodeId: soLine.TaxCodeId,
-                TaxCode: taxDisplay));
+                TaxCode: taxDisplay,
+                Locked: true));   // Q1: SO-derived line — item/category/qty/price locked
         }
 
         // Always keep one trailing blank line so the operator can append
@@ -1081,6 +1226,7 @@
     private void RemoveLine(int i)
     {
         if (i < 0 || i >= _lines.Count) return;
+        if (_lines[i].Locked) return;   // SO-derived lines can't be removed (Q1)
         _lines.RemoveAt(i);
         // Always keep at least one row so the operator has somewhere to
         // type. The auto-grow rule below relies on the LAST row being

@@ -356,7 +356,7 @@ else
             if (outcome.Succeeded)
             {
                 await Message.SuccessAsync($"Invoice {_invoice.DisplayNumber} reversed — opening a new draft to edit and re-post.");
-                Navigation.NavigateTo($"invoices/new?copyFrom={_invoice.Id:D}");
+                Navigation.NavigateTo($"invoices/new?reviseFrom={_invoice.Id:D}");
             }
             else
             {
