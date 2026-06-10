@@ -1,18 +1,20 @@
 @*
-    InvoiceNotesSection — the real customer-facing Memo ("Note to customer")
-    plus a mockup-only internal note that renders disabled (TODO: not in
-    invoice model). Memo two-way binds back to the parent via MemoChanged.
+    InvoiceNotesSection — flat note/memo block (NO card). The real
+    customer-facing Memo two-way binds via MemoChanged; the internal note is
+    mockup-only (TODO: not in invoice model).
 *@
 
-<CitusFormSection Title="Note to customer">
-    <CitusFormField Label="Message on invoice">
+<div class="flex flex-col gap-2">
+    <div class="invoice-field">
+        <label class="invoice-field__label">Note to customer</label>
         <CitusInput TValue="string" Value="@Memo" ValueChanged="MemoChanged" Placeholder="Visible to customer; optional." />
-    </CitusFormField>
-    <CitusFormField Label="Note to self (internal)">
+    </div>
+    <div class="invoice-field">
+        <label class="invoice-field__label">Note to self (internal)</label>
         @* TODO: not in invoice model — the invoice carries a single customer-facing memo only. *@
-        <CitusInput TValue="string" Disabled="true" Placeholder="Internal note (not shown to customer)" Class="citus-invoice-editor__todo" />
-    </CitusFormField>
-</CitusFormSection>
+        <CitusInput TValue="string" Disabled="true" Placeholder="Internal note (not shown to customer)" Class="invoice-todo" />
+    </div>
+</div>
 
 @code {
     [Parameter] public string Memo { get; set; } = string.Empty;

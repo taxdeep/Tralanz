@@ -25,112 +25,121 @@
     grid, right-side totals, fixed bottom action bar.
 *@
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <CitusLinkButton Href="invoices"
-                         Variant="CitusButtonVariant.Ghost"
-                         LeadingIcon="IconName.ArrowLeft">
-            Back to invoices
-        </CitusLinkButton>
-        @* TODO: not in invoice model — Manage / Feedback toolbar actions are mockup-only. *@
-        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" Class="citus-invoice-editor__todo">Manage</CitusButton>
-        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" Class="citus-invoice-editor__todo">Feedback</CitusButton>
-    </Actions>
-</CitusPageHeader>
-
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
-}
-
-@if (_isRevise)
-{
-    @* Reverse-&-re-draft "Edit": the original posted invoice was reversed
-       and this is its replacement draft. SO-linked invoices keep the SO
-       link + lock the SO-derived fields. *@
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="Revising a reversed invoice — correct the lines and re-post as a new invoice. Fields carried from a linked sales order stay locked; you can still add new lines." />
-}
-else if (_isFromCopy)
-{
-    @* Copy A3 Phase 2: prefilled from another invoice. The source is
-       untouched; this is a fresh draft the operator can revise. *@
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Review the lines and revise as needed; the original invoice is unchanged." />
-}
-
-@if (!string.IsNullOrWhiteSpace(_validation))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-}
-
-<WriteFlowResultAlert Result="@_lastResult" />
-
-<div class="citus-invoice-editor">
-    <InvoiceHeaderSection EditInvoiceId="_editInvoiceId"
-                          InvoiceNumber="_invoiceNumber" InvoiceNumberChanged="@(v => _invoiceNumber = v)"
-                          SoLocked="_soLocked"
-                          CustomerId="_customerId" CustomerDisplay="_customerDisplay"
-                          Currency="_currency"
-                          FxRate="_fxRate" FxRateChanged="@(v => _fxRate = v)"
-                          DocumentDate="_documentDate" DocumentDateChanged="@(v => _documentDate = v)"
-                          DueDate="_dueDate" DueDateChanged="@(v => _dueDate = v)"
-                          CustomerPoNumber="_customerPoNumber" CustomerPoNumberChanged="@(v => _customerPoNumber = v)"
-                          SalesOrderId="_salesOrderId" SalesOrderNumber="_salesOrderNumber"
-                          CompanyId="ShellState.ActiveCompany.Id"
-                          UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                          BaseCurrencyCode="ShellState.ActiveCompany.BaseCurrencyCode"
-                          OnCustomerSelected="OnCustomerSelected"
-                          OnCustomerCleared="OnCustomerCleared" />
-
-    <InvoiceAddressSection Billing="_billing" Shipping="_shipping" ShippingMode="_shippingMode"
-                           OnEditAddress="OpenAddressDrawer" />
-
-    <InvoiceLineGrid Lines="_lines" TaxCodeSets="_taxCodeSets"
-                     CompanyId="ShellState.ActiveCompany.Id"
-                     UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                     SourceRoute="/invoices/new"
-                     GetAccountLabel="GetAccountLabel" FormatAmount="FormatAmount" Total="_total"
-                     OnAddLine="AddLine" OnInsertLineAfter="InsertLineAfter" OnRemoveLine="RemoveLine"
-                     OnItemCleared="OnItemCleared"
-                     OnAccountCleared="@(i => Update(i, l => l with { AccountId = null, AccountCode = string.Empty, AccountDisplay = string.Empty }))"
-                     OnItemPicked="@(t => OnItemPicked(t.Index, t.Option))"
-                     OnAccountSelected="@(t => Update(t.Index, l => l with { AccountId = t.Account.Id, AccountCode = t.Account.Code, AccountDisplay = $"{t.Account.Code}  {t.Account.Name}" }))"
-                     OnDescriptionChanged="@(t => Update(t.Index, l => l with { Description = t.Description }))"
-                     OnQuantityChanged="@(t => Update(t.Index, l => l with { Quantity = t.Quantity }))"
-                     OnUnitPriceChanged="@(t => Update(t.Index, l => l with { UnitPrice = t.UnitPrice }))"
-                     OnTaxCodeSetChanged="@(t => Update(t.Index, l => l with { TaxCodeSetId = t.TaxCodeSetId }))" />
-
-    <div class="citus-invoice-editor__bottom">
-        <div class="citus-invoice-editor__bottom-left">
-            <InvoicePaymentOptions />
-            <InvoiceNotesSection Memo="_memo" MemoChanged="@(v => _memo = v)" />
+<div class="invoice-editor-page">
+    <div class="invoice-toolbar">
+        <div class="invoice-toolbar__heading">
+            <span class="invoice-toolbar__title">@_header.Title</span>
+            @if (!string.IsNullOrWhiteSpace(_header.Subtitle))
+            {
+                <span class="invoice-toolbar__sub">@_header.Subtitle</span>
+            }
         </div>
-        <InvoiceTotalsPanel LineCount="_lines.Count" Total="_total"
-                            TaxByRule="_taxByRule" TaxTotal="_taxTotal"
-                            Currency="_currency" FxRate="_fxRate"
-                            BaseCurrencyCode="ShellState.ActiveCompany.BaseCurrencyCode"
-                            FormatAmount="FormatAmount" />
+        <div class="invoice-toolbar__actions">
+            <CitusLinkButton Href="invoices" Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" LeadingIcon="IconName.ArrowLeft">Back</CitusLinkButton>
+            @* TODO: not in invoice model — Manage / Feedback toolbar actions are mockup-only. *@
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="invoice-todo">Manage</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="invoice-todo">Feedback</CitusButton>
+        </div>
     </div>
+
+    @if (ShellState.AreWritesBlocked || _isRevise || _isFromCopy || !string.IsNullOrWhiteSpace(_validation) || _lastResult is not null)
+    {
+        <div class="px-4 pt-3 flex flex-col gap-2">
+            @if (ShellState.AreWritesBlocked)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
+            }
+            @if (_isRevise)
+            {
+                @* Reverse-&-re-draft "Edit": the original posted invoice was reversed; SO-linked fields stay locked. *@
+                <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true"
+                            Message="Revising a reversed invoice — correct the lines and re-post as a new invoice. Fields carried from a linked sales order stay locked; you can still add new lines." />
+            }
+            else if (_isFromCopy)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true"
+                            Message="This is a copy. Review the lines and revise as needed; the original invoice is unchanged." />
+            }
+            @if (!string.IsNullOrWhiteSpace(_validation))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" />
+            }
+            <WriteFlowResultAlert Result="@_lastResult" />
+        </div>
+    }
+
+    @* One continuous editing surface — regions divided by thin lines, not cards. *@
+    <div class="invoice-surface">
+        <div class="invoice-region">
+            <InvoiceHeaderSection EditInvoiceId="_editInvoiceId"
+                                  InvoiceNumber="_invoiceNumber" InvoiceNumberChanged="@(v => _invoiceNumber = v)"
+                                  SoLocked="_soLocked"
+                                  CustomerId="_customerId" CustomerDisplay="_customerDisplay"
+                                  Currency="_currency"
+                                  FxRate="_fxRate" FxRateChanged="@(v => _fxRate = v)"
+                                  DocumentDate="_documentDate" DocumentDateChanged="@(v => _documentDate = v)"
+                                  DueDate="_dueDate" DueDateChanged="@(v => _dueDate = v)"
+                                  CustomerPoNumber="_customerPoNumber" CustomerPoNumberChanged="@(v => _customerPoNumber = v)"
+                                  SalesOrderId="_salesOrderId" SalesOrderNumber="_salesOrderNumber"
+                                  CompanyId="ShellState.ActiveCompany.Id"
+                                  UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                  BaseCurrencyCode="ShellState.ActiveCompany.BaseCurrencyCode"
+                                  Billing="_billing" Shipping="_shipping" ShippingMode="_shippingMode"
+                                  OnEditAddress="OpenAddressDrawer"
+                                  OnCustomerSelected="OnCustomerSelected"
+                                  OnCustomerCleared="OnCustomerCleared" />
+        </div>
+
+        <div class="invoice-region">
+            <InvoiceLineGrid Lines="_lines" TaxCodeSets="_taxCodeSets"
+                             CompanyId="ShellState.ActiveCompany.Id"
+                             UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                             SourceRoute="/invoices/new"
+                             GetAccountLabel="GetAccountLabel" FormatAmount="FormatAmount" Total="_total"
+                             OnAddLine="AddLine" OnClearLines="ClearLines" OnInsertLineAfter="InsertLineAfter" OnRemoveLine="RemoveLine"
+                             OnItemCleared="OnItemCleared"
+                             OnAccountCleared="@(i => Update(i, l => l with { AccountId = null, AccountCode = string.Empty, AccountDisplay = string.Empty }))"
+                             OnItemPicked="@(t => OnItemPicked(t.Index, t.Option))"
+                             OnAccountSelected="@(t => Update(t.Index, l => l with { AccountId = t.Account.Id, AccountCode = t.Account.Code, AccountDisplay = $"{t.Account.Code}  {t.Account.Name}" }))"
+                             OnDescriptionChanged="@(t => Update(t.Index, l => l with { Description = t.Description }))"
+                             OnQuantityChanged="@(t => Update(t.Index, l => l with { Quantity = t.Quantity }))"
+                             OnUnitPriceChanged="@(t => Update(t.Index, l => l with { UnitPrice = t.UnitPrice }))"
+                             OnTaxCodeSetChanged="@(t => Update(t.Index, l => l with { TaxCodeSetId = t.TaxCodeSetId }))" />
+        </div>
+
+        <div class="invoice-region">
+            <div class="invoice-lower-grid">
+                <div class="invoice-lower-grid__left">
+                    <InvoiceNotesSection Memo="_memo" MemoChanged="@(v => _memo = v)" />
+                    <InvoicePaymentOptions />
+                </div>
+                <InvoiceTotalsPanel Total="_total"
+                                    TaxByRule="_taxByRule" TaxTotal="_taxTotal"
+                                    Currency="_currency" FxRate="_fxRate"
+                                    BaseCurrencyCode="ShellState.ActiveCompany.BaseCurrencyCode"
+                                    FormatAmount="FormatAmount" />
+            </div>
+        </div>
+    </div>
+
+    @* Address editor drawer — working-copy + dirty state stay here in the parent. *@
+    <CitusDrawer @bind-IsOpen="_addressDrawerOpen"
+                 Title="Edit address"
+                 Width="CitusDrawerWidth.Medium"
+                 IsDirty="@AddressDraftIsDirty"
+                 OnSave="SaveAddressDrawer">
+        <AddressEditor @bind-Billing="_draftBilling"
+                       @bind-Shipping="_draftShipping"
+                       @bind-Mode="_draftMode"
+                       CustomerId="@(_customerId == Guid.Empty ? null : (Guid?)_customerId)" />
+    </CitusDrawer>
+
+    <InvoiceActionBar EditInvoiceId="_editInvoiceId"
+                      IsSaving="_isSubmitting"
+                      Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
+                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                      OnSave="PostAsync" />
 </div>
-
-@* Address editor drawer — working-copy + dirty state stay here in the parent. *@
-<CitusDrawer @bind-IsOpen="_addressDrawerOpen"
-             Title="Edit address"
-             Width="CitusDrawerWidth.Medium"
-             IsDirty="@AddressDraftIsDirty"
-             OnSave="SaveAddressDrawer">
-    <AddressEditor @bind-Billing="_draftBilling"
-                   @bind-Shipping="_draftShipping"
-                   @bind-Mode="_draftMode"
-                   CustomerId="@(_customerId == Guid.Empty ? null : (Guid?)_customerId)" />
-</CitusDrawer>
-
-<InvoiceActionBar EditInvoiceId="_editInvoiceId"
-                  IsSaving="_isSubmitting"
-                  Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
-                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                  OnSave="PostAsync" />
 
 @code {
     /// <summary>
@@ -982,6 +991,17 @@ else if (_isFromCopy)
     }
 
     private void AddLine() => _lines.Add(new InvoiceLineEditState());
+
+    // "Clear all lines" tool: removes the editable lines but keeps any
+    // SO-locked lines (they can't be removed — Q1), then leaves one blank row.
+    private void ClearLines()
+    {
+        _lines.RemoveAll(l => !l.Locked);
+        if (_lines.Count == 0 || _lines[^1].HasContent)
+        {
+            _lines.Add(new InvoiceLineEditState());
+        }
+    }
 
     private void RemoveLine(int i)
     {

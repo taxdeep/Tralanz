@@ -1,19 +1,15 @@
 @using Citus.Modules.UnitySearch.Blazor
 
 @*
-    InvoiceLineGrid — presentational spreadsheet-style line table. Holds NO
-    business state: it renders the parent's `Lines` and reports each edit via
-    an EventCallback; the parent (InvoiceEditor) runs the actual mutation
-    (Update / AddLine / …) so auto-grow + SO-lock logic stay single-sourced.
-    SO-derived lines lock item / category / qty / price / delete via line.Locked.
+    InvoiceLineGrid — spreadsheet-style line table (NO card). Reuses the
+    .citus-data-table--compact table styling (cell-flush inputs, thin borders,
+    tight rows). Holds NO business state: renders the parent's Lines and
+    reports each edit via EventCallback; the parent runs the mutation. SO-locked
+    lines disable item/category/qty/price/delete via line.Locked.
 *@
 
-<CitusFormSection Title="Product / service">
-    <HeaderActions>
-        <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="OnAddLine">Add line</CitusButton>
-    </HeaderActions>
-    <ChildContent>
-    <div class="citus-invoice-editor__lines">
+<div class="invoice-line-grid">
+    <div class="invoice-line-grid__scroll">
         <table class="citus-data-table citus-data-table--compact">
             <thead>
                 <tr>
@@ -44,8 +40,8 @@
                             </button>
                         </td>
                         <td>
-                            @* TODO: not in invoice model — per-line service date is a Task field, not an invoice line field. *@
-                            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full citus-invoice-editor__todo" />
+                            @* TODO: not in invoice model — per-line service date is a Task field. *@
+                            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full invoice-todo" />
                         </td>
                         <td>
                             <ItemServicePicker CompanyId="@CompanyId"
@@ -70,7 +66,7 @@
                                            OnAccountSelected="@(acct => OnAccountSelected.InvokeAsync((i, acct)))"
                                            OnCleared="@(() => OnAccountCleared.InvokeAsync(i))" />
                         </td>
-                        <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => OnDescriptionChanged.InvokeAsync((i, v ?? string.Empty)))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
+                        <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => OnDescriptionChanged.InvokeAsync((i, v ?? string.Empty)))" Size="CitusButtonSize.Small" Placeholder="Description" /></td>
                         <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => OnQuantityChanged.InvokeAsync((i, v)))" Min="0" Disabled="@line.Locked" Class="citus-control-full" /></td>
                         <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => OnUnitPriceChanged.InvokeAsync((i, v)))" Min="0" Disabled="@line.Locked" Class="citus-control-full" /></td>
                         <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
@@ -100,8 +96,15 @@
             </tbody>
         </table>
     </div>
-    </ChildContent>
-</CitusFormSection>
+    <div class="invoice-line-grid__tools">
+        <button type="button" class="invoice-line-grid__tool" @onclick="() => OnAddLine.InvokeAsync()">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line
+        </button>
+        <button type="button" class="invoice-line-grid__tool" @onclick="() => OnClearLines.InvokeAsync()">
+            <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines
+        </button>
+    </div>
+</div>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<InvoiceLineEditState> Lines { get; set; } = Array.Empty<InvoiceLineEditState>();
@@ -114,6 +117,7 @@
     [Parameter] public decimal Total { get; set; }
 
     [Parameter] public EventCallback OnAddLine { get; set; }
+    [Parameter] public EventCallback OnClearLines { get; set; }
     [Parameter] public EventCallback<int> OnInsertLineAfter { get; set; }
     [Parameter] public EventCallback<int> OnRemoveLine { get; set; }
     [Parameter] public EventCallback<int> OnItemCleared { get; set; }

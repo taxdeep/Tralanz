@@ -1,25 +1,21 @@
 @*
-    InvoicePaymentOptions — mockup-only bottom-left zone (online payment
-    options + attachments). The invoice model has no backing for these, so
-    every control renders disabled (TODO: not in invoice model). No state,
-    no callbacks.
+    InvoicePaymentOptions — flat mockup-only block (NO card). The invoice model
+    has no backing for online payment methods / attachments, so every control
+    renders disabled (TODO: not in invoice model).
 *@
 
-<CitusFormSection Title="Payment options">
-    <div class="flex flex-col gap-3 citus-invoice-editor__todo">
-        @* TODO: not in invoice model — online payment method toggles. *@
-        <label class="flex items-center gap-2 text-sm text-fg-muted">
-            <input type="checkbox" disabled /> Accept credit card
-        </label>
-        <label class="flex items-center gap-2 text-sm text-fg-muted">
-            <input type="checkbox" disabled /> Accept bank transfer
-        </label>
-
+<div class="flex flex-col gap-2 invoice-todo">
+    <span class="invoice-field__label">Payment options</span>
+    @* TODO: not in invoice model — online payment method toggles. *@
+    <label class="flex items-center gap-2 text-sm text-fg-muted">
+        <input type="checkbox" disabled /> Accept credit card
+    </label>
+    <label class="flex items-center gap-2 text-sm text-fg-muted">
+        <input type="checkbox" disabled /> Accept bank transfer
+    </label>
+    <div class="invoice-field">
+        <label class="invoice-field__label">Attachments</label>
         @* TODO: not in invoice model — attachments aren't part of the invoice draft. *@
-        <CitusFormField Label="Attachments">
-            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
-                <span class="text-fg-subtle text-sm">Drag files here (coming soon)</span>
-            </div>
-        </CitusFormField>
+        <div class="invoice-address-box invoice-address-box--empty">Drag files here (coming soon)</div>
     </div>
-</CitusFormSection>
+</div>

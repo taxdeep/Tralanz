@@ -1,26 +1,28 @@
 @*
-    InvoiceActionBar — fixed bottom bar. Wraps the shared CitusFormActions
-    (Sticky) with the SAME primary-label / disabled / saving expressions as
-    the original page; OnSave forwards to the parent's PostAsync. The mockup's
-    Print-or-download / Make-recurring / Review-and-send render disabled
-    (TODO: not in invoice model / no send flow yet).
+    InvoiceActionBar — flat sticky bottom bar (NO card / no radius / no shadow).
+    Left: Print-or-download / Make-recurring (TODO). Right: Review-and-send
+    (TODO) + the REAL primary Save, which forwards to the parent's PostAsync
+    with the same label / disabled / saving semantics as before.
 *@
 
-<CitusFormActions Sticky="true"
-                  PrimaryLabel="@(EditInvoiceId is null ? "Post invoice" : "Save draft")"
-                  SavingLabel="@(EditInvoiceId is null ? "Posting..." : "Saving...")"
-                  CancelVisible="false"
-                  IsSaving="@IsSaving"
-                  Disabled="@Disabled"
-                  ErrorHint="@ErrorHint"
-                  OnSave="OnSave">
-    <ExtraContent>
-        @* TODO: not in invoice model — no PDF/print or recurring/send flow on the create page yet. *@
-        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" LeadingIcon="IconName.Download" Class="citus-invoice-editor__todo">Print or download</CitusButton>
-        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" Class="citus-invoice-editor__todo">Make recurring</CitusButton>
-        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" Class="citus-invoice-editor__todo">Review and send</CitusButton>
-    </ExtraContent>
-</CitusFormActions>
+<div class="invoice-action-bar">
+    <div class="invoice-action-bar__group">
+        @* TODO: not in invoice model — no PDF/print or recurring flow yet. *@
+        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" LeadingIcon="IconName.Download" Class="invoice-todo">Print or download</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="invoice-todo">Make recurring</CitusButton>
+    </div>
+    <div class="invoice-action-bar__group">
+        @if (!string.IsNullOrWhiteSpace(ErrorHint))
+        {
+            <span class="invoice-action-bar__hint">@ErrorHint</span>
+        }
+        @* TODO: not in invoice model — no send flow yet. *@
+        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="invoice-todo">Review and send</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@Disabled" Loading="@IsSaving" OnClick="OnSave">
+            @(EditInvoiceId is null ? "Post invoice" : "Save draft")
+        </CitusButton>
+    </div>
+</div>
 
 @code {
     [Parameter] public Guid? EditInvoiceId { get; set; }

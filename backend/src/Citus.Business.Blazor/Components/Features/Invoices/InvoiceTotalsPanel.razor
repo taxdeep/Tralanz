@@ -1,70 +1,38 @@
 @*
-    InvoiceTotalsPanel — presentational, read-only totals. Renders the
-    parent's already-computed subtotal / per-rule tax preview / grand total
-    (verbatim conditions). Discount / Shipping / Deposit are mockup-only and
-    render disabled (TODO: not in invoice model).
+    InvoiceTotalsPanel — flat right-aligned totals summary (NO card). Renders
+    the parent's already-computed subtotal / per-rule tax / grand total
+    (verbatim conditions). Discount / Shipping / Deposit are mockup-only (TODO).
 *@
 
-<CitusFormSection Title="Totals">
-    <div class="citus-invoice-editor__totals">
-        <div class="citus-invoice-editor__totals-row">
-            <span>Subtotal</span>
-            <span class="tabular-nums">@FormatAmount(Total)</span>
-        </div>
+<div class="invoice-totals-panel">
+    <div class="invoice-totals-row"><span>Subtotal</span><span>@FormatAmount(Total)</span></div>
 
-        @* TODO: not in invoice model — discount/shipping aren't on the invoice draft. *@
-        <div class="citus-invoice-editor__totals-row citus-invoice-editor__todo">
-            <span>Discount</span>
-            <span class="tabular-nums">—</span>
-        </div>
-        <div class="citus-invoice-editor__totals-row citus-invoice-editor__todo">
-            <span>Shipping</span>
-            <span class="tabular-nums">—</span>
-        </div>
+    @* TODO: not in invoice model. *@
+    <div class="invoice-totals-row invoice-todo"><span>Discount</span><span>—</span></div>
+    <div class="invoice-totals-row invoice-todo"><span>Shipping</span><span>—</span></div>
 
-        @* Live per-rule tax preview (GST / PST / …). Engine recomputes on save. *@
-        @foreach (var t in TaxByRule)
-        {
-            <div class="citus-invoice-editor__totals-row">
-                <span>@t.RuleCode</span>
-                <span class="tabular-nums">@FormatAmount(t.Amount)</span>
-            </div>
-        }
+    @* Live per-rule tax preview (GST / PST / …). Engine recomputes on save. *@
+    @foreach (var t in TaxByRule)
+    {
+        <div class="invoice-totals-row"><span>@t.RuleCode</span><span>@FormatAmount(t.Amount)</span></div>
+    }
 
-        @if (TaxTotal > 0m)
-        {
-            <div class="citus-invoice-editor__totals-row citus-invoice-editor__totals-row--emphasis">
-                <span>Invoice total</span>
-                <span class="tabular-nums">@FormatAmount(Total + TaxTotal) @Currency.ToUpperInvariant()</span>
-            </div>
-        }
+    @if (TaxTotal > 0m)
+    {
+        <div class="invoice-totals-row invoice-totals-row--grand"><span>Invoice total</span><span>@FormatAmount(Total + TaxTotal) @Currency.ToUpperInvariant()</span></div>
+    }
 
-        @* TODO: not in invoice model — deposit application isn't part of the create flow. *@
-        <div class="citus-invoice-editor__totals-row citus-invoice-editor__todo">
-            <span>Deposit</span>
-            <span class="tabular-nums">—</span>
-        </div>
+    @* TODO: not in invoice model. *@
+    <div class="invoice-totals-row invoice-todo"><span>Deposit</span><span>—</span></div>
 
-        <div class="citus-invoice-editor__totals-row">
-            <span>Currency</span>
-            <span>@Currency.ToUpperInvariant()</span>
-        </div>
-        @if (!string.Equals(Currency, BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-        {
-            <div class="citus-invoice-editor__totals-row">
-                <span>Exchange rate</span>
-                <span class="tabular-nums">@(FxRate.HasValue ? FxRate.Value.ToString("0.000000") : "—")</span>
-            </div>
-        }
-        <div class="citus-invoice-editor__totals-row citus-invoice-editor__totals-row--muted">
-            <span>Lines</span>
-            <span class="tabular-nums">@LineCount</span>
-        </div>
-    </div>
-</CitusFormSection>
+    <div class="invoice-totals-row"><span>Currency</span><span>@Currency.ToUpperInvariant()</span></div>
+    @if (!string.Equals(Currency, BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+    {
+        <div class="invoice-totals-row"><span>Exchange rate</span><span>@(FxRate.HasValue ? FxRate.Value.ToString("0.000000") : "—")</span></div>
+    }
+</div>
 
 @code {
-    [Parameter] public int LineCount { get; set; }
     [Parameter] public decimal Total { get; set; }
     [Parameter] public IReadOnlyList<(string RuleCode, decimal Amount)> TaxByRule { get; set; } = Array.Empty<(string, decimal)>();
     [Parameter] public decimal TaxTotal { get; set; }
