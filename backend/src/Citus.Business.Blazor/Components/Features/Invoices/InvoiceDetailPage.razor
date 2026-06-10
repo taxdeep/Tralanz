@@ -7,6 +7,7 @@
 @inject NavigationManager Navigation
 @inject BusinessWriteFlowClient WriteFlow
 @inject CitusToastService Message
+@inject IJSRuntime JS
 
 @*
     InvoiceDetailPage — read-only detail surface for a posted invoice.
@@ -181,6 +182,7 @@ else
                           CancelVisible="false"
                           OnSave="@(() => Navigation.NavigateTo("receive-payment"))">
             <ExtraContent>
+                <CitusButton Variant="CitusButtonVariant.Ghost" LeadingIcon="IconName.Pencil" Disabled="@(_isReDrafting || _isReversing)" OnClick="EditPostedInvoiceAsync">Edit</CitusButton>
                 <CitusLinkButton Href="@($"credit-memos/new?FromInvoiceId={_invoice.Id:D}")" Variant="CitusButtonVariant.Ghost">Issue credit memo</CitusLinkButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="CopyAsync">Copy</CitusButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isReversing" OnClick="ReverseInvoiceAsync">Reverse</CitusButton>
@@ -327,6 +329,41 @@ else
             }
         }
         finally { _isReversing = false; }
+    }
+
+    private bool _isReDrafting;
+
+    // "Edit" on a posted / partially-paid invoice (product decision:
+    // "Reverse & re-draft"). A posted invoice can't be edited in place
+    // without desyncing the GL, so Edit REVERSES it (posts the compensating
+    // journal entry, flips to 'reversed') and then opens a fresh pre-filled
+    // draft via the copy flow to correct and re-post as a new invoice.
+    // Confirmed first because the reversal is a real ledger posting, not an
+    // obvious side effect of a button labelled "Edit".
+    private async Task EditPostedInvoiceAsync()
+    {
+        if (_invoice is null || _isReDrafting || _isReversing) return;
+
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Editing posted invoice {_invoice.DisplayNumber} will reverse it (posting a compensating journal entry) and open a new draft to re-post. Continue?");
+        if (!confirmed) return;
+
+        _isReDrafting = true;
+        try
+        {
+            var outcome = await InvoiceClient.ReverseAsync(_invoice.Id);
+            if (outcome.Succeeded)
+            {
+                await Message.SuccessAsync($"Invoice {_invoice.DisplayNumber} reversed — opening a new draft to edit and re-post.");
+                Navigation.NavigateTo($"invoices/new?copyFrom={_invoice.Id:D}");
+            }
+            else
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Could not reverse the invoice for editing.");
+            }
+        }
+        finally { _isReDrafting = false; }
     }
 
     private static string HumanizeStatus(string status) => status switch
