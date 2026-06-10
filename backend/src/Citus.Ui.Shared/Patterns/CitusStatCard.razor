@@ -4,7 +4,7 @@
     Tone. Kept restrained per spec §9 — no charts, no decoration.
 *@
 
-<div class="citus-stat-card citus-stat-card--@(Tone.ToString().ToLowerInvariant())">
+<div class="citus-stat-card citus-stat-card--@(Tone.ToString().ToLowerInvariant()) @(OnClick.HasDelegate ? "citus-stat-card--clickable" : null)" @onclick="HandleClickAsync">
     <div class="citus-stat-card__text">
         <span class="citus-stat-card__label">@Label</span>
         <span class="citus-stat-card__value">@Value</span>
@@ -29,4 +29,16 @@
     [Parameter] public IconName Icon { get; set; } = IconName.LayoutDashboard;
 
     [Parameter] public StatTone Tone { get; set; } = StatTone.Primary;
+
+    /// <summary>Optional. When set, the whole card becomes clickable (e.g. a
+    /// "Source" card that opens the linked document).</summary>
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    private async Task HandleClickAsync()
+    {
+        if (OnClick.HasDelegate)
+        {
+            await OnClick.InvokeAsync();
+        }
+    }
 }

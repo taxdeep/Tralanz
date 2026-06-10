@@ -677,6 +677,15 @@
     font-size: var(--citus-text-sm);
 }
 
+.citus-stat-card--clickable {
+    cursor: pointer;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.citus-stat-card--clickable:hover {
+    border-color: var(--citus-color-primary);
+    box-shadow: var(--citus-shadow-2);
+}
+
 .citus-stat-card__icon {
     display: inline-flex;
     align-items: center;

@@ -68,10 +68,20 @@ else
         <CitusStatCard Label="Total" Value="@($"{_so.TotalAmount:N2} {_so.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_so.SubtotalAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
-        <CitusStatCard Label="Source"
-                       Value="@(_so.SourceQuoteNumber ?? "Direct")"
-                       Description="@(_so.SourceQuoteId is null ? "Created directly." : "Converted from quote.")"
-                       Icon="IconName.FileText" Tone="StatTone.Neutral" />
+        @if (_so.SourceQuoteId is { } srcQuoteId)
+        {
+            <CitusStatCard Label="Source"
+                           Value="@(_so.SourceQuoteNumber ?? "—")"
+                           Description="Converted from quote — open"
+                           Icon="IconName.FileText" Tone="StatTone.Primary"
+                           OnClick="@(() => Navigation.NavigateTo($"quotes/{srcQuoteId:D}"))" />
+        }
+        else
+        {
+            <CitusStatCard Label="Source" Value="Direct"
+                           Description="Created directly."
+                           Icon="IconName.FileText" Tone="StatTone.Neutral" />
+        }
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -197,17 +207,13 @@ else
             }
             @if (_so.Status == "open")
             {
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConfirmAsync">
-                    <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
-                    <span>Confirm</span>
-                </CitusButton>
                 <CitusLinkButton Href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")"
                                  Variant="CitusButtonVariant.Ghost"
                                  LeadingIcon="IconName.FileInvoice">
                     Create Invoice
                 </CitusLinkButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" Danger="true" Disabled="_isMutating" OnClick="CancelAsync">
-                    Cancel
+                    Void
                 </CitusButton>
             }
             else if (_so.Status == "confirmed")
@@ -218,7 +224,7 @@ else
                     Create Invoice
                 </CitusLinkButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" Danger="true" Disabled="_isMutating" OnClick="CancelAsync">
-                    Cancel
+                    Void
                 </CitusButton>
                 @if (_so.ConfirmedAt is { } confirmedAt)
                 {
@@ -228,13 +234,6 @@ else
             else if (_so.Status == "invoiced")
             {
                 <span class="text-fg-muted text-sm">Invoiced as <strong>@_so.InvoiceNumber</strong>.</span>
-            }
-            @if (_so.SourceQuoteId is { } quoteId)
-            {
-                <CitusLinkButton Href="@($"quotes/{quoteId:D}")"
-                                 Variant="CitusButtonVariant.Ghost">
-                    View source quote
-                </CitusLinkButton>
             }
         </div>
     }
@@ -352,42 +351,14 @@ else
             if (outcome.OpenDepositCount > 0)
             {
                 await Message.WarningAsync(
-                    $"Sales order cancelled. {outcome.OpenDepositCount} open customer deposit(s) " +
+                    $"Sales order voided. {outcome.OpenDepositCount} open customer deposit(s) " +
                     $"totaling {outcome.OpenDepositTotalBase:N2} remain — issue a Refund Receipt or " +
                     $"apply them to another SO as needed.");
             }
             else
             {
-                await Message.SuccessAsync("Sales order cancelled.");
+                await Message.SuccessAsync("Sales order voided.");
             }
-        }
-        finally { _isMutating = false; }
-    }
-
-    private async Task ConfirmAsync()
-    {
-        if (_so is null || _isMutating) return;
-        _isMutating = true;
-        try
-        {
-            var outcome = await SalesOrderClient.ConfirmAsync(_so.Id);
-            if (!outcome.Succeeded)
-            {
-                _error = outcome.ErrorMessage ?? "Confirm failed.";
-                await Message.WarningAsync(_error);
-                return;
-            }
-            _so = outcome.Saved;
-            ApplyHeader();
-
-            // Compose a per-line summary in the toast so the operator sees
-            // exactly what got reserved vs queued for backorder.
-            var totalReserved = _so?.Lines.Sum(l => l.ReservedQty) ?? 0m;
-            var totalBackorder = _so?.Lines.Sum(l => l.BackorderQty) ?? 0m;
-            var msg = totalBackorder > 0m
-                ? $"Sales Order confirmed — reserved {totalReserved:0.##}, on backorder {totalBackorder:0.##}."
-                : $"Sales Order confirmed — reserved {totalReserved:0.##} units.";
-            await Message.SuccessAsync(msg);
         }
         finally { _isMutating = false; }
     }
@@ -418,8 +389,7 @@ else
     // open/confirmed carry the lifecycle buttons, invoiced shows the invoice
     // number, and any SO converted from a quote keeps the "View source quote" link.
     private static bool HasAnyAction(SalesOrderRecordDto so) =>
-        so.Status is "open" or "confirmed" or "invoiced"
-        || so.SourceQuoteId is not null;
+        so.Status is "open" or "confirmed" or "invoiced";
 
     private static bool HasAddress(SalesOrderRecordDto so) =>
         !string.IsNullOrWhiteSpace(so.BillingAddressLine) || !string.IsNullOrWhiteSpace(so.BillingCity);
