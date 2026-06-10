@@ -391,6 +391,10 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // Backend guard for SO-linked invoices (mirrors the UI field lock).
+        // Runs before any number is reserved so a violation rolls back clean.
+        await ValidateAgainstSalesOrderAsync(connection, transaction, draft, cancellationToken);
+
         // Inventory-grade invoice_lines columns are managed by the
         // migration runner (see 2026-05-08-invoice-line-inventory-
         // columns.sql); no inline ALTER on this write path.
@@ -916,6 +920,90 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         }
 
         ValidateFx(draft.TransactionCurrencyCode, draft.BaseCurrencyCode, draft.FxRate);
+    }
+
+    /// <summary>
+    /// Backend guard for SO-linked invoices (mirrors the UI lock). When the
+    /// draft carries a <c>SalesOrderId</c>, the customer must equal the SO's
+    /// customer and every SO-committed line (quantity + unit price) must be
+    /// present unchanged — operators may ADD lines but not alter or drop the
+    /// ordered ones. Reads sales_orders / sales_order_lines on the same
+    /// connection (the SO is already committed). A stale link (SO row gone)
+    /// is not blocked here; the FK / existing handling covers that.
+    /// </summary>
+    private async Task ValidateAgainstSalesOrderAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        InvoiceDraftSaveModel draft,
+        CancellationToken cancellationToken)
+    {
+        if (draft.SalesOrderId is not { } salesOrderId)
+        {
+            return;
+        }
+
+        Guid soCustomerId;
+        await using (var headerCommand = connection.CreateCommand())
+        {
+            headerCommand.Transaction = transaction;
+            headerCommand.CommandText =
+                "select customer_id from sales_orders where company_id = @company_id and id = @sales_order_id limit 1;";
+            headerCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            headerCommand.Parameters.AddWithValue("sales_order_id", salesOrderId);
+            if (await headerCommand.ExecuteScalarAsync(cancellationToken) is not Guid customerId)
+            {
+                return; // SO not found for this company — don't block on a stale link.
+            }
+            soCustomerId = customerId;
+        }
+
+        // Q1 (backend): the customer is locked to the SO's customer.
+        if (draft.CustomerId != soCustomerId)
+        {
+            throw new InvalidOperationException(
+                "This invoice is linked to a sales order, so its customer can't be changed.");
+        }
+
+        var soLines = new List<(decimal Qty, decimal Price)>();
+        await using (var lineCommand = connection.CreateCommand())
+        {
+            lineCommand.Transaction = transaction;
+            lineCommand.CommandText =
+                "select quantity, unit_price from sales_order_lines where sales_order_id = @sales_order_id;";
+            lineCommand.Parameters.AddWithValue("sales_order_id", salesOrderId);
+            await using var reader = await lineCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                soLines.Add((Round6(reader.GetDecimal(0)), Round6(reader.GetDecimal(1))));
+            }
+        }
+
+        if (soLines.Count == 0)
+        {
+            return;
+        }
+
+        // Q1 (backend): multiset containment — every SO line must be matched
+        // by a distinct draft line on (quantity, unit price). Extra draft
+        // lines are the operator's allowed additions. Matching on amounts
+        // (not account/item) keeps the UI's add-lines flow from ever
+        // false-rejecting while still catching tampered qty/price/removals.
+        var available = new Dictionary<(decimal Qty, decimal Price), int>();
+        foreach (var line in draft.Lines)
+        {
+            var key = (Round6(line.Quantity), Round6(line.UnitPrice));
+            available[key] = available.TryGetValue(key, out var count) ? count + 1 : 1;
+        }
+
+        foreach (var soLine in soLines)
+        {
+            if (!available.TryGetValue(soLine, out var count) || count == 0)
+            {
+                throw new InvalidOperationException(
+                    "This invoice is linked to a sales order, so the ordered lines' quantities and prices can't be changed or removed. You can still add new lines.");
+            }
+            available[soLine] = count - 1;
+        }
     }
 
     private static void BindHeader(

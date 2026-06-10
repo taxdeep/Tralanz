@@ -29,7 +29,7 @@
     <Version>0.0.0.0</Version>
     <AssemblyVersion>0.0.0.0</AssemblyVersion>
     <FileVersion>0.0.0.0</FileVersion>
-    <InformationalVersion>0.00.000.0000.00.D4</InformationalVersion>
+    <InformationalVersion>0.00.000.0000.00.D5</InformationalVersion>
   </PropertyGroup>
   <ItemGroup Condition="'$(MSBuildProjectName)' != 'SharedKernel'">
     <Using Include="SharedKernel.Identity" />
