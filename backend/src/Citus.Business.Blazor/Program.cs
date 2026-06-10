@@ -230,6 +230,16 @@ builder.Services.AddHttpClient<OpenReceivablesClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// Pay Bills page: lists the vendor's open bills (AP open items) so the
+// operator can apply outgoing cash. AP mirror of OpenReceivablesClient.
+builder.Services.AddHttpClient<OpenPayablesClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<CompanyCurrencyClient>(
         (serviceProvider, client) =>
         {

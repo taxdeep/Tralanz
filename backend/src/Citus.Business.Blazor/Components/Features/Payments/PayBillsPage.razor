@@ -1,7 +1,11 @@
 @page "/pay-bills"
 
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
+@inject OpenPayablesClient OpenPayablesClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -44,8 +48,16 @@
                     }
                 </div>
                 <div>
-                    <label class="text-sm font-medium block mb-1">Vendor (id)</label>
-                    <CitusInput TValue="string" @bind-Value="_vendorIdInput" Placeholder="@("00000000-0000-0000-0000-000000000000")" />
+                    <label class="text-sm font-medium block mb-1">Vendor</label>
+                    <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                  UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                  Placeholder="Search vendors…"
+                                  Take="8"
+                                  SourceRoute="/pay-bills"
+                                  SelectedId="@(_vendorId == Guid.Empty ? null : _vendorId)"
+                                  SelectedDisplayText="@_vendorDisplay"
+                                  OnVendorSelected="OnVendorSelected"
+                                  OnCleared="OnVendorCleared" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Amount paid</label>
@@ -67,52 +79,66 @@
 
         <section class="citus-panel">
             <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Apply to open bills</h2>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddApplication">Add application</CitusButton>
+                <h2 class="citus-panel__title">Open bills</h2>
+                <span class="text-fg-muted text-sm">Enter how much of this payment to apply to each open bill.</span>
             </header>
 
-            <p class="text-fg-muted text-sm mb-3">
-                Each row applies part of the payment against a specific A/P open item.
-            </p>
-
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Bill</th>
-                        <th style="width: 14rem">Open item id</th>
-                        <th class="text-right" style="width: 10rem">Applied</th>
-                        <th style="width: 3rem"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (var index = 0; index < _applications.Count; index++)
-                    {
-                        var i = index;
-                        var app = _applications[i];
-                        <tr>
-                            <td><CitusInput TValue="string" Value="@app.DocumentDisplayNumber" ValueChanged="@(v => Update(i, a => a with { DocumentDisplayNumber = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="BILL-000123" /></td>
-                            <td><CitusInput TValue="string" Value="@(app.OpenItemId == Guid.Empty ? string.Empty : app.OpenItemId.ToString("D"))" ValueChanged="@(v => Update(i, a => a with { OpenItemId = ParseGuid(v) }))" Size="CitusButtonSize.Small" Placeholder="@("uuid")" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@app.AppliedAmount" ValueChanged="@(v => Update(i, a => a with { AppliedAmount = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td>
-                                <button type="button" class="citus-icon-button" title="Remove" @onclick="() => RemoveApplication(i)">
-                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                    <tr class="citus-data-table__total">
-                        <td colspan="2" class="text-right font-medium">Applied total</td>
-                        <td class="text-right font-semibold">@FormatAmount(_appliedTotal)</td>
-                        <td></td>
-                    </tr>
-                </tbody>
-            </table>
-
-            @if (_amount > 0 && _appliedTotal != _amount)
+            @if (_vendorId == Guid.Empty)
             {
-                <p class="text-warning text-sm mt-3">
-                    Difference: <span class="citus-inline-code">@FormatAmount(_amount - _appliedTotal)</span>. Posting requires applied total to match payment amount.
-                </p>
+                <p class="text-fg-muted text-sm">Pick a vendor first to load their open bills.</p>
+            }
+            else if (_isLoadingBills)
+            {
+                <CitusLoadingBar />
+            }
+            else if (_openBills.Count == 0)
+            {
+                <p class="text-fg-muted text-sm">No open bills for this vendor.</p>
+            }
+            else
+            {
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Bill Reference #</th>
+                            <th>Vendor</th>
+                            <th style="width: 8rem">Due date</th>
+                            <th class="text-right" style="width: 10rem">Amount due</th>
+                            <th class="text-right" style="width: 10rem">Applied</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _openBills)
+                        {
+                            var captured = row;
+                            <tr>
+                                <td><span class="citus-inline-code">@captured.DisplayNumber</span></td>
+                                <td>@_vendorDisplay</td>
+                                <td>@(captured.DueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                                <td class="text-right font-semibold">@FormatAmount(captured.OpenAmountTx)</td>
+                                <td>
+                                    <input type="text"
+                                           inputmode="decimal"
+                                           class="citus-form-field__input text-right"
+                                           value="@FormatDecimalForInput(captured.Applied)"
+                                           @oninput="@(e => OnAppliedEdited(captured.OpenItemId, e.Value?.ToString()))" />
+                                </td>
+                            </tr>
+                        }
+                        <tr class="citus-data-table__total">
+                            <td colspan="3" class="text-right font-medium">Applied total</td>
+                            <td></td>
+                            <td class="text-right font-semibold">@FormatAmount(_appliedTotal)</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                @if (_amount > 0 && _appliedTotal != _amount)
+                {
+                    <p class="text-warning text-sm mt-3">
+                        Difference: <span class="citus-inline-code">@FormatAmount(_amount - _appliedTotal)</span>. Posting requires applied total to match payment amount.
+                    </p>
+                }
             }
         </section>
     </div>
@@ -122,7 +148,7 @@
             <h2 class="citus-panel__title">Summary</h2>
             <table class="citus-keyvalue">
                 <tbody>
-                    <tr><th>Vendor</th><td>@(_vendorIdInput.Length > 8 ? _vendorIdInput[..8] + "..." : "(not set)")</td></tr>
+                    <tr><th>Vendor</th><td>@(_vendorId == Guid.Empty ? "(not set)" : _vendorDisplay)</td></tr>
                     <tr><th>Amount</th><td>@FormatAmount(_amount) @_currency.ToUpperInvariant()</td></tr>
                     <tr><th>Applied</th><td>@FormatAmount(_appliedTotal)</td></tr>
                     <tr><th>Remaining</th><td>@FormatAmount(_amount - _appliedTotal)</td></tr>
@@ -136,7 +162,7 @@
                 Posting closes AP open items proportional to applied amounts. Unapplied cash becomes a vendor prepayment.
             </p>
             <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_amount <= 0 || _applications.Count == 0 || ShellState.AreWritesBlocked || _isSubmitting)"
+                         Disabled="@(_vendorId == Guid.Empty || _amount <= 0 || _appliedTotal <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
                          OnClick="PostAsync">
                 @(_isSubmitting ? "Posting..." : "Post pay bill")
             </CitusButton>
@@ -153,38 +179,82 @@
     };
 
     private DateTime? _date = DateTime.Today;
-    private string _vendorIdInput = string.Empty;
+    private Guid _vendorId;
+    private string _vendorDisplay = string.Empty;
     private string _currency = string.Empty;
     private decimal? _fxRate;
     private decimal _amount;
     private string _memo = string.Empty;
-    private readonly List<SettlementApplicationDraft> _applications = new() { new SettlementApplicationDraft() };
+
+    private List<PayRow> _openBills = new();
+    private bool _isLoadingBills;
+
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
 
-    private decimal _appliedTotal => _applications.Sum(a => a.AppliedAmount);
+    private decimal _appliedTotal => _openBills.Sum(b => b.Applied);
 
     protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
 
-    private void AddApplication() => _applications.Add(new SettlementApplicationDraft());
-    private void RemoveApplication(int i) { if (i >= 0 && i < _applications.Count) _applications.RemoveAt(i); }
-    private void Update(int i, Func<SettlementApplicationDraft, SettlementApplicationDraft> mutate) { if (i >= 0 && i < _applications.Count) _applications[i] = mutate(_applications[i]); }
+    private async Task OnVendorSelected(UnitySearchPickerOption option)
+    {
+        _vendorId = option.SourceId;
+        _vendorDisplay = option.DisplayText;
+        await LoadOpenBillsAsync();
+    }
 
-    private static Guid ParseGuid(string? s) => Guid.TryParse(s, out var g) ? g : Guid.Empty;
+    private void OnVendorCleared()
+    {
+        _vendorId = Guid.Empty;
+        _vendorDisplay = string.Empty;
+        _openBills = new List<PayRow>();
+    }
+
+    private async Task LoadOpenBillsAsync()
+    {
+        _isLoadingBills = true;
+        try
+        {
+            var rows = await OpenPayablesClient.ListAsync(ShellState.ActiveCompany.Id, _vendorId);
+            _openBills = rows
+                // v1 scope: bills with a positive remaining balance (vendor
+                // credits / negative-side rows are deferred, same as the AR
+                // receive-payment table).
+                .Where(r => r.OpenAmountTx > 0m)
+                .OrderBy(r => r.DueDate ?? DateOnly.MaxValue)
+                .ThenBy(r => r.DocumentDate)
+                .Select(r => new PayRow(r))
+                .ToList();
+        }
+        finally
+        {
+            _isLoadingBills = false;
+        }
+    }
+
+    private void OnAppliedEdited(Guid openItemId, string? raw)
+    {
+        var row = _openBills.FirstOrDefault(b => b.OpenItemId == openItemId);
+        if (row is null) return;
+
+        var typed = ParseDecimal(raw);
+        // Can't apply more than the bill's open balance to a single line.
+        if (typed > row.OpenAmountTx) typed = row.OpenAmountTx;
+        if (typed < 0m) typed = 0m;
+        row.Applied = typed;
+    }
 
     private async Task PostAsync()
     {
         _validation = null;
         _lastResult = null;
 
+        if (_vendorId == Guid.Empty) { _validation = "Pick a vendor first."; return; }
         if (_amount <= 0) { _validation = "Payment amount must be greater than zero."; return; }
-        if (_applications.Count == 0) { _validation = "Apply the payment to at least one open bill."; return; }
+        var applied = _openBills.Where(b => b.Applied > 0m).ToArray();
+        if (applied.Length == 0) { _validation = "Apply the payment to at least one open bill."; return; }
         if (_appliedTotal != _amount) { _validation = "Applied total must equal the payment amount."; return; }
-        if (_applications.Any(a => a.OpenItemId == Guid.Empty)) { _validation = "Every application row needs an open-item id."; return; }
-
-        Guid? vendorId = null;
-        if (Guid.TryParse(_vendorIdInput, out var parsed)) vendorId = parsed;
 
         _isSubmitting = true;
         try
@@ -192,12 +262,17 @@
             var draft = new PayBillDraft
             {
                 Date = DateOnly.FromDateTime((_date ?? DateTime.Today).Date),
-                VendorId = vendorId,
+                VendorId = _vendorId,
                 Amount = _amount,
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
                 FxRate = _fxRate,
                 Memo = _memo.Trim(),
-                Applications = _applications.ToArray()
+                Applications = applied.Select(b => new SettlementApplicationDraft
+                {
+                    OpenItemId = b.OpenItemId,
+                    AppliedAmount = b.Applied,
+                    DocumentDisplayNumber = b.DisplayNumber,
+                }).ToArray()
             };
             _lastResult = await WriteFlow.PostPayBillAsync(draft);
             if (_lastResult.Succeeded) { await Message.SuccessAsync("Pay bill posted."); NavigationManager.NavigateTo("dashboard"); }
@@ -206,5 +281,35 @@
         finally { _isSubmitting = false; }
     }
 
+    private static decimal ParseDecimal(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return 0m;
+        return decimal.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0m;
+    }
+
+    private static string FormatDecimalForInput(decimal amount) =>
+        amount == 0m ? string.Empty : amount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private sealed class PayRow
+    {
+        public PayRow(OpenPayableSummary summary)
+        {
+            OpenItemId = summary.OpenItemId;
+            DisplayNumber = summary.DisplayNumber;
+            DueDate = summary.DueDate;
+            DocumentDate = summary.DocumentDate;
+            OpenAmountTx = summary.OpenAmountTx;
+        }
+
+        public Guid OpenItemId { get; }
+        public string DisplayNumber { get; }
+        public DateOnly? DueDate { get; }
+        public DateOnly DocumentDate { get; }
+        public decimal OpenAmountTx { get; }
+        public decimal Applied { get; set; }
+    }
 }
