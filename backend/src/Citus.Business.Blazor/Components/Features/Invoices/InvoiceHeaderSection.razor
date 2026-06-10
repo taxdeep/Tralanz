@@ -1,0 +1,168 @@
+@using Citus.Modules.UnitySearch.Blazor
+
+@*
+    InvoiceHeaderSection — presentational header card (3 zones: customer/email,
+    ship via/date/tracking, invoice#/terms/dates/currency/FX) + a collapsible
+    tags/tax-mode strip. Holds no business state. SO-lock / invoice-number /
+    currency / FX branches are preserved verbatim from the original page.
+    Mockup-only fields render disabled with a TODO marker.
+*@
+
+<CitusFormSection Title="Header">
+    <div class="citus-invoice-editor__header">
+        @* LEFT zone — customer + email *@
+        <div class="citus-invoice-editor__header-zone">
+            <CitusFormField Label="Customer">
+                @* Locked to the SO's customer when SO-linked (Q1) — can't re-bill an SO to a different customer. *@
+                @if (SoLocked)
+                {
+                    <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                        <span>@(string.IsNullOrWhiteSpace(CustomerDisplay) ? "—" : CustomerDisplay)</span>
+                    </div>
+                }
+                else
+                {
+                    <CustomerPicker CompanyId="@CompanyId"
+                                       UserId="@UserId"
+                                       Placeholder="Search customers…"
+                                       Take="8"
+                                       SourceRoute="/invoices/new"
+                                       SelectedId="@(CustomerId == Guid.Empty ? null : CustomerId)"
+                                       SelectedDisplayText="@CustomerDisplay"
+                                       OnCustomerSelected="OnCustomerSelected"
+                                       OnCleared="OnCustomerCleared" />
+                }
+            </CitusFormField>
+            <CitusFormField Label="Customer email">
+                @* TODO: not in invoice model — invoice draft carries no customer email. *@
+                <CitusInput TValue="string" Disabled="true" Placeholder="customer@example.com" Class="citus-invoice-editor__todo" />
+            </CitusFormField>
+        </div>
+
+        @* MIDDLE zone — shipping logistics (all TODO: not in invoice model) *@
+        <div class="citus-invoice-editor__header-zone">
+            <CitusFormField Label="Ship via">
+                @* TODO: not in invoice model. *@
+                <CitusInput TValue="string" Disabled="true" Placeholder="Carrier" Class="citus-invoice-editor__todo" />
+            </CitusFormField>
+            <CitusFormField Label="Shipping date">
+                @* TODO: not in invoice model. *@
+                <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full citus-invoice-editor__todo" />
+            </CitusFormField>
+            <CitusFormField Label="Tracking no.">
+                @* TODO: not in invoice model. *@
+                <CitusInput TValue="string" Disabled="true" Placeholder="Tracking number" Class="citus-invoice-editor__todo" />
+            </CitusFormField>
+        </div>
+
+        @* RIGHT zone — identity, terms, dates, currency, FX *@
+        <div class="citus-invoice-editor__header-zone">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <CitusFormField Label="Invoice #">
+                    @* Editable on a new invoice, read-only once the number is assigned. *@
+                    @if (EditInvoiceId is null)
+                    {
+                        <CitusInput TValue="string" Value="@InvoiceNumber" ValueChanged="InvoiceNumberChanged" Placeholder="Auto-assigned on save; editable" MaxLength="64" />
+                    }
+                    else
+                    {
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                            <span class="citus-inline-code">@InvoiceNumber</span>
+                        </div>
+                    }
+                </CitusFormField>
+                <CitusFormField Label="Terms">
+                    @* TODO: not in invoice model — payment terms aren't carried on the invoice draft. *@
+                    <CitusInput TValue="string" Disabled="true" Placeholder="Net 30" Class="citus-invoice-editor__todo" />
+                </CitusFormField>
+                <CitusFormField Label="Invoice date">
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@DocumentDate" ValueChanged="DocumentDateChanged" Class="citus-control-full" />
+                </CitusFormField>
+                <CitusFormField Label="Due date">
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@DueDate" ValueChanged="DueDateChanged" Class="citus-control-full" />
+                </CitusFormField>
+                <CitusFormField Label="Currency">
+                    <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                        <span>@Currency.ToUpperInvariant()</span>
+                    </div>
+                </CitusFormField>
+                <CitusFormField Label="Exchange rate">
+                    @if (CustomerId == Guid.Empty)
+                    {
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                            <span class="text-fg-subtle">Pick a customer first</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((DocumentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@BaseCurrencyCode"
+                                      QuoteCurrencyCode="@Currency"
+                                      Rate="FxRate"
+                                      RateChanged="FxRateChanged" />
+                    }
+                </CitusFormField>
+                <CitusFormField Label="Sales order">
+                    <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                        <span class="text-fg-muted text-sm">@(SalesOrderId is null ? "Direct invoice (no source SO)" : $"From SO {SalesOrderNumber}")</span>
+                    </div>
+                </CitusFormField>
+                <CitusFormField Label="Customer PO #">
+                    <CitusInput TValue="string" Value="@CustomerPoNumber" ValueChanged="CustomerPoNumberChanged" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
+                </CitusFormField>
+            </div>
+        </div>
+    </div>
+
+    @* Collapsible tags / tax-mode strip — secondary, visually de-emphasised. *@
+    <div class="citus-invoice-editor__tagstrip">
+        <button type="button" class="citus-invoice-editor__tagstrip-toggle" @onclick="() => _showMore = !_showMore">
+            <CitusIcon Name="@(_showMore ? IconName.ChevronDown : IconName.ChevronRight)" Size="IconSize.Inline" />
+            <span>Tags &amp; tax mode</span>
+        </button>
+        @if (_showMore)
+        {
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                <CitusFormField Label="Tags">
+                    @* TODO: not in invoice model. *@
+                    <CitusInput TValue="string" Disabled="true" Placeholder="Add tags" Class="citus-invoice-editor__todo" />
+                </CitusFormField>
+                <CitusFormField Label="Amounts are">
+                    @* TODO: not in invoice model — tax mode (inclusive/exclusive) isn't a client toggle. *@
+                    <select class="citus-form-field__input citus-invoice-editor__todo" disabled>
+                        <option>Tax exclusive</option>
+                    </select>
+                </CitusFormField>
+            </div>
+        }
+    </div>
+</CitusFormSection>
+
+@code {
+    [Parameter] public Guid? EditInvoiceId { get; set; }
+    [Parameter] public string InvoiceNumber { get; set; } = string.Empty;
+    [Parameter] public bool SoLocked { get; set; }
+    [Parameter] public Guid CustomerId { get; set; }
+    [Parameter] public string CustomerDisplay { get; set; } = string.Empty;
+    [Parameter] public string Currency { get; set; } = string.Empty;
+    [Parameter] public decimal? FxRate { get; set; }
+    [Parameter] public DateTime? DocumentDate { get; set; }
+    [Parameter] public DateTime? DueDate { get; set; }
+    [Parameter] public string CustomerPoNumber { get; set; } = string.Empty;
+    [Parameter] public Guid? SalesOrderId { get; set; }
+    [Parameter] public string? SalesOrderNumber { get; set; }
+    [Parameter, EditorRequired] public CompanyId CompanyId { get; set; }
+    [Parameter] public UserId? UserId { get; set; }
+    [Parameter] public string BaseCurrencyCode { get; set; } = string.Empty;
+
+    [Parameter] public EventCallback<string> InvoiceNumberChanged { get; set; }
+    [Parameter] public EventCallback<DateTime?> DocumentDateChanged { get; set; }
+    [Parameter] public EventCallback<DateTime?> DueDateChanged { get; set; }
+    [Parameter] public EventCallback<string> CustomerPoNumberChanged { get; set; }
+    [Parameter] public EventCallback<decimal?> FxRateChanged { get; set; }
+    [Parameter] public EventCallback<UnitySearchPickerOption> OnCustomerSelected { get; set; }
+    [Parameter] public EventCallback OnCustomerCleared { get; set; }
+
+    // Local UI-only state for the collapsible strip (no business meaning).
+    private bool _showMore;
+}

@@ -1,0 +1,40 @@
+@*
+    InvoiceAddressSection — presentational Bill-to / Ship-to display + an "Edit"
+    button that fires OnEditAddress. The actual address drawer + working-copy /
+    dirty state live in the parent (InvoiceEditor); this component is display-only.
+*@
+
+<CitusFormSection Title="Bill to / Ship to">
+    <HeaderActions>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     Size="CitusButtonSize.Small"
+                     LeadingIcon="IconName.Pencil"
+                     OnClick="OnEditAddress">Edit</CitusButton>
+    </HeaderActions>
+    <ChildContent>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <h4 class="text-fg-muted text-xs font-medium mb-2 uppercase">Billing</h4>
+                <AddressDisplay Address="Billing" EmptyHint="No billing address set." />
+            </div>
+            <div>
+                <h4 class="text-fg-muted text-xs font-medium mb-2 uppercase">Shipping</h4>
+                @if (ShippingMode == ShippingMode.SameAsBilling)
+                {
+                    <p class="text-fg-muted text-sm m-0">Same as billing</p>
+                }
+                else
+                {
+                    <AddressDisplay Address="Shipping" EmptyHint="No shipping address set." />
+                }
+            </div>
+        </div>
+    </ChildContent>
+</CitusFormSection>
+
+@code {
+    [Parameter] public AddressDraft Billing { get; set; } = AddressDraft.Empty;
+    [Parameter] public AddressDraft Shipping { get; set; } = AddressDraft.Empty;
+    [Parameter] public ShippingMode ShippingMode { get; set; } = ShippingMode.SameAsBilling;
+    [Parameter] public EventCallback OnEditAddress { get; set; }
+}

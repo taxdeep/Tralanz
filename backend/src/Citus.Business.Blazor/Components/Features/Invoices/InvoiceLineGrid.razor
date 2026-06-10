@@ -1,0 +1,127 @@
+@using Citus.Modules.UnitySearch.Blazor
+
+@*
+    InvoiceLineGrid — presentational spreadsheet-style line table. Holds NO
+    business state: it renders the parent's `Lines` and reports each edit via
+    an EventCallback; the parent (InvoiceEditor) runs the actual mutation
+    (Update / AddLine / …) so auto-grow + SO-lock logic stay single-sourced.
+    SO-derived lines lock item / category / qty / price / delete via line.Locked.
+*@
+
+<CitusFormSection Title="Product / service">
+    <HeaderActions>
+        <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="OnAddLine">Add line</CitusButton>
+    </HeaderActions>
+    <ChildContent>
+    <div class="citus-invoice-editor__lines">
+        <table class="citus-data-table citus-data-table--compact">
+            <thead>
+                <tr>
+                    <th style="width: 2.25rem"></th>
+                    <th style="width: 9rem">Service date</th>
+                    <th style="width: 15rem">Product / service</th>
+                    <th style="width: 14rem">Category</th>
+                    <th>Description</th>
+                    <th class="text-right" style="width: 6rem">Qty</th>
+                    <th class="text-right" style="width: 9rem">Rate</th>
+                    <th class="text-right" style="width: 9rem">Amount</th>
+                    <th style="width: 6rem">Sales tax</th>
+                    <th style="width: 3rem"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var index = 0; index < Lines.Count; index++)
+                {
+                    var i = index;
+                    var line = Lines[i];
+                    <tr>
+                        <td>
+                            <button type="button"
+                                    class="citus-icon-button"
+                                    title="Insert line below"
+                                    @onclick="() => OnInsertLineAfter.InvokeAsync(i)">
+                                <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                            </button>
+                        </td>
+                        <td>
+                            @* TODO: not in invoice model — per-line service date is a Task field, not an invoice line field. *@
+                            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full citus-invoice-editor__todo" />
+                        </td>
+                        <td>
+                            <ItemServicePicker CompanyId="@CompanyId"
+                                               UserId="@UserId"
+                                               Placeholder="Search items… (optional)"
+                                               Take="6"
+                                               SourceRoute="@SourceRoute"
+                                               SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                               SelectedDisplayText="@line.ItemDisplay"
+                                               Disabled="@line.Locked"
+                                               OnItemSelected="@(option => OnItemPicked.InvokeAsync((i, option)))"
+                                               OnCleared="@(() => OnItemCleared.InvokeAsync(i))" />
+                        </td>
+                        <td>
+                            <AccountPicker CompanyId="@CompanyId"
+                                           UserId="@UserId"
+                                           Context="invoice.line.category"
+                                           Disabled="@line.Locked"
+                                           SelectedId="@line.AccountId"
+                                           SelectedDisplayText="@GetAccountLabel(line.AccountId)"
+                                           Placeholder="Pick a category…"
+                                           OnAccountSelected="@(acct => OnAccountSelected.InvokeAsync((i, acct)))"
+                                           OnCleared="@(() => OnAccountCleared.InvokeAsync(i))" />
+                        </td>
+                        <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => OnDescriptionChanged.InvokeAsync((i, v ?? string.Empty)))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
+                        <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => OnQuantityChanged.InvokeAsync((i, v)))" Min="0" Disabled="@line.Locked" Class="citus-control-full" /></td>
+                        <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => OnUnitPriceChanged.InvokeAsync((i, v)))" Min="0" Disabled="@line.Locked" Class="citus-control-full" /></td>
+                        <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                        <td>
+                            <RadzenDropDown TValue="Guid?"
+                                            Data="@TaxCodeSets"
+                                            Value="@line.TaxCodeSetId"
+                                            Change="@(v => OnTaxCodeSetChanged.InvokeAsync((i, v as Guid?)))"
+                                            TextProperty="Code"
+                                            ValueProperty="Id"
+                                            AllowClear="true"
+                                            Placeholder="Tax"
+                                            Class="citus-control-full" />
+                        </td>
+                        <td>
+                            <button type="button" class="citus-icon-button" title="@(line.Locked ? "SO-derived line — locked" : "Remove line")" disabled="@line.Locked" @onclick="() => OnRemoveLine.InvokeAsync(i)">
+                                <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
+                            </button>
+                        </td>
+                    </tr>
+                }
+                <tr class="citus-data-table__total">
+                    <td colspan="7" class="text-right font-medium">Total</td>
+                    <td class="text-right font-semibold">@FormatAmount(Total)</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    </ChildContent>
+</CitusFormSection>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<InvoiceLineEditState> Lines { get; set; } = Array.Empty<InvoiceLineEditState>();
+    [Parameter, EditorRequired] public IReadOnlyList<TaxCodeSetSummary> TaxCodeSets { get; set; } = Array.Empty<TaxCodeSetSummary>();
+    [Parameter, EditorRequired] public CompanyId CompanyId { get; set; }
+    [Parameter] public UserId? UserId { get; set; }
+    [Parameter] public string SourceRoute { get; set; } = "/invoices/new";
+    [Parameter, EditorRequired] public Func<Guid?, string?> GetAccountLabel { get; set; } = _ => null;
+    [Parameter, EditorRequired] public Func<decimal, string> FormatAmount { get; set; } = a => a.ToString("N2");
+    [Parameter] public decimal Total { get; set; }
+
+    [Parameter] public EventCallback OnAddLine { get; set; }
+    [Parameter] public EventCallback<int> OnInsertLineAfter { get; set; }
+    [Parameter] public EventCallback<int> OnRemoveLine { get; set; }
+    [Parameter] public EventCallback<int> OnItemCleared { get; set; }
+    [Parameter] public EventCallback<int> OnAccountCleared { get; set; }
+    [Parameter] public EventCallback<(int Index, UnitySearchPickerOption Option)> OnItemPicked { get; set; }
+    [Parameter] public EventCallback<(int Index, AccountSummary Account)> OnAccountSelected { get; set; }
+    [Parameter] public EventCallback<(int Index, string Description)> OnDescriptionChanged { get; set; }
+    [Parameter] public EventCallback<(int Index, decimal Quantity)> OnQuantityChanged { get; set; }
+    [Parameter] public EventCallback<(int Index, decimal UnitPrice)> OnUnitPriceChanged { get; set; }
+    [Parameter] public EventCallback<(int Index, Guid? TaxCodeSetId)> OnTaxCodeSetChanged { get; set; }
+}

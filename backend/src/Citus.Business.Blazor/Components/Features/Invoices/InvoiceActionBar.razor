@@ -1,0 +1,31 @@
+@*
+    InvoiceActionBar — fixed bottom bar. Wraps the shared CitusFormActions
+    (Sticky) with the SAME primary-label / disabled / saving expressions as
+    the original page; OnSave forwards to the parent's PostAsync. The mockup's
+    Print-or-download / Make-recurring / Review-and-send render disabled
+    (TODO: not in invoice model / no send flow yet).
+*@
+
+<CitusFormActions Sticky="true"
+                  PrimaryLabel="@(EditInvoiceId is null ? "Post invoice" : "Save draft")"
+                  SavingLabel="@(EditInvoiceId is null ? "Posting..." : "Saving...")"
+                  CancelVisible="false"
+                  IsSaving="@IsSaving"
+                  Disabled="@Disabled"
+                  ErrorHint="@ErrorHint"
+                  OnSave="OnSave">
+    <ExtraContent>
+        @* TODO: not in invoice model — no PDF/print or recurring/send flow on the create page yet. *@
+        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" LeadingIcon="IconName.Download" Class="citus-invoice-editor__todo">Print or download</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" Class="citus-invoice-editor__todo">Make recurring</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true" Class="citus-invoice-editor__todo">Review and send</CitusButton>
+    </ExtraContent>
+</CitusFormActions>
+
+@code {
+    [Parameter] public Guid? EditInvoiceId { get; set; }
+    [Parameter] public bool IsSaving { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? ErrorHint { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+}

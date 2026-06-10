@@ -4587,3 +4587,124 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     right: auto !important;
     transform: translateX(-50%);
 }
+
+/* ============================================================
+   Invoice editor — modern accounting-software layout.
+   Additive block; reuses existing --citus-* design tokens (no new
+   colors). The --invoice-* aliases expose semantic names per spec.
+   ============================================================ */
+.citus-invoice-editor {
+    --invoice-page-bg: var(--citus-color-bg-muted);
+    --invoice-panel-bg: var(--citus-color-bg-elevated);
+    --invoice-border: var(--citus-color-border);
+    --invoice-primary: var(--citus-color-primary);
+    --invoice-text: var(--citus-color-fg);
+    --invoice-muted: var(--citus-color-fg-muted);
+
+    /* Compact, high-density inputs scoped to the editor only — does not
+       touch the global --citus-input-height token. */
+    --citus-input-height: 1.875rem;
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-4);
+    /* Leave room for the fixed bottom action bar. */
+    padding-bottom: var(--citus-space-16);
+}
+
+/* 3-zone header (customer/email · ship-via/date/tracking · identity/dates);
+   stacks vertically on narrow screens. */
+.citus-invoice-editor__header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--citus-space-5);
+}
+@media (min-width: 1024px) {
+    .citus-invoice-editor__header {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.4fr);
+    }
+}
+.citus-invoice-editor__header-zone {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-3);
+    min-width: 0;
+}
+
+/* Collapsible secondary strip (tags / tax mode). */
+.citus-invoice-editor__tagstrip {
+    margin-top: var(--citus-space-4);
+    padding-top: var(--citus-space-3);
+    border-top: 1px solid var(--invoice-border);
+}
+.citus-invoice-editor__tagstrip-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    color: var(--invoice-muted);
+    font-size: var(--citus-text-sm);
+    font-weight: 500;
+}
+.citus-invoice-editor__tagstrip-toggle:hover { color: var(--invoice-text); }
+
+/* Dense line grid — horizontal scroll on narrow screens so cells don't crush. */
+.citus-invoice-editor__lines {
+    overflow-x: auto;
+}
+
+/* Bottom split: payment/notes (left) + totals (right); stacks on narrow. */
+.citus-invoice-editor__bottom {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--citus-space-6);
+    align-items: start;
+}
+@media (min-width: 1024px) {
+    .citus-invoice-editor__bottom {
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    }
+}
+.citus-invoice-editor__bottom-left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-4);
+    min-width: 0;
+}
+
+/* Totals stack. */
+.citus-invoice-editor__totals {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+}
+.citus-invoice-editor__totals-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--citus-space-4);
+    padding: var(--citus-space-1) 0;
+    font-size: var(--citus-text-base);
+    color: var(--invoice-text);
+}
+.citus-invoice-editor__totals-row > span:first-child { color: var(--invoice-muted); }
+.citus-invoice-editor__totals-row--muted {
+    color: var(--invoice-muted);
+    font-size: var(--citus-text-sm);
+}
+.citus-invoice-editor__totals-row--emphasis {
+    margin-top: var(--citus-space-1);
+    padding-top: var(--citus-space-2);
+    border-top: 1px solid var(--citus-color-border-strong);
+    font-size: var(--citus-text-lg);
+    font-weight: 600;
+}
+.citus-invoice-editor__totals-row--emphasis > span:first-child { color: var(--invoice-text); }
+
+/* Disabled mockup-only fields — visually de-emphasised ("coming soon"). */
+.citus-invoice-editor__todo {
+    opacity: 0.6;
+}

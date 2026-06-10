@@ -1,0 +1,25 @@
+@*
+    InvoicePaymentOptions — mockup-only bottom-left zone (online payment
+    options + attachments). The invoice model has no backing for these, so
+    every control renders disabled (TODO: not in invoice model). No state,
+    no callbacks.
+*@
+
+<CitusFormSection Title="Payment options">
+    <div class="flex flex-col gap-3 citus-invoice-editor__todo">
+        @* TODO: not in invoice model — online payment method toggles. *@
+        <label class="flex items-center gap-2 text-sm text-fg-muted">
+            <input type="checkbox" disabled /> Accept credit card
+        </label>
+        <label class="flex items-center gap-2 text-sm text-fg-muted">
+            <input type="checkbox" disabled /> Accept bank transfer
+        </label>
+
+        @* TODO: not in invoice model — attachments aren't part of the invoice draft. *@
+        <CitusFormField Label="Attachments">
+            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                <span class="text-fg-subtle text-sm">Drag files here (coming soon)</span>
+            </div>
+        </CitusFormField>
+    </div>
+</CitusFormSection>
