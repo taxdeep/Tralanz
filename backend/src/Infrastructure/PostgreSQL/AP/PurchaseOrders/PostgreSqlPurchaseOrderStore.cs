@@ -10,8 +10,8 @@ namespace Infrastructure.PostgreSQL.AP.PurchaseOrders;
 /// <c>ap_purchase_orders</c> + <c>ap_purchase_order_lines</c> tables —
 /// distinct from the inventory-grade <c>purchase_orders</c> tables
 /// owned by <see cref="Citus.Accounting.Infrastructure.Persistence.PostgresPurchaseOrderDocumentRepository"/>.
-/// PO numbering follows <c>PO{year}{8-digit-random}</c> per the
-/// Tralanz numbering convention.
+/// PO numbering uses the shared <c>company_numbering_sequences</c>
+/// "purchase-order-display" scope (sequential, e.g. PO000001).
 /// </summary>
 public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory connections) : IPurchaseOrderStore
 {
@@ -169,10 +169,23 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         CancellationToken cancellationToken)
     {
         var (subtotal, discount, tax, total) = ComputeTotals(input);
-        var poNumber = GeneratePurchaseOrderNumber();
 
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Sequential per-company purchase-order number (PO000001) from the shared
+        // company_numbering_sequences "purchase-order-display" scope (the
+        // BusinessNumbering catalog default prefix is PO-), replacing the legacy
+        // random PO{year}{rand}. A prefix configured in Settings -> Numbering wins.
+        var poNumber = await Infrastructure.PostgreSQL.Numbering.PostgreSqlNumberingSequences.ReserveAsync(
+            connection,
+            transaction,
+            companyId,
+            "purchase-order-display",
+            "PO-",
+            6,
+            1,
+            cancellationToken).ConfigureAwait(false);
 
         Guid poId;
         await using (var command = connection.CreateCommand())
@@ -515,14 +528,6 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
         command.Parameters.AddWithValue("memo_to_supplier", (object?)input.MemoToSupplier ?? DBNull.Value);
         command.Parameters.AddWithValue("internal_note", (object?)input.InternalNote ?? DBNull.Value);
         command.Parameters.AddWithValue("payment_term_id", (object?)input.PaymentTermId ?? DBNull.Value);
-    }
-
-    /// <summary>PO{4-digit-year}{8-digit-random} per the Tralanz numbering convention.</summary>
-    private static string GeneratePurchaseOrderNumber()
-    {
-        var year = DateTime.UtcNow.Year;
-        var seed = Random.Shared.Next(0, 100_000_000);
-        return $"PO{year:0000}{seed:00000000}";
     }
 
     private const string SelectColumns = """
