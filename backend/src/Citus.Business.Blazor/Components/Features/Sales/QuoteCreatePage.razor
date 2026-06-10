@@ -81,17 +81,27 @@ else
                         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
                                           @bind-Value="_expirationDate" Class="citus-control-full" />
                     </CitusFormField>
-                    <CitusFormField Label="Transaction currency">
-                        <CitusInput TValue="string"
-                                    @bind-Value="_currency"
-                                    Placeholder="USD"
-                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    <CitusFormField Label="Currency">
+                        @* Read-only, driven by the selected customer's default
+                           currency — matches the New Invoice header style. *@
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                            <span>@_currency.ToUpperInvariant()</span>
+                        </div>
                     </CitusFormField>
                     <CitusFormField Label="Exchange rate">
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
+                        @if (_customerId is null)
+                        {
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                                <span class="text-fg-subtle">Pick a customer first</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                          BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                          QuoteCurrencyCode="@_currency"
+                                          @bind-Rate="_fxRate" />
+                        }
                     </CitusFormField>
                 </CitusFormGrid>
 
