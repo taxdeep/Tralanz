@@ -327,6 +327,12 @@
     [SupplyParameterFromQuery] public Guid? FromTaskId { get; set; }
 
     /// <summary>
+    /// Optional comma-separated source-task ids — the Tasks list "Invoice
+    /// selected" flow. Builds one invoice from several same-customer tasks.
+    /// </summary>
+    [SupplyParameterFromQuery] public string? FromTaskIds { get; set; }
+
+    /// <summary>
     /// Copy A3 Phase 2: source invoice id passed via query string. Set
     /// by InvoiceDetailPage's More → Copy. The create page hydrates
     /// the form with the source's customer / currency / lines / memo,
@@ -509,6 +515,10 @@
         else if (FromTaskId is { } taskId && taskId != Guid.Empty)
         {
             await PrefillFromTaskAsync(taskId);
+        }
+        else if (ParseTaskIds(FromTaskIds) is { Count: > 0 } taskIds)
+        {
+            await PrefillFromMultipleTasksAsync(taskIds);
         }
         else if (CopyFromInvoiceId is { } copyId && copyId != Guid.Empty)
         {
@@ -760,6 +770,19 @@
         }
 
         _lines.Clear();
+        AppendTaskLines(task, taxById);
+
+        if (_lines.Count == 0 || _lines[^1].HasContent)
+        {
+            _lines.Add(new InvoiceLineEditState(TaskId: task.Id));
+        }
+    }
+
+    // Appends one task's lines to _lines (revenue account / tax / qty-precision
+    // resolved best-effort), each stamped with the task id so the post handler
+    // flips that task Completed -> Billed.
+    private void AppendTaskLines(TaskRecord task, Dictionary<Guid, TaxCodeSummary> taxById)
+    {
         foreach (var line in task.Lines.OrderBy(l => l.LineNo))
         {
             string itemDisplay = string.Empty;
@@ -812,12 +835,82 @@
                 TaxCode: taxDisplay,
                 TaskId: task.Id));
         }
+    }
 
+    /// <summary>
+    /// Pre-fills one invoice from several Completed tasks of the same customer
+    /// (the Tasks list "Invoice selected" flow). Lines from every task are
+    /// accumulated; tasks for a different customer are dropped (an invoice is
+    /// for one customer), and non-completed / no-customer tasks are skipped.
+    /// </summary>
+    private async Task PrefillFromMultipleTasksAsync(IReadOnlyList<Guid> taskIds)
+    {
+        var tasks = new List<TaskRecord>();
+        foreach (var id in taskIds)
+        {
+            var t = await TaskClient.GetAsync(id);
+            if (t is not null && t.Status == TaskStatus.Completed && t.CustomerId is not null)
+            {
+                tasks.Add(t);
+            }
+        }
+        if (tasks.Count == 0)
+        {
+            await Message.WarningAsync("None of the selected tasks can be billed (need status Completed with a customer). Starting a blank invoice.");
+            return;
+        }
+
+        var customerId = tasks[0].CustomerId!.Value;
+        var dropped = tasks.RemoveAll(t => t.CustomerId != customerId);
+        tasks = tasks.OrderBy(t => t.TaskNo, StringComparer.Ordinal).ToList();
+
+        var customer = await CustomerClient.GetByIdAsync(customerId);
+        _customerId = customerId;
+        _customerDisplay = customer?.DisplayName ?? string.Empty;
+        _currency = customer?.DefaultCurrencyCode ?? tasks[0].CurrencyCode;
+        _memo = $"Tasks {string.Join(", ", tasks.Select(t => t.TaskNo))}";
+
+        _header = _header with
+        {
+            Title = $"New invoice from {tasks.Count} task(s)",
+            Subtitle = $"Pre-filled from {string.Join(", ", tasks.Select(t => t.TaskNo))}. Posting flips each task to Billed."
+        };
+
+        Dictionary<Guid, TaxCodeSummary> taxById;
+        try
+        {
+            taxById = (await TaxCodeClient.ListAsync(appliesTo: "sales")).ToDictionary(t => t.Id);
+        }
+        catch
+        {
+            taxById = new Dictionary<Guid, TaxCodeSummary>();
+        }
+
+        _lines.Clear();
+        foreach (var t in tasks)
+        {
+            AppendTaskLines(t, taxById);
+        }
         if (_lines.Count == 0 || _lines[^1].HasContent)
         {
-            _lines.Add(new InvoiceLineEditState(TaskId: task.Id));
+            _lines.Add(new InvoiceLineEditState());
+        }
+
+        if (dropped > 0)
+        {
+            await Message.WarningAsync($"{dropped} selected task(s) were for a different customer and were left out — an invoice is for one customer.");
         }
     }
+
+    private static List<Guid> ParseTaskIds(string? raw) =>
+        string.IsNullOrWhiteSpace(raw)
+            ? new List<Guid>()
+            : raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+                .Where(g => g is not null)
+                .Select(g => g!.Value)
+                .Distinct()
+                .ToList();
 
     /// <summary>
     /// Pre-fills the form from an existing Sales Order. Best-effort:

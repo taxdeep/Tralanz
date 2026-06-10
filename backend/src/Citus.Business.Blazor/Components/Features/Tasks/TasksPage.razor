@@ -5,6 +5,7 @@
 
 @inject BusinessShellState ShellState
 @inject TaskClient TaskClient
+@inject CustomerClient CustomerClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Toast
 
@@ -27,6 +28,14 @@ else
 {
     <CitusPageHeader Model="_header">
         <Actions>
+            @if (CanBill && _selectedTaskIds.Count > 0)
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             LeadingIcon="IconName.FileInvoice"
+                             OnClick="InvoiceSelected">
+                    Invoice selected (@_selectedTaskIds.Count)
+                </CitusButton>
+            }
             @if (CanViewMargin)
             {
                 <CitusButton Variant="CitusButtonVariant.Ghost"
@@ -75,7 +84,9 @@ else
             <table class="citus-data-table">
                 <thead>
                     <tr>
+                        <th style="width: 2.5rem"></th>
                         <th>Task #</th>
+                        <th>Customer</th>
                         <th>Title</th>
                         <th>Status</th>
                         <th>Service date</th>
@@ -90,8 +101,20 @@ else
                         var taskId = task.Id;
                         var status = task.Status;
                         var hasCustomer = task.CustomerId.HasValue;
+                        var customerId = task.CustomerId;
+                        var canInvoice = IsInvoiceable(task);
                         <tr class="cursor-pointer" @onclick="@(() => OpenTask(taskId))">
+                            <td @onclick:stopPropagation="true">
+                                @if (canInvoice)
+                                {
+                                    <input type="checkbox"
+                                           checked="@_selectedTaskIds.Contains(taskId)"
+                                           disabled="@(_selectedCustomerId is { } sc && sc != customerId)"
+                                           @onchange="@(() => ToggleSelection(taskId, customerId))" />
+                                }
+                            </td>
                             <td>@task.TaskNo</td>
+                            <td>@CustomerName(customerId)</td>
                             <td>@task.Title</td>
                             <td>
                                 <CitusDocumentStatusBadge Status="@status.ToString()" />
@@ -157,6 +180,14 @@ else
     private IReadOnlyList<TaskSummary> _tasks = Array.Empty<TaskSummary>();
     private Guid _busyTaskId = Guid.Empty;
 
+    // Part 1: customer names resolved client-side (TaskSummary only carries the id).
+    private IReadOnlyDictionary<Guid, string> _customersById = new Dictionary<Guid, string>();
+
+    // Part 2: multi-select → one combined invoice. Only same-customer tasks can be
+    // co-selected; _selectedCustomerId pins the customer once the first is ticked.
+    private readonly HashSet<Guid> _selectedTaskIds = new();
+    private Guid? _selectedCustomerId;
+
     private bool CanCreate => ShellState.User.Roles.Contains("task.create", StringComparer.Ordinal);
 
     private bool CanViewMargin => ShellState.User.Roles.Contains("task.report.margin", StringComparer.Ordinal);
@@ -165,11 +196,31 @@ else
 
     private bool CanBill => ShellState.User.Roles.Contains("task.bill", StringComparer.Ordinal);
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCustomersAsync();
+        await ReloadAsync();
+    }
+
+    private async Task LoadCustomersAsync()
+    {
+        try
+        {
+            var customers = await CustomerClient.ListAsync();
+            _customersById = customers.ToDictionary(c => c.Id, c => c.DisplayName);
+        }
+        catch
+        {
+            _customersById = new Dictionary<Guid, string>();
+        }
+    }
 
     private async Task ReloadAsync()
     {
         _isLoading = true;
+        // Selection is row-id based; a reload (filter change / refresh) invalidates it.
+        _selectedTaskIds.Clear();
+        _selectedCustomerId = null;
         try
         {
             TaskStatus? status = !string.IsNullOrEmpty(_statusFilter) && int.TryParse(_statusFilter, out var raw)
@@ -198,6 +249,41 @@ else
     // task to Billed (or keeps it PartiallyBilled) on a successful post.
     private void InvoiceFrom(Guid taskId) =>
         NavigationManager.NavigateTo($"invoices/new?FromTaskId={taskId:D}");
+
+    // Part 1: resolve the customer display name for a task row.
+    private string CustomerName(Guid? customerId) =>
+        customerId is { } id && _customersById.TryGetValue(id, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : "—";
+
+    // Part 2: a task can be invoiced only when completed (or partially billed)
+    // and it has a customer — mirrors the per-row "Invoice" affordance gate.
+    private bool IsInvoiceable(TaskSummary task) =>
+        CanBill
+        && task.CustomerId.HasValue
+        && (task.Status == TaskStatus.Completed || task.Status == TaskStatus.PartiallyBilled);
+
+    private void ToggleSelection(Guid taskId, Guid? customerId)
+    {
+        if (_selectedTaskIds.Remove(taskId))
+        {
+            if (_selectedTaskIds.Count == 0) _selectedCustomerId = null;
+            return;
+        }
+        // First pick pins the customer; other customers' rows are disabled at the
+        // checkbox, so this guard is belt-and-suspenders.
+        if (_selectedCustomerId is { } pinned && pinned != customerId) return;
+        _selectedCustomerId ??= customerId;
+        _selectedTaskIds.Add(taskId);
+    }
+
+    // Part 2: hand the selected (same-customer) tasks off to one combined invoice.
+    private void InvoiceSelected()
+    {
+        if (_selectedTaskIds.Count == 0) return;
+        var ids = string.Join(",", _selectedTaskIds.Select(id => id.ToString("D")));
+        NavigationManager.NavigateTo($"invoices/new?FromTaskIds={ids}");
+    }
 
     // "Complete" shortcut — calls the same workflow as TaskDetailPage's
     // "Mark completed" button. Server rejects when the task has no lines;
