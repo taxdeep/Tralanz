@@ -1,0 +1,207 @@
+@*
+    CurrencyPicker — type-directly typeahead for picking a transaction currency.
+    You type in the field itself; a dropdown of matching currencies drops down
+    and auto-matches as you type; pick one with click or keyboard. The committed
+    value is always a real currency from the supplied enabled-currency list (the
+    field reverts to the last selection on blur, so free-typed garbage can't be
+    posted). Reuses the citus-tax-picker visual vocabulary so it reads the same
+    as the line Tax picker.
+*@
+
+<div class="citus-tax-picker @(Disabled ? "citus-tax-picker--disabled" : null)">
+    <div class="citus-tax-picker__control" @onclick="HandleControlClickAsync">
+        <input class="citus-tax-picker__input"
+               type="text"
+               autocomplete="off"
+               value="@_searchText"
+               placeholder="@Placeholder"
+               disabled="@Disabled"
+               @ref="_inputRef"
+               @oninput="HandleInput"
+               @onfocus="HandleFocus"
+               @onblur="HandleBlurAsync"
+               @onkeydown="HandleKeyDownAsync" />
+        <span class="citus-tax-picker__chevron" aria-hidden="true">
+            <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+        </span>
+    </div>
+
+    @if (_showResults)
+    {
+        <div class="citus-tax-picker__panel" role="listbox">
+            @if (_visibleRows.Count == 0)
+            {
+                <div class="citus-tax-picker__empty">No matching currencies.</div>
+            }
+            else
+            {
+                @for (var idx = 0; idx < _visibleRows.Count; idx++)
+                {
+                    var i = idx;
+                    var row = _visibleRows[i];
+                    <button type="button"
+                            class="citus-tax-picker__option @(i == _highlightedIndex ? "is-active" : null)"
+                            @onmousedown:preventDefault
+                            @onclick="@(() => Select(row))"
+                            @onmouseover="@(() => _highlightedIndex = i)">
+                        <span class="citus-tax-picker__option-code">@row.CurrencyCode</span>
+                        <span class="citus-tax-picker__option-name">@row.CurrencyName@(row.IsBaseCurrency ? " (base)" : "")</span>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<CompanyCurrencyEntry> Currencies { get; set; } = Array.Empty<CompanyCurrencyEntry>();
+    [Parameter] public string SelectedCode { get; set; } = string.Empty;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Type or pick a currency…";
+    [Parameter] public EventCallback<string> OnCurrencySelected { get; set; }
+
+    private ElementReference _inputRef;
+    private string _searchText = string.Empty;
+    private bool _isFocused;
+    private bool _showResults;
+    private int _highlightedIndex = -1;
+    private List<CompanyCurrencyEntry> _visibleRows = new();
+    private CancellationTokenSource? _blurCts;
+
+    protected override void OnParametersSet()
+    {
+        // When not actively editing, the field shows the selected currency code.
+        if (!_isFocused)
+        {
+            _searchText = SelectedCode ?? string.Empty;
+        }
+    }
+
+    private void ApplyFilter(string query)
+    {
+        var trimmed = (query ?? string.Empty).Trim();
+        IEnumerable<CompanyCurrencyEntry> rows = Currencies;
+        if (!string.IsNullOrEmpty(trimmed))
+        {
+            rows = Currencies.Where(c =>
+                c.CurrencyCode.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                c.CurrencyName.Contains(trimmed, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _visibleRows = rows
+            .OrderByDescending(c => c.CurrencyCode.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(c => c.IsBaseCurrency)
+            .ThenBy(c => c.CurrencyCode, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _highlightedIndex = _visibleRows.Count > 0 ? 0 : -1;
+    }
+
+    private void HandleFocus(FocusEventArgs _)
+    {
+        if (Disabled)
+        {
+            return;
+        }
+
+        _isFocused = true;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        _blurCts = null;
+        // Clear the field on focus so the first keystroke filters fresh (instead
+        // of appending to the shown code); the full list shows immediately so the
+        // operator can also just browse + pick. Blur restores the selected code.
+        _searchText = string.Empty;
+        ApplyFilter(string.Empty);
+        _showResults = true;
+    }
+
+    private async Task HandleControlClickAsync()
+    {
+        if (Disabled)
+        {
+            return;
+        }
+
+        if (!_showResults)
+        {
+            await _inputRef.FocusAsync();
+            HandleFocus(default!);
+        }
+    }
+
+    private void HandleInput(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        ApplyFilter(_searchText);
+        _showResults = true;
+    }
+
+    private async Task HandleBlurAsync(FocusEventArgs _)
+    {
+        _isFocused = false;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _blurCts = cts;
+
+        try
+        {
+            // Brief delay so an option @onclick can win the race over blur.
+            await Task.Delay(150, cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                _showResults = false;
+                _highlightedIndex = -1;
+                // Revert to the committed selection — free-typed text that was
+                // never picked from the list does not become the value.
+                _searchText = SelectedCode ?? string.Empty;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _showResults = false;
+            _highlightedIndex = -1;
+            _searchText = SelectedCode ?? string.Empty;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!_showResults || _visibleRows.Count == 0)
+        {
+            return;
+        }
+
+        if (e.Key == "ArrowDown")
+        {
+            _highlightedIndex = Math.Min(_highlightedIndex + 1, _visibleRows.Count - 1);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _highlightedIndex = Math.Max(_highlightedIndex - 1, 0);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "Enter" && _highlightedIndex >= 0 && _highlightedIndex < _visibleRows.Count)
+        {
+            await Select(_visibleRows[_highlightedIndex]);
+        }
+    }
+
+    private async Task Select(CompanyCurrencyEntry row)
+    {
+        _showResults = false;
+        _highlightedIndex = -1;
+        _isFocused = false;
+        _searchText = row.CurrencyCode;
+        await OnCurrencySelected.InvokeAsync(row.CurrencyCode);
+    }
+}

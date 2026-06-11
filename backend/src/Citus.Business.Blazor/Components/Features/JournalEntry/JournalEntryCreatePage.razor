@@ -91,27 +91,15 @@
                    from the recommendation API. *@
                 <label class="tz-doc-field">
                     <span class="tz-doc-field__label">Transaction currency</span>
-                    @* Radzen 6 filterable combobox: type to filter / auto-match by
-                       code, or pick from the list. Constrained to the company's
-                       enabled currencies (no free-typed values). Switching currency
-                       clears the prior FX rate so FxRateInline re-fetches. *@
-                    <RadzenDropDown TValue="string"
-                                    Data="@_enabledCurrencies"
-                                    @bind-Value="_currency"
-                                    TextProperty="CurrencyCode"
-                                    ValueProperty="CurrencyCode"
-                                    AllowFiltering="true"
-                                    FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                                    AllowClear="false"
+                    @* Type-directly typeahead: type in the field, matches drop
+                       down and auto-match as you type, pick with click/keyboard.
+                       Same UX as the line Tax picker; constrained to enabled
+                       currencies (free-typed text reverts on blur). Switching
+                       currency clears the prior FX rate so FxRateInline re-fetches. *@
+                    <CurrencyPicker Currencies="@_enabledCurrencies"
+                                    SelectedCode="@_currency"
                                     Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || _isLoadingCurrencies)"
-                                    Placeholder="Type or pick a currency…"
-                                    Class="citus-control-full"
-                                    Change="@(_ => _exchangeRate = null)">
-                        <Template Context="entry">
-                            @{ var ce = (CompanyCurrencyEntry)entry; }
-                            @ce.CurrencyCode — @ce.CurrencyName@(ce.IsBaseCurrency ? " (base)" : "")
-                        </Template>
-                    </RadzenDropDown>
+                                    OnCurrencySelected="OnCurrencyPicked" />
                     @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
                     {
                         <span class="text-fg-subtle text-xs mt-1">
@@ -484,6 +472,18 @@
         {
             _isLoadingCurrencies = false;
         }
+    }
+
+    private void OnCurrencyPicked(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.Equals(code, _currency, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        _currency = code;
+        // Drop the previous rate so FxRateInline re-fetches the recommendation
+        // for the new pair instead of reusing the stale rate.
+        _exchangeRate = null;
     }
 
     private void OnDateChanged(ChangeEventArgs args)
