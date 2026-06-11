@@ -13,13 +13,7 @@
 <PageTitle>New Journal Entry | Tralanz Books</PageTitle>
 
 <div class="tz-doc-editor-page">
-    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="journal-entry" BackLabel="Back to journal entries">
-        <Actions>
-            <CitusBadge Color="@(_isBalanced ? "green" : "orange")">
-                @(_isBalanced ? "Balanced" : "Out of balance")
-            </CitusBadge>
-        </Actions>
-    </TzDocToolbar>
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="journal-entry" BackLabel="Back to journal entries" />
 
     @if (ShellState.AreWritesBlocked || !string.IsNullOrWhiteSpace(_prefilledFromDisplayNumber) || !string.IsNullOrWhiteSpace(_validationMessage) || _lastResult is not null)
     {
@@ -97,22 +91,23 @@
                    from the recommendation API. *@
                 <label class="tz-doc-field">
                     <span class="tz-doc-field__label">Transaction currency</span>
-                    <select class="citus-form-field__input"
-                            value="@_currency"
-                            @onchange="OnCurrencyChanged"
-                            disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || _isLoadingCurrencies)">
+                    @* Combobox: type to filter / auto-match by code or name, or
+                       pick from the list. Native <input list> + <datalist> keeps
+                       the same look as the other JE header inputs. OnCurrencyChanged
+                       fires on commit (selection or blur) exactly like the old select. *@
+                    <input type="text"
+                           class="citus-form-field__input"
+                           list="je-currency-options"
+                           value="@_currency"
+                           @onchange="OnCurrencyChanged"
+                           disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || _isLoadingCurrencies)"
+                           placeholder="Type or pick a currency…" />
+                    <datalist id="je-currency-options">
                         @foreach (var entry in _enabledCurrencies)
                         {
-                            <option value="@entry.CurrencyCode">
-                                @entry.CurrencyCode — @entry.CurrencyName@(entry.IsBaseCurrency ? " (base)" : "")
-                            </option>
+                            <option value="@entry.CurrencyCode">@entry.CurrencyCode — @entry.CurrencyName@(entry.IsBaseCurrency ? " (base)" : "")</option>
                         }
-                        @if (!string.IsNullOrWhiteSpace(_currency)
-                             && _enabledCurrencies.All(c => !string.Equals(c.CurrencyCode, _currency, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            <option value="@_currency">@_currency (no longer enabled)</option>
-                        }
-                    </select>
+                    </datalist>
                     @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
                     {
                         <span class="text-fg-subtle text-xs mt-1">
@@ -131,14 +126,6 @@
                                       @bind-Rate="_exchangeRate" />
                     </label>
                 }
-                <label class="tz-doc-field" style="grid-column: 1 / -1">
-                    <span class="tz-doc-field__label">Description <span class="text-fg-subtle text-xs">(optional)</span></span>
-                    <input type="text"
-                           class="citus-form-field__input"
-                           placeholder="What is this journal recording?"
-                           value="@_description"
-                           @oninput="@(e => _description = e.Value?.ToString() ?? string.Empty)" />
-                </label>
             </div>
         </div>
 
@@ -234,7 +221,19 @@
                         <td colspan="3" class="text-right font-medium">Totals</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalDebit)</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalCredit)</td>
-                        <td colspan="4"></td>
+                        <td colspan="2">
+                            <div class="flex items-center gap-2">
+                                @if (_isBalanced)
+                                {
+                                    <CitusBadge Color="green">Balanced</CitusBadge>
+                                }
+                                else
+                                {
+                                    <span class="text-warning text-sm">Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span></span>
+                                    <CitusBadge Color="orange">Out of balance</CitusBadge>
+                                }
+                            </div>
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -243,12 +242,6 @@
                     <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
                     <button type="button" class="tz-doc-line-grid__tool" @onclick="ClearAllLines"><CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines</button>
                     <span class="text-fg-muted text-sm">Press Tab through cells; a new row appears as you fill the last one.</span>
-                    @if (!_isBalanced)
-                    {
-                        <span class="text-warning text-sm ml-auto">
-                            Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span>
-                        </span>
-                    }
                 </div>
             </div>
         </div>
@@ -256,10 +249,17 @@
         <div class="tz-doc-region">
             <div class="tz-doc-lower-grid">
                 <div class="tz-doc-lower-grid__left">
+                    <label class="tz-doc-field">
+                        <span class="tz-doc-field__label">Description <span class="text-fg-subtle text-xs">(optional)</span></span>
+                        <textarea class="citus-form-field__input"
+                                  rows="3"
+                                  placeholder="What is this journal recording?"
+                                  @oninput="@(e => _description = e.Value?.ToString() ?? string.Empty)">@_description</textarea>
+                    </label>
                     @* Post-rationale: the actual Post + Reset buttons live in the
                        sticky footer below so a long-form operator scrolling through
                        lines never loses the commit affordance. *@
-                    <p class="text-fg-muted text-sm m-0">
+                    <p class="text-fg-muted text-sm m-0 mt-3">
                         Posting is irreversible from this surface. Backend reserves the journal entry number and the FX snapshot at the moment of the call.
                     </p>
                 </div>
