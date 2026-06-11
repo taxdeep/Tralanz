@@ -185,6 +185,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                       description,
                       party_type,
                       party_id,
+                      tax_code_id,
                       tx_debit,
                       tx_credit,
                       debit,
@@ -200,8 +201,9 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                       @line_number,
                       @account_id,
                       @description,
-                      null,
-                      null,
+                      @party_type,
+                      @party_id,
+                      @tax_code_id,
                       @tx_debit,
                       @tx_credit,
                       @debit,
@@ -217,6 +219,9 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                 insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
                 insertLineCommand.Parameters.AddWithValue("account_id", line.Account!.AccountId);
                 insertLineCommand.Parameters.AddWithValue("description", string.IsNullOrWhiteSpace(line.Description) ? (object)DBNull.Value : line.Description);
+                insertLineCommand.Parameters.AddWithValue("party_type", string.IsNullOrWhiteSpace(line.PartyType) ? (object)DBNull.Value : line.PartyType);
+                insertLineCommand.Parameters.AddWithValue("party_id", line.PartyId.HasValue ? (object)line.PartyId.Value : DBNull.Value);
+                insertLineCommand.Parameters.AddWithValue("tax_code_id", line.TaxCodeId.HasValue ? (object)line.TaxCodeId.Value : DBNull.Value);
                 insertLineCommand.Parameters.AddWithValue("tx_debit", txDebit);
                 insertLineCommand.Parameters.AddWithValue("tx_credit", txCredit);
                 insertLineCommand.Parameters.AddWithValue("debit", baseDebit);

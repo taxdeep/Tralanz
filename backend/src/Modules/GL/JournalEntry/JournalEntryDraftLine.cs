@@ -14,7 +14,13 @@ public sealed class JournalEntryDraftLine
 
     public string Name { get; set; } = string.Empty;
 
+    public Guid? PartyId { get; set; }
+
+    public string PartyType { get; set; } = string.Empty;
+
     public string SalesTax { get; set; } = string.Empty;
+
+    public Guid? TaxCodeId { get; set; }
 
     public bool HasContent =>
         Account is not null ||
@@ -33,7 +39,10 @@ public sealed class JournalEntryDraftLine
             CreditAmount = CreditAmount,
             Description = Description,
             Name = Name,
-            SalesTax = SalesTax
+            PartyId = PartyId,
+            PartyType = PartyType,
+            SalesTax = SalesTax,
+            TaxCodeId = TaxCodeId
         };
 
     public static JournalEntryDraftLine Blank(int lineNumber) => new()

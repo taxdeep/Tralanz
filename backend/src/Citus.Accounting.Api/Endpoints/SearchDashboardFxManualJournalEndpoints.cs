@@ -881,6 +881,17 @@ internal static class SearchDashboardFxManualJournalEndpoints
                         return Results.BadRequest(new { message = $"Line {lineNumber} references an account that is inactive or not allowed for manual posting." });
                     }
 
+                    // Per-line customer is persisted as party_id + party_type.
+                    // Only set the type when an id is present; default it to
+                    // "customer" (the JE picker only offers customers).
+                    Guid? partyId = lineRequest.CounterpartyId is { } cid && cid != Guid.Empty ? cid : null;
+                    string partyType = partyId is null
+                        ? string.Empty
+                        : (string.IsNullOrWhiteSpace(lineRequest.CounterpartyType)
+                            ? "customer"
+                            : lineRequest.CounterpartyType.Trim().ToLowerInvariant());
+                    Guid? taxCodeId = lineRequest.TaxCodeId is { } tid && tid != Guid.Empty ? tid : null;
+
                     draft.Lines.Add(new global::Modules.GL.JournalEntry.JournalEntryDraftLine
                     {
                         LineNumber = lineNumber,
@@ -898,6 +909,9 @@ internal static class SearchDashboardFxManualJournalEndpoints
                         DebitAmount = lineRequest.Debit > 0m ? lineRequest.Debit : null,
                         CreditAmount = lineRequest.Credit > 0m ? lineRequest.Credit : null,
                         Description = lineRequest.Description ?? string.Empty,
+                        PartyId = partyId,
+                        PartyType = partyType,
+                        TaxCodeId = taxCodeId,
                     });
                 }
 

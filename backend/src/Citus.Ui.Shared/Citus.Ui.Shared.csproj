@@ -8,7 +8,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Radzen.Blazor" Version="[5.0.0,7.0.0)" />
+    <PackageReference Include="Radzen.Blazor" Version="[6.0.0,7.0.0)" />
     <PackageReference Include="System.Linq.Dynamic.Core" Version="1.6.4" />
   </ItemGroup>
 

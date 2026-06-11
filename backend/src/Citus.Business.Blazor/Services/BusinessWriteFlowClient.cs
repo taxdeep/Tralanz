@@ -57,6 +57,9 @@ public sealed class BusinessWriteFlowClient
                 description = line.Description,
                 debit = line.Debit,
                 credit = line.Credit,
+                counterpartyId = line.NameEntityId,
+                counterpartyType = string.IsNullOrWhiteSpace(line.NameEntityType) ? null : line.NameEntityType.Trim(),
+                taxCodeId = line.TaxCodeId,
             }).ToArray(),
         };
 
@@ -1227,6 +1230,15 @@ public sealed record ManualJournalLineDraft
     public string Description { get; init; } = string.Empty;
     public decimal Debit { get; init; }
     public decimal Credit { get; init; }
+
+    /// <summary>Optional per-line counterparty (the "Name" column). Persisted
+    /// as party_id with party_type='customer' on journal_entry_lines.</summary>
+    public Guid? NameEntityId { get; init; }
+    /// <summary>Counterparty kind for <see cref="NameEntityId"/> — e.g. "customer".</summary>
+    public string NameEntityType { get; init; } = string.Empty;
+    /// <summary>Optional per-line sales-tax code (the TaxCode picker). Persisted
+    /// to journal_entry_lines.tax_code_id.</summary>
+    public Guid? TaxCodeId { get; init; }
 }
 
 public sealed record InvoiceDraft

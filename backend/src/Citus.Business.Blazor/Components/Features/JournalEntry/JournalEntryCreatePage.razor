@@ -91,23 +91,27 @@
                    from the recommendation API. *@
                 <label class="tz-doc-field">
                     <span class="tz-doc-field__label">Transaction currency</span>
-                    @* Combobox: type to filter / auto-match by code or name, or
-                       pick from the list. Native <input list> + <datalist> keeps
-                       the same look as the other JE header inputs. OnCurrencyChanged
-                       fires on commit (selection or blur) exactly like the old select. *@
-                    <input type="text"
-                           class="citus-form-field__input"
-                           list="je-currency-options"
-                           value="@_currency"
-                           @onchange="OnCurrencyChanged"
-                           disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || _isLoadingCurrencies)"
-                           placeholder="Type or pick a currency…" />
-                    <datalist id="je-currency-options">
-                        @foreach (var entry in _enabledCurrencies)
-                        {
-                            <option value="@entry.CurrencyCode">@entry.CurrencyCode — @entry.CurrencyName@(entry.IsBaseCurrency ? " (base)" : "")</option>
-                        }
-                    </datalist>
+                    @* Radzen 6 filterable combobox: type to filter / auto-match by
+                       code, or pick from the list. Constrained to the company's
+                       enabled currencies (no free-typed values). Switching currency
+                       clears the prior FX rate so FxRateInline re-fetches. *@
+                    <RadzenDropDown TValue="string"
+                                    Data="@_enabledCurrencies"
+                                    @bind-Value="_currency"
+                                    TextProperty="CurrencyCode"
+                                    ValueProperty="CurrencyCode"
+                                    AllowFiltering="true"
+                                    FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                    AllowClear="false"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || _isLoadingCurrencies)"
+                                    Placeholder="Type or pick a currency…"
+                                    Class="citus-control-full"
+                                    Change="@(_ => _exchangeRate = null)">
+                        <Template Context="entry">
+                            @{ var ce = (CompanyCurrencyEntry)entry; }
+                            @ce.CurrencyCode — @ce.CurrencyName@(ce.IsBaseCurrency ? " (base)" : "")
+                        </Template>
+                    </RadzenDropDown>
                     @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
                     {
                         <span class="text-fg-subtle text-xs mt-1">
@@ -141,13 +145,8 @@
                         <th class="text-right citus-journal-lines__amount">DEBIT (@_currency.ToUpperInvariant())</th>
                         <th class="text-right citus-journal-lines__amount">CREDIT (@_currency.ToUpperInvariant())</th>
                         <th class="citus-journal-lines__desc">DESCRIPTION</th>
-                        @* NAME (per-line counterparty) and SALES TAX columns
-                           were removed: the values used to be captured in the
-                           UI but the wire shape (ManualJournalLineDraft)
-                           dropped them on post, so they never landed in
-                           journal_entry_lines. They'll come back when the
-                           line schema gains counterparty_id + tax_code_id
-                           and the post payload carries them through. *@
+                        <th class="citus-journal-lines__name">NAME</th>
+                        <th class="citus-journal-lines__tax">SALES TAX</th>
                         <th class="citus-journal-lines__action"></th>
                     </tr>
                 </thead>
@@ -206,7 +205,25 @@
                                        @oninput="@(e => UpdateLine(i, l => l with { Description = e.Value?.ToString() ?? string.Empty }))"
                                        placeholder="Memo" />
                             </td>
-                            @* NAME and SALES TAX cells removed; see header note. *@
+                            <td>
+                                <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                                Placeholder="Search customers…"
+                                                Take="8"
+                                                SourceRoute="/journal-entry/new"
+                                                SelectedId="@line.NameEntityId"
+                                                SelectedDisplayText="@line.NameDisplay"
+                                                OnCustomerSelected="@(option => OnNameSelected(i, option))"
+                                                OnCleared="@(() => ClearName(i))" />
+                            </td>
+                            <td>
+                                <TaxCodePicker SelectedId="@line.TaxCodeId"
+                                               SelectedDisplayText="@line.TaxCode"
+                                               AppliesTo="sales"
+                                               Placeholder="Tax"
+                                               OnTaxCodeSelected="@(tax => OnTaxCodeSelected(i, tax))"
+                                               OnCleared="@(() => OnTaxCodeCleared(i))" />
+                            </td>
                             <td class="citus-journal-lines__action">
                                 <button type="button"
                                         class="citus-icon-button"
@@ -288,11 +305,11 @@
     };
 
     /// <summary>
-    /// UI-side line model. Carries the columns the user enters today
+    /// UI-side line model. Carries the columns the user enters
     /// (account / name / description / debit / credit / tax). The wire
-    /// shape (<see cref="ManualJournalLineDraft"/>) only forwards the
-    /// fields the Posting Engine currently consumes; counterparty + tax
-    /// values are captured for the upcoming backend integration.
+    /// shape (<see cref="ManualJournalLineDraft"/>) forwards the per-line
+    /// customer (NameEntityId) + sales-tax code (TaxCodeId) so they persist
+    /// to journal_entry_lines.party_id / tax_code_id on post.
     /// </summary>
     private sealed record JournalLineEditState(
         string AccountCode = "",
@@ -304,13 +321,8 @@
         string Description = "",
         decimal Debit = 0m,
         decimal Credit = 0m,
+        Guid? TaxCodeId = null,
         string TaxCode = "");
-
-    @* Per-line tax codes were removed from the form; see header comment
-       in the table. The fetch + drop-down state previously kept here go
-       away too — they pull data nothing renders. Restore alongside the
-       NAME / SALES TAX columns when the JE post payload starts carrying
-       counterparty_id + tax_code_id per line. *@
 
     // Enabled currencies for the Transaction currency dropdown. Loaded
     // once at page init from /accounting/company/currencies. The base
@@ -474,17 +486,6 @@
         }
     }
 
-    private void OnCurrencyChanged(ChangeEventArgs args)
-    {
-        var picked = args.Value?.ToString() ?? string.Empty;
-        if (string.Equals(picked, _currency, StringComparison.OrdinalIgnoreCase)) return;
-        _currency = picked;
-        // Drop the previous rate so FxRateInline re-fetches the
-        // recommendation for the new pair instead of reusing the
-        // stale rate from the old currency.
-        _exchangeRate = null;
-    }
-
     private void OnDateChanged(ChangeEventArgs args)
     {
         var raw = args.Value?.ToString();
@@ -586,6 +587,18 @@
         NameDisplay = string.Empty,
     });
 
+    private void OnTaxCodeSelected(int index, TaxCodeSummary tax) => UpdateLine(index, l => l with
+    {
+        TaxCodeId = tax.Id,
+        TaxCode = tax.Code,
+    });
+
+    private void OnTaxCodeCleared(int index) => UpdateLine(index, l => l with
+    {
+        TaxCodeId = null,
+        TaxCode = string.Empty,
+    });
+
     /// <summary>
     /// When the user fills any field of the last row, append a fresh empty
     /// row so they can keep typing without reaching for "Add line". A row
@@ -656,6 +669,9 @@
                     Description = l.Description,
                     Debit = l.Debit,
                     Credit = l.Credit,
+                    NameEntityId = l.NameEntityId,
+                    NameEntityType = l.NameEntityId is null ? string.Empty : "customer",
+                    TaxCodeId = l.TaxCodeId,
                 }).ToArray()
             };
 
