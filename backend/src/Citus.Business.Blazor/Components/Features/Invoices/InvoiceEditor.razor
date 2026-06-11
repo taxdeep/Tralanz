@@ -25,22 +25,14 @@
     grid, right-side totals, fixed bottom action bar.
 *@
 
-<div class="invoice-editor-page">
-    <div class="invoice-toolbar">
-        <div class="invoice-toolbar__heading">
-            <span class="invoice-toolbar__title">@_header.Title</span>
-            @if (!string.IsNullOrWhiteSpace(_header.Subtitle))
-            {
-                <span class="invoice-toolbar__sub">@_header.Subtitle</span>
-            }
-        </div>
-        <div class="invoice-toolbar__actions">
-            <CitusLinkButton Href="invoices" Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" LeadingIcon="IconName.ArrowLeft">Back</CitusLinkButton>
+<div class="tz-doc-editor-page">
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="invoices">
+        <Actions>
             @* TODO: not in invoice model — Manage / Feedback toolbar actions are mockup-only. *@
-            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="invoice-todo">Manage</CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="invoice-todo">Feedback</CitusButton>
-        </div>
-    </div>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="tz-doc-todo">Manage</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="tz-doc-todo">Feedback</CitusButton>
+        </Actions>
+    </TzDocToolbar>
 
     @if (ShellState.AreWritesBlocked || _isRevise || _isFromCopy || !string.IsNullOrWhiteSpace(_validation) || _lastResult is not null)
     {
@@ -69,8 +61,8 @@
     }
 
     @* One continuous editing surface — regions divided by thin lines, not cards. *@
-    <div class="invoice-surface">
-        <div class="invoice-region">
+    <div class="tz-doc-surface">
+        <div class="tz-doc-region">
             <InvoiceHeaderSection EditInvoiceId="_editInvoiceId"
                                   InvoiceNumber="_invoiceNumber" InvoiceNumberChanged="@(v => _invoiceNumber = v)"
                                   SoLocked="_soLocked"
@@ -90,7 +82,7 @@
                                   OnCustomerCleared="OnCustomerCleared" />
         </div>
 
-        <div class="invoice-region">
+        <div class="tz-doc-region">
             <InvoiceLineGrid Lines="_lines" TaxCodeSets="_taxCodeSets"
                              CompanyId="ShellState.ActiveCompany.Id"
                              UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
@@ -107,17 +99,13 @@
                              OnTaxCodeSetChanged="@(t => Update(t.Index, l => l with { TaxCodeSetId = t.TaxCodeSetId }))" />
         </div>
 
-        <div class="invoice-region">
-            <div class="invoice-lower-grid">
-                <div class="invoice-lower-grid__left">
+        <div class="tz-doc-region">
+            <div class="tz-doc-lower-grid">
+                <div class="tz-doc-lower-grid__left">
                     <InvoiceNotesSection Memo="_memo" MemoChanged="@(v => _memo = v)" />
                     <InvoicePaymentOptions />
                 </div>
-                <InvoiceTotalsPanel Total="_total"
-                                    TaxByRule="_taxByRule" TaxTotal="_taxTotal"
-                                    Currency="_currency" FxRate="_fxRate"
-                                    BaseCurrencyCode="ShellState.ActiveCompany.BaseCurrencyCode"
-                                    FormatAmount="FormatAmount" />
+                <TzDocTotalsPanel Rows="_totalsRows" />
             </div>
         </div>
     </div>
@@ -134,11 +122,21 @@
                        CustomerId="@(_customerId == Guid.Empty ? null : (Guid?)_customerId)" />
     </CitusDrawer>
 
-    <InvoiceActionBar EditInvoiceId="_editInvoiceId"
-                      IsSaving="_isSubmitting"
-                      Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
-                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                      OnSave="PostAsync" />
+    <TzDocActionBar PrimaryLabel="@(_editInvoiceId is null ? "Post invoice" : "Save draft")"
+                    IsSaving="_isSubmitting"
+                    Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
+                    ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                    OnSave="PostAsync">
+        <LeftActions>
+            @* TODO: not in invoice model — no PDF/print or recurring flow yet. *@
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" LeadingIcon="IconName.Download" Class="tz-doc-todo">Print or download</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="tz-doc-todo">Make recurring</CitusButton>
+        </LeftActions>
+        <RightExtras>
+            @* TODO: not in invoice model — no send flow yet. *@
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="true" Class="tz-doc-todo">Review and send</CitusButton>
+        </RightExtras>
+    </TzDocActionBar>
 </div>
 
 @code {
@@ -307,6 +305,37 @@
     }
 
     private decimal _taxTotal => _taxByRule.Sum(t => t.Amount);
+
+    // Rows for the shared TzDocTotalsPanel (Label / Value / Emphasis / Todo).
+    // Same content the inline totals panel rendered; Discount/Shipping/Deposit
+    // are mockup-only (TODO: not in invoice model).
+    private IReadOnlyList<(string Label, string Value, bool Emphasis, bool Todo)> _totalsRows
+    {
+        get
+        {
+            var rows = new List<(string, string, bool, bool)>
+            {
+                ("Subtotal", FormatAmount(_total), false, false),
+                ("Discount", "—", false, true),
+                ("Shipping", "—", false, true),
+            };
+            foreach (var t in _taxByRule)
+            {
+                rows.Add((t.RuleCode, FormatAmount(t.Amount), false, false));
+            }
+            if (_taxTotal > 0m)
+            {
+                rows.Add(("Invoice total", $"{FormatAmount(_total + _taxTotal)} {_currency.ToUpperInvariant()}", true, false));
+            }
+            rows.Add(("Deposit", "—", false, true));
+            rows.Add(("Currency", _currency.ToUpperInvariant(), false, false));
+            if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+            {
+                rows.Add(("Exchange rate", _fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—", false, false));
+            }
+            return rows;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

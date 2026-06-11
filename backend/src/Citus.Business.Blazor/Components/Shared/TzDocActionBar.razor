@@ -1,0 +1,30 @@
+@*
+    TzDocActionBar — flat sticky bottom action bar for the Tralanz document
+    canvas (tz-doc-*). Left cluster (LeftActions) + right cluster (RightExtras
+    then the primary Save). No card / radius / shadow. The page supplies the
+    primary label + disabled/saving state + OnSave.
+*@
+
+<div class="tz-doc-action-bar">
+    <div class="tz-doc-action-bar__group">
+        @LeftActions
+    </div>
+    <div class="tz-doc-action-bar__group">
+        @if (!string.IsNullOrWhiteSpace(ErrorHint))
+        {
+            <span class="tz-doc-action-bar__hint">@ErrorHint</span>
+        }
+        @RightExtras
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@Disabled" Loading="@IsSaving" OnClick="OnSave">@PrimaryLabel</CitusButton>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string PrimaryLabel { get; set; } = "Save";
+    [Parameter] public bool IsSaving { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? ErrorHint { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public RenderFragment? LeftActions { get; set; }
+    [Parameter] public RenderFragment? RightExtras { get; set; }
+}

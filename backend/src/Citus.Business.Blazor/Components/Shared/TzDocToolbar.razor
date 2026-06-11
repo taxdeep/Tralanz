@@ -1,0 +1,30 @@
+@*
+    TzDocToolbar — lightweight flat top bar for the Tralanz document canvas
+    (tz-doc-*). Title + optional subtitle on the left; a Back link plus any
+    custom actions on the right. NOT a card.
+*@
+
+<div class="tz-doc-toolbar">
+    <div class="tz-doc-toolbar__heading">
+        <span class="tz-doc-toolbar__title">@Title</span>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <span class="tz-doc-toolbar__sub">@Subtitle</span>
+        }
+    </div>
+    <div class="tz-doc-toolbar__actions">
+        @if (!string.IsNullOrWhiteSpace(BackHref))
+        {
+            <CitusLinkButton Href="@BackHref" Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" LeadingIcon="IconName.ArrowLeft">@BackLabel</CitusLinkButton>
+        }
+        @Actions
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? BackHref { get; set; }
+    [Parameter] public string BackLabel { get; set; } = "Back";
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

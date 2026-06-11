@@ -5,14 +5,14 @@
     title). Left: customer / email / bill-to+ship-to address boxes. Middle:
     ship via / date / tracking (TODO). Right: invoice# / terms / dates /
     currency / FX / SO / PO. Plus a collapsible tags/tax-mode strip. SO-lock /
-    invoice-number / currency / FX branches preserved verbatim.
+    tz-doc-number / currency / FX branches preserved verbatim.
 *@
 
-<div class="invoice-header-grid">
+<div class="tz-doc-header-grid">
     @* LEFT — customer / email / addresses *@
-    <div class="invoice-zone">
-        <div class="invoice-field">
-            <label class="invoice-field__label">Customer</label>
+    <div class="tz-doc-zone">
+        <div class="tz-doc-field">
+            <label class="tz-doc-field__label">Customer</label>
             @if (SoLocked)
             {
                 <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
@@ -32,38 +32,38 @@
                                    OnCleared="OnCustomerCleared" />
             }
         </div>
-        <div class="invoice-field">
-            <label class="invoice-field__label">Customer email</label>
+        <div class="tz-doc-field">
+            <label class="tz-doc-field__label">Customer email</label>
             @* TODO: not in invoice model — invoice draft carries no customer email. *@
-            <CitusInput TValue="string" Disabled="true" Placeholder="customer@example.com" Class="invoice-todo" />
+            <CitusInput TValue="string" Disabled="true" Placeholder="customer@example.com" Class="tz-doc-todo" />
         </div>
-        <InvoiceAddressSection Billing="Billing" Shipping="Shipping" ShippingMode="ShippingMode" OnEditAddress="OnEditAddress" />
+        <TzDocAddressSection Billing="Billing" Shipping="Shipping" ShippingMode="ShippingMode" OnEditAddress="OnEditAddress" />
     </div>
 
     @* MIDDLE — shipping logistics (TODO: not in invoice model) *@
-    <div class="invoice-zone">
-        <div class="invoice-field">
-            <label class="invoice-field__label">Ship via</label>
+    <div class="tz-doc-zone">
+        <div class="tz-doc-field">
+            <label class="tz-doc-field__label">Ship via</label>
             @* TODO: not in invoice model. *@
-            <CitusInput TValue="string" Disabled="true" Placeholder="Carrier" Class="invoice-todo" />
+            <CitusInput TValue="string" Disabled="true" Placeholder="Carrier" Class="tz-doc-todo" />
         </div>
-        <div class="invoice-field">
-            <label class="invoice-field__label">Shipping date</label>
+        <div class="tz-doc-field">
+            <label class="tz-doc-field__label">Shipping date</label>
             @* TODO: not in invoice model. *@
-            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full invoice-todo" />
+            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full tz-doc-todo" />
         </div>
-        <div class="invoice-field">
-            <label class="invoice-field__label">Tracking no.</label>
+        <div class="tz-doc-field">
+            <label class="tz-doc-field__label">Tracking no.</label>
             @* TODO: not in invoice model. *@
-            <CitusInput TValue="string" Disabled="true" Placeholder="Tracking number" Class="invoice-todo" />
+            <CitusInput TValue="string" Disabled="true" Placeholder="Tracking number" Class="tz-doc-todo" />
         </div>
     </div>
 
     @* RIGHT — identity / terms / dates / currency / FX *@
-    <div class="invoice-zone">
-        <div class="invoice-field-row">
-            <div class="invoice-field">
-                <label class="invoice-field__label">Invoice #</label>
+    <div class="tz-doc-zone">
+        <div class="tz-doc-field-row">
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Invoice #</label>
                 @if (EditInvoiceId is null)
                 {
                     <CitusInput TValue="string" Value="@InvoiceNumber" ValueChanged="InvoiceNumberChanged" Placeholder="Auto-assigned; editable" MaxLength="64" />
@@ -75,27 +75,27 @@
                     </div>
                 }
             </div>
-            <div class="invoice-field">
-                <label class="invoice-field__label">Terms</label>
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Terms</label>
                 @* TODO: not in invoice model. *@
-                <CitusInput TValue="string" Disabled="true" Placeholder="Net 30" Class="invoice-todo" />
+                <CitusInput TValue="string" Disabled="true" Placeholder="Net 30" Class="tz-doc-todo" />
             </div>
-            <div class="invoice-field">
-                <label class="invoice-field__label">Invoice date</label>
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Invoice date</label>
                 <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@DocumentDate" ValueChanged="DocumentDateChanged" Class="citus-control-full" />
             </div>
-            <div class="invoice-field">
-                <label class="invoice-field__label">Due date</label>
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Due date</label>
                 <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@DueDate" ValueChanged="DueDateChanged" Class="citus-control-full" />
             </div>
-            <div class="invoice-field">
-                <label class="invoice-field__label">Currency</label>
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Currency</label>
                 <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
                     <span>@Currency.ToUpperInvariant()</span>
                 </div>
             </div>
-            <div class="invoice-field">
-                <label class="invoice-field__label">Exchange rate</label>
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Exchange rate</label>
                 @if (CustomerId == Guid.Empty)
                 {
                     <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
@@ -111,36 +111,36 @@
                                   RateChanged="FxRateChanged" />
                 }
             </div>
-            <div class="invoice-field">
-                <label class="invoice-field__label">Sales order</label>
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Sales order</label>
                 <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
                     <span class="text-fg-muted text-sm">@(SalesOrderId is null ? "Direct (no SO)" : $"From SO {SalesOrderNumber}")</span>
                 </div>
             </div>
-            <div class="invoice-field">
-                <label class="invoice-field__label">Customer PO #</label>
+            <div class="tz-doc-field">
+                <label class="tz-doc-field__label">Customer PO #</label>
                 <CitusInput TValue="string" Value="@CustomerPoNumber" ValueChanged="CustomerPoNumberChanged" Placeholder="Optional" MaxLength="64" />
             </div>
         </div>
 
         @* Collapsible secondary strip — tags / tax mode (TODO). *@
-        <div class="invoice-tagstrip">
-            <button type="button" class="invoice-tagstrip__toggle" @onclick="() => _showMore = !_showMore">
+        <div class="tz-doc-tagstrip">
+            <button type="button" class="tz-doc-tagstrip__toggle" @onclick="() => _showMore = !_showMore">
                 <CitusIcon Name="@(_showMore ? IconName.ChevronDown : IconName.ChevronRight)" Size="IconSize.Inline" />
                 <span>Tags &amp; tax mode</span>
             </button>
             @if (_showMore)
             {
-                <div class="invoice-field-row mt-2">
-                    <div class="invoice-field">
-                        <label class="invoice-field__label">Tags</label>
+                <div class="tz-doc-field-row mt-2">
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Tags</label>
                         @* TODO: not in invoice model. *@
-                        <CitusInput TValue="string" Disabled="true" Placeholder="Add tags" Class="invoice-todo" />
+                        <CitusInput TValue="string" Disabled="true" Placeholder="Add tags" Class="tz-doc-todo" />
                     </div>
-                    <div class="invoice-field">
-                        <label class="invoice-field__label">Amounts are</label>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Amounts are</label>
                         @* TODO: not in invoice model. *@
-                        <select class="citus-form-field__input invoice-todo" disabled><option>Tax exclusive</option></select>
+                        <select class="citus-form-field__input tz-doc-todo" disabled><option>Tax exclusive</option></select>
                     </div>
                 </div>
             }

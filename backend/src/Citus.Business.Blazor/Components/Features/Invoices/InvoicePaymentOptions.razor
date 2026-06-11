@@ -4,8 +4,8 @@
     renders disabled (TODO: not in invoice model).
 *@
 
-<div class="flex flex-col gap-2 invoice-todo">
-    <span class="invoice-field__label">Payment options</span>
+<div class="flex flex-col gap-2 tz-doc-todo">
+    <span class="tz-doc-field__label">Payment options</span>
     @* TODO: not in invoice model — online payment method toggles. *@
     <label class="flex items-center gap-2 text-sm text-fg-muted">
         <input type="checkbox" disabled /> Accept credit card
@@ -13,9 +13,9 @@
     <label class="flex items-center gap-2 text-sm text-fg-muted">
         <input type="checkbox" disabled /> Accept bank transfer
     </label>
-    <div class="invoice-field">
-        <label class="invoice-field__label">Attachments</label>
+    <div class="tz-doc-field">
+        <label class="tz-doc-field__label">Attachments</label>
         @* TODO: not in invoice model — attachments aren't part of the invoice draft. *@
-        <div class="invoice-address-box invoice-address-box--empty">Drag files here (coming soon)</div>
+        <div class="tz-doc-address-box tz-doc-address-box--empty">Drag files here (coming soon)</div>
     </div>
 </div>

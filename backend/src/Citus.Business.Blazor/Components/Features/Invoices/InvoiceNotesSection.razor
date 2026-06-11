@@ -5,14 +5,14 @@
 *@
 
 <div class="flex flex-col gap-2">
-    <div class="invoice-field">
-        <label class="invoice-field__label">Note to customer</label>
+    <div class="tz-doc-field">
+        <label class="tz-doc-field__label">Note to customer</label>
         <CitusInput TValue="string" Value="@Memo" ValueChanged="MemoChanged" Placeholder="Visible to customer; optional." />
     </div>
-    <div class="invoice-field">
-        <label class="invoice-field__label">Note to self (internal)</label>
+    <div class="tz-doc-field">
+        <label class="tz-doc-field__label">Note to self (internal)</label>
         @* TODO: not in invoice model — the invoice carries a single customer-facing memo only. *@
-        <CitusInput TValue="string" Disabled="true" Placeholder="Internal note (not shown to customer)" Class="invoice-todo" />
+        <CitusInput TValue="string" Disabled="true" Placeholder="Internal note (not shown to customer)" Class="tz-doc-todo" />
     </div>
 </div>
 

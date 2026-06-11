@@ -8,8 +8,8 @@
     lines disable item/category/qty/price/delete via line.Locked.
 *@
 
-<div class="invoice-line-grid">
-    <div class="invoice-line-grid__scroll">
+<div class="tz-doc-line-grid">
+    <div class="tz-doc-line-grid__scroll">
         <table class="citus-data-table citus-data-table--compact">
             <thead>
                 <tr>
@@ -41,7 +41,7 @@
                         </td>
                         <td>
                             @* TODO: not in invoice model — per-line service date is a Task field. *@
-                            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full invoice-todo" />
+                            <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Disabled="true" Class="citus-control-full tz-doc-todo" />
                         </td>
                         <td>
                             <ItemServicePicker CompanyId="@CompanyId"
@@ -96,11 +96,11 @@
             </tbody>
         </table>
     </div>
-    <div class="invoice-line-grid__tools">
-        <button type="button" class="invoice-line-grid__tool" @onclick="() => OnAddLine.InvokeAsync()">
+    <div class="tz-doc-line-grid__tools">
+        <button type="button" class="tz-doc-line-grid__tool" @onclick="() => OnAddLine.InvokeAsync()">
             <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line
         </button>
-        <button type="button" class="invoice-line-grid__tool" @onclick="() => OnClearLines.InvokeAsync()">
+        <button type="button" class="tz-doc-line-grid__tool" @onclick="() => OnClearLines.InvokeAsync()">
             <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines
         </button>
     </div>

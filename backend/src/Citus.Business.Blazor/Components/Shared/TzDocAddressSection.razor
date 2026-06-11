@@ -1,30 +1,31 @@
 @*
-    InvoiceAddressSection — Bill-to / Ship-to as flat textarea-style address
-    boxes (NO card). Rendered inside the header's left zone. Edit fires
-    OnEditAddress; the drawer + working-copy state live in the parent.
+    TzDocAddressSection — Bill-to / Ship-to flat textarea-style address boxes
+    (no card) for the Tralanz document canvas (tz-doc-*). Edit fires
+    OnEditAddress; the AddressEditor drawer + working-copy state live on the
+    parent page. Lifted from the invoice editor — already document-agnostic.
 *@
 
 <div class="flex flex-col gap-2">
-    <div class="invoice-address-head">
-        <span class="invoice-field__label">Bill to / Ship to</span>
+    <div class="tz-doc-address-head">
+        <span class="tz-doc-field__label">Bill to / Ship to</span>
         <CitusButton Variant="CitusButtonVariant.Link" Size="CitusButtonSize.Small"
                      LeadingIcon="IconName.Pencil" OnClick="OnEditAddress">Edit</CitusButton>
     </div>
-    <div class="invoice-field">
-        <label class="invoice-field__label">Bill to</label>
-        <div class="invoice-address-box @(Billing.IsEmpty ? "invoice-address-box--empty" : null)">
+    <div class="tz-doc-field">
+        <label class="tz-doc-field__label">Bill to</label>
+        <div class="tz-doc-address-box @(Billing.IsEmpty ? "tz-doc-address-box--empty" : null)">
             <AddressDisplay Address="Billing" EmptyHint="No billing address set." />
         </div>
     </div>
-    <div class="invoice-field">
-        <label class="invoice-field__label">Ship to</label>
+    <div class="tz-doc-field">
+        <label class="tz-doc-field__label">Ship to</label>
         @if (ShippingMode == ShippingMode.SameAsBilling)
         {
-            <div class="invoice-address-box invoice-address-box--empty">Same as billing</div>
+            <div class="tz-doc-address-box tz-doc-address-box--empty">Same as billing</div>
         }
         else
         {
-            <div class="invoice-address-box @(Shipping.IsEmpty ? "invoice-address-box--empty" : null)">
+            <div class="tz-doc-address-box @(Shipping.IsEmpty ? "tz-doc-address-box--empty" : null)">
                 <AddressDisplay Address="Shipping" EmptyHint="No shipping address set." />
             </div>
         }

@@ -4589,17 +4589,19 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 /* ============================================================
-   Invoice editor — single continuous editing canvas (NOT cards).
-   Additive; reuses existing --citus-* tokens (no new colors). Regions
-   are divided by thin lines + light-gray header bands, never panels.
+   Tralanz document canvas (tz-doc-*) — shared continuous editing
+   surface for document editors (invoice / quote / sales order / bill /
+   …). NOT cards: regions are divided by thin lines + light-gray header
+   bands, never panels. Additive; reuses existing --citus-* tokens
+   (no new colors). See Components/Shared/TzDoc*.razor.
    ============================================================ */
-.invoice-editor-page {
-    --invoice-surface-bg: var(--citus-color-bg-elevated);
-    --invoice-border: var(--citus-color-border);
-    --invoice-primary: var(--citus-color-primary);
-    --invoice-text: var(--citus-color-fg);
-    --invoice-muted: var(--citus-color-fg-muted);
-    --invoice-head-bg: var(--citus-color-bg-subtle);
+.tz-doc-editor-page {
+    --tz-doc-surface-bg: var(--citus-color-bg-elevated);
+    --tz-doc-border: var(--citus-color-border);
+    --tz-doc-primary: var(--citus-color-primary);
+    --tz-doc-text: var(--citus-color-fg);
+    --tz-doc-muted: var(--citus-color-fg-muted);
+    --tz-doc-head-bg: var(--citus-color-bg-subtle);
 
     /* Compact ~30px inputs, scoped to the editor only. */
     --citus-input-height: 1.875rem;
@@ -4611,84 +4613,84 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 /* Lightweight toolbar (not a card). */
-.invoice-toolbar {
+.tz-doc-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--citus-space-3);
     padding: var(--citus-space-2) var(--citus-space-4);
-    background: var(--invoice-surface-bg);
-    border-bottom: 1px solid var(--invoice-border);
+    background: var(--tz-doc-surface-bg);
+    border-bottom: 1px solid var(--tz-doc-border);
 }
-.invoice-toolbar__heading { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.invoice-toolbar__title { font-size: var(--citus-text-lg); font-weight: 600; color: var(--invoice-text); }
-.invoice-toolbar__sub { font-size: var(--citus-text-xs); color: var(--invoice-muted); }
-.invoice-toolbar__actions { display: flex; align-items: center; gap: var(--citus-space-2); }
+.tz-doc-toolbar__heading { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tz-doc-toolbar__title { font-size: var(--citus-text-lg); font-weight: 600; color: var(--tz-doc-text); }
+.tz-doc-toolbar__sub { font-size: var(--citus-text-xs); color: var(--tz-doc-muted); }
+.tz-doc-toolbar__actions { display: flex; align-items: center; gap: var(--citus-space-2); }
 
 /* One continuous white surface; regions divided by thin lines, no panels. */
-.invoice-surface { background: var(--invoice-surface-bg); border-bottom: 1px solid var(--invoice-border); }
-.invoice-region { padding: var(--citus-space-3) var(--citus-space-4); border-bottom: 1px solid var(--invoice-border); }
-.invoice-region:last-child { border-bottom: 0; }
-.invoice-region--flush { padding-left: 0; padding-right: 0; }
+.tz-doc-surface { background: var(--tz-doc-surface-bg); border-bottom: 1px solid var(--tz-doc-border); }
+.tz-doc-region { padding: var(--citus-space-3) var(--citus-space-4); border-bottom: 1px solid var(--tz-doc-border); }
+.tz-doc-region:last-child { border-bottom: 0; }
+.tz-doc-region--flush { padding-left: 0; padding-right: 0; }
 
 /* Header: 3 compact zones via grid; stacks on narrow. */
-.invoice-header-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--citus-space-3) var(--citus-space-6); }
+.tz-doc-header-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--citus-space-3) var(--citus-space-6); }
 @media (min-width: 1024px) {
-    .invoice-header-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 1.4fr); }
+    .tz-doc-header-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 1.4fr); }
 }
-.invoice-zone { display: flex; flex-direction: column; gap: var(--citus-space-2); min-width: 0; }
+.tz-doc-zone { display: flex; flex-direction: column; gap: var(--citus-space-2); min-width: 0; }
 
 /* Compact field — 11px label over the control. */
-.invoice-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.invoice-field__label { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--invoice-muted); }
-.invoice-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--citus-space-2) var(--citus-space-3); }
+.tz-doc-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tz-doc-field__label { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--tz-doc-muted); }
+.tz-doc-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--citus-space-2) var(--citus-space-3); }
 
 /* Address box — textarea-style; always renders (even empty). */
-.invoice-address-head { display: flex; align-items: center; justify-content: space-between; gap: var(--citus-space-2); }
-.invoice-address-box {
-    border: 1px solid var(--invoice-border);
+.tz-doc-address-head { display: flex; align-items: center; justify-content: space-between; gap: var(--citus-space-2); }
+.tz-doc-address-box {
+    border: 1px solid var(--tz-doc-border);
     border-radius: var(--citus-radius-sm);
-    background: var(--invoice-surface-bg);
+    background: var(--tz-doc-surface-bg);
     padding: var(--citus-space-2);
     min-height: 3rem;
     font-size: var(--citus-text-sm);
     line-height: var(--citus-leading-normal);
-    color: var(--invoice-text);
+    color: var(--tz-doc-text);
 }
-.invoice-address-box--empty { color: var(--invoice-muted); }
+.tz-doc-address-box--empty { color: var(--tz-doc-muted); }
 
 /* Spreadsheet line grid — reuses .citus-data-table--compact for the table;
    this wrapper only adds horizontal scroll + the bottom tool row. */
-.invoice-line-grid__scroll { overflow-x: auto; }
-.invoice-line-grid__tools { display: flex; gap: var(--citus-space-4); padding: var(--citus-space-2) 0 0; }
-.invoice-line-grid__tool {
+.tz-doc-line-grid__scroll { overflow-x: auto; }
+.tz-doc-line-grid__tools { display: flex; gap: var(--citus-space-4); padding: var(--citus-space-2) 0 0; }
+.tz-doc-line-grid__tool {
     display: inline-flex; align-items: center; gap: var(--citus-space-1);
     background: transparent; border: 0; padding: 0; cursor: pointer;
-    color: var(--invoice-primary); font-size: var(--citus-text-sm); font-weight: 500;
+    color: var(--tz-doc-primary); font-size: var(--citus-text-sm); font-weight: 500;
 }
-.invoice-line-grid__tool:disabled { color: var(--invoice-muted); cursor: default; }
+.tz-doc-line-grid__tool:disabled { color: var(--tz-doc-muted); cursor: default; }
 
 /* Lower grid: notes (left) + totals (right); stacks on narrow. No cards. */
-.invoice-lower-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--citus-space-5); align-items: start; }
+.tz-doc-lower-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--citus-space-5); align-items: start; }
 @media (min-width: 1024px) {
-    .invoice-lower-grid { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+    .tz-doc-lower-grid { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
 }
-.invoice-lower-grid__left { display: flex; flex-direction: column; gap: var(--citus-space-3); min-width: 0; }
+.tz-doc-lower-grid__left { display: flex; flex-direction: column; gap: var(--citus-space-3); min-width: 0; }
 
 /* Totals — right-aligned summary, weak border, no card. */
-.invoice-totals-panel { display: flex; flex-direction: column; gap: 1px; margin-left: auto; width: 100%; max-width: 20rem; }
-.invoice-totals-row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--citus-space-4); padding: 2px 0; font-size: var(--citus-text-sm); color: var(--invoice-text); }
-.invoice-totals-row > span:first-child { color: var(--invoice-muted); }
-.invoice-totals-row--grand { margin-top: 2px; padding-top: var(--citus-space-2); border-top: 1px solid var(--citus-color-border-strong); font-size: var(--citus-text-base); font-weight: 600; }
-.invoice-totals-row--grand > span:first-child { color: var(--invoice-text); }
+.tz-doc-totals-panel { display: flex; flex-direction: column; gap: 1px; margin-left: auto; width: 100%; max-width: 20rem; }
+.tz-doc-totals-row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--citus-space-4); padding: 2px 0; font-size: var(--citus-text-sm); color: var(--tz-doc-text); }
+.tz-doc-totals-row > span:first-child { color: var(--tz-doc-muted); }
+.tz-doc-totals-row--grand { margin-top: 2px; padding-top: var(--citus-space-2); border-top: 1px solid var(--citus-color-border-strong); font-size: var(--citus-text-base); font-weight: 600; }
+.tz-doc-totals-row--grand > span:first-child { color: var(--tz-doc-text); }
 
 /* Collapsible tags / tax-mode strip. */
-.invoice-tagstrip { margin-top: var(--citus-space-3); }
-.invoice-tagstrip__toggle { display: inline-flex; align-items: center; gap: var(--citus-space-1); background: transparent; border: 0; padding: 0; cursor: pointer; color: var(--invoice-muted); font-size: var(--citus-text-sm); font-weight: 500; }
-.invoice-tagstrip__toggle:hover { color: var(--invoice-text); }
+.tz-doc-tagstrip { margin-top: var(--citus-space-3); }
+.tz-doc-tagstrip__toggle { display: inline-flex; align-items: center; gap: var(--citus-space-1); background: transparent; border: 0; padding: 0; cursor: pointer; color: var(--tz-doc-muted); font-size: var(--citus-text-sm); font-weight: 500; }
+.tz-doc-tagstrip__toggle:hover { color: var(--tz-doc-text); }
 
 /* Sticky bottom action bar — compact, flat (no radius/shadow/card). */
-.invoice-action-bar {
+.tz-doc-action-bar {
     position: sticky;
     bottom: 0;
     z-index: 20;
@@ -4697,11 +4699,11 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     justify-content: space-between;
     gap: var(--citus-space-3);
     padding: var(--citus-space-2) var(--citus-space-4);
-    background: var(--invoice-surface-bg);
-    border-top: 1px solid var(--invoice-border);
+    background: var(--tz-doc-surface-bg);
+    border-top: 1px solid var(--tz-doc-border);
 }
-.invoice-action-bar__group { display: flex; align-items: center; gap: var(--citus-space-2); }
-.invoice-action-bar__hint { color: var(--citus-color-danger); font-size: var(--citus-text-sm); }
+.tz-doc-action-bar__group { display: flex; align-items: center; gap: var(--citus-space-2); }
+.tz-doc-action-bar__hint { color: var(--citus-color-danger); font-size: var(--citus-text-sm); }
 
 /* Mockup-only (no backing) fields — visually de-emphasised. */
-.invoice-todo { opacity: 0.55; }
+.tz-doc-todo { opacity: 0.55; }

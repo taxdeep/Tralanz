@@ -1,0 +1,22 @@
+@*
+    TzDocTotalsPanel — flat right-aligned totals summary for the Tralanz
+    document canvas (tz-doc-*). The page supplies its own rows (label / value /
+    emphasis / todo). No document-specific logic here — pure display.
+*@
+
+<div class="tz-doc-totals-panel">
+    @foreach (var row in Rows)
+    {
+        <div class="tz-doc-totals-row @(row.Emphasis ? "tz-doc-totals-row--grand" : null) @(row.Todo ? "tz-doc-todo" : null)">
+            <span>@row.Label</span>
+            <span>@row.Value</span>
+        </div>
+    }
+</div>
+
+@code {
+    // Each row: Label / Value, plus Emphasis (grand-total styling) and Todo
+    // (muted "not in model yet" placeholder).
+    [Parameter, EditorRequired] public IReadOnlyList<(string Label, string Value, bool Emphasis, bool Todo)> Rows { get; set; }
+        = Array.Empty<(string, string, bool, bool)>();
+}
