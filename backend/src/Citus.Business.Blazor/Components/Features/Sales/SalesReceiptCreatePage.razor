@@ -32,42 +32,38 @@
 
 <PageTitle>New Sales Receipt | Tralanz Books</PageTitle>
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <CitusLinkButton Href="sales-overview"
-                         Variant="CitusButtonVariant.Ghost"
-                         LeadingIcon="IconName.ArrowLeft">
-            Back to sales
-        </CitusLinkButton>
-    </Actions>
-</CitusPageHeader>
+<div class="tz-doc-editor-page">
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="sales-overview" BackLabel="Back to sales" />
 
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
-}
+    @if (ShellState.AreWritesBlocked || _isFromCopy || !string.IsNullOrWhiteSpace(_validation) || _lastResult is not null)
+    {
+        <div class="px-4 pt-3 flex flex-col gap-2">
+            @if (ShellState.AreWritesBlocked)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
+            }
+            @if (_isFromCopy)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true"
+                            Message="This is a copy. Revise as needed and save to create a new sales receipt; the original is unchanged." />
+            }
+            @if (!string.IsNullOrWhiteSpace(_validation))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" />
+            }
+            <WriteFlowResultAlert Result="@_lastResult" />
+        </div>
+    }
 
-@if (_isFromCopy)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Revise as needed and save to create a new sales receipt; the original is unchanged." />
-}
-
-@if (!string.IsNullOrWhiteSpace(_validation))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-}
-
-<WriteFlowResultAlert Result="@_lastResult" />
-
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 flex flex-col gap-6">
-        <CitusFormSection Title="Header">
-            <CitusFormGrid Columns="2">
-                <CitusFormField Label="Receipt date">
+    <div class="tz-doc-surface">
+        <div class="tz-doc-region">
+            <div class="tz-doc-field-row">
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Receipt date</label>
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Customer">
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Customer</label>
                     <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search customers…"
@@ -77,8 +73,9 @@
                                        SelectedDisplayText="@_customerDisplay"
                                        OnCustomerSelected="OnCustomerSelected"
                                        OnCleared="OnCustomerCleared" />
-                </CitusFormField>
-                <CitusFormField Label="Exchange rate">
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Exchange rate</label>
                     @* FxRateInline mirrors invoice / bill: muted placeholder
                        until customer is picked, then the live D-1 rate from
                        fx_rates_daily with manual override. Currency is read-
@@ -96,76 +93,77 @@
                                       QuoteCurrencyCode="@_currency"
                                       @bind-Rate="_fxRate" />
                     }
-                </CitusFormField>
-                <CitusFormField Label="Memo">
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Memo</label>
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the receipt; optional." />
-                </CitusFormField>
-            </CitusFormGrid>
-            <CitusFormField Label="Customer PO #" Class="mt-4">
-                <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
-            </CitusFormField>
-        </CitusFormSection>
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Customer PO #</label>
+                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
+                </div>
+            </div>
+        </div>
 
-        <CitusFormSection Title="Payment">
-            <CitusFormGrid Columns="2">
-                <CitusFormField Label="Payment method">
+        <div class="tz-doc-region">
+            <div class="tz-doc-field-row">
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Payment method</label>
                     <PaymentMethodSelect Value="@_paymentMethod" ValueChanged="HandlePaymentMethodChanged" />
-                </CitusFormField>
-                <div>
+                </div>
+                <div class="tz-doc-field">
                     @* Reference field is conditional on payment method —
                        cash needs nothing, cheque needs a number, wire / EFT
                        need a trace, credit_card / other take an optional
                        reference. Same convention as ExpenseCreatePage so
-                       operators don't relearn the rules per page. Kept as
-                       raw div + label because the label text + required-
-                       asterisk depend on the payment method. *@
+                       operators don't relearn the rules per page. The label
+                       text + required-asterisk depend on the payment method. *@
                     @if (_paymentMethod == "cheque")
                     {
-                        <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
+                        <label class="tz-doc-field__label">Cheque # <span class="text-fg-danger">*</span></label>
                         <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="e.g. 1042" />
                     }
                     else if (_paymentMethod is "wire" or "direct_deposit" or "eft")
                     {
-                        <label class="text-sm font-medium block mb-1">Reference # <span class="text-fg-danger">*</span></label>
+                        <label class="tz-doc-field__label">Reference # <span class="text-fg-danger">*</span></label>
                         <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="Bank trace / SWIFT MT103 / etc." />
                     }
                     else if (_paymentMethod is "credit_card" or "other")
                     {
-                        <label class="text-sm font-medium block mb-1">Reference #</label>
+                        <label class="tz-doc-field__label">Reference #</label>
                         <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="Optional" />
                     }
                     else
                     {
-                        <label class="text-sm font-medium block mb-1">&nbsp;</label>
+                        <label class="tz-doc-field__label">&nbsp;</label>
                         <div class="text-fg-muted text-sm">Cash payments don't need a reference.</div>
                     }
                 </div>
-            </CitusFormGrid>
-            <CitusFormField Label="Deposit to" Class="mt-4">
-                @* AccountPicker filtered to asset accounts — the cash /
-                   bank / credit-card / payment-processor row that
-                   receives the funds. Asset is the only correct root
-                   type here; revenue / expense / liability would all be
-                   categorically wrong "where did the money land?"
-                   answers. *@
-                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                               UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                               Context="sales_receipt.deposit_to"
-                               AllowedRootTypes="asset"
-                               SelectedId="@_depositToAccountId"
-                               SelectedDisplayText="@_depositToAccountDisplay"
-                               Placeholder="Select bank / cash / credit card…"
-                               DefaultCurrencyCode="@_currency"
-                               OnAccountSelected="OnDepositAccountSelected"
-                               OnCleared="OnDepositAccountCleared" />
-            </CitusFormField>
-        </CitusFormSection>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Deposit to</label>
+                    @* AccountPicker filtered to asset accounts — the cash /
+                       bank / credit-card / payment-processor row that
+                       receives the funds. Asset is the only correct root
+                       type here; revenue / expense / liability would all be
+                       categorically wrong "where did the money land?"
+                       answers. *@
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                   Context="sales_receipt.deposit_to"
+                                   AllowedRootTypes="asset"
+                                   SelectedId="@_depositToAccountId"
+                                   SelectedDisplayText="@_depositToAccountDisplay"
+                                   Placeholder="Select bank / cash / credit card…"
+                                   DefaultCurrencyCode="@_currency"
+                                   OnAccountSelected="OnDepositAccountSelected"
+                                   OnCleared="OnDepositAccountCleared" />
+                </div>
+            </div>
+        </div>
 
-        <CitusFormSection Title="Lines">
-            <HeaderActions>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </HeaderActions>
-            <ChildContent>
+        <div class="tz-doc-region">
+            <div class="tz-doc-line-grid">
+                <div class="tz-doc-line-grid__scroll">
             <table class="citus-data-table citus-data-table--compact">
                 <thead>
                     <tr>
@@ -243,49 +241,36 @@
                     </tr>
                 </tbody>
             </table>
-            </ChildContent>
-        </CitusFormSection>
+                </div>
+                <div class="tz-doc-line-grid__tools">
+                    <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="tz-doc-region">
+            <div class="tz-doc-lower-grid">
+                <div class="tz-doc-lower-grid__left">
+                    <p class="text-fg-muted text-sm m-0">
+                        Posting debits the deposit account, credits the line revenue
+                        accounts plus tax-payable, and reserves the receipt number.
+                        No AR open item is created — the customer paid at the point
+                        of sale.
+                    </p>
+                </div>
+                <TzDocTotalsPanel Rows="_srTotalsRows" />
+            </div>
+        </div>
     </div>
 
-    <div class="lg:col-span-4 flex flex-col gap-6">
-        <CitusFormSection Title="Summary">
-            <CitusKeyValueTable>
-                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
-                @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                {
-                    <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
-                }
-                @if (!string.IsNullOrWhiteSpace(_depositToAccountDisplay))
-                {
-                    <CitusKeyValueRow Label="Deposit to">@_depositToAccountDisplay</CitusKeyValueRow>
-                }
-            </CitusKeyValueTable>
-        </CitusFormSection>
-
-        <CitusFormSection Title="Post sales receipt">
-            <p class="text-fg-muted text-sm m-0">
-                Posting debits the deposit account, credits the line revenue
-                accounts plus tax-payable, and reserves the receipt number.
-                No AR open item is created — the customer paid at the point
-                of sale.
-            </p>
-        </CitusFormSection>
-    </div>
+    @* Sticky Post action — single primary button (no Cancel; sales
+       receipts have no Save Draft pathway, Back navigates away). *@
+    <TzDocActionBar PrimaryLabel="Post sales receipt"
+                    IsSaving="@_isSubmitting"
+                    Disabled="@(_lines.Count == 0 || _total <= 0 || _depositToAccountId is null || ShellState.AreWritesBlocked)"
+                    ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                    OnSave="PostAsync" />
 </div>
-
-@* Sticky Post action — single primary button (no Cancel; sales
-   receipts have no Save Draft pathway, Back navigates away). *@
-<CitusFormActions Sticky="true"
-                  PrimaryLabel="Post sales receipt"
-                  SavingLabel="Posting..."
-                  CancelVisible="false"
-                  IsSaving="@_isSubmitting"
-                  Disabled="@(_lines.Count == 0 || _total <= 0 || _depositToAccountId is null || ShellState.AreWritesBlocked)"
-                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                  OnSave="PostAsync" />
 
 @code {
     private readonly PageHeaderModel _header = new()
@@ -351,6 +336,26 @@
     [SupplyParameterFromQuery(Name = "copyFrom")] public Guid? CopyFromReceiptId { get; set; }
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
+
+    // Read-only canvas summary strip (right column of the lower grid).
+    // Mirrors the old Summary key-value card row-for-row.
+    private IReadOnlyList<(string Label, string Value, bool Emphasis, bool Todo)> _srTotalsRows
+    {
+        get
+        {
+            var rows = new List<(string, string, bool, bool)>
+            {
+                ("Lines", _lines.Count.ToString(), false, false),
+                ("Subtotal", FormatAmount(_total), true, false),
+                ("Currency", _currency.ToUpperInvariant(), false, false),
+            };
+            if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                rows.Add(("FX rate", _fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—", false, false));
+            if (!string.IsNullOrWhiteSpace(_depositToAccountDisplay))
+                rows.Add(("Deposit to", _depositToAccountDisplay, false, false));
+            return rows;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

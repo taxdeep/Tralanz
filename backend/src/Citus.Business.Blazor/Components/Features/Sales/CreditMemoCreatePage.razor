@@ -33,59 +33,44 @@
 
 <PageTitle>New Credit Memo | Tralanz Books</PageTitle>
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <CitusLinkButton Href="invoices"
-                         Variant="CitusButtonVariant.Ghost"
-                         LeadingIcon="IconName.ArrowLeft">
-            Back to invoices
-        </CitusLinkButton>
-    </Actions>
-</CitusPageHeader>
+<div class="tz-doc-editor-page">
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="invoices" BackLabel="Back to invoices" />
 
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
-}
+    <div class="px-4 pt-3 flex flex-col gap-2">
+        @if (ShellState.AreWritesBlocked)
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
+        }
+        @if (_isFromCopy)
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Message="This is a copy. Revise as needed and save to create a new credit memo; the original is unchanged." />
+        }
+        @if (!string.IsNullOrWhiteSpace(_validation))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" />
+        }
+        @* Task-rollback warning — posting rolls task_id lines Billed -> Completed. *@
+        @if (ShellState.IsModuleEnabled("task") && _impactedTaskIds.Count > 0)
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true">
+                <MessageTemplate>
+                    <strong>Posting this credit memo will roll back @_impactedTaskIds.Count task@(_impactedTaskIds.Count == 1 ? "" : "s") to Completed:</strong>
+                    <span class="ms-1">@TaskLabelList()</span>
+                </MessageTemplate>
+            </CitusAlert>
+        }
+        <WriteFlowResultAlert Result="@_lastResult" />
+    </div>
 
-@if (_isFromCopy)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Revise as needed and save to create a new credit memo; the original is unchanged." />
-}
-
-@if (!string.IsNullOrWhiteSpace(_validation))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-}
-
-@* Task-rollback warning. When this credit memo carries lines with
-   task_id (typically from the "Credit invoice" prefill path) the
-   server-side Step 2 hook will roll those tasks Billed -> Completed
-   after post. Surface that side-effect up-front so the operator
-   doesn't get surprised — and so they can edit task allocations on
-   the originating invoice before reversing if they don't actually
-   intend the rollback. *@
-@if (ShellState.IsModuleEnabled("task") && _impactedTaskIds.Count > 0)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Class="mb-4">
-        <MessageTemplate>
-            <strong>Posting this credit memo will roll back @_impactedTaskIds.Count task@(_impactedTaskIds.Count == 1 ? "" : "s") to Completed:</strong>
-            <span class="ms-1">@TaskLabelList()</span>
-        </MessageTemplate>
-    </CitusAlert>
-}
-
-<WriteFlowResultAlert Result="@_lastResult" />
-
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 flex flex-col gap-6">
-        <CitusFormSection Title="Header">
-            <CitusFormGrid Columns="2">
-                <CitusFormField Label="Memo date">
+    <div class="tz-doc-surface">
+        <div class="tz-doc-region">
+            <div class="tz-doc-field-row">
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Memo date</label>
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Customer">
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Customer</label>
                     <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
                                        UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                        Placeholder="Search customers…"
@@ -95,56 +80,46 @@
                                        SelectedDisplayText="@_customerDisplay"
                                        OnCustomerSelected="OnCustomerSelected"
                                        OnCleared="OnCustomerCleared" />
-                </CitusFormField>
-                <CitusFormField Label="Exchange rate">
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Exchange rate</label>
                     @if (_customerId == Guid.Empty)
                     {
-                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
-                            <span class="text-fg-subtle">Pick a customer first</span>
-                        </div>
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center"><span class="text-fg-subtle">Pick a customer first</span></div>
                     }
                     else
                     {
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))" BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode" QuoteCurrencyCode="@_currency" @bind-Rate="_fxRate" />
                     }
-                </CitusFormField>
-                <CitusFormField Label="Apply to invoice (optional)">
-                    @* Apply-to-invoice number. Free text for V1 — stored
-                       and the backend resolves to invoice id at post-
-                       time using a (company_id, display_number) lookup
-                       so two companies can reuse number namespaces
-                       without colliding. When a list / picker for
-                       outstanding invoices ships, this field becomes a
-                       proper picker. Leaving blank issues a standalone
-                       credit. *@
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Apply to invoice (optional)</label>
                     <CitusInput TValue="string" @bind-Value="_appliedToInvoiceNumber" Placeholder="e.g. INV-2026-0042" />
                     @if (!string.IsNullOrWhiteSpace(_appliedToInvoiceNumber) && !LooksLikeDocumentNumber(_appliedToInvoiceNumber))
                     {
-                        <p class="text-fg-warning text-xs mt-1">
-                            Use the invoice's display number (alphanumerics, dashes, underscores). Backend will reject anything it can't resolve in this company.
-                        </p>
+                        <p class="text-fg-warning text-xs mt-1">Use the invoice's display number. Backend will reject anything it can't resolve in this company.</p>
                     }
-                </CitusFormField>
-            </CitusFormGrid>
-            <CitusFormField Label="Reason" Class="mt-4">
-                <CitusInput TValue="string" @bind-Value="_reason" Placeholder="Return / pricing correction / RMA #..." />
-            </CitusFormField>
-            <CitusFormField Label="Memo" Class="mt-4">
-                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
-            </CitusFormField>
-            <CitusFormField Label="Customer PO #" Class="mt-4">
-                <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (typically copied from the original invoice)" MaxLength="64" />
-            </CitusFormField>
-        </CitusFormSection>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Reason</label>
+                    <CitusInput TValue="string" @bind-Value="_reason" Placeholder="Return / pricing correction / RMA #..." />
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Memo</label>
+                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
+                </div>
+                <div class="tz-doc-field">
+                    <label class="tz-doc-field__label">Customer PO #</label>
+                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference" MaxLength="64" />
+                </div>
+            </div>
+        </div>
 
-        <CitusFormSection Title="Lines">
-            <HeaderActions>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </HeaderActions>
-            <ChildContent>
+        <div class="tz-doc-region">
+            <div class="tz-doc-line-grid">
+                <div class="tz-doc-line-grid__scroll">
             <table class="citus-data-table citus-data-table--compact">
                 <thead>
                     <tr>
@@ -219,51 +194,31 @@
                     </tr>
                 </tbody>
             </table>
-            </ChildContent>
-        </CitusFormSection>
+                </div>
+                <div class="tz-doc-line-grid__tools">
+                    <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="tz-doc-region">
+            <div class="tz-doc-lower-grid">
+                <div class="tz-doc-lower-grid__left">
+                    <p class="text-fg-muted text-sm m-0">
+                        Posting reverses revenue + tax-payable and credits AR@(string.IsNullOrWhiteSpace(_appliedToInvoiceNumber) ? " — issued as a standalone customer credit." : $" — applied directly against {_appliedToInvoiceNumber}.")
+                    </p>
+                </div>
+                <TzDocTotalsPanel Rows="_cmTotalsRows" />
+            </div>
+        </div>
     </div>
 
-    <div class="lg:col-span-4 flex flex-col gap-6">
-        <CitusFormSection Title="Summary">
-            <CitusKeyValueTable>
-                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Subtotal">@FormatAmount(_total)</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Currency">@_currency.ToUpperInvariant()</CitusKeyValueRow>
-                @if (!string.IsNullOrWhiteSpace(_appliedToInvoiceNumber))
-                {
-                    <CitusKeyValueRow Label="Applied to">@_appliedToInvoiceNumber</CitusKeyValueRow>
-                }
-                @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                {
-                    <CitusKeyValueRow Label="FX rate">@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</CitusKeyValueRow>
-                }
-            </CitusKeyValueTable>
-        </CitusFormSection>
-
-        <CitusFormSection Title="Post credit memo">
-            <p class="text-fg-muted text-sm m-0">
-                Posting reverses revenue + tax-payable and credits AR
-                @(string.IsNullOrWhiteSpace(_appliedToInvoiceNumber)
-                    ? " — issued as a standalone customer credit."
-                    : $" — applied directly against {_appliedToInvoiceNumber}.")
-            </p>
-        </CitusFormSection>
-    </div>
+    <TzDocActionBar PrimaryLabel="Post credit memo"
+                    IsSaving="_isSubmitting"
+                    Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
+                    ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                    OnSave="PostAsync" />
 </div>
-
-@* Sticky Post action — single primary button (no Cancel; credit
-   memos have no Save Draft pathway, Back navigates away). Mirrors
-   InvoiceCreatePage's footer pattern. ErrorHint nudges the operator
-   back up to the top-of-page validation alert. *@
-<CitusFormActions Sticky="true"
-                  PrimaryLabel="Post credit memo"
-                  SavingLabel="Posting..."
-                  CancelVisible="false"
-                  IsSaving="@_isSubmitting"
-                  Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked)"
-                  ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                  OnSave="PostAsync" />
 
 @code {
     private readonly PageHeaderModel _header = new()
@@ -324,6 +279,30 @@
     private IReadOnlyList<Guid> _impactedTaskIds = Array.Empty<Guid>();
 
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
+
+    // Rows for the shared TzDocTotalsPanel (read-only — same content the
+    // inline Summary card showed).
+    private IReadOnlyList<(string Label, string Value, bool Emphasis, bool Todo)> _cmTotalsRows
+    {
+        get
+        {
+            var rows = new List<(string, string, bool, bool)>
+            {
+                ("Lines", _lines.Count.ToString(), false, false),
+                ("Subtotal", FormatAmount(_total), true, false),
+                ("Currency", _currency.ToUpperInvariant(), false, false),
+            };
+            if (!string.IsNullOrWhiteSpace(_appliedToInvoiceNumber))
+            {
+                rows.Add(("Applied to", _appliedToInvoiceNumber, false, false));
+            }
+            if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+            {
+                rows.Add(("FX rate", _fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—", false, false));
+            }
+            return rows;
+        }
+    }
 
     /// <summary>
     /// Optional source-invoice id passed via query string. When present
