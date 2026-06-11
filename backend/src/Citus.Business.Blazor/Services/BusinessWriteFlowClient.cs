@@ -1232,9 +1232,9 @@ public sealed record ManualJournalLineDraft
     public decimal Credit { get; init; }
 
     /// <summary>Optional per-line counterparty (the "Name" column). Persisted
-    /// as party_id with party_type='customer' on journal_entry_lines.</summary>
+    /// as party_id + party_type on journal_entry_lines.</summary>
     public Guid? NameEntityId { get; init; }
-    /// <summary>Counterparty kind for <see cref="NameEntityId"/> — e.g. "customer".</summary>
+    /// <summary>Counterparty kind for <see cref="NameEntityId"/> — "customer" or "vendor".</summary>
     public string NameEntityType { get; init; } = string.Empty;
     /// <summary>Optional per-line sales-tax code (the TaxCode picker). Persisted
     /// to journal_entry_lines.tax_code_id.</summary>

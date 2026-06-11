@@ -194,15 +194,15 @@
                                        placeholder="Memo" />
                             </td>
                             <td>
-                                <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                Placeholder="Search customers…"
-                                                Take="8"
-                                                SourceRoute="/journal-entry/new"
-                                                SelectedId="@line.NameEntityId"
-                                                SelectedDisplayText="@line.NameDisplay"
-                                                OnCustomerSelected="@(option => OnNameSelected(i, option))"
-                                                OnCleared="@(() => ClearName(i))" />
+                                <NamePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                            UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                            Placeholder="Search customers & vendors…"
+                                            Take="8"
+                                            SourceRoute="/journal-entry/new"
+                                            SelectedId="@line.NameEntityId"
+                                            SelectedDisplayText="@line.NameDisplay"
+                                            OnNameSelected="@(option => OnNameSelected(i, option))"
+                                            OnCleared="@(() => ClearName(i))" />
                             </td>
                             <td>
                                 <TaxCodePicker SelectedId="@line.TaxCodeId"
@@ -670,7 +670,11 @@
                     Debit = l.Debit,
                     Credit = l.Credit,
                     NameEntityId = l.NameEntityId,
-                    NameEntityType = l.NameEntityId is null ? string.Empty : "customer",
+                    // The NamePicker spans customers and vendors; pass the picked
+                    // kind through so party_type lands as 'customer' or 'vendor'.
+                    NameEntityType = l.NameEntityId is null
+                        ? string.Empty
+                        : (string.IsNullOrWhiteSpace(l.NameEntityType) ? "customer" : l.NameEntityType),
                     TaxCodeId = l.TaxCodeId,
                 }).ToArray()
             };

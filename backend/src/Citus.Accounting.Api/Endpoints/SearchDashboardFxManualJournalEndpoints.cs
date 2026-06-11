@@ -881,9 +881,10 @@ internal static class SearchDashboardFxManualJournalEndpoints
                         return Results.BadRequest(new { message = $"Line {lineNumber} references an account that is inactive or not allowed for manual posting." });
                     }
 
-                    // Per-line customer is persisted as party_id + party_type.
-                    // Only set the type when an id is present; default it to
-                    // "customer" (the JE picker only offers customers).
+                    // Per-line counterparty is persisted as party_id + party_type.
+                    // Only set the type when an id is present; the JE NamePicker
+                    // sends "customer" or "vendor", with "customer" as the
+                    // fallback for older clients that omit the kind.
                     Guid? partyId = lineRequest.CounterpartyId is { } cid && cid != Guid.Empty ? cid : null;
                     string partyType = partyId is null
                         ? string.Empty
