@@ -12,78 +12,69 @@
 
 <PageTitle>New Journal Entry | Tralanz Books</PageTitle>
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <CitusLinkButton Href="journal-entry"
-                         Variant="CitusButtonVariant.Ghost"
-                         LeadingIcon="IconName.ArrowLeft">
-            Back to journal entries
-        </CitusLinkButton>
-        <CitusBadge Color="@(_isBalanced ? "green" : "orange")">
-            @(_isBalanced ? "Balanced" : "Out of balance")
-        </CitusBadge>
-    </Actions>
-</CitusPageHeader>
+<div class="tz-doc-editor-page">
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="journal-entry" BackLabel="Back to journal entries">
+        <Actions>
+            <CitusBadge Color="@(_isBalanced ? "green" : "orange")">
+                @(_isBalanced ? "Balanced" : "Out of balance")
+            </CitusBadge>
+        </Actions>
+    </TzDocToolbar>
 
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning"
-                     ShowIcon="true"
-                     Message="@ShellState.WriteBlockMessage"
-                     Class="mb-4" />
-}
-
-@if (!string.IsNullOrWhiteSpace(_prefilledFromDisplayNumber))
-{
-    @* Copy A3 Phase 2: this banner serves two distinct flows now —
-       the legacy ?from= (edit-after-void) and the new ?copyFrom=
-       (Copy). _isFromCopy disambiguates the wording: copy = source is
-       UNCHANGED, edit = source was just voided. *@
-    <CitusAlert Severity="CitusAlertSeverity.Info"
-                ShowIcon="true"
-                Class="mb-4">
-        <MessageTemplate>
-            @if (_isFromCopy)
+    @if (ShellState.AreWritesBlocked || !string.IsNullOrWhiteSpace(_prefilledFromDisplayNumber) || !string.IsNullOrWhiteSpace(_validationMessage) || _lastResult is not null)
+    {
+        <div class="px-4 pt-3 flex flex-col gap-2">
+            @if (ShellState.AreWritesBlocked)
             {
-                <strong>This is a copy of @_prefilledFromDisplayNumber.</strong>
-                <div class="text-fg-muted text-sm mt-1">
-                    The original entry is unchanged. Adjust the lines below and submit to post a new, independent journal entry.
-                </div>
+                <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
             }
-            else
+            @if (!string.IsNullOrWhiteSpace(_prefilledFromDisplayNumber))
             {
-                <strong>Pre-filled from @_prefilledFromDisplayNumber.</strong>
-                <div class="text-fg-muted text-sm mt-1">
-                    The original entry has been voided (a compensating entry was auto-posted).
-                    Adjust the lines below and submit to record the corrected version.
-                </div>
+                @* Copy A3 Phase 2: this banner serves two distinct flows now —
+                   the legacy ?from= (edit-after-void) and the new ?copyFrom=
+                   (Copy). _isFromCopy disambiguates the wording: copy = source is
+                   UNCHANGED, edit = source was just voided. *@
+                <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true">
+                    <MessageTemplate>
+                        @if (_isFromCopy)
+                        {
+                            <strong>This is a copy of @_prefilledFromDisplayNumber.</strong>
+                            <div class="text-fg-muted text-sm mt-1">
+                                The original entry is unchanged. Adjust the lines below and submit to post a new, independent journal entry.
+                            </div>
+                        }
+                        else
+                        {
+                            <strong>Pre-filled from @_prefilledFromDisplayNumber.</strong>
+                            <div class="text-fg-muted text-sm mt-1">
+                                The original entry has been voided (a compensating entry was auto-posted).
+                                Adjust the lines below and submit to record the corrected version.
+                            </div>
+                        }
+                    </MessageTemplate>
+                </CitusAlert>
             }
-        </MessageTemplate>
-    </CitusAlert>
-}
+            @if (!string.IsNullOrWhiteSpace(_validationMessage))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validationMessage" ShowIcon="true" />
+            }
+            <WriteFlowResultAlert Result="@_lastResult" />
+        </div>
+    }
 
-@if (!string.IsNullOrWhiteSpace(_validationMessage))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validationMessage" ShowIcon="true" Class="mb-4" />
-}
-
-<WriteFlowResultAlert Result="@_lastResult" />
-
-<div class="flex flex-col gap-6">
-    <CitusFormSection Title="Header">
-            @* JE header keeps the existing <label class="citus-form-field">
-               BEM markup — it already uses the design-system class hierarchy
-               and re-wrapping in <CitusFormField> would lose label-click
-               focus and the inline "(optional)" hint span. CitusFormGrid
-               still owns the responsive 1/2/4-col layout. *@
-            <CitusFormGrid Columns="4">
+    <div class="tz-doc-surface">
+        <div class="tz-doc-region">
+            @* JE header keeps native <input>/<select> markup (label-click
+               focus + inline hint span) but adopts the tz-doc field layout:
+               each <label> is a tz-doc-field, its text a tz-doc-field__label. *@
+            <div class="tz-doc-field-row">
                 @* Journal No. — pre-filled with the next system-assigned
                    number on form load, but the operator can override inline.
                    Backend honors the override if it doesn't collide; if the
                    field is cleared, the post handler falls back to the
                    numbering engine's reserve path. *@
-                <label class="citus-form-field">
-                    <span class="citus-form-field__label">Journal No.</span>
+                <label class="tz-doc-field">
+                    <span class="tz-doc-field__label">Journal No.</span>
                     <input type="text"
                            class="citus-form-field__input"
                            placeholder="@(_isLoadingJournalNumber ? "Loading…" : "Auto-assigned on save")"
@@ -91,8 +82,8 @@
                            @oninput="@(e => _journalNumber = e.Value?.ToString() ?? string.Empty)"
                            maxlength="32" />
                 </label>
-                <label class="citus-form-field">
-                    <span class="citus-form-field__label">Date</span>
+                <label class="tz-doc-field">
+                    <span class="tz-doc-field__label">Date</span>
                     <input type="date"
                            class="citus-form-field__input"
                            value="@(_date?.ToString("yyyy-MM-dd"))"
@@ -104,8 +95,8 @@
                    rate inline below auto-fetches on currency change; switching
                    currency clears the prior rate so FxRateInline re-fills
                    from the recommendation API. *@
-                <label class="citus-form-field">
-                    <span class="citus-form-field__label">Transaction currency</span>
+                <label class="tz-doc-field">
+                    <span class="tz-doc-field__label">Transaction currency</span>
                     <select class="citus-form-field__input"
                             value="@_currency"
                             @onchange="OnCurrencyChanged"
@@ -129,35 +120,31 @@
                         </span>
                     }
                 </label>
-                <div>
-                    @if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase) &&
-                         !string.IsNullOrWhiteSpace(_currency.Trim()))
-                    {
-                        <label class="citus-form-field">
-                            <span class="citus-form-field__label">Exchange rate</span>
-                            <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_date ?? DateTime.Today).Date))"
-                                          BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                          QuoteCurrencyCode="@_currency"
-                                          @bind-Rate="_exchangeRate" />
-                        </label>
-                    }
-                </div>
-                <label class="citus-form-field md:col-span-4">
-                    <span class="citus-form-field__label">Description <span class="text-fg-subtle text-xs">(optional)</span></span>
+                @if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase) &&
+                     !string.IsNullOrWhiteSpace(_currency.Trim()))
+                {
+                    <label class="tz-doc-field">
+                        <span class="tz-doc-field__label">Exchange rate</span>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_date ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_exchangeRate" />
+                    </label>
+                }
+                <label class="tz-doc-field" style="grid-column: 1 / -1">
+                    <span class="tz-doc-field__label">Description <span class="text-fg-subtle text-xs">(optional)</span></span>
                     <input type="text"
                            class="citus-form-field__input"
                            placeholder="What is this journal recording?"
                            value="@_description"
                            @oninput="@(e => _description = e.Value?.ToString() ?? string.Empty)" />
                 </label>
-            </CitusFormGrid>
-        </CitusFormSection>
+            </div>
+        </div>
 
-        <CitusFormSection Title="Lines">
-            <HeaderActions>
-                <span class="text-fg-muted text-sm">Press Tab through cells; a new row appears as you fill the last one.</span>
-            </HeaderActions>
-            <ChildContent>
+        <div class="tz-doc-region">
+            <div class="tz-doc-line-grid">
+                <div class="tz-doc-line-grid__scroll">
             <table class="citus-data-table citus-data-table--compact citus-journal-lines">
                 <thead>
                     <tr>
@@ -251,57 +238,46 @@
                     </tr>
                 </tbody>
             </table>
-
-            <div class="flex items-center gap-3 mt-3">
-            <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearAllLines">Clear all lines</CitusButton>
-            @if (!_isBalanced)
-            {
-                <span class="text-warning text-sm ml-auto">
-                    Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span>
-                </span>
-            }
+                </div>
+                <div class="tz-doc-line-grid__tools">
+                    <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
+                    <button type="button" class="tz-doc-line-grid__tool" @onclick="ClearAllLines"><CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines</button>
+                    <span class="text-fg-muted text-sm">Press Tab through cells; a new row appears as you fill the last one.</span>
+                    @if (!_isBalanced)
+                    {
+                        <span class="text-warning text-sm ml-auto">
+                            Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span>
+                        </span>
+                    }
+                </div>
+            </div>
         </div>
-            </ChildContent>
-        </CitusFormSection>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-        <CitusFormSection Title="Posting summary" Class="h-full">
-            <CitusKeyValueTable>
-                <CitusKeyValueRow Label="Company">@ShellState.ActiveCompany.CompanyName</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Base currency">@ShellState.ActiveCompany.BaseCurrencyCode</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Transaction currency">@(_currency.ToUpperInvariant())</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Lines">@_lines.Count</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Debit total">@FormatAmount(_totalDebit)</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Credit total">@FormatAmount(_totalCredit)</CitusKeyValueRow>
-                <CitusKeyValueRow Label="Balance">@(_isBalanced ? "✓" : "△")</CitusKeyValueRow>
-            </CitusKeyValueTable>
-        </CitusFormSection>
-
-        @* Post-rationale panel keeps the irreversibility hint here; the
-           actual Post + Reset buttons live in the sticky footer below
-           so a long-form operator scrolling through lines never loses
-           the commit affordance. *@
-        <CitusFormSection Title="Post" Class="h-full">
-            <p class="text-fg-muted text-sm m-0">
-                Posting is irreversible from this surface. Backend reserves the journal entry number and the FX snapshot at the moment of the call.
-            </p>
-        </CitusFormSection>
+        <div class="tz-doc-region">
+            <div class="tz-doc-lower-grid">
+                <div class="tz-doc-lower-grid__left">
+                    @* Post-rationale: the actual Post + Reset buttons live in the
+                       sticky footer below so a long-form operator scrolling through
+                       lines never loses the commit affordance. *@
+                    <p class="text-fg-muted text-sm m-0">
+                        Posting is irreversible from this surface. Backend reserves the journal entry number and the FX snapshot at the moment of the call.
+                    </p>
+                </div>
+                <TzDocTotalsPanel Rows="_jeTotalsRows" />
+            </div>
+        </div>
     </div>
-</div>
 
-<CitusFormActions Sticky="true"
-                  PrimaryLabel="Post journal entry"
-                  SavingLabel="Posting..."
-                  CancelVisible="false"
-                  IsSaving="@_isSubmitting"
-                  Disabled="@(!_isBalanced || _lines.Count == 0 || ShellState.AreWritesBlocked)"
-                  ErrorHint="@(string.IsNullOrWhiteSpace(_validationMessage) ? null : "Fix errors above")"
-                  OnSave="PostAsync">
-    <ExtraContent>
-        <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isSubmitting" OnClick="ResetAsync">Reset draft</CitusButton>
-    </ExtraContent>
-</CitusFormActions>
+    <TzDocActionBar PrimaryLabel="Post journal entry"
+                    IsSaving="@_isSubmitting"
+                    Disabled="@(!_isBalanced || _lines.Count == 0 || ShellState.AreWritesBlocked)"
+                    ErrorHint="@(string.IsNullOrWhiteSpace(_validationMessage) ? null : "Fix errors above")"
+                    OnSave="PostAsync">
+        <LeftActions>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isSubmitting" OnClick="ResetAsync">Reset draft</CitusButton>
+        </LeftActions>
+    </TzDocActionBar>
+</div>
 
 @code {
     private readonly PageHeaderModel _header = new()
@@ -386,6 +362,27 @@
     private decimal _totalDebit => _lines.Sum(l => l.Debit);
     private decimal _totalCredit => _lines.Sum(l => l.Credit);
     private bool _isBalanced => _lines.Count > 0 && _totalDebit == _totalCredit && _totalDebit > 0;
+
+    // Read-only canvas totals strip (right column of the lower grid),
+    // replacing the old Posting-summary key-value card. The Difference
+    // row is the bottom line here — it reads 0.00 exactly when balanced.
+    private IReadOnlyList<(string Label, string Value, bool Emphasis, bool Todo)> _jeTotalsRows
+    {
+        get
+        {
+            var rows = new List<(string, string, bool, bool)>
+            {
+                ("Transaction currency", _currency.ToUpperInvariant(), false, false),
+            };
+            if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                rows.Add(("Base currency", ShellState.ActiveCompany.BaseCurrencyCode, false, false));
+            rows.Add(("Lines", _lines.Count.ToString(), false, false));
+            rows.Add(("Debit total", FormatAmount(_totalDebit), false, false));
+            rows.Add(("Credit total", FormatAmount(_totalCredit), false, false));
+            rows.Add(("Difference", FormatAmount(Math.Abs(_totalDebit - _totalCredit)), true, false));
+            return rows;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
