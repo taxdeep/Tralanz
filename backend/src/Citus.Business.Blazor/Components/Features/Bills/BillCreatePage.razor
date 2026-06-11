@@ -44,181 +44,111 @@
 
 <PageTitle>@(_billId is null ? "New bill" : $"Edit {_billNumberDisplay}") | Tralanz Books</PageTitle>
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <CitusLinkButton Href="bills"
-                         Variant="CitusButtonVariant.Ghost"
-                         LeadingIcon="IconName.ArrowLeft">
-            Back to bills
-        </CitusLinkButton>
-    </Actions>
-</CitusPageHeader>
+<div class="tz-doc-editor-page">
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="bills" BackLabel="Back to bills" />
 
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning"
-                ShowIcon="true"
-                Message="@ShellState.WriteBlockMessage"
-                Class="mb-4" />
-}
+    @if (ShellState.AreWritesBlocked || _copiedFromBillId is not null || !string.IsNullOrWhiteSpace(_validation))
+    {
+        <div class="px-4 pt-3 flex flex-col gap-2">
+            @if (ShellState.AreWritesBlocked)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
+            }
+            @if (_copiedFromBillId is not null)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Message="This is a copy. Enter the new supplier invoice number and revise as needed; the original bill is unchanged." />
+            }
+            @if (!string.IsNullOrWhiteSpace(_validation))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" />
+            }
+        </div>
+    }
 
-@if (_copiedFromBillId is not null)
-{
-    @* Copy A3 Phase 2: form prefilled from another bill via ?copyFrom=
-       The source bill is untouched; this is a fresh draft. *@
-    <CitusAlert Severity="CitusAlertSeverity.Info"
-                ShowIcon="true"
-                Class="mb-4"
-                Message="This is a copy. Enter the new supplier invoice number and revise as needed; the original bill is unchanged." />
-}
-
-@if (!string.IsNullOrWhiteSpace(_validation))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error"
-                Message="@_validation"
-                ShowIcon="true"
-                Class="mb-4" />
-}
-
-@if (_isLoading)
-{
-    <CitusSkeleton Variant="SkeletonVariant.Form" />
-}
-else
-{
-    @* === Bill — single card containing supplier + bill metadata on the
-         left (col-8) and the running Totals summary on the right (col-4).
-         Operator never has to look elsewhere for the live subtotal. ===*@
-    <CitusFormSection Title="Bill">
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div class="lg:col-span-8">
-                <CitusFormGrid Columns="2">
-                    <CitusFormField Label="Supplier" Required="true">
+    @if (_isLoading)
+    {
+        <CitusSkeleton Variant="SkeletonVariant.Form" />
+    }
+    else
+    {
+        <div class="tz-doc-surface">
+            <div class="tz-doc-region">
+                <div class="tz-doc-field-row">
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Supplier *</label>
                         <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
                                       SelectedId="@_vendorId"
                                       SelectedDisplayText="@_vendorDisplay"
                                       Placeholder="Search vendors…"
                                       OnVendorSelected="OnVendorSelected"
                                       OnCleared="OnVendorCleared" />
-                    </CitusFormField>
-
-                    <CitusFormField Label="Source PO">
-                        @if (!string.IsNullOrWhiteSpace(_sourcePurchaseOrderNumber))
-                        {
-                            @if (_sourcePurchaseOrderId is { } poId)
+                    </div>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Source PO</label>
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                            @if (!string.IsNullOrWhiteSpace(_sourcePurchaseOrderNumber))
                             {
-                                <a class="citus-link" href="@($"purchase-orders/{poId:D}")">
+                                @if (_sourcePurchaseOrderId is { } poId)
+                                {
+                                    <a class="citus-link" href="@($"purchase-orders/{poId:D}")"><span class="citus-inline-code">@_sourcePurchaseOrderNumber</span></a>
+                                }
+                                else
+                                {
                                     <span class="citus-inline-code">@_sourcePurchaseOrderNumber</span>
-                                </a>
+                                }
                             }
                             else
                             {
-                                <span class="citus-inline-code">@_sourcePurchaseOrderNumber</span>
+                                <span class="text-fg-muted text-sm">Direct (no source PO)</span>
                             }
-                        }
-                        else
-                        {
-                            <div class="text-fg-muted text-sm">Created directly (no source PO)</div>
-                        }
-                    </CitusFormField>
-
-                    <CitusFormField Label="Bill no. (supplier's invoice #)" Required="true">
-                        <CitusInput TValue="string"
-                                    @bind-Value="_billNumber"
-                                    Placeholder="e.g. INV-12345" />
-                    </CitusFormField>
-
-                    <CitusFormField Label="Internal entity number"
-                                    Hint="@(string.IsNullOrWhiteSpace(_billNumberDisplay) ? "Auto-assigned on save" : null)">
+                        </div>
+                    </div>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Bill no. (supplier's invoice #) *</label>
+                        <CitusInput TValue="string" @bind-Value="_billNumber" Placeholder="e.g. INV-12345" />
+                    </div>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Internal entity number</label>
                         @if (!string.IsNullOrWhiteSpace(_billNumberDisplay))
                         {
-                            <div class="citus-inline-code">@_billNumberDisplay</div>
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center"><span class="citus-inline-code">@_billNumberDisplay</span></div>
                         }
                         else
                         {
-                            <div class="text-fg-subtle text-sm">—</div>
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center"><span class="text-fg-subtle">Auto-assigned on save</span></div>
                         }
-                    </CitusFormField>
-
-                    <CitusFormField Label="Bill date" Required="true">
-                        <RadzenDatePicker TValue="DateTime?"
-                                          DateFormat="yyyy-MM-dd"
-                                          ShowTime="false"
-                                          @bind-Value="_billDate"
-                                          Change="@(_ => RecomputeDueDate())"
-                                          Class="citus-control-full" />
-                    </CitusFormField>
-
-                    <CitusFormField Label="Due date" Required="true">
-                        <RadzenDatePicker TValue="DateTime?"
-                                          DateFormat="yyyy-MM-dd"
-                                          ShowTime="false"
-                                          @bind-Value="_dueDate"
-                                          Class="citus-control-full" />
+                    </div>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Bill date *</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_billDate" Change="@(_ => RecomputeDueDate())" Class="citus-control-full" />
+                    </div>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Due date *</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Class="citus-control-full" />
                         @if (_paymentTermId is { } termId)
                         {
                             var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);
                             if (term is not null)
                             {
-                                <p class="text-fg-subtle text-xs mt-1">
-                                    Defaulted from payment term <strong>@term.Name</strong> (Net @term.NetDays).
-                                </p>
+                                <p class="text-fg-subtle text-xs mt-1">Defaulted from payment term <strong>@term.Name</strong> (Net @term.NetDays).</p>
                             }
                         }
-                    </CitusFormField>
-
-                    <CitusFormField Label="Transaction currency">
-                        <CitusInput TValue="string"
-                                    @bind-Value="_currency"
-                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    </CitusFormField>
-
-                    <CitusFormField Label="Exchange rate">
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_fxRate" />
-                    </CitusFormField>
-                </CitusFormGrid>
-            </div>
-
-            <div class="lg:col-span-4">
-                <div class="citus-totals-card">
-                    <CitusKeyValueTable>
-                        <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                        @* Live per-Tax-Rule preview (GST / PST inside a GP/BC code),
-                           computed client-side from the loaded Tax Code rates; the
-                           engine recomputes the authoritative split on save. Falls
-                           back to the manual Tax amount when no Tax Code is picked. *@
-                        @if (_taxByRule.Count > 0)
-                        {
-                            @foreach (var t in _taxByRule)
-                            {
-                                <CitusKeyValueRow Label="@t.RuleCode" ValueAlignRight="true">@FormatAmount(t.Amount)</CitusKeyValueRow>
-                            }
-                        }
-                        else
-                        {
-                            <CitusKeyValueRow Label="Tax" ValueAlignRight="true">@FormatAmount(TaxTotal)</CitusKeyValueRow>
-                        }
-                        <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Subtotal + (_taxByRule.Count > 0 ? _taxPreviewTotal : TaxTotal)) @_currency</strong></CitusKeyValueRow>
-                    </CitusKeyValueTable>
+                    </div>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Transaction currency</label>
+                        <CitusInput TValue="string" @bind-Value="_currency" Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </div>
+                    <div class="tz-doc-field">
+                        <label class="tz-doc-field__label">Exchange rate</label>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date))" BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode" QuoteCurrencyCode="@_currency" @bind-Rate="_fxRate" />
+                    </div>
                 </div>
             </div>
-        </div>
-    </CitusFormSection>
 
-    @* === Lines — purchase line editor. Item column is gated to stock
-         items only (see BillItemPicker policy); service-kind purchases
-         leave Item blank and pick Category directly. Task column is
-         only rendered when the company has the Task module enabled.
-         The table sums to ~74rem of fixed-width columns; min-width
-         pins the column rhythm on narrow viewports (the page itself
-         scrolls horizontally below ~74rem available width). No
-         overflow wrapper here — picker dropdowns need to escape the
-         table bounds when they open. ===*@
-    <CitusFormSection Title="Lines">
-        <table class="citus-data-table citus-data-table--compact citus-line-table">
+            <div class="tz-doc-region">
+                <div class="tz-doc-line-grid">
+                    <div class="tz-doc-line-grid__scroll">
+                <table class="citus-data-table citus-data-table--compact citus-line-table">
             <thead>
                 <tr>
                     <th style="width: 3rem">#</th>
@@ -313,29 +243,39 @@ else
                     </tr>
                 }
             </tbody>
-        </table>
-        <div class="flex gap-2 mt-3">
-            <CitusButton Variant="CitusButtonVariant.Ghost"
-                         Size="CitusButtonSize.Small"
-                         OnClick="AddLine">+ Add line</CitusButton>
-            <CitusButton Variant="CitusButtonVariant.Ghost"
-                         Size="CitusButtonSize.Small"
-                         OnClick="ClearLines">Clear all lines</CitusButton>
+                </table>
+                    </div>
+                    <div class="tz-doc-line-grid__tools">
+                        <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
+                        <button type="button" class="tz-doc-line-grid__tool" @onclick="ClearLines"><CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tz-doc-region">
+                <div class="tz-doc-lower-grid">
+                    <div class="tz-doc-lower-grid__left">
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Memo</label>
+                            <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill" />
+                        </div>
+                    </div>
+                    <TzDocTotalsPanel Rows="_billTotalsRows" />
+                </div>
+            </div>
         </div>
-    </CitusFormSection>
 
-    <CitusFormSection Title="Memo">
-        <CitusInput TValue="string"
-                    @bind-Value="_memo"
-                    Placeholder="Internal note about this bill" />
-    </CitusFormSection>
-
-    <CitusFormActions Sticky="true"
-                      IsSaving="@_isSaving"
-                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                      OnSave="SaveAsync"
-                      OnCancel="Cancel" />
-}
+        @* Sticky Save (primary) + Cancel (left). Only Draft bills are editable. *@
+        <TzDocActionBar PrimaryLabel="Save"
+                        IsSaving="_isSaving"
+                        ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                        OnSave="SaveAsync">
+            <LeftActions>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="@_isSaving" OnClick="Cancel">Cancel</CitusButton>
+            </LeftActions>
+        </TzDocActionBar>
+    }
+</div>
 
 @code {
     [Parameter] public Guid? BillId { get; set; }
@@ -425,6 +365,28 @@ else
     }
 
     private decimal _taxPreviewTotal => _taxByRule.Sum(t => t.Amount);
+
+    // Rows for the shared TzDocTotalsPanel (read-only running totals — same
+    // content the inline totals card showed). Per-rule tax preview when a Tax
+    // Code is picked, else the manual Tax amount.
+    private IReadOnlyList<(string Label, string Value, bool Emphasis, bool Todo)> _billTotalsRows
+    {
+        get
+        {
+            var rows = new List<(string, string, bool, bool)> { ("Subtotal", FormatAmount(Subtotal), false, false) };
+            if (_taxByRule.Count > 0)
+            {
+                foreach (var t in _taxByRule) rows.Add((t.RuleCode, FormatAmount(t.Amount), false, false));
+            }
+            else
+            {
+                rows.Add(("Tax", FormatAmount(TaxTotal), false, false));
+            }
+            var total = Subtotal + (_taxByRule.Count > 0 ? _taxPreviewTotal : TaxTotal);
+            rows.Add(("Total", $"{FormatAmount(total)} {_currency}", true, false));
+            return rows;
+        }
+    }
 
     /// <summary>
     /// Resting-state label shown inside the AccountPicker control so a
