@@ -9,6 +9,12 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_doc is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_doc.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="refund-receipts/new"
                          Variant="CitusButtonVariant.Ghost"
@@ -33,18 +39,28 @@ else if (_doc is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Refund #" Value="@_doc.DisplayNumber" Description="@_customerName"
-                       Icon="IconName.ArrowLeft" Tone="StatTone.Warning" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Customer">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Name">@_customerName</CitusKeyValueRow>
+                @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
+                {
+                    <CitusKeyValueRow Label="Reference">@_doc.ReferenceNo</CitusKeyValueRow>
+                }
+                @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
+                {
+                    <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_doc.CustomerPoNumber</span></CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total refunded" Value="@($"-{_doc.TotalAmount:N2} {_doc.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_doc.SubtotalAmount:N2} + tax {_doc.TaxAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Warning" />
         <CitusStatCard Label="Refund date" Value="@_doc.RefundDate.ToString("yyyy-MM-dd")"
                        Description="@_doc.PaymentMethod"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+    </div>
 
     @* Copy A3 Phase 3: actions bar with the standard More menu. *@
     <CitusActionsPanel MoreMenuItems="@_moreItems" />
@@ -102,18 +118,9 @@ else
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Refund no."><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_doc.EntityNumber</span></CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Customer">@_customerName</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Refund date">@_doc.RefundDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Currency">@_doc.TransactionCurrencyCode</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Method">@_doc.PaymentMethod</CitusKeyValueRow>
-                    @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
-                    {
-                        <CitusKeyValueRow Label="Reference">@_doc.ReferenceNo</CitusKeyValueRow>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
-                    {
-                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_doc.CustomerPoNumber</span></CitusKeyValueRow>
-                    }
                     <CitusKeyValueRow Label="Refunded from">@ResolveAccountLabel(_doc.RefundFromAccountId)</CitusKeyValueRow>
                 </CitusKeyValueTable>
             </CitusFormSection>
@@ -196,23 +203,5 @@ else
     private static string HumanizeStatus(string status) => status switch
     {
         "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "draft" => "Not posted yet.",
-        "posted" => "Refund disbursed; GL posted.",
-        "voided" => "Voided.",
-        "reversed" => "Reversed.",
-        _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "posted" => StatTone.Warning,
-        "voided" => StatTone.Neutral,
-        "reversed" => StatTone.Warning,
-        _ => StatTone.Neutral
     };
 }

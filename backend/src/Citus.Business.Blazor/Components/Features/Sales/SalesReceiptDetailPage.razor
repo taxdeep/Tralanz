@@ -9,6 +9,12 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_doc is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_doc.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="sales-receipts/new"
                          Variant="CitusButtonVariant.Ghost"
@@ -33,18 +39,20 @@ else if (_doc is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Receipt #" Value="@_doc.DisplayNumber" Description="@_customerName"
-                       Icon="IconName.Cash" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_doc.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Customer">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Name">@_customerName</CitusKeyValueRow>
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total" Value="@($"{_doc.TotalAmount:N2} {_doc.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_doc.SubtotalAmount:N2} + tax {_doc.TaxAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
         <CitusStatCard Label="Receipt date" Value="@_doc.ReceiptDate.ToString("yyyy-MM-dd")"
                        Description="@HumanizePaymentMethod(_doc.PaymentMethod)"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+    </div>
 
     @* Copy A3 Phase 3: actions bar with the standard More menu. *@
     <CitusActionsPanel MoreMenuItems="@_moreItems" />
@@ -94,7 +102,6 @@ else
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Receipt no."><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_doc.EntityNumber</span></CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Customer">@_customerName</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Receipt date">@_doc.ReceiptDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Currency">@_doc.TransactionCurrencyCode</CitusKeyValueRow>
                     @if (!string.Equals(_doc.TransactionCurrencyCode, _doc.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
@@ -206,15 +213,6 @@ else
     private static string HumanizeStatus(string status) => status switch
     {
         "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "draft" => "Not posted yet.",
-        "posted" => "Cash collected; GL posted.",
-        "voided" => "Voided.",
-        "reversed" => "Reversed by a refund receipt.",
-        _ => string.Empty
     };
 
     private static string HumanizePaymentMethod(string method) => method switch

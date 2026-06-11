@@ -9,6 +9,12 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_doc is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_doc.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="credit-memos/new"
                          Variant="CitusButtonVariant.Ghost"
@@ -33,18 +39,24 @@ else if (_doc is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Memo #" Value="@_doc.DisplayNumber" Description="@_customerName"
-                       Icon="IconName.FileText" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_doc.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Customer">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Name">@_customerName</CitusKeyValueRow>
+                @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
+                {
+                    <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_doc.CustomerPoNumber</span></CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total" Value="@($"{_doc.TotalAmount:N2} {_doc.TransactionCurrencyCode}")"
                        Description="@($"Subtotal {_doc.SubtotalAmount:N2} + tax {_doc.TaxAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
         <CitusStatCard Label="Memo date" Value="@_doc.DocumentDate.ToString("yyyy-MM-dd")"
                        Description="@($"Due {_doc.DueDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+    </div>
 
     @* Copy A3 Phase 3: actions bar with the standard More menu. *@
     <CitusActionsPanel MoreMenuItems="@_moreItems" />
@@ -94,11 +106,6 @@ else
                 <CitusKeyValueTable>
                     <CitusKeyValueRow Label="Memo no."><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_doc.EntityNumber</span></CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Customer">@_customerName</CitusKeyValueRow>
-                    @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
-                    {
-                        <CitusKeyValueRow Label="Customer PO #"><span class="citus-inline-code">@_doc.CustomerPoNumber</span></CitusKeyValueRow>
-                    }
                     <CitusKeyValueRow Label="Memo date">@_doc.DocumentDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Due date">@_doc.DueDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Currency">@_doc.TransactionCurrencyCode</CitusKeyValueRow>
@@ -196,14 +203,5 @@ else
     private static string HumanizeStatus(string status) => status switch
     {
         "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "draft" => "Not posted yet.",
-        "posted" => "AR reduced; GL posted.",
-        "voided" => "Voided.",
-        "reversed" => "Reversed.",
-        _ => string.Empty
     };
 }

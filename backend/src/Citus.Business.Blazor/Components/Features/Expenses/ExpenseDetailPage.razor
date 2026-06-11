@@ -9,6 +9,12 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_expense is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_expense.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="expenses"
                          Variant="CitusButtonVariant.Ghost"
@@ -33,12 +39,19 @@ else if (_expense is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Expense #" Value="@_expense.ExpenseNumber" Description="@_expense.PayeeNameFreeform"
-                       Icon="IconName.Wallet" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_expense.Status)"
-                       Description="@(_expense.VoidedAt is { } v ? $"Voided {v.ToLocalTime():yyyy-MM-dd HH:mm}" : "Posted")"
-                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_expense.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Payee">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Name">@(string.IsNullOrEmpty(_expense.PayeeNameFreeform) ? "—" : _expense.PayeeNameFreeform)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Expense #"><span class="citus-inline-code">@_expense.ExpenseNumber</span></CitusKeyValueRow>
+                @if (!string.IsNullOrEmpty(_expense.RefNo))
+                {
+                    <CitusKeyValueRow Label="Reference #"><span class="citus-inline-code">@_expense.RefNo</span></CitusKeyValueRow>
+                }
+                <CitusKeyValueRow Label="Source PO">@(string.IsNullOrEmpty(_expense.SourcePurchaseOrderNumber) ? "—" : _expense.SourcePurchaseOrderNumber)</CitusKeyValueRow>
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total" Value="@($"{_expense.TotalAmount:N2} {_expense.TransactionCurrencyCode}")"
                        Description="@($"Paid via {HumanizeMethod(_expense.PaymentMethod)}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -46,7 +59,7 @@ else
                        Value="@_expense.PaymentDate.ToString("yyyy-MM-dd")"
                        Description="@_expense.PaymentAccountLabel"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+    </div>
 
     @* Copy A3 Phase 1: secondary actions collapse into the More
        menu. Copy is always available (even on voided expenses —
@@ -118,22 +131,16 @@ else
         <aside class="lg:col-span-4 flex flex-col gap-6">
             <CitusFormSection Title="Payment">
                 <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Payee">@(string.IsNullOrEmpty(_expense.PayeeNameFreeform) ? "—" : _expense.PayeeNameFreeform)</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Paid from">@_expense.PaymentAccountLabel</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Method">@HumanizeMethod(_expense.PaymentMethod)</CitusKeyValueRow>
                     @if (!string.IsNullOrEmpty(_expense.ChequeNumber))
                     {
                         <CitusKeyValueRow Label="Cheque #"><span class="citus-inline-code">@_expense.ChequeNumber</span></CitusKeyValueRow>
                     }
-                    @if (!string.IsNullOrEmpty(_expense.RefNo))
-                    {
-                        <CitusKeyValueRow Label="Reference #"><span class="citus-inline-code">@_expense.RefNo</span></CitusKeyValueRow>
-                    }
                     <CitusKeyValueRow Label="Currency">
                         @_expense.TransactionCurrencyCode
                         @(_expense.TransactionCurrencyCode == _expense.BaseCurrencyCode ? "" : $"@ {_expense.FxRate}")
                     </CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Source PO">@(string.IsNullOrEmpty(_expense.SourcePurchaseOrderNumber) ? "—" : _expense.SourcePurchaseOrderNumber)</CitusKeyValueRow>
                 </CitusKeyValueTable>
             </CitusFormSection>
 

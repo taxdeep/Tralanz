@@ -10,6 +10,12 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_bill is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_bill.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="bills"
                          Variant="CitusButtonVariant.Ghost"
@@ -41,11 +47,18 @@ else if (_bill is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Bill #" Value="@_bill.BillNumber" Description="@_bill.VendorName"
-                       Icon="IconName.Receipt" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_bill.Status)" Description="@StatusHint(_bill.Status)"
-                       Icon="IconName.Eye" Tone="@StatusTone(_bill.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Supplier">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Name">@_bill.VendorName</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Bill no."><span class="citus-inline-code">@_bill.BillNumber</span></CitusKeyValueRow>
+                @if (!string.IsNullOrEmpty(_bill.SourcePurchaseOrderNumber))
+                {
+                    <CitusKeyValueRow Label="Source PO"><span class="citus-inline-code">@_bill.SourcePurchaseOrderNumber</span></CitusKeyValueRow>
+                }
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total" Value="@($"{_bill.TotalAmount:N2} {_bill.DocumentCurrencyCode}")"
                        Description="@($"Subtotal {_bill.SubtotalAmount:N2} + tax {_bill.TaxAmount:N2}")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
@@ -53,7 +66,7 @@ else
                        Value="@_bill.DueDate.ToString("yyyy-MM-dd")"
                        Description="@($"Issued {_bill.BillDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
@@ -94,12 +107,10 @@ else
         <aside class="lg:col-span-4 flex flex-col gap-6">
             <CitusFormSection Title="Document">
                 <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Bill no."><span class="citus-inline-code">@_bill.BillNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_bill.EntityNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Bill date">@_bill.BillDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Due date">@_bill.DueDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Currency">@_bill.DocumentCurrencyCode @(_bill.DocumentCurrencyCode == _bill.BaseCurrencyCode ? "" : $"@ {_bill.FxRate}")</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Source PO">@(string.IsNullOrEmpty(_bill.SourcePurchaseOrderNumber) ? "—" : _bill.SourcePurchaseOrderNumber)</CitusKeyValueRow>
                     @if (_bill.PostedAt is { } postedAt)
                     {
                         <CitusKeyValueRow Label="Posted">@postedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</CitusKeyValueRow>
@@ -333,27 +344,5 @@ else
         "voided" => "Voided",
         "reversed" => "Reversed",
         _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "draft" => "Not posted yet.",
-        "posted" => "Awaiting payment.",
-        "partially_paid" => "Some applications received.",
-        "paid" => "Fully settled.",
-        "voided" => "Voided.",
-        "reversed" => "Reversed.",
-        _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "draft" => StatTone.Neutral,
-        "posted" => StatTone.Info,
-        "partially_paid" => StatTone.Info,
-        "paid" => StatTone.Success,
-        "voided" => StatTone.Neutral,
-        "reversed" => StatTone.Warning,
-        _ => StatTone.Neutral
     };
 }

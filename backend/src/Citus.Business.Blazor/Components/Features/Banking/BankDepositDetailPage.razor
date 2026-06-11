@@ -7,6 +7,12 @@
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
+    <TitleSuffix>
+        @if (_doc is not null)
+        {
+            <CitusDocumentStatusBadge Status="@_doc.Status" />
+        }
+    </TitleSuffix>
     <Actions>
         <CitusLinkButton Href="bank-deposits/new"
                          Variant="CitusButtonVariant.Ghost"
@@ -31,19 +37,22 @@ else if (_doc is null)
 }
 else
 {
-    <CitusStatCardGrid Columns="4">
-        <CitusStatCard Label="Deposit #" Value="@_doc.DisplayNumber" Description="@_doc.DepositDate.ToString("yyyy-MM-dd")"
-                       Icon="IconName.Receipt" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
-                       Icon="IconName.Eye" Tone="@CitusDocumentStatusBadge.ResolveTone(_doc.Status)" />
+    <div class="citus-detail-overview">
+        <CitusFormSection Title="Deposit">
+            <CitusKeyValueTable>
+                <CitusKeyValueRow Label="Deposit #"><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
+                <CitusKeyValueRow Label="Deposit to">@ResolveAccountLabel(_doc.DepositToAccountId)</CitusKeyValueRow>
+                <CitusKeyValueRow Label="Holding account">@ResolveAccountLabel(_doc.UndepositedFundsAccountId)</CitusKeyValueRow>
+            </CitusKeyValueTable>
+        </CitusFormSection>
+
         <CitusStatCard Label="Total" Value="@($"{_doc.TotalAmount:N2} {_doc.TransactionCurrencyCode}")"
                        Description="@($"{_doc.Items.Count} item(s)")"
                        Icon="IconName.Coin" Tone="StatTone.Success" />
-        <CitusStatCard Label="Deposit to"
-                       Value="@ResolveAccountLabel(_doc.DepositToAccountId)"
+        <CitusStatCard Label="Deposit date" Value="@_doc.DepositDate.ToString("yyyy-MM-dd")"
                        Description="from Undeposited Funds"
-                       Icon="IconName.Coin" Tone="StatTone.Neutral" />
-    </CitusStatCardGrid>
+                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
+    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
@@ -90,12 +99,9 @@ else
         <aside class="lg:col-span-4">
             <CitusFormSection Title="Document">
                 <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Deposit no."><span class="citus-inline-code">@_doc.DisplayNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Internal #"><span class="citus-inline-code">@_doc.EntityNumber</span></CitusKeyValueRow>
                     <CitusKeyValueRow Label="Date">@_doc.DepositDate.ToString("yyyy-MM-dd")</CitusKeyValueRow>
                     <CitusKeyValueRow Label="Currency">@_doc.TransactionCurrencyCode</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Bank account">@ResolveAccountLabel(_doc.DepositToAccountId)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Holding account">@ResolveAccountLabel(_doc.UndepositedFundsAccountId)</CitusKeyValueRow>
                     @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
                     {
                         <CitusKeyValueRow Label="Reference">@_doc.ReferenceNo</CitusKeyValueRow>
@@ -153,12 +159,5 @@ else
     private static string HumanizeStatus(string status) => status switch
     {
         "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "draft" => "Not posted yet.",
-        "posted" => "Holding cleared; bank credited.",
-        _ => string.Empty
     };
 }
