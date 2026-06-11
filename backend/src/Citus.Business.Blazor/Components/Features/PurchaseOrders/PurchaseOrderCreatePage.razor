@@ -26,66 +26,87 @@
 
 <PageTitle>@(_purchaseOrderId is null ? "New PO" : $"Edit {_poNumber}") | Tralanz Books</PageTitle>
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <CitusLinkButton Href="purchase-orders"
-                         Variant="CitusButtonVariant.Ghost"
-                         LeadingIcon="IconName.ArrowLeft">
-            Back to POs
-        </CitusLinkButton>
-    </Actions>
-</CitusPageHeader>
+<div class="tz-doc-editor-page">
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="purchase-orders" BackLabel="Back to POs" />
 
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
-}
+    @if (ShellState.AreWritesBlocked || _isFromCopy || !string.IsNullOrWhiteSpace(_validation))
+    {
+        <div class="px-4 pt-3 flex flex-col gap-2">
+            @if (ShellState.AreWritesBlocked)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
+            }
+            @if (_isFromCopy)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Message="This is a copy. Revise as needed and save to create a new purchase order; the original is unchanged." />
+            }
+            @if (!string.IsNullOrWhiteSpace(_validation))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" />
+            }
+        </div>
+    }
 
-@if (_isFromCopy)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Revise as needed and save to create a new purchase order; the original is unchanged." />
-}
+    @if (_isLoading)
+    {
+        <CitusSkeleton Variant="SkeletonVariant.Form" />
+    }
+    else
+    {
+        <div class="tz-doc-surface">
+            <div class="tz-doc-region">
+                <div class="tz-doc-header-grid">
+                    <div class="tz-doc-zone">
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Vendor</label>
+                            <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                          SelectedId="@_vendorId"
+                                          SelectedDisplayText="@_vendorDisplay"
+                                          Placeholder="Search vendors…"
+                                          OnVendorSelected="OnVendorSelected"
+                                          OnCleared="OnVendorCleared" />
+                        </div>
+                    </div>
+                    <div class="tz-doc-zone">
+                        <div class="tz-doc-field-row">
+                            @if (!string.IsNullOrWhiteSpace(_poNumber))
+                            {
+                                <div class="tz-doc-field">
+                                    <label class="tz-doc-field__label">PO no.</label>
+                                    <div class="citus-form-field__input citus-form-field__input--readonly flex items-center"><span class="citus-inline-code">@_poNumber</span></div>
+                                </div>
+                            }
+                            <div class="tz-doc-field">
+                                <label class="tz-doc-field__label">Order date</label>
+                                <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_orderDate" Class="citus-control-full" />
+                            </div>
+                            <div class="tz-doc-field">
+                                <label class="tz-doc-field__label">Expected delivery</label>
+                                <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_expectedDeliveryDate" Class="citus-control-full" />
+                            </div>
+                            <div class="tz-doc-field">
+                                <label class="tz-doc-field__label">Transaction currency</label>
+                                <CitusInput TValue="string" @bind-Value="_currency" Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                            </div>
+                            <div class="tz-doc-field">
+                                <label class="tz-doc-field__label">Exchange rate</label>
+                                <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_orderDate ?? DateTime.Today).Date))" BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode" QuoteCurrencyCode="@_currency" @bind-Rate="_fxRate" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-@if (!string.IsNullOrWhiteSpace(_validation))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-}
-
-@if (_isLoading)
-{
-    <CitusSkeleton Variant="SkeletonVariant.Form" />
-}
-else
-{
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-8 flex flex-col gap-6">
-            <CitusFormSection Title="Vendor">
-                <CitusFormGrid Columns="2">
-                    <CitusFormField Label="Vendor">
-                        <VendorPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                      SelectedId="@_vendorId"
-                                      SelectedDisplayText="@_vendorDisplay"
-                                      Placeholder="Search vendors…"
-                                      OnVendorSelected="OnVendorSelected"
-                                      OnCleared="OnVendorCleared" />
-                    </CitusFormField>
-                </CitusFormGrid>
-            </CitusFormSection>
-
-            <CitusFormSection Title="Address">
-                @* Address grid kept as raw markup: the layout pairs
-                   billing / shipping fields row-by-row (line / city +
-                   province / postal + country) with nested 2-col sub-
-                   grids, which doesn't fit the CitusFormGrid +
-                   CitusFormField "one field per cell" model. *@
+            <div class="tz-doc-region">
+                @* Billing / ship-to address — raw paired inputs (line / city +
+                   province / postal + country); kept verbatim. *@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                        <label class="text-sm font-medium block mb-1">Billing address</label>
+                        <label class="tz-doc-field__label">Billing address</label>
                         <CitusInput TValue="string" @bind-Value="_billingAddressLine" Placeholder="Street + suite" />
                     </div>
                     <div>
-                        <label class="text-sm font-medium block mb-1">Ship to (your delivery)</label>
+                        <label class="tz-doc-field__label">Ship to (your delivery)</label>
                         <CitusInput TValue="string" @bind-Value="_shippingAddressLine" Placeholder="Street + suite" />
                     </div>
                     <div class="grid grid-cols-2 gap-2">
@@ -105,21 +126,20 @@ else
                         <CitusInput TValue="string" @bind-Value="_shippingCountry" Placeholder="Country" />
                     </div>
                     <div class="md:col-span-2">
-                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="CopyBillingToShipping">
-                            Copy billing → shipping
-                        </CitusButton>
+                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="CopyBillingToShipping">Copy billing → shipping</CitusButton>
                     </div>
                 </div>
-            </CitusFormSection>
+            </div>
 
-            <CitusFormSection Title="Lines">
-                <HeaderActions>
-                    <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
-                        <option value="exclusive">Tax exclusive</option>
-                        <option value="inclusive">Tax inclusive</option>
-                    </select>
-                </HeaderActions>
-                <ChildContent>
+            <div class="tz-doc-region">
+                <div class="tz-doc-line-grid">
+                    <div class="flex items-center justify-end mb-2">
+                        <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
+                            <option value="exclusive">Tax exclusive</option>
+                            <option value="inclusive">Tax inclusive</option>
+                        </select>
+                    </div>
+                    <div class="tz-doc-line-grid__scroll">
                 <table class="citus-data-table citus-data-table--compact">
                     <thead>
                         <tr>
@@ -184,103 +204,71 @@ else
                         }
                     </tbody>
                 </table>
-                <div class="flex gap-2 mt-3">
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                    </div>
+                    <div class="tz-doc-line-grid__tools">
+                        <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
+                        <button type="button" class="tz-doc-line-grid__tool" @onclick="ClearLines"><CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines</button>
+                    </div>
                 </div>
-                </ChildContent>
-            </CitusFormSection>
+            </div>
 
-            <CitusFormSection Title="Notes">
-                <CitusFormField Label="Memo to supplier">
-                    <CitusInput TValue="string" @bind-Value="_memoToSupplier" Placeholder="Visible on the PO." />
-                </CitusFormField>
-                <CitusFormField Label="Internal note" Class="mt-4">
-                    <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
-                </CitusFormField>
-            </CitusFormSection>
+            <div class="tz-doc-region">
+                <div class="tz-doc-lower-grid">
+                    <div class="tz-doc-lower-grid__left">
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Memo to supplier</label>
+                            <CitusInput TValue="string" @bind-Value="_memoToSupplier" Placeholder="Visible on the PO." />
+                        </div>
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Internal note</label>
+                            <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
+                        </div>
+                    </div>
+                    @* Totals — interactive Discount (None/Percent/Amount) + Shipping inputs kept verbatim. *@
+                    <div class="tz-doc-totals-panel">
+                        <div class="tz-doc-totals-row"><span>Subtotal</span><span>@FormatAmount(Subtotal)</span></div>
+                        <div class="tz-doc-totals-row">
+                            <span>Discount</span>
+                            <span class="flex items-center gap-2">
+                                <select class="citus-form-field__input citus-inline-control--sm" value="@(_discountKind ?? "")" @onchange="OnDiscountKindChanged">
+                                    <option value="">None</option>
+                                    <option value="percent">Percent</option>
+                                    <option value="amount">Amount</option>
+                                </select>
+                                <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-quote-totals__input" />
+                                <span>−@FormatAmount(DiscountAmount)</span>
+                            </span>
+                        </div>
+                        <div class="tz-doc-totals-row">
+                            <span>Shipping</span>
+                            <span class="flex items-center gap-2">
+                                <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-quote-totals__input" />
+                                <span>@FormatAmount(_shippingAmount ?? 0m)</span>
+                            </span>
+                        </div>
+                        <div class="tz-doc-totals-row tz-doc-totals-row--grand"><span>Total</span><strong>@FormatAmount(Total) @_currency</strong></div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <aside class="lg:col-span-4 flex flex-col gap-6">
-            <CitusFormSection Title="Document">
-                @if (!string.IsNullOrWhiteSpace(_poNumber))
+        @* Sticky Save (primary) + Save & Send (right, while Draft) + Cancel (left). *@
+        <TzDocActionBar PrimaryLabel="Save"
+                        IsSaving="_isSaving"
+                        ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                        OnSave="@(() => SaveAsync(send: false))">
+            <LeftActions>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="@_isSaving" OnClick="Cancel">Cancel</CitusButton>
+            </LeftActions>
+            <RightExtras>
+                @if (_status == "draft" || _purchaseOrderId is null)
                 {
-                    <CitusFormField Label="PO no.">
-                        <div class="citus-inline-code">@_poNumber</div>
-                    </CitusFormField>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="@_isSaving" OnClick="@(() => SaveAsync(send: true))">Save &amp; Send</CitusButton>
                 }
-                <CitusFormField Label="Order date" Class="@(string.IsNullOrWhiteSpace(_poNumber) ? null : "mt-4")">
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                      @bind-Value="_orderDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Expected delivery" Class="mt-4">
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                      @bind-Value="_expectedDeliveryDate" Class="citus-control-full" />
-                </CitusFormField>
-                <CitusFormField Label="Transaction currency" Class="mt-4">
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                </CitusFormField>
-                <CitusFormField Label="Exchange rate" Class="mt-4">
-                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_orderDate ?? DateTime.Today).Date))"
-                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                  QuoteCurrencyCode="@_currency"
-                                  @bind-Rate="_fxRate" />
-                </CitusFormField>
-            </CitusFormSection>
-
-            <CitusFormSection Title="Discount + shipping">
-                <CitusFormField Label="Discount">
-                    <div class="flex gap-2">
-                        <select class="citus-form-field__input citus-inline-control--sm"
-                                value="@(_discountKind ?? "")"
-                                @onchange="OnDiscountKindChanged">
-                            <option value="">None</option>
-                            <option value="percent">Percent</option>
-                            <option value="amount">Amount</option>
-                        </select>
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
-                    </div>
-                </CitusFormField>
-                <CitusFormField Label="Shipping amount" Class="mt-4">
-                    <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
-                </CitusFormField>
-            </CitusFormSection>
-
-            <CitusFormSection Title="Totals">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Shipping" ValueAlignRight="true">@FormatAmount(_shippingAmount ?? 0m)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                </CitusKeyValueTable>
-            </CitusFormSection>
-        </aside>
-    </div>
-
-    @* Sticky Save / Save & Send / Cancel — Save is the primary, Save & Send
-       is a secondary in ExtraContent (only when the PO is still Draft or
-       brand-new), Cancel routes back. Mirrors QuoteCreatePage's dual-action
-       pattern. *@
-    <CitusFormActions Sticky="true"
-                      PrimaryLabel="Save"
-                      IsSaving="@_isSaving"
-                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                      OnSave="@(() => SaveAsync(send: false))"
-                      OnCancel="Cancel">
-        <ExtraContent>
-            @if (_status == "draft" || _purchaseOrderId is null)
-            {
-                <CitusButton Variant="CitusButtonVariant.Primary"
-                             Disabled="@_isSaving"
-                             OnClick="@(() => SaveAsync(send: true))">
-                    Save &amp; Send
-                </CitusButton>
-            }
-        </ExtraContent>
-    </CitusFormActions>
-}
+            </RightExtras>
+        </TzDocActionBar>
+    }
+</div>
 
 @code {
     [Parameter] public Guid? PurchaseOrderId { get; set; }

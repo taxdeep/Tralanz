@@ -33,44 +33,35 @@
 
 <PageTitle>New Expense | Tralanz Books</PageTitle>
 
-<CitusPageHeader Model="_header">
-    <Actions>
-        <CitusLinkButton Href="expenses"
-                         Variant="CitusButtonVariant.Ghost"
-                         LeadingIcon="IconName.ArrowLeft">
-            Back to expenses
-        </CitusLinkButton>
-    </Actions>
-</CitusPageHeader>
+<div class="tz-doc-editor-page">
+    <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="expenses" BackLabel="Back to expenses" />
 
-@if (ShellState.AreWritesBlocked)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
-}
+    @if (ShellState.AreWritesBlocked || _copiedFromExpenseId is not null || !string.IsNullOrWhiteSpace(_validation))
+    {
+        <div class="px-4 pt-3 flex flex-col gap-2">
+            @if (ShellState.AreWritesBlocked)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
+            }
+            @if (_copiedFromExpenseId is not null)
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Message="This is a copy. Revise as needed and save to create a new expense; the original is unchanged." />
+            }
+            @if (!string.IsNullOrWhiteSpace(_validation))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" />
+            }
+        </div>
+    }
 
-@if (_copiedFromExpenseId is not null)
-{
-    @* Copy A3 Phase 1: visible confirmation that the form was
-       prefilled from an existing expense. The source expense itself
-       is untouched — this banner just tells the operator that what
-       they see was carried forward, mirroring QBO's "This is a copy." *@
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4"
-                Message="This is a copy. Revise as needed and save to create a new expense; the original is unchanged." />
-}
-
-@if (!string.IsNullOrWhiteSpace(_validation))
-{
-    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-}
-
-@if (_isLoading)
-{
-    <CitusSkeleton Variant="SkeletonVariant.Form" />
-}
-else
-{
-    <div class="flex flex-col gap-6">
-        <CitusFormSection Title="Payee + payment">
+    @if (_isLoading)
+    {
+        <CitusSkeleton Variant="SkeletonVariant.Form" />
+    }
+    else
+    {
+        <div class="tz-doc-surface">
+            <div class="tz-doc-region">
             @* Line 1: Payee (35%) + Currency (35%) + Payment date (30%). *@
             <div class="citus-expense-row">
                 <CitusFormField Label="Payee">
@@ -169,16 +160,17 @@ else
                     }
                 </div>
             </div>
-        </CitusFormSection>
+            </div>
 
-            <CitusFormSection Title="Lines">
-                <HeaderActions>
-                    <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
-                        <option value="exclusive">Tax exclusive</option>
-                        <option value="inclusive">Tax inclusive</option>
-                    </select>
-                </HeaderActions>
-                <ChildContent>
+            <div class="tz-doc-region">
+                <div class="tz-doc-line-grid">
+                    <div class="flex items-center justify-end mb-2">
+                        <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
+                            <option value="exclusive">Tax exclusive</option>
+                            <option value="inclusive">Tax inclusive</option>
+                        </select>
+                    </div>
+                    <div class="tz-doc-line-grid__scroll">
                 <table class="citus-data-table citus-data-table--compact">
                     <thead>
                         <tr>
@@ -258,61 +250,63 @@ else
                         }
                     </tbody>
                 </table>
-                <div class="flex gap-2 mt-3">
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                    </div>
+                    <div class="tz-doc-line-grid__tools">
+                        <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
+                        <button type="button" class="tz-doc-line-grid__tool" @onclick="ClearLines"><CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines</button>
+                    </div>
                 </div>
-                </ChildContent>
-            </CitusFormSection>
-
-        <CitusFormSection Title="Discount">
-            <div class="flex gap-2">
-                <select class="citus-form-field__input citus-inline-control--sm"
-                        value="@(_discountKind ?? "")"
-                        @onchange="OnDiscountKindChanged">
-                    <option value="">None</option>
-                    <option value="percent">Percent</option>
-                    <option value="amount">Amount</option>
-                </select>
-                <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
             </div>
-        </CitusFormSection>
 
-        @* Line 3: Notes (50%) + Totals (50%). *@
-        <div class="citus-form-grid citus-form-grid--cols-2">
-            <CitusFormSection Title="Notes">
-                <CitusFormField Label="Memo">
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the expense record." />
-                </CitusFormField>
-                <CitusFormField Label="Internal note" Class="mt-4">
-                    <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
-                </CitusFormField>
-            </CitusFormSection>
-
-            <CitusFormSection Title="Totals">
-                <CitusKeyValueTable>
-                    <CitusKeyValueRow Label="Subtotal" ValueAlignRight="true">@FormatAmount(Subtotal) @_currency</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Discount" ValueAlignRight="true">−@FormatAmount(DiscountAmount)</CitusKeyValueRow>
-                    <CitusKeyValueRow Label="Total" ValueAlignRight="true"><strong>@FormatAmount(Total) @_currency</strong></CitusKeyValueRow>
-                    @if (!string.IsNullOrEmpty(_currency)
-                         && !string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
-                         && _fxRate is { } fx && fx > 0m)
-                    {
-                        <CitusKeyValueRow Label="@($"Total ({ShellState.ActiveCompany.BaseCurrencyCode})")" ValueAlignRight="true">@FormatAmount(Total * fx)</CitusKeyValueRow>
-                    }
-                </CitusKeyValueTable>
-            </CitusFormSection>
+            <div class="tz-doc-region">
+                <div class="tz-doc-lower-grid">
+                    <div class="tz-doc-lower-grid__left">
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Memo</label>
+                            <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the expense record." />
+                        </div>
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Internal note</label>
+                            <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
+                        </div>
+                    </div>
+                    @* Totals — interactive Discount (None/Percent/Amount) kept verbatim. *@
+                    <div class="tz-doc-totals-panel">
+                        <div class="tz-doc-totals-row"><span>Subtotal</span><span>@FormatAmount(Subtotal) @_currency</span></div>
+                        <div class="tz-doc-totals-row">
+                            <span>Discount</span>
+                            <span class="flex items-center gap-2">
+                                <select class="citus-form-field__input citus-inline-control--sm" value="@(_discountKind ?? "")" @onchange="OnDiscountKindChanged">
+                                    <option value="">None</option>
+                                    <option value="percent">Percent</option>
+                                    <option value="amount">Amount</option>
+                                </select>
+                                <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-quote-totals__input" />
+                                <span>−@FormatAmount(DiscountAmount)</span>
+                            </span>
+                        </div>
+                        <div class="tz-doc-totals-row tz-doc-totals-row--grand"><span>Total</span><strong>@FormatAmount(Total) @_currency</strong></div>
+                        @if (!string.IsNullOrEmpty(_currency)
+                             && !string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
+                             && _fxRate is { } fx && fx > 0m)
+                        {
+                            <div class="tz-doc-totals-row"><span>Total (@ShellState.ActiveCompany.BaseCurrencyCode)</span><span>@FormatAmount(Total * fx)</span></div>
+                        }
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
 
-    @* Sticky Save / Cancel — pinned to viewport bottom while the
-       operator scrolls a long expense form. *@
-    <CitusFormActions Sticky="true"
-                      IsSaving="@_isSaving"
-                      ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                      OnSave="SaveAsync"
-                      OnCancel="Cancel" />
-}
+        <TzDocActionBar PrimaryLabel="Save"
+                        IsSaving="_isSaving"
+                        ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                        OnSave="SaveAsync">
+            <LeftActions>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="@_isSaving" OnClick="Cancel">Cancel</CitusButton>
+            </LeftActions>
+        </TzDocActionBar>
+    }
+</div>
 
 @code {
     private IReadOnlyList<VendorSummary> _vendors = Array.Empty<VendorSummary>();
