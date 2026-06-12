@@ -7,6 +7,7 @@
 @inject BusinessWriteFlowClient WriteFlow
 @inject JournalEntryReviewClient JournalEntryReviewClient
 @inject CompanyCurrencyClient CompanyCurrencyClient
+@inject TaxCodeSetClient TaxCodeSetClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -205,12 +206,19 @@
                                             OnCleared="@(() => ClearName(i))" />
                             </td>
                             <td>
-                                <TaxCodePicker SelectedId="@line.TaxCodeId"
-                                               SelectedDisplayText="@line.TaxCode"
-                                               AppliesTo="sales"
-                                               Placeholder="Tax"
-                                               OnTaxCodeSelected="@(tax => OnTaxCodeSelected(i, tax))"
-                                               OnCleared="@(() => OnTaxCodeCleared(i))" />
+                                @* R4: Tax CODES (tax_code_sets), not legacy Tax Rules —
+                                   same dropdown as the invoice line grid. No appliesTo
+                                   filter: a JE line can sit on either the sales or the
+                                   purchase side. *@
+                                <RadzenDropDown TValue="Guid?"
+                                                Data="@_taxCodeSets"
+                                                Value="@line.TaxCodeSetId"
+                                                Change="@(v => UpdateLine(i, l => l with { TaxCodeSetId = v as Guid? }))"
+                                                TextProperty="Code"
+                                                ValueProperty="Id"
+                                                AllowClear="true"
+                                                Placeholder="Tax"
+                                                Class="citus-control-full" />
                             </td>
                             <td class="citus-journal-lines__action">
                                 <button type="button"
@@ -296,7 +304,7 @@
     /// UI-side line model. Carries the columns the user enters
     /// (account / name / description / debit / credit / tax). The wire
     /// shape (<see cref="ManualJournalLineDraft"/>) forwards the per-line
-    /// customer (NameEntityId) + sales-tax code (TaxCodeId) so they persist
+    /// counterparty (NameEntityId) + sales-tax code (TaxCodeSetId) so they persist
     /// to journal_entry_lines.party_id / tax_code_id on post.
     /// </summary>
     private sealed record JournalLineEditState(
@@ -309,8 +317,7 @@
         string Description = "",
         decimal Debit = 0m,
         decimal Credit = 0m,
-        Guid? TaxCodeId = null,
-        string TaxCode = "");
+        Guid? TaxCodeSetId = null);
 
     // Enabled currencies for the Transaction currency dropdown. Loaded
     // once at page init from /accounting/company/currencies. The base
@@ -384,9 +391,13 @@
         }
     }
 
+    // R4: Tax Codes (tax_code_sets bundles) for the per-line tax dropdown.
+    private IReadOnlyList<TaxCodeSetSummary> _taxCodeSets = Array.Empty<TaxCodeSetSummary>();
+
     protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        _taxCodeSets = await TaxCodeSetClient.ListAsync();
 
         // When opened via the JE review page's "Edit" action the URL carries
         // ?from={journalEntryId}. Fetch that entry up-front and pre-fill the
@@ -587,17 +598,6 @@
         NameDisplay = string.Empty,
     });
 
-    private void OnTaxCodeSelected(int index, TaxCodeSummary tax) => UpdateLine(index, l => l with
-    {
-        TaxCodeId = tax.Id,
-        TaxCode = tax.Code,
-    });
-
-    private void OnTaxCodeCleared(int index) => UpdateLine(index, l => l with
-    {
-        TaxCodeId = null,
-        TaxCode = string.Empty,
-    });
 
     /// <summary>
     /// When the user fills any field of the last row, append a fresh empty
@@ -619,7 +619,7 @@
         line.Debit == 0m &&
         line.Credit == 0m &&
         line.NameEntityId is null &&
-        string.IsNullOrWhiteSpace(line.TaxCode);
+        line.TaxCodeSetId is null;
 
     private async Task PostAsync()
     {
@@ -675,7 +675,7 @@
                     NameEntityType = l.NameEntityId is null
                         ? string.Empty
                         : (string.IsNullOrWhiteSpace(l.NameEntityType) ? "customer" : l.NameEntityType),
-                    TaxCodeId = l.TaxCodeId,
+                    TaxCodeSetId = l.TaxCodeSetId,
                 }).ToArray()
             };
 

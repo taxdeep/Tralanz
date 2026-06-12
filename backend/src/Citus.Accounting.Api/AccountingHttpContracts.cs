@@ -101,11 +101,12 @@ internal sealed record class ManualJournalSaveAndPostLineHttpRequest
     public decimal Debit { get; init; }
     public decimal Credit { get; init; }
 
-    // Per-line customer (party_id + party_type='customer') and sales tax
-    // (tax_code_id). Optional — a line may have neither.
+    // Per-line counterparty (party_id + party_type, customer or vendor) and
+    // Tax Code (tax_code_sets.id → tax_code_set_id). Optional — a line may
+    // have neither.
     public Guid? CounterpartyId { get; init; }
     public string? CounterpartyType { get; init; }
-    public Guid? TaxCodeId { get; init; }
+    public Guid? TaxCodeSetId { get; init; }
 }
 
 // V1-pending request bodies. Match the frontend Draft records 1:1.

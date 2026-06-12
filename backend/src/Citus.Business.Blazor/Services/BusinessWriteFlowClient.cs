@@ -59,7 +59,7 @@ public sealed class BusinessWriteFlowClient
                 credit = line.Credit,
                 counterpartyId = line.NameEntityId,
                 counterpartyType = string.IsNullOrWhiteSpace(line.NameEntityType) ? null : line.NameEntityType.Trim(),
-                taxCodeId = line.TaxCodeId,
+                taxCodeSetId = line.TaxCodeSetId,
             }).ToArray(),
         };
 
@@ -1236,9 +1236,9 @@ public sealed record ManualJournalLineDraft
     public Guid? NameEntityId { get; init; }
     /// <summary>Counterparty kind for <see cref="NameEntityId"/> — "customer" or "vendor".</summary>
     public string NameEntityType { get; init; } = string.Empty;
-    /// <summary>Optional per-line sales-tax code (the TaxCode picker). Persisted
-    /// to journal_entry_lines.tax_code_id.</summary>
-    public Guid? TaxCodeId { get; init; }
+    /// <summary>Optional per-line Tax Code (tax_code_sets bundle). Persisted
+    /// to journal_entry_lines.tax_code_set_id.</summary>
+    public Guid? TaxCodeSetId { get; init; }
 }
 
 public sealed record InvoiceDraft

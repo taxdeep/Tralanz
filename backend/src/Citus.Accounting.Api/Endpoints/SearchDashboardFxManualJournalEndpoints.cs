@@ -891,7 +891,7 @@ internal static class SearchDashboardFxManualJournalEndpoints
                         : (string.IsNullOrWhiteSpace(lineRequest.CounterpartyType)
                             ? "customer"
                             : lineRequest.CounterpartyType.Trim().ToLowerInvariant());
-                    Guid? taxCodeId = lineRequest.TaxCodeId is { } tid && tid != Guid.Empty ? tid : null;
+                    Guid? taxCodeSetId = lineRequest.TaxCodeSetId is { } tid && tid != Guid.Empty ? tid : null;
 
                     draft.Lines.Add(new global::Modules.GL.JournalEntry.JournalEntryDraftLine
                     {
@@ -912,7 +912,7 @@ internal static class SearchDashboardFxManualJournalEndpoints
                         Description = lineRequest.Description ?? string.Empty,
                         PartyId = partyId,
                         PartyType = partyType,
-                        TaxCodeId = taxCodeId,
+                        TaxCodeSetId = taxCodeSetId,
                     });
                 }
 

@@ -1213,7 +1213,7 @@ CREATE TABLE journal_entry_lines (
   debit numeric(20,6) NOT NULL DEFAULT 0,
   credit numeric(20,6) NOT NULL DEFAULT 0,
   tax_component_type text,
-  tax_code_id uuid,
+  tax_code_set_id uuid,
   control_role text,
   posting_role text,
   source_line_number integer,

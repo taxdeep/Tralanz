@@ -20,7 +20,8 @@ public sealed class JournalEntryDraftLine
 
     public string SalesTax { get; set; } = string.Empty;
 
-    public Guid? TaxCodeId { get; set; }
+    /// <summary>Tax Code (tax_code_sets bundle) id — journal_entry_lines.tax_code_set_id.</summary>
+    public Guid? TaxCodeSetId { get; set; }
 
     public bool HasContent =>
         Account is not null ||
@@ -42,7 +43,7 @@ public sealed class JournalEntryDraftLine
             PartyId = PartyId,
             PartyType = PartyType,
             SalesTax = SalesTax,
-            TaxCodeId = TaxCodeId
+            TaxCodeSetId = TaxCodeSetId
         };
 
     public static JournalEntryDraftLine Blank(int lineNumber) => new()
