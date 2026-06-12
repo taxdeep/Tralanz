@@ -410,6 +410,10 @@
         if (BillId is null)
         {
             await TryHydrateFromCopySourceAsync();
+            // Fresh create (and copy): default the due date right away —
+            // bill date + payment term once a vendor carries one, plain
+            // bill date until then. Edit mode keeps the stored due date.
+            RecomputeDueDate();
         }
     }
 
@@ -615,18 +619,19 @@
 
     private void RecomputeDueDate()
     {
-        if (_paymentTermId is { } termId && _billDate is { } billDate)
+        if (_billDate is not { } billDate)
         {
-            var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);
-            if (term is not null)
-            {
-                _dueDate = billDate.AddDays(term.NetDays);
-            }
+            return;
         }
-        else if (_dueDate is null && _billDate is { } d)
-        {
-            _dueDate = d;
-        }
+
+        // Due date = bill date + the payment term's net days; with no
+        // (resolvable) term it simply follows the bill date. Runs on page
+        // init, vendor pick, and bill-date change — a manual due-date
+        // override therefore survives until one of those changes it.
+        var term = _paymentTermId is { } termId
+            ? _paymentTerms.FirstOrDefault(t => t.Id == termId)
+            : null;
+        _dueDate = term is null ? billDate : billDate.AddDays(term.NetDays);
     }
 
     private void UpdateLine(int index, Func<LineDraft, LineDraft> mutate)
