@@ -4661,7 +4661,14 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 /* Spreadsheet line grid — reuses .citus-data-table--compact for the table;
    this wrapper only adds horizontal scroll + the bottom tool row. */
-.tz-doc-line-grid__scroll { overflow-x: auto; }
+/* No overflow rule on the line-grid wrapper: overflow-x:auto forces
+   overflow-y to compute to auto (CSS spec), which traps the absolutely-
+   positioned picker panels (account create panel, name/item/tax pickers)
+   inside the wrapper — clipped at the last row with an inner scrollbar
+   when the grid is shorter than the 320px panel. Same bug + same fix as
+   .citus-line-table (2d.12 note above): no clip wrapper; on narrow
+   viewports the page scrolls horizontally and panels stay un-clipped. */
+.tz-doc-line-grid__scroll { }
 .tz-doc-line-grid__tools { display: flex; gap: var(--citus-space-4); padding: var(--citus-space-2) 0 0; }
 .tz-doc-line-grid__tool {
     display: inline-flex; align-items: center; gap: var(--citus-space-1);
