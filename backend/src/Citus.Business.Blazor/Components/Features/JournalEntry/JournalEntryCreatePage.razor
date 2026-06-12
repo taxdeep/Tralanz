@@ -289,7 +289,7 @@
         </div>
     </div>
 
-    <TzDocActionBar PrimaryLabel="Post journal entry"
+    <TzDocActionBar PrimaryLabel="Post"
                     IsSaving="@_isSubmitting"
                     Disabled="@(!_isBalanced || _lines.Count == 0 || ShellState.AreWritesBlocked)"
                     ErrorHint="@(string.IsNullOrWhiteSpace(_validationMessage) ? null : "Fix errors above")"
@@ -297,6 +297,12 @@
         <LeftActions>
             <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isSubmitting" OnClick="ResetAsync">Reset draft</CitusButton>
         </LeftActions>
+        <RightExtras>
+            @* Post and new: same posting path, but stays on the page and
+               resets to a blank form for back-to-back entries. *@
+            <CitusButton Disabled="@(!_isBalanced || _lines.Count == 0 || ShellState.AreWritesBlocked || _isSubmitting)"
+                         OnClick="PostAndNewAsync">Post and new</CitusButton>
+        </RightExtras>
     </TzDocActionBar>
 </div>
 
@@ -628,7 +634,11 @@
         line.NameEntityId is null &&
         line.TaxCodeSetId is null;
 
-    private async Task PostAsync()
+    private Task PostAsync() => PostCoreAsync(stayAndNew: false);
+
+    private Task PostAndNewAsync() => PostCoreAsync(stayAndNew: true);
+
+    private async Task PostCoreAsync(bool stayAndNew)
     {
         _validationMessage = null;
         _lastResult = null;
@@ -690,7 +700,16 @@
             if (_lastResult.Succeeded)
             {
                 await Message.SuccessAsync("Journal entry posted.");
-                NavigationManager.NavigateTo("journal-entry");
+                if (stayAndNew)
+                {
+                    // Stay on the page with a blank form (next number re-peeked)
+                    // so the operator can file back-to-back entries.
+                    await ResetAsync();
+                }
+                else
+                {
+                    NavigationManager.NavigateTo("journal-entry");
+                }
             }
             else
             {
