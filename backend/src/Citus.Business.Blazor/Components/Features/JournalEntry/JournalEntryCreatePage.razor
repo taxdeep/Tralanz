@@ -218,7 +218,15 @@
                                                 ValueProperty="Id"
                                                 AllowClear="true"
                                                 Placeholder="Tax"
-                                                Class="citus-control-full" />
+                                                Class="citus-control-full">
+                                    @* Open list shows "Code — Name" so the operator can tell
+                                       what G / GP / P mean; the selected value stays Code-only
+                                       (TextProperty) to fit the 9rem tax cell. *@
+                                    <Template Context="ctx">
+                                        @{ var set = (TaxCodeSetSummary)ctx; }
+                                        <span class="citus-inline-code">@set.Code</span> @set.Name
+                                    </Template>
+                                </RadzenDropDown>
                             </td>
                             <td class="citus-journal-lines__action">
                                 <button type="button"
