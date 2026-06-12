@@ -1181,8 +1181,11 @@
    containers spacing comes from `gap`, and a stray margin-top on the
    second sibling pushes it down within its cell â€” the cards then
    fail to bottom-align even with `items-stretch` + `h-full`. Cancel
-   the auto-margin in those layouts. */
-:where(.grid, .flex) > .citus-panel + .citus-panel {
+   the auto-margin in those layouts. (.citus-customer-summary is the
+   customer / vendor profile summary row: display:grid via its own
+   class, so the .grid selector alone missed it and the Financial
+   summary panel sat 1rem lower than Vendor/Customer details.) */
+:where(.grid, .flex, .citus-customer-summary) > .citus-panel + .citus-panel {
     margin-top: 0;
 }
 
