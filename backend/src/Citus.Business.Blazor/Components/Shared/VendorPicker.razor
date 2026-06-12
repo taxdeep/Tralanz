@@ -81,14 +81,7 @@
                             @onclick="@(() => SelectAsync(row))"
                             @onmouseover="@(() => _highlightedIndex = i)">
                         <span class="citus-customer-picker__option-copy">
-                            <span class="citus-customer-picker__option-primary">@RenderHighlight(row.DisplayName)</span>
-                            <span class="citus-customer-picker__option-secondary">
-                                @row.EntityNumber
-                                @if (!string.IsNullOrWhiteSpace(row.DefaultCurrencyCode))
-                                {
-                                    <span> - @row.DefaultCurrencyCode</span>
-                                }
-                            </span>
+                            <span class="citus-customer-picker__option-primary">@RenderOptionLine(row)</span>
                         </span>
                         <span class="citus-customer-picker__option-kind">Vendor</span>
                     </button>
@@ -348,6 +341,28 @@
         string.IsNullOrWhiteSpace(row.DefaultCurrencyCode)
             ? row.DisplayName
             : $"{row.DisplayName} - {row.DefaultCurrencyCode}";
+
+    // Dropdown option, single line: "Supplier | Supplier # | Currency",
+    // where Supplier # is the operator-facing VEN-NNNNNN code (EN entity
+    // number as a fallback for rows created before vendor numbering).
+    // The name keeps the type-ahead match highlight; segments are omitted
+    // when absent.
+    private RenderFragment RenderOptionLine(VendorSummary row) => builder =>
+    {
+        var seq = 0;
+        builder.AddContent(seq++, RenderHighlight(row.DisplayName));
+
+        var number = string.IsNullOrWhiteSpace(row.VendorNumber) ? row.EntityNumber : row.VendorNumber;
+        if (!string.IsNullOrWhiteSpace(number))
+        {
+            builder.AddContent(seq++, $" | {number}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.DefaultCurrencyCode))
+        {
+            builder.AddContent(seq++, $" | {row.DefaultCurrencyCode}");
+        }
+    };
 
     private RenderFragment RenderHighlight(string text) => builder =>
     {
