@@ -58,186 +58,196 @@ else if (!CanCreate)
 }
 else
 {
-    <CitusPageHeader Model="_header">
-        <Actions>
-            <CitusLinkButton Href="tasks"
-                             Variant="CitusButtonVariant.Ghost"
-                             LeadingIcon="IconName.ArrowLeft">
-                Back to tasks
-            </CitusLinkButton>
-        </Actions>
-    </CitusPageHeader>
+    @* tz-doc continuous canvas — same structure as the SO / invoice
+       editors (toolbar → header grid → line grid → lower grid → sticky
+       action bar). Functionality is unchanged from the CitusFormSection
+       version; only the visual shell moved. *@
+    <div class="tz-doc-editor-page">
+        <TzDocToolbar Title="@_header.Title" Subtitle="@_header.Subtitle" BackHref="tasks" BackLabel="Back to tasks" />
 
-    @if (ShellState.AreWritesBlocked)
-    {
-        <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
-    }
-
-    @if (!string.IsNullOrWhiteSpace(_validation))
-    {
-        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-    }
-
-    @if (_isLoading)
-    {
-        <CitusSkeleton Variant="SkeletonVariant.Form" />
-    }
-    else
-    {
-        <CitusFormSection Title="Header">
-            @* Line 1: Title (left half, capped at 30 chars) + Service date (right half). *@
-            <CitusFormGrid Columns="2">
-                <CitusFormField Label="Title">
-                    <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" MaxLength="30" />
-                </CitusFormField>
-                <CitusFormField Label="Service date">
-                    <input type="date" class="citus-form-field__input" @bind="_serviceDate" />
-                </CitusFormField>
-            </CitusFormGrid>
-
-            @* Line 2: Customer (40%) + Currency (10%, read-only — follows the picked
-               customer's default) + Description (50%). *@
-            <div class="citus-task-customer-row mt-4">
-                <CitusFormField Label="Customer" Required="true">
-                    @* Customer is required at create-time so the task is
-                       immediately billable — TaskDetailPage's "Create invoice"
-                       affordance only appears when customer_id is set, and
-                       requiring it here avoids the round-trip back through
-                       PUT /tasks/{id}. The DB column stays nullable so legacy
-                       rows and future internal-only flows still parse. *@
-                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                    UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                    SelectedId="@_customerId"
-                                    SelectedDisplayText="@_customerDisplay"
-                                    Placeholder="Search customers…"
-                                    SourceRoute="/tasks/new"
-                                    OnCustomerSelected="OnCustomerSelected"
-                                    OnCleared="OnCustomerCleared" />
-                </CitusFormField>
-                <CitusFormField Label="Currency">
-                    @* Currency is customer-driven: show an em-dash until a customer
-                       is picked, then the customer's default (set in OnCustomerSelected). *@
-                    <div class="citus-form-field__static">@(_customerId is null ? "—" : _currency)</div>
-                </CitusFormField>
-                <CitusFormField Label="Description (optional)">
-                    <CitusInput TValue="string" @bind-Value="_description" Placeholder="Optional" />
-                </CitusFormField>
-            </div>
-        </CitusFormSection>
-
-        <CitusFormSection Title="Items">
-            <HeaderActions>
-                <span class="text-fg-subtle text-xs">
-                    Pick a Service or Product line. Tax is handled when this task is converted to an invoice.
-                </span>
-            </HeaderActions>
-            <ChildContent>
-            <table class="citus-data-table citus-data-table--compact">
-                <thead>
-                    <tr>
-                        <th style="width: 3rem">#</th>
-                        <th style="width: 18rem">Item / Service</th>
-                        <th>Description</th>
-                        <th class="text-right" style="width: 6rem">Qty</th>
-                        <th class="text-right" style="width: 9rem">Unit price</th>
-                        <th class="text-right" style="width: 10rem">Amount</th>
-                        <th style="width: 3rem"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (var i = 0; i < _lines.Count; i++)
-                    {
-                        var index = i;
-                        var line = _lines[index];
-                        <tr>
-                            <td>@(index + 1)</td>
-                            <td>
-                                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                   Context="@SearchScopeContext.SalesItemServicePicker"
-                                                   Placeholder="Pick an item or service…"
-                                                   Take="6"
-                                                   SourceRoute="/tasks/new"
-                                                   SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
-                                                   SelectedDisplayText="@line.ItemDisplay"
-                                                   OnItemSelected="@(option => OnItemPicked(index, option))"
-                                                   OnCleared="@(() => OnItemCleared(index))" />
-                            </td>
-                            <td>
-                                <CitusInput TValue="string"
-                                            Value="@line.Description"
-                                            ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
-                            </td>
-                            <td>
-                                @* Qty rule follows the picked item's UOM:
-                                   precision=0 (each / case / box) forces integer;
-                                   precision=2 (hour / day / kg) allows 2 decimals;
-                                   precision=3 (kg) allows 3, etc. RadzenNumeric
-                                   (over a bare <input value="...">) is what makes
-                                   the value re-render when LineDraft fields change
-                                   after an item pick — the HTML attribute path
-                                   leaves the rendered text stuck on the previous
-                                   value because Blazor's diff sees the attribute
-                                   string unchanged and skips the DOM update. *@
-                                @{
-                                    var qtyPrecision = QtyPrecisionFor(line);
-                                    var qtyFormat = QtyFormat(qtyPrecision);
-                                }
-                                <RadzenNumeric TValue="decimal"
-                                               Value="@line.Quantity"
-                                               ValueChanged="@(v => UpdateLine(index, l => l with { Quantity = ApplyQtyPrecision(v, qtyPrecision) }))"
-                                               Min="0"
-                                               Format="@qtyFormat"
-                                               Class="citus-control-full" />
-                            </td>
-                            <td>
-                                @* Unit price always rounds to 2 decimals on store
-                                   (CAD/USD billing convention). Round happens in
-                                   the ValueChanged handler so downstream Invoice
-                                   carryover inherits a clean scale. *@
-                                <RadzenNumeric TValue="decimal?"
-                                               Value="@line.UnitPrice"
-                                               ValueChanged="@(v => UpdateLine(index, l => l with { UnitPrice = RoundMoney(v) }))"
-                                               Min="0"
-                                               Format="0.00"
-                                               Placeholder="Auto"
-                                               Class="citus-control-full" />
-                            </td>
-                            <td class="text-right">@line.LineAmount.ToString("N2") @_currency</td>
-                            <td>
-                                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
-                                             OnClick="@(() => RemoveLine(index))">×</CitusButton>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-                <tfoot>
-                    <tr>
-                        <td colspan="5" class="text-right font-medium">Subtotal</td>
-                        <td class="text-right font-medium">@Subtotal.ToString("N2") @_currency</td>
-                        <td></td>
-                    </tr>
-                </tfoot>
-            </table>
-
-            <div class="flex gap-2 mt-3">
-                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
-                @if (_lines.Count > 1)
+        @if (ShellState.AreWritesBlocked || !string.IsNullOrWhiteSpace(_validation))
+        {
+            <div class="px-4 pt-3 flex flex-col gap-2">
+                @if (ShellState.AreWritesBlocked)
                 {
-                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" />
+                }
+                @if (!string.IsNullOrWhiteSpace(_validation))
+                {
+                    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" />
                 }
             </div>
-            </ChildContent>
-        </CitusFormSection>
+        }
 
-        <CitusFormActions Sticky="true"
-                          PrimaryLabel="Create"
-                          SavingLabel="Creating…"
-                          IsSaving="@_isSaving"
-                          ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
-                          OnSave="OnCreateAsync"
-                          OnCancel="OnCancelAsync" />
-    }
+        @if (_isLoading)
+        {
+            <CitusSkeleton Variant="SkeletonVariant.Form" />
+        }
+        else
+        {
+            <div class="tz-doc-surface">
+                <div class="tz-doc-region">
+                    <div class="tz-doc-header-grid">
+                        <div class="tz-doc-zone">
+                            <div class="tz-doc-field">
+                                <label class="tz-doc-field__label">Customer *</label>
+                                @* Customer is required at create-time so the task is
+                                   immediately billable — TaskDetailPage's "Create invoice"
+                                   affordance only appears when customer_id is set, and
+                                   requiring it here avoids the round-trip back through
+                                   PUT /tasks/{id}. The DB column stays nullable so legacy
+                                   rows and future internal-only flows still parse. *@
+                                <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                                SelectedId="@_customerId"
+                                                SelectedDisplayText="@_customerDisplay"
+                                                Placeholder="Search customers…"
+                                                SourceRoute="/tasks/new"
+                                                OnCustomerSelected="OnCustomerSelected"
+                                                OnCleared="OnCustomerCleared" />
+                            </div>
+                            <div class="tz-doc-field">
+                                <label class="tz-doc-field__label">Title</label>
+                                <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" MaxLength="30" />
+                            </div>
+                        </div>
+                        <div class="tz-doc-zone">
+                            <div class="tz-doc-field-row">
+                                <div class="tz-doc-field">
+                                    <label class="tz-doc-field__label">Service date</label>
+                                    <input type="date" class="citus-form-field__input" @bind="_serviceDate" />
+                                </div>
+                                <div class="tz-doc-field">
+                                    <label class="tz-doc-field__label">Currency</label>
+                                    @* Customer-driven: em-dash until a customer is picked,
+                                       then the customer's default (set in OnCustomerSelected). *@
+                                    <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">@(_customerId is null ? "—" : _currency)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tz-doc-region">
+                    <div class="tz-doc-line-grid">
+                        <div class="tz-doc-line-grid__scroll">
+                    <table class="citus-data-table citus-data-table--compact">
+                        <thead>
+                            <tr>
+                                <th style="width: 2.5rem">#</th>
+                                <th style="width: 18rem">Item / Service</th>
+                                <th>Description</th>
+                                <th class="text-right" style="width: 6rem">Qty</th>
+                                <th class="text-right" style="width: 9rem">Unit price</th>
+                                <th class="text-right" style="width: 10rem">Amount</th>
+                                <th style="width: 3rem"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < _lines.Count; i++)
+                            {
+                                var index = i;
+                                var line = _lines[index];
+                                <tr>
+                                    <td>@(index + 1)</td>
+                                    <td>
+                                        <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                           UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                                           Context="@SearchScopeContext.SalesItemServicePicker"
+                                                           Placeholder="Pick an item or service…"
+                                                           Take="6"
+                                                           SourceRoute="/tasks/new"
+                                                           SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                                           SelectedDisplayText="@line.ItemDisplay"
+                                                           OnItemSelected="@(option => OnItemPicked(index, option))"
+                                                           OnCleared="@(() => OnItemCleared(index))" />
+                                    </td>
+                                    <td>
+                                        <CitusInput TValue="string"
+                                                    Value="@line.Description"
+                                                    ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
+                                    </td>
+                                    <td>
+                                        @* Qty rule follows the picked item's UOM:
+                                           precision=0 (each / case / box) forces integer;
+                                           precision=2 (hour / day / kg) allows 2 decimals;
+                                           precision=3 (kg) allows 3, etc. RadzenNumeric
+                                           (over a bare <input value="...">) is what makes
+                                           the value re-render when LineDraft fields change
+                                           after an item pick — the HTML attribute path
+                                           leaves the rendered text stuck on the previous
+                                           value because Blazor's diff sees the attribute
+                                           string unchanged and skips the DOM update. *@
+                                        @{
+                                            var qtyPrecision = QtyPrecisionFor(line);
+                                            var qtyFormat = QtyFormat(qtyPrecision);
+                                        }
+                                        <RadzenNumeric TValue="decimal"
+                                                       Value="@line.Quantity"
+                                                       ValueChanged="@(v => UpdateLine(index, l => l with { Quantity = ApplyQtyPrecision(v, qtyPrecision) }))"
+                                                       Min="0"
+                                                       Format="@qtyFormat"
+                                                       Class="citus-control-full" />
+                                    </td>
+                                    <td>
+                                        @* Unit price always rounds to 2 decimals on store
+                                           (CAD/USD billing convention). Round happens in
+                                           the ValueChanged handler so downstream Invoice
+                                           carryover inherits a clean scale. *@
+                                        <RadzenNumeric TValue="decimal?"
+                                                       Value="@line.UnitPrice"
+                                                       ValueChanged="@(v => UpdateLine(index, l => l with { UnitPrice = RoundMoney(v) }))"
+                                                       Min="0"
+                                                       Format="0.00"
+                                                       Placeholder="Auto"
+                                                       Class="citus-control-full" />
+                                    </td>
+                                    <td class="text-right">@line.LineAmount.ToString("N2") @_currency</td>
+                                    <td>
+                                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                                     OnClick="@(() => RemoveLine(index))"><i class="ti ti-trash" aria-hidden="true"></i></CitusButton>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                        </div>
+                        <div class="tz-doc-line-grid__tools">
+                            <button type="button" class="tz-doc-line-grid__tool" @onclick="AddLine"><CitusIcon Name="IconName.Plus" Size="IconSize.Inline" /> Add line</button>
+                            @if (_lines.Count > 1)
+                            {
+                                <button type="button" class="tz-doc-line-grid__tool" @onclick="ClearLines"><CitusIcon Name="IconName.Trash" Size="IconSize.Inline" /> Clear all lines</button>
+                            }
+                            <span class="text-fg-muted text-sm">Pick a Service or Product line. Tax is handled when this task is converted to an invoice.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tz-doc-region">
+                    <div class="tz-doc-lower-grid">
+                        <div class="tz-doc-lower-grid__left">
+                            <div class="tz-doc-field">
+                                <label class="tz-doc-field__label">Description <span class="text-fg-subtle text-xs">(optional)</span></label>
+                                <CitusInput TValue="string" @bind-Value="_description" Placeholder="Optional" />
+                            </div>
+                        </div>
+                        <div class="tz-doc-totals-panel">
+                            <div class="tz-doc-totals-row tz-doc-totals-row--grand"><span>Subtotal</span><strong>@Subtotal.ToString("N2") @_currency</strong></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <TzDocActionBar PrimaryLabel="Create"
+                            IsSaving="@_isSaving"
+                            ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
+                            OnSave="OnCreateAsync">
+                <LeftActions>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="@_isSaving" OnClick="OnCancelAsync">Cancel</CitusButton>
+                </LeftActions>
+            </TzDocActionBar>
+        }
+    </div>
 }
 
 @code {
