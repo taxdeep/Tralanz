@@ -21,13 +21,6 @@
                          LeadingIcon="IconName.ArrowLeft">
             Back to POs
         </CitusLinkButton>
-        @if (_po is not null && IsEditable(_po.Status))
-        {
-            <CitusLinkButton Href="@($"purchase-orders/{_po.Id:D}/edit")"
-                             LeadingIcon="IconName.Pencil">
-                Edit
-            </CitusLinkButton>
-        }
     </Actions>
 </CitusPageHeader>
 
@@ -70,36 +63,6 @@ else
                        Description="@($"Ordered {_po.OrderDate:yyyy-MM-dd}")"
                        Icon="IconName.Calendar" Tone="StatTone.Neutral" />
     </div>
-
-    @* Copy A3 Phase 3: More menu hosts Copy. Lifecycle actions
-       (Send / Convert / Cancel / Void) stay as inline buttons
-       because they're context-specific to PO status. *@
-    <CitusActionsPanel MoreMenuItems="@_moreItems">
-        @if (_po.Status == "draft")
-        {
-            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("open", "PO sent (Open)."))">Send</CitusButton>
-        }
-        @if (_po.Status is "open" or "closed")
-        {
-            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertToBillAsync">
-                Convert to Bill
-            </CitusButton>
-            <CitusLinkButton Href="@($"purchase-orders/{_po.Id:D}/convert-to-expense")">
-                Convert to Expense
-            </CitusLinkButton>
-        }
-        @if (_po.Status is "draft" or "open")
-        {
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("cancelled", "PO cancelled."))">Cancel PO</CitusButton>
-        }
-        @if (_po.Status != "void" && _po.Status != "cancelled")
-        {
-            <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                         OnClick="@(() => SetStatusAsync("void", "PO voided."))">Void</CitusButton>
-        }
-    </CitusActionsPanel>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
@@ -160,6 +123,58 @@ else
             </CitusFormSection>
         </aside>
     </div>
+
+    @* Sticky bottom action bar — same pattern as the invoice / SO detail
+       pages (the mid-page Actions panel is gone). Primary action varies
+       by lifecycle; Edit moved here from the page header. *@
+    @if (_po.Status == "draft")
+    {
+        <CitusFormActions Sticky="true"
+                          PrimaryLabel="Send"
+                          SavingLabel="Sending…"
+                          CancelVisible="false"
+                          IsSaving="@_isMutating"
+                          Disabled="@ShellState.AreWritesBlocked"
+                          OnSave="@(() => SetStatusAsync("open", "PO sent (Open)."))">
+            <ExtraContent>
+                <CitusLinkButton Href="@($"purchase-orders/{_po.Id:D}/edit")" Variant="CitusButtonVariant.Ghost" LeadingIcon="IconName.Pencil">Edit</CitusLinkButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isMutating" OnClick="CopyAsync">Copy</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isMutating" OnClick="@(() => SetStatusAsync("cancelled", "PO cancelled."))">Cancel PO</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isMutating" OnClick="@(() => SetStatusAsync("void", "PO voided."))">Void</CitusButton>
+            </ExtraContent>
+        </CitusFormActions>
+    }
+    else if (_po.Status is "open" or "closed")
+    {
+        <CitusFormActions Sticky="true"
+                          PrimaryLabel="Convert to Bill"
+                          SavingLabel="Converting…"
+                          CancelVisible="false"
+                          IsSaving="@_isMutating"
+                          Disabled="@ShellState.AreWritesBlocked"
+                          OnSave="ConvertToBillAsync">
+            <ExtraContent>
+                @if (IsEditable(_po.Status))
+                {
+                    <CitusLinkButton Href="@($"purchase-orders/{_po.Id:D}/edit")" Variant="CitusButtonVariant.Ghost" LeadingIcon="IconName.Pencil">Edit</CitusLinkButton>
+                }
+                <CitusLinkButton Href="@($"purchase-orders/{_po.Id:D}/convert-to-expense")" Variant="CitusButtonVariant.Ghost">Convert to Expense</CitusLinkButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isMutating" OnClick="CopyAsync">Copy</CitusButton>
+                @if (_po.Status == "open")
+                {
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isMutating" OnClick="@(() => SetStatusAsync("cancelled", "PO cancelled."))">Cancel PO</CitusButton>
+                }
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="@_isMutating" OnClick="@(() => SetStatusAsync("void", "PO voided."))">Void</CitusButton>
+            </ExtraContent>
+        </CitusFormActions>
+    }
+    else
+    {
+        <CitusFormActions Sticky="true"
+                          PrimaryLabel="Copy PO"
+                          CancelVisible="false"
+                          OnSave="CopyAsync" />
+    }
 }
 
 @code {
@@ -213,7 +228,8 @@ else
         {
             Eyebrow = "Expense & Bills",
             Title = _po.PurchaseOrderNumber,
-            Subtitle = $"{_po.VendorName} · {HumanizeStatus(_po.Status)}"
+            // Status lives in the header badge; repeating it here read twice.
+            Subtitle = _po.VendorName
         };
     }
 
@@ -287,20 +303,4 @@ else
         Navigation.NavigateTo($"purchase-orders/new?copyFrom={_po.Id:D}");
     }
 
-    private IReadOnlyList<CitusMoreMenuItem> _moreItems => _po is null
-        ? Array.Empty<CitusMoreMenuItem>()
-        : new[]
-        {
-            new CitusMoreMenuItem { Label = "Copy", OnClick = EventCallback.Factory.Create(this, CopyAsync) }
-        };
-
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "draft" => "Draft",
-        "open" => "Open",
-        "closed" => "Closed",
-        "cancelled" => "Cancelled",
-        "void" => "Void",
-        _ => status
-    };
 }
