@@ -391,7 +391,6 @@
             };
             if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                 rows.Add(("Base currency", ShellState.ActiveCompany.BaseCurrencyCode, false, false));
-            rows.Add(("Lines", _lines.Count.ToString(), false, false));
             rows.Add(("Debit total", FormatAmount(_totalDebit), false, false));
             rows.Add(("Credit total", FormatAmount(_totalCredit), false, false));
             rows.Add(("Difference", FormatAmount(Math.Abs(_totalDebit - _totalCredit)), true, false));
