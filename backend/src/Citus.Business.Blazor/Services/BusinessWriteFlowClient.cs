@@ -1121,7 +1121,7 @@ public sealed class BusinessWriteFlowClient
         return outcome.Succeeded
             ? new WriteFlowResult(
                 Succeeded: true,
-                Message: $"Customer {outcome.Saved!.EntityNumber} saved.",
+                Message: $"Customer {outcome.Saved!.DisplayName} saved.",
                 Operation: nameof(SaveCustomerAsync),
                 DraftEcho: outcome.Saved)
             : new WriteFlowResult(
@@ -1154,7 +1154,7 @@ public sealed class BusinessWriteFlowClient
         return outcome.Succeeded
             ? new WriteFlowResult(
                 Succeeded: true,
-                Message: $"Vendor {outcome.Saved!.EntityNumber} saved.",
+                Message: $"Vendor {outcome.Saved!.DisplayName} saved.",
                 Operation: nameof(SaveVendorAsync),
                 DraftEcho: outcome.Saved)
             : new WriteFlowResult(
