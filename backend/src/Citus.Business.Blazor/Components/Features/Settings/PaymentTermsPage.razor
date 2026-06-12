@@ -120,13 +120,18 @@
                 </CitusFormField>
 
                 <CitusFormField Label="Net days">
-                    <input type="number"
+                    @* type="text" + inputmode="numeric" instead of type="number":
+                       Chromium's native numeric renderer paints the value with a
+                       system -webkit-text-fill-color that can match the field
+                       background (the input looks dead while typing). Same fix
+                       as the JE amount cells. OnSaveAsync validates the 0–3650
+                       range. *@
+                    <input type="text"
+                           inputmode="numeric"
                            class="citus-form-field__input"
-                           step="1"
-                           min="0"
-                           max="3650"
                            value="@_formNetDays"
                            @oninput="@(e => _formNetDays = e.Value?.ToString() ?? string.Empty)"
+                           placeholder="30"
                            disabled="@_isMutating" />
                 </CitusFormField>
             </CitusFormGrid>
