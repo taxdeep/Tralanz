@@ -142,7 +142,7 @@
                                 <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                                Context="vendor_credit.line.category"
-                                               AllowedRootTypes="expense,asset,cost_of_sales"
+                                               AllowedRootTypes="expense,cost_of_sales,asset"
                                                SelectedId="@line.AccountId"
                                                SelectedDisplayText="@line.AccountDisplay"
                                                Placeholder="Pick a category..."

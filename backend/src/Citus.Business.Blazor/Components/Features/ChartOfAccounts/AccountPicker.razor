@@ -187,6 +187,10 @@
     // create a row inline. Search filters this list client-side; ranking
     // is layered on top via UnitySearchPickerService.SearchAsync results.
     private List<AccountSummary> _allAccounts = new();
+    // AllowedRootTypes parsed into an ordered list — its position drives the
+    // empty-query / tie-break display priority (see RootTypeRank). Empty when
+    // no AllowedRootTypes is set (full chart → pure code order, unchanged).
+    private string[] _allowedOrder = Array.Empty<string>();
     private IReadOnlyList<AccountSummary> _visibleRows = Array.Empty<AccountSummary>();
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _blurCts;
@@ -249,6 +253,10 @@
         {
             var rows = await AccountClient.ListAsync();
             var allowed = ParseAllowedRootTypes(AllowedRootTypes);
+            // The CSV order doubles as a display-priority order (see
+            // RootTypeRank) so e.g. the expense picker leads with expense
+            // categories instead of the low-numbered asset accounts.
+            _allowedOrder = ParseRootTypeOrder(AllowedRootTypes);
             _allAccounts = rows
                 .Where(r => r.IsActive)
                 .Where(r => allowed is null || allowed.Contains(r.RootType ?? string.Empty))
@@ -280,6 +288,25 @@
         return csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(s => s.ToLowerInvariant())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string[] ParseRootTypeOrder(string? csv) =>
+        string.IsNullOrWhiteSpace(csv)
+            ? Array.Empty<string>()
+            : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => s.ToLowerInvariant())
+                .ToArray();
+
+    // Lower rank sorts first. The AllowedRootTypes CSV order is the
+    // priority, so e.g. "expense,cost_of_sales,asset" floats expense
+    // categories to the top instead of pure code order surfacing the
+    // low-numbered asset accounts. No CSV → every row ranks 0, leaving
+    // the pure code order untouched.
+    private int RootTypeRank(string? rootType)
+    {
+        if (_allowedOrder.Length == 0) return 0;
+        var idx = Array.IndexOf(_allowedOrder, (rootType ?? string.Empty).ToLowerInvariant());
+        return idx < 0 ? int.MaxValue : idx;
     }
 
     private async Task HandleFocus(FocusEventArgs _)
@@ -341,24 +368,29 @@
         var trimmed = query.Trim();
         if (string.IsNullOrEmpty(trimmed))
         {
-            // No query → top-N by code, gives the user something useful
-            // immediately on focus.
+            // No query → top-N by root-type priority (the AllowedRootTypes
+            // CSV order), then code. Pure code order put low-numbered asset
+            // accounts first and pushed the page's primary type (e.g.
+            // expense) past the 15-row cap.
             _visibleRows = _allAccounts
-                .OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(a => RootTypeRank(a.RootType))
+                .ThenBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
                 .Take(15)
                 .ToArray();
             return;
         }
 
-        // Local match: starts-with code wins, then contains-in-code, then
-        // contains-in-name. This is the immediate result so the popup
-        // never feels like it's waiting on the network.
+        // Local match: starts-with code wins, then root-type priority, then
+        // code (contains-in-code / contains-in-name fall under the same
+        // tie-breaks). This is the immediate result so the popup never
+        // feels like it's waiting on the network.
         var localMatches = _allAccounts
             .Where(a =>
                 a.Code.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase) ||
                 a.Code.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
                 a.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(a => a.Code.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(a => RootTypeRank(a.RootType))
             .ThenBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
             .Take(15)
             .ToArray();
