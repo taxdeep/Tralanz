@@ -189,6 +189,7 @@
                             <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                            UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
                                            Context="bill.line.category"
+                                           AllowedRootTypes="expense,cost_of_sales,asset"
                                            Disabled="@hasItem"
                                            SelectedId="@line.ExpenseAccountId"
                                            SelectedDisplayText="@GetAccountLabel(line.ExpenseAccountId)"
@@ -219,7 +220,14 @@
                                             TextProperty="Code"
                                             ValueProperty="Id"
                                             AllowClear="true"
-                                            Class="citus-control-full" />
+                                            Class="citus-control-full">
+                                @* Open list shows "Code — Name"; the selected cell
+                                   stays Code-only to fit the column. *@
+                                <Template Context="ctx">
+                                    @{ var set = (TaxCodeSetSummary)ctx; }
+                                    <span class="citus-inline-code">@set.Code</span> @set.Name
+                                </Template>
+                            </RadzenDropDown>
                         </td>
                         <td>
                             <RadzenNumeric TValue="decimal"

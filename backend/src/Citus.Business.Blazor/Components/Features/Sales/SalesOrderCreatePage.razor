@@ -182,7 +182,14 @@
                                                     TextProperty="Code"
                                                     ValueProperty="Id"
                                                     AllowClear="true"
-                                                    Class="citus-control-full" />
+                                                    Class="citus-control-full">
+                                        @* Open list shows "Code — Name"; the selected cell
+                                           stays Code-only to fit the column. *@
+                                        <Template Context="ctx">
+                                            @{ var set = (TaxCodeSetSummary)ctx; }
+                                            <span class="citus-inline-code">@set.Code</span> @set.Name
+                                        </Template>
+                                    </RadzenDropDown>
                                 </td>
                                 <td>
                                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
