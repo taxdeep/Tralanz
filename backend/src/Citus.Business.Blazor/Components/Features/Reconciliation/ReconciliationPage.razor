@@ -210,11 +210,31 @@
             .ToArray();
     }
 
-    private void OnAccountChanged(ChangeEventArgs args)
+    private async Task OnAccountChanged(ChangeEventArgs args)
     {
         _completed = null;
         _rows.Clear();
         _selectedAccountId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
+
+        // Carry forward from the account's last completed reconciliation:
+        // opening balance picks up where the prior statement ended, and the
+        // statement date rolls one month on. An account that has never been
+        // reconciled falls back to a clean slate (0 / today). The operator can
+        // still override either field before loading the ledger.
+        if (_selectedAccountId is { } accountId)
+        {
+            var last = await ReconciliationClient.GetLastCompletedAsync(accountId);
+            if (last is not null)
+            {
+                _openingBalance = last.EndingBalance;
+                _statementDate = last.StatementDate.AddMonths(1).ToDateTime(TimeOnly.MinValue);
+            }
+            else
+            {
+                _openingBalance = 0m;
+                _statementDate = DateTime.Today;
+            }
+        }
     }
 
     private async Task LoadEntriesAsync()
