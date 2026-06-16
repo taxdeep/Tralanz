@@ -25,7 +25,7 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
             le.company_id = @company_id
             and le.account_id = @bank_account_id
             and le.posting_date <= @statement_date
-            and je.status = 'posted'
+            and je.status in ('posted', 'voided', 'reversed')
             and le.reconciliation_id is null
             and le.reconciliation_draft_id is null
             and (le.tx_debit <> 0 or le.tx_credit <> 0)
@@ -228,7 +228,7 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
             and le.account_id = @bank_account_id
             and le.posting_date <= @statement_date
             and le.id = any(@ledger_entry_ids)
-            and je.status = 'posted'
+            and je.status in ('posted', 'voided', 'reversed')
             and le.reconciliation_id is null
             and le.reconciliation_draft_id is null
             and (le.tx_debit <> 0 or le.tx_credit <> 0)
@@ -871,12 +871,23 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         // cheque issued 18 months ago that still hasn't cleared) are
         // legitimate and the operator must be able to see and clear
         // them. Filtering by date here would silently hide them.
+        //
+        // Status set includes 'voided'/'reversed', not just 'posted':
+        // when a JE is voided/reversed the original keeps its bank-line
+        // amounts and a separate posted compensation JE carries the
+        // offset. Showing only 'posted' would surface the compensation
+        // as an orphan with no partner to net against, leaving the
+        // register impossible to balance. Including the voided/reversed
+        // original lets the operator clear both legs together (they sum
+        // to zero). A compensation of an already-reconciled item is
+        // unaffected: the reconciled original is excluded by the
+        // reconciliation_id IS NULL filter below.
         command.CommandText = LedgerEntrySelectSql(
             """
             le.company_id = @company_id
               and le.account_id = @bank_account_id
               and le.posting_date <= @statement_date
-              and je.status = 'posted'
+              and je.status in ('posted', 'voided', 'reversed')
               and le.reconciliation_id is null
               and (le.reconciliation_draft_id is null
                    or le.reconciliation_draft_id = @draft_id)
@@ -1672,10 +1683,17 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = LedgerEntrySelectSql(
+            // Mirror the candidate query's status set: a voided/reversed
+            // original is offered as a reconcile candidate next to its
+            // posted compensation so the pair nets to zero and clears
+            // together. If this load stayed 'posted'-only it would drop the
+            // ticked voided leg, the count would drift, and completion would
+            // throw. The draft-id filter already scopes this to the operator's
+            // selection.
             """
             le.company_id = @company_id
               and le.reconciliation_draft_id = @draft_id
-              and je.status = 'posted'
+              and je.status in ('posted', 'voided', 'reversed')
               order by le.posting_date asc, le.created_at asc, le.id asc
               for update of le
             """);
