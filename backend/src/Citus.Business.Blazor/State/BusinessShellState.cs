@@ -72,6 +72,25 @@ public sealed class BusinessShellState
         OnChanged?.Invoke();
     }
 
+    /// <summary>
+    /// Money decimal places for the active company (2 default, or 3). Read by
+    /// the central money formatter. Falls back to 2 for any out-of-range value
+    /// so a bad persisted value never breaks rendering.
+    /// </summary>
+    public int MoneyDecimals => ActiveCompany.MoneyDecimals is 2 or 3 ? ActiveCompany.MoneyDecimals : 2;
+
+    /// <summary>
+    /// Update the active company's money decimals in-place after a successful
+    /// settings save, so the central formatter reflects the new precision
+    /// immediately without a full session reload.
+    /// </summary>
+    public void ApplyMoneyDecimals(int moneyDecimals)
+    {
+        var normalized = moneyDecimals is 2 or 3 ? moneyDecimals : 2;
+        ActiveCompany = ActiveCompany with { MoneyDecimals = normalized };
+        OnChanged?.Invoke();
+    }
+
     public IReadOnlyList<NavSection> NavigationSections { get; } =
     [
         new NavSection

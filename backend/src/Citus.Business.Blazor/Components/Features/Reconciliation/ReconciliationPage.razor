@@ -61,11 +61,11 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement opening balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_openingBalance" Format="0.00" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_openingBalance" Format="@MoneyFormat.EditFormat(ShellState.MoneyDecimals)" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement ending balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_endingBalance" Format="0.00" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_endingBalance" Format="@MoneyFormat.EditFormat(ShellState.MoneyDecimals)" Class="citus-control-full" />
                 </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Notes</label>
@@ -303,7 +303,7 @@
     }
 
     private static bool IsZero(decimal value) => Math.Abs(value) < 0.005m;
-    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+    private string FormatAmount(decimal amount) => MoneyFormat.Amount(amount, ShellState.MoneyDecimals);
     private static string FormatAccountKind(AccountSummary account) => account.DetailType switch
     {
         "bank" => "Bank",

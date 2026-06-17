@@ -26,4 +26,11 @@ public sealed record class CompanyAccessCompanySummary
     public string Status { get; init; } = "active";
 
     public bool IsReadOnly { get; init; }
+
+    /// <summary>
+    /// Per-company money decimal places (2 default, or 3). Sourced from
+    /// <c>companies.money_decimals</c> and surfaced to the Blazor shell so the
+    /// central money formatter can render the configured precision.
+    /// </summary>
+    public int MoneyDecimals { get; init; } = 2;
 }

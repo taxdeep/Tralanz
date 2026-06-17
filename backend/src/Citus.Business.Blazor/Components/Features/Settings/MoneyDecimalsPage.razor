@@ -1,0 +1,93 @@
+@page "/settings/money-decimals"
+
+@using Citus.Ui.Shared.Business
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject MoneyDecimalsClient MoneyDecimalsClient
+@inject CitusToastService Message
+
+<PageTitle>Money Decimals | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusLinkButton Href="settings" Variant="CitusButtonVariant.Ghost" LeadingIcon="IconName.ArrowLeft">
+            Back to settings
+        </CitusLinkButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <CitusFormSection Title="Decimal places">
+        <p class="text-fg-muted text-sm mb-3">
+            How many decimal places monetary amounts are shown with for
+            <strong>@ShellState.ActiveCompany.CompanyName</strong>. Most currencies use 2;
+            some (e.g. KWD, BHD, OMR) use 3.
+        </p>
+        <label class="text-sm font-medium block mb-1">Money decimals</label>
+        <RadzenDropDown TValue="int" @bind-Value="_selected" Data="@_options" Style="width: 12rem" />
+        <div class="mt-4">
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Disabled="@(_isSaving || _selected == ShellState.MoneyDecimals)"
+                         OnClick="SaveAsync">
+                @(_isSaving ? "Saving..." : "Save")
+            </CitusButton>
+        </div>
+    </CitusFormSection>
+
+    <CitusFormSection Title="Preview">
+        <CitusKeyValueTable>
+            <CitusKeyValueRow Label="Current setting">@ShellState.MoneyDecimals decimals</CitusKeyValueRow>
+            <CitusKeyValueRow Label="Example">@MoneyFormat.Amount(1234.5m, _selected)</CitusKeyValueRow>
+            <CitusKeyValueRow Label="Example">@MoneyFormat.Amount(99.989m, _selected)</CitusKeyValueRow>
+        </CitusKeyValueTable>
+        <p class="text-fg-subtle text-xs mt-2">
+            Phase 1 affects display only. Posting will round amounts to the configured
+            precision in a later phase.
+        </p>
+    </CitusFormSection>
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Money decimals",
+        Subtitle = "Decimal precision used to display monetary amounts for this company."
+    };
+
+    private readonly int[] _options = { 2, 3 };
+    private int _selected;
+    private bool _isSaving;
+    private string? _error;
+
+    protected override void OnInitialized() => _selected = ShellState.MoneyDecimals;
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _isSaving = true;
+        try
+        {
+            var outcome = await MoneyDecimalsClient.SetAsync(_selected);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage;
+                return;
+            }
+
+            ShellState.ApplyMoneyDecimals(_selected);
+            await Message.SuccessAsync("Money decimals updated.");
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

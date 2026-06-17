@@ -215,6 +215,43 @@ internal static class CompanyMasterDataEndpoints
             }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsModulesToggle);
 
         // -----------------------------------------------------------------------
+        // Money decimal precision (2 or 3) for the active company. Phase 1 is
+        // display-only — the value flows back to the shell via the session
+        // summary and drives the central money formatter. settings.company.edit
+        // gated. Current value is read from the session, so only a write surface
+        // is needed here.
+        // -----------------------------------------------------------------------
+        accounting.MapPut(
+            "/company/settings/money-decimals",
+            async (
+                CompanyMoneyDecimalsHttpRequest request,
+                BusinessSessionContextAccessor sessionAccessor,
+                ICompanyMoneyDecimalsStore store,
+                CancellationToken cancellationToken) =>
+            {
+                var session = sessionAccessor.Current;
+                if (session is null || string.IsNullOrEmpty(session.ActiveCompanyId.Value))
+                {
+                    return Results.Unauthorized();
+                }
+
+                if (request.MoneyDecimals is not (2 or 3))
+                {
+                    return Results.BadRequest(new { message = "Money decimals must be 2 or 3." });
+                }
+
+                try
+                {
+                    await store.SetAsync(session.ActiveCompanyId, request.MoneyDecimals, cancellationToken);
+                    return Results.Ok(new { moneyDecimals = request.MoneyDecimals });
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(new { message = ex.Message });
+                }
+            }).RequireGrantedPermission(CompanyMembershipPermissionCatalog.SettingsCompanyEdit);
+
+        // -----------------------------------------------------------------------
         // Create an additional company (Business shell, "+ New Company").
         //
         // The signed-in user (resolved from BusinessSession) becomes the owner

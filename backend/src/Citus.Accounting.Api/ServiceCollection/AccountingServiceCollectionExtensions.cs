@@ -410,6 +410,7 @@ public static class AccountingServiceCollectionExtensions
     public static IServiceCollection AddSearchCoreMasterDataAndPdf(this IServiceCollection services)
     {
         services.AddSingleton<IBankReconciliationStore, PostgreSqlBankReconciliationStore>();
+        services.AddSingleton<Citus.Accounting.Application.Companies.ICompanyMoneyDecimalsStore, global::Infrastructure.PostgreSQL.Companies.PostgreSqlCompanyMoneyDecimalsStore>();
         services.AddSingleton<UnitySearchPolicyRegistry>();
         services.AddSingleton<IUnitySearchProjectionStore, PostgreSqlUnitySearchProjectionStore>();
         services.AddSingleton<IUnitySearchQueryService, PostgreSqlUnitySearchQueryService>();

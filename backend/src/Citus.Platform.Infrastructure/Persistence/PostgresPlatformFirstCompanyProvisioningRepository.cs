@@ -157,6 +157,14 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             alter table companies add column if not exists inventory_module_locked_at timestamptz null;
             alter table companies add column if not exists inventory_profile_tag text null;
 
+            -- Per-company money display/rounding precision (2 default, or 3).
+            -- Drives the central money formatter; values are constrained to the
+            -- two supported scales. Existing rows backfill to 2 (current behaviour).
+            alter table companies add column if not exists money_decimals smallint not null default 2;
+            alter table companies drop constraint if exists companies_money_decimals_chk;
+            alter table companies add constraint companies_money_decimals_chk
+              check (money_decimals in (2, 3));
+
             do $$
             begin
               if not exists (

@@ -79,6 +79,7 @@ public static class BusinessSessionEndpointHelpers
             MultiCurrencyEnabled = company.MultiCurrencyEnabled,
             InventoryModuleEnabled = company.InventoryModuleEnabled,
             Status = string.IsNullOrWhiteSpace(company.Status) ? "active" : company.Status,
-            IsReadOnly = company.IsReadOnly
+            IsReadOnly = company.IsReadOnly,
+            MoneyDecimals = company.MoneyDecimals
         };
 }

@@ -101,17 +101,17 @@ else if (_draft is null)
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
                 <label class="text-sm font-medium block mb-1">Beginning balance</label>
-                <RadzenNumeric TValue="decimal" @bind-Value="_startOpeningBalance" Format="0.00" Class="citus-control-full" />
+                <RadzenNumeric TValue="decimal" @bind-Value="_startOpeningBalance" Format="@MoneyFormat.EditFormat(ShellState.MoneyDecimals)" Class="citus-control-full" />
                 @if (_lastCompleted is not null && Math.Abs(_lastCompleted.EndingBalance - _startOpeningBalance) >= 0.005m)
                 {
                     <p class="text-xs text-warning mt-1">
-                        ⚠ Differs from prior reconciliation's ending balance (@_lastCompleted.EndingBalance.ToString("N2")). Override will be recorded in audit notes.
+                        ⚠ Differs from prior reconciliation's ending balance (@MoneyFormat.Amount(_lastCompleted.EndingBalance, ShellState.MoneyDecimals)). Override will be recorded in audit notes.
                     </p>
                 }
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Statement ending balance</label>
-                <RadzenNumeric TValue="decimal" @bind-Value="_startEndingBalance" Format="0.00" Class="citus-control-full" />
+                <RadzenNumeric TValue="decimal" @bind-Value="_startEndingBalance" Format="@MoneyFormat.EditFormat(ShellState.MoneyDecimals)" Class="citus-control-full" />
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Statement ending date</label>
@@ -182,11 +182,11 @@ else
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Beginning balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_editOpeningBalance" Format="0.00" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_editOpeningBalance" Format="@MoneyFormat.EditFormat(ShellState.MoneyDecimals)" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement ending balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_editEndingBalance" Format="0.00" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_editEndingBalance" Format="@MoneyFormat.EditFormat(ShellState.MoneyDecimals)" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement ending date</label>
@@ -582,12 +582,12 @@ else
         _ => account.DetailType ?? "Account"
     };
 
-    private static string FormatAmount(decimal amount) =>
-        amount.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+    private string FormatAmount(decimal amount) =>
+        MoneyFormat.Amount(amount, ShellState.MoneyDecimals);
 
-    private static string FormatPositiveOnly(decimal signedAmount) =>
-        signedAmount > 0m ? signedAmount.ToString("N2") : "";
+    private string FormatPositiveOnly(decimal signedAmount) =>
+        signedAmount > 0m ? MoneyFormat.Amount(signedAmount, ShellState.MoneyDecimals) : "";
 
-    private static string FormatNegativeOnly(decimal signedAmount) =>
-        signedAmount < 0m ? Math.Abs(signedAmount).ToString("N2") : "";
+    private string FormatNegativeOnly(decimal signedAmount) =>
+        signedAmount < 0m ? MoneyFormat.Amount(Math.Abs(signedAmount), ShellState.MoneyDecimals) : "";
 }

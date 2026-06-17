@@ -83,6 +83,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
             BaseCurrencyCode = company.BaseCurrencyCode,
             MultiCurrencyEnabled = company.MultiCurrencyEnabled,
             InventoryModuleEnabled = company.InventoryModuleEnabled,
+            MoneyDecimals = company.MoneyDecimals,
             Status = company.Status,
             IsReadOnly = !string.Equals(company.Status, "active", StringComparison.Ordinal)
         };
@@ -172,6 +173,13 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         var inventoryModuleSelect = hasInventoryModuleColumn
             ? "c.inventory_module_enabled"
             : "false as inventory_module_enabled";
+        // Same defensive pattern for the money_decimals column (added by the
+        // platform-provisioning ALTER). Fall back to 2 (the standard) on
+        // deployments that haven't run the bumped startup yet.
+        var hasMoneyDecimalsColumn = await HasColumnAsync(connection, "companies", "money_decimals", cancellationToken);
+        var moneyDecimalsSelect = hasMoneyDecimalsColumn
+            ? "c.money_decimals::int"
+            : "2 as money_decimals";
         // Same defensive pattern: is_owner is added by the Batch-3.5
         // membership-permission EnsureSchemaAsync. If a session
         // resolves before that ALTER ran, fall back to false — the
@@ -193,6 +201,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               c.base_currency_code,
               c.multi_currency_enabled,
               {inventoryModuleSelect},
+              {moneyDecimalsSelect},
               c.status,
               m.role,
               {isOwnerSelect},
@@ -213,6 +222,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               c.base_currency_code,
               c.multi_currency_enabled,
               {inventoryModuleSelect},
+              {moneyDecimalsSelect},
               c.status,
               m.role,
               {isOwnerSelect},
@@ -238,6 +248,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
                     reader.GetString(reader.GetOrdinal("base_currency_code")).Trim().ToUpperInvariant(),
                     reader.GetBoolean(reader.GetOrdinal("multi_currency_enabled")),
                     reader.GetBoolean(reader.GetOrdinal("inventory_module_enabled")),
+                    reader.GetInt32(reader.GetOrdinal("money_decimals")),
                     reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
                     reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
                     reader.GetBoolean(reader.GetOrdinal("is_owner")),
@@ -372,6 +383,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         string BaseCurrencyCode,
         bool MultiCurrencyEnabled,
         bool InventoryModuleEnabled,
+        int MoneyDecimals,
         string Status,
         string MembershipRole,
         bool IsOwner,
