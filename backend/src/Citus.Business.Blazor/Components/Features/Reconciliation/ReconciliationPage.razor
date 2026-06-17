@@ -61,11 +61,11 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement opening balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_openingBalance" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_openingBalance" Format="0.00" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement ending balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_endingBalance" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_endingBalance" Format="0.00" Class="citus-control-full" />
                 </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Notes</label>

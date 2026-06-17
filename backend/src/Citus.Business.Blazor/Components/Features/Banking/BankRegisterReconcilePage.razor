@@ -101,7 +101,7 @@ else if (_draft is null)
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
                 <label class="text-sm font-medium block mb-1">Beginning balance</label>
-                <RadzenNumeric TValue="decimal" @bind-Value="_startOpeningBalance" Class="citus-control-full" />
+                <RadzenNumeric TValue="decimal" @bind-Value="_startOpeningBalance" Format="0.00" Class="citus-control-full" />
                 @if (_lastCompleted is not null && Math.Abs(_lastCompleted.EndingBalance - _startOpeningBalance) >= 0.005m)
                 {
                     <p class="text-xs text-warning mt-1">
@@ -111,7 +111,7 @@ else if (_draft is null)
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Statement ending balance</label>
-                <RadzenNumeric TValue="decimal" @bind-Value="_startEndingBalance" Class="citus-control-full" />
+                <RadzenNumeric TValue="decimal" @bind-Value="_startEndingBalance" Format="0.00" Class="citus-control-full" />
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Statement ending date</label>
@@ -182,11 +182,11 @@ else
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Beginning balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_editOpeningBalance" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_editOpeningBalance" Format="0.00" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement ending balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_editEndingBalance" Class="citus-control-full" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_editEndingBalance" Format="0.00" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement ending date</label>
