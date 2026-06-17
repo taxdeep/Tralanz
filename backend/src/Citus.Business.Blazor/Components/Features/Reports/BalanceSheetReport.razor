@@ -6,7 +6,7 @@
 @inject BalanceSheetClient BalanceSheetClient
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
-<ReportShell IsLoading="_isLoading" Error="_error">
+<ReportShell IsLoading="_isLoading" Error="@_error">
     <Controls>
         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
         <label class="inline-flex items-center gap-2 text-sm">

@@ -6,7 +6,7 @@
 @inject IncomeStatementClient IncomeStatementClient
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
-<ReportShell IsLoading="_isLoading" Error="_error">
+<ReportShell IsLoading="_isLoading" Error="@_error">
     <Controls>
         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dateFrom" Placeholder="@("From")" />
         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dateTo" Placeholder="@("To")" />
