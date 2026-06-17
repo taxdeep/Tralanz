@@ -35,10 +35,10 @@
 @if (_incomeStatement is not null)
 {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <CitusStatCard Label="Revenue" Value="@ReportFormat.Amount(_incomeStatement.TotalRevenue)" Description="@($"Range {_incomeStatement.DateFrom:yyyy-MM-dd} to {_incomeStatement.DateTo:yyyy-MM-dd}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Success" />
-        <CitusStatCard Label="Gross profit" Value="@ReportFormat.Amount(_incomeStatement.GrossProfit)" Description="@($"After cost of sales in {_incomeStatement.BaseCurrencyCode}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
-        <CitusStatCard Label="Expenses" Value="@ReportFormat.Amount(_incomeStatement.TotalExpenses)" Description="Operating expense accounts in the selected range." Icon="IconName.Wallet" Tone="StatTone.Warning" />
-        <CitusStatCard Label="Net income" Value="@ReportFormat.Amount(_incomeStatement.NetIncome)" Description="@(_comparison is null ? $"Company base currency {_incomeStatement.BaseCurrencyCode}" : $"vs {ReportFormat.Amount(_comparison.NetIncome)} ({_compare})")" Icon="IconName.BuildingBank" Tone="@(_incomeStatement.NetIncome >= 0m ? StatTone.Success : StatTone.Danger)" />
+        <CitusStatCard Label="Revenue" Value="@Amt(_incomeStatement.TotalRevenue)" Description="@($"Range {_incomeStatement.DateFrom:yyyy-MM-dd} to {_incomeStatement.DateTo:yyyy-MM-dd}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Success" />
+        <CitusStatCard Label="Gross profit" Value="@Amt(_incomeStatement.GrossProfit)" Description="@($"After cost of sales in {_incomeStatement.BaseCurrencyCode}")" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
+        <CitusStatCard Label="Expenses" Value="@Amt(_incomeStatement.TotalExpenses)" Description="Operating expense accounts in the selected range." Icon="IconName.Wallet" Tone="StatTone.Warning" />
+        <CitusStatCard Label="Net income" Value="@Amt(_incomeStatement.NetIncome)" Description="@(_comparison is null ? $"Company base currency {_incomeStatement.BaseCurrencyCode}" : $"vs {Amt(_comparison.NetIncome)} ({_compare})")" Icon="IconName.BuildingBank" Tone="@(_incomeStatement.NetIncome >= 0m ? StatTone.Success : StatTone.Danger)" />
     </div>
 
     @if (_incomeStatement.AccountCount == 0)
@@ -53,10 +53,10 @@
                 <header class="citus-subpanel__header">
                     <h3 class="citus-subpanel__title">@sec.Title</h3>
                     <div class="flex items-center gap-2">
-                        <CitusBadge Color="@TagColor(sec.Tone)">@ReportFormat.Amount(sec.TotalOf(_incomeStatement))</CitusBadge>
+                        <CitusBadge Color="@TagColor(sec.Tone)">@Amt(sec.TotalOf(_incomeStatement))</CitusBadge>
                         @if (_comparison is not null)
                         {
-                            <span class="text-fg-subtle text-xs">vs @ReportFormat.Amount(sec.TotalOf(_comparison))</span>
+                            <span class="text-fg-subtle text-xs">vs @Amt(sec.TotalOf(_comparison))</span>
                         }
                     </div>
                 </header>
@@ -91,9 +91,9 @@
                                         <td>@row.Name</td>
                                         @foreach (var value in row.Values)
                                         {
-                                            <td class="text-right">@ReportFormat.Amount(value)</td>
+                                            <td class="text-right">@Amt(value)</td>
                                         }
-                                        <td class="text-right">@ReportFormat.Amount(row.Total)</td>
+                                        <td class="text-right">@Amt(row.Total)</td>
                                     </tr>
                                 }
                             </tbody>
@@ -129,11 +129,11 @@
                                     <tr>
                                         <td><span class="citus-inline-code">@row.Code</span></td>
                                         <td>@row.Name</td>
-                                        <td class="text-right">@ReportFormat.Amount(row.Current)</td>
+                                        <td class="text-right">@Amt(row.Current)</td>
                                         @if (_comparison is not null)
                                         {
-                                            <td class="text-right">@ReportFormat.Amount(row.Comparison)</td>
-                                            <td class="text-right">@ReportFormat.Amount(row.Current - row.Comparison)</td>
+                                            <td class="text-right">@Amt(row.Comparison)</td>
+                                            <td class="text-right">@Amt(row.Current - row.Comparison)</td>
                                         }
                                     </tr>
                                 }
@@ -381,4 +381,6 @@
         StatTone.Primary => "geekblue",
         _ => "default"
     };
+
+    private string Amt(decimal v) => MoneyFormat.Amount(v, ShellState.MoneyDecimals);
 }

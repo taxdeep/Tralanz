@@ -18,8 +18,8 @@
         {
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <CitusStatCard Label="Entries" Value="@_report.EntryCount.ToString()" Description="@($"{_report.LineCount} lines · {_report.DateFrom:yyyy-MM-dd} to {_report.DateTo:yyyy-MM-dd}")" Icon="IconName.FileText" Tone="StatTone.Info" />
-                <CitusStatCard Label="Total debit" Value="@ReportFormat.Amount(_report.TotalDebit)" Description="@($"Base currency {_report.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Success" />
-                <CitusStatCard Label="Total credit" Value="@ReportFormat.Amount(_report.TotalCredit)" Description="@($"Base currency {_report.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Warning" />
+                <CitusStatCard Label="Total debit" Value="@Amt(_report.TotalDebit)" Description="@($"Base currency {_report.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Success" />
+                <CitusStatCard Label="Total credit" Value="@Amt(_report.TotalCredit)" Description="@($"Base currency {_report.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Warning" />
                 <CitusStatCard Label="Balance check" Value="@(_report.IsBalanced ? "Balanced" : "Out of balance")" Description="Debits should equal credits." Icon="IconName.CircleCheck" Tone="@(_report.IsBalanced ? StatTone.Success : StatTone.Danger)" />
             </div>
 
@@ -75,14 +75,14 @@
                                         <td>@line.Description</td>
                                         <td><span class="citus-inline-code">@line.AccountCode</span></td>
                                         <td>@line.AccountName</td>
-                                        <td class="text-right">@(line.Debit == 0m ? "" : ReportFormat.Amount(line.Debit))</td>
-                                        <td class="text-right">@(line.Credit == 0m ? "" : ReportFormat.Amount(line.Credit))</td>
+                                        <td class="text-right">@(line.Debit == 0m ? "" : Amt(line.Debit))</td>
+                                        <td class="text-right">@(line.Credit == 0m ? "" : Amt(line.Credit))</td>
                                     </tr>
                                 }
                                 <tr class="citus-data-table__total">
                                     <td colspan="7">@($"Total for {first.InternalNumber}")</td>
-                                    <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Debit))</td>
-                                    <td class="text-right">@ReportFormat.Amount(group.Sum(static line => line.Credit))</td>
+                                    <td class="text-right">@Amt(group.Sum(static line => line.Debit))</td>
+                                    <td class="text-right">@Amt(group.Sum(static line => line.Credit))</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -145,6 +145,8 @@
         sourceType.EndsWith("_reversal", StringComparison.OrdinalIgnoreCase)
             ? sourceType[..^"_reversal".Length]
             : sourceType;
+
+    private string Amt(decimal v) => MoneyFormat.Amount(v, ShellState.MoneyDecimals);
 
     // Where the Reference# links: each source document to its own detail page
     // (reversals route to the underlying doc via DocType); manual journals and

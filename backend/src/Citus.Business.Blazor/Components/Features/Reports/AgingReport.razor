@@ -22,19 +22,19 @@
         @if (View is not null)
         {
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <CitusStatCard Label="Outstanding" Value="@ReportFormat.Amount(View.TotalOutstanding)" Description="@($"As of {View.AsOfDate:yyyy-MM-dd} in {View.BaseCurrencyCode}")" Icon="IconName.Receipt" Tone="StatTone.Info" />
+                <CitusStatCard Label="Outstanding" Value="@Amt(View.TotalOutstanding)" Description="@($"As of {View.AsOfDate:yyyy-MM-dd} in {View.BaseCurrencyCode}")" Icon="IconName.Receipt" Tone="StatTone.Info" />
                 <CitusStatCard Label="@PartyCountLabel" Value="@View.PartyCount.ToString()" Description="@($"{View.OpenItemCount} open items in scope")" Icon="IconName.Users" Tone="StatTone.Primary" />
-                <CitusStatCard Label="Overdue" Value="@ReportFormat.Amount(View.TotalOverdue)" Description="Total value already past due." Icon="IconName.AlertTriangle" Tone="@(View.TotalOverdue > 0m ? StatTone.Warning : StatTone.Success)" />
-                <CitusStatCard Label="> 90 days" Value="@ReportFormat.Amount(View.DaysOver90)" Description="The oldest overdue bucket." Icon="IconName.Clock" Tone="@(View.DaysOver90 > 0m ? StatTone.Danger : StatTone.Success)" />
+                <CitusStatCard Label="Overdue" Value="@Amt(View.TotalOverdue)" Description="Total value already past due." Icon="IconName.AlertTriangle" Tone="@(View.TotalOverdue > 0m ? StatTone.Warning : StatTone.Success)" />
+                <CitusStatCard Label="> 90 days" Value="@Amt(View.DaysOver90)" Description="The oldest overdue bucket." Icon="IconName.Clock" Tone="@(View.DaysOver90 > 0m ? StatTone.Danger : StatTone.Success)" />
             </div>
 
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-                <CitusStatCard Label="Current" Value="@ReportFormat.Amount(View.Current)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
-                <CitusStatCard Label="1-30" Value="@ReportFormat.Amount(View.Days1To30)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
-                <CitusStatCard Label="31-60" Value="@ReportFormat.Amount(View.Days31To60)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
-                <CitusStatCard Label="61-90" Value="@ReportFormat.Amount(View.Days61To90)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
-                <CitusStatCard Label="> 90" Value="@ReportFormat.Amount(View.DaysOver90)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
-                <CitusStatCard Label="Total" Value="@ReportFormat.Amount(View.TotalOutstanding)" Description="Net open balance" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
+                <CitusStatCard Label="Current" Value="@Amt(View.Current)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
+                <CitusStatCard Label="1-30" Value="@Amt(View.Days1To30)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                <CitusStatCard Label="31-60" Value="@Amt(View.Days31To60)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                <CitusStatCard Label="61-90" Value="@Amt(View.Days61To90)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                <CitusStatCard Label="> 90" Value="@Amt(View.DaysOver90)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
+                <CitusStatCard Label="Total" Value="@Amt(View.TotalOutstanding)" Description="Net open balance" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
             </div>
 
             @if (View.TotalOutstanding > 0)
@@ -75,22 +75,22 @@
                                 <Template Context="row">@(row.IsActive ? "Active" : "Inactive")</Template>
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Current)" Title="Current" TextAlign="TextAlign.Right" Width="120px">
-                                <Template Context="row">@ReportFormat.Amount(row.Current)</Template>
+                                <Template Context="row">@Amt(row.Current)</Template>
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Days1To30)" Title="1-30" TextAlign="TextAlign.Right" Width="110px">
-                                <Template Context="row">@ReportFormat.Amount(row.Days1To30)</Template>
+                                <Template Context="row">@Amt(row.Days1To30)</Template>
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Days31To60)" Title="31-60" TextAlign="TextAlign.Right" Width="110px">
-                                <Template Context="row">@ReportFormat.Amount(row.Days31To60)</Template>
+                                <Template Context="row">@Amt(row.Days31To60)</Template>
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.Days61To90)" Title="61-90" TextAlign="TextAlign.Right" Width="110px">
-                                <Template Context="row">@ReportFormat.Amount(row.Days61To90)</Template>
+                                <Template Context="row">@Amt(row.Days61To90)</Template>
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.DaysOver90)" Title="> 90" TextAlign="TextAlign.Right" Width="110px">
-                                <Template Context="row">@ReportFormat.Amount(row.DaysOver90)</Template>
+                                <Template Context="row">@Amt(row.DaysOver90)</Template>
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingPartyRow" Property="@nameof(AgingPartyRow.TotalOutstanding)" Title="Total" TextAlign="TextAlign.Right" Width="130px">
-                                <Template Context="row"><strong>@ReportFormat.Amount(row.TotalOutstanding)</strong></Template>
+                                <Template Context="row"><strong>@Amt(row.TotalOutstanding)</strong></Template>
                             </RadzenDataGridColumn>
                         </Columns>
                     </RadzenDataGrid>
@@ -130,10 +130,10 @@
                             </RadzenDataGridColumn>
                             <RadzenDataGridColumn TItem="AgingOpenItemRow" Property="@nameof(AgingOpenItemRow.SignedOpenAmountBase)" Title="Open amount" TextAlign="TextAlign.Right" Width="150px">
                                 <Template Context="row">
-                                    <div>@ReportFormat.Amount(row.SignedOpenAmountBase)</div>
+                                    <div>@Amt(row.SignedOpenAmountBase)</div>
                                     @if (!string.Equals(row.DocumentCurrencyCode, View!.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                                     {
-                                        <div class="text-fg-subtle text-xs">@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
+                                        <div class="text-fg-subtle text-xs">@Amt(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
                                     }
                                 </Template>
                             </RadzenDataGridColumn>
@@ -159,6 +159,9 @@
     [Parameter] public EventCallback<DateTime?> AsOfDateChanged { get; set; }
     [Parameter] public EventCallback OnRun { get; set; }
     [Parameter] public EventCallback OnExport { get; set; }
+    [Parameter] public int MoneyDecimals { get; set; } = 2;
+
+    private string Amt(decimal v) => MoneyFormat.Amount(v, MoneyDecimals);
 
     private async Task OnAsOfDateChanged(DateTime? value)
     {

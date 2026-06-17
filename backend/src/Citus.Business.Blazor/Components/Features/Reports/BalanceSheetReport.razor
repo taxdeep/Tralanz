@@ -23,10 +23,10 @@
 @if (_balanceSheet is not null)
 {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <CitusStatCard Label="Assets" Value="@ReportFormat.Amount(_balanceSheet.TotalAssets)" Description="@($"As of {_balanceSheet.AsOfDate:yyyy-MM-dd}")" Icon="IconName.BuildingBank" Tone="StatTone.Info" />
-        <CitusStatCard Label="Liabilities" Value="@ReportFormat.Amount(_balanceSheet.TotalLiabilities)" Description="@($"Base currency {_balanceSheet.BaseCurrencyCode}")" Icon="IconName.Receipt" Tone="StatTone.Warning" />
-        <CitusStatCard Label="Equity" Value="@ReportFormat.Amount(_balanceSheet.TotalEquity)" Description="@($"Includes current earnings {ReportFormat.Amount(_balanceSheet.CurrentEarnings)}")" Icon="IconName.Report" Tone="StatTone.Success" />
-        <CitusStatCard Label="Balance check" Value="@(_balanceSheet.IsBalanced ? "Balanced" : "Out of balance")" Description="@($"Liabilities + equity {ReportFormat.Amount(_balanceSheet.TotalLiabilitiesAndEquity)}")" Icon="IconName.CircleCheck" Tone="@(_balanceSheet.IsBalanced ? StatTone.Success : StatTone.Danger)" />
+        <CitusStatCard Label="Assets" Value="@Amt(_balanceSheet.TotalAssets)" Description="@($"As of {_balanceSheet.AsOfDate:yyyy-MM-dd}")" Icon="IconName.BuildingBank" Tone="StatTone.Info" />
+        <CitusStatCard Label="Liabilities" Value="@Amt(_balanceSheet.TotalLiabilities)" Description="@($"Base currency {_balanceSheet.BaseCurrencyCode}")" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+        <CitusStatCard Label="Equity" Value="@Amt(_balanceSheet.TotalEquity)" Description="@($"Includes current earnings {Amt(_balanceSheet.CurrentEarnings)}")" Icon="IconName.Report" Tone="StatTone.Success" />
+        <CitusStatCard Label="Balance check" Value="@(_balanceSheet.IsBalanced ? "Balanced" : "Out of balance")" Description="@($"Liabilities + equity {Amt(_balanceSheet.TotalLiabilitiesAndEquity)}")" Icon="IconName.CircleCheck" Tone="@(_balanceSheet.IsBalanced ? StatTone.Success : StatTone.Danger)" />
     </div>
 
     @if (_balanceSheet.AccountCount == 0)
@@ -40,7 +40,7 @@
             <article class="citus-subpanel">
                 <header class="citus-subpanel__header">
                     <h3 class="citus-subpanel__title">@reportSection.Title</h3>
-                    <CitusBadge Color="@TagColor(reportSection.Tone)">@ReportFormat.Amount(reportSection.Total)</CitusBadge>
+                    <CitusBadge Color="@TagColor(reportSection.Tone)">@Amt(reportSection.Total)</CitusBadge>
                 </header>
 
                 @if (reportSection.Rows.Count == 0)
@@ -59,7 +59,7 @@
                                 <tr>
                                     <td><span class="citus-inline-code">@row.Code</span></td>
                                     <td>@row.Name</td>
-                                    <td class="text-right">@ReportFormat.Amount(row.DisplayAmount)</td>
+                                    <td class="text-right">@Amt(row.DisplayAmount)</td>
                                 </tr>
                             }
                         </tbody>
@@ -150,4 +150,6 @@
         StatTone.Primary => "geekblue",
         _ => "default"
     };
+
+    private string Amt(decimal v) => MoneyFormat.Amount(v, ShellState.MoneyDecimals);
 }

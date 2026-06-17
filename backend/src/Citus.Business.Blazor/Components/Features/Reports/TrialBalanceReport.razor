@@ -25,8 +25,8 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <CitusStatCard Label="As of" Value="@_trialBalance.AsOfDate.ToString("yyyy-MM-dd")" Description="Trial Balance stays pinned to one backend-owned cut-off date." Icon="IconName.Calendar" Tone="StatTone.Info" />
         <CitusStatCard Label="Accounts" Value="@_trialBalance.AccountCount.ToString()" Description="Only active-company accounts participate in this report." Icon="IconName.BuildingBank" Tone="StatTone.Primary" />
-        <CitusStatCard Label="Debit total" Value="@ReportFormat.Amount(_trialBalance.TotalBalanceDebit)" Description="@($"Base currency {_trialBalance.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Success" />
-        <CitusStatCard Label="Balance check" Value="@(_trialBalance.IsBalanced ? "Balanced" : "Out of balance")" Description="@($"Credit total {ReportFormat.Amount(_trialBalance.TotalBalanceCredit)} {_trialBalance.BaseCurrencyCode}")" Icon="IconName.CircleCheck" Tone="@(_trialBalance.IsBalanced ? StatTone.Success : StatTone.Danger)" />
+        <CitusStatCard Label="Debit total" Value="@Amt(_trialBalance.TotalBalanceDebit)" Description="@($"Base currency {_trialBalance.BaseCurrencyCode}")" Icon="IconName.Cash" Tone="StatTone.Success" />
+        <CitusStatCard Label="Balance check" Value="@(_trialBalance.IsBalanced ? "Balanced" : "Out of balance")" Description="@($"Credit total {Amt(_trialBalance.TotalBalanceCredit)} {_trialBalance.BaseCurrencyCode}")" Icon="IconName.CircleCheck" Tone="@(_trialBalance.IsBalanced ? StatTone.Success : StatTone.Danger)" />
     </div>
 
     @if (_trialBalance.Rows.Count == 0)
@@ -61,10 +61,10 @@
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.BalanceDebit)" Title="Debit balance" TextAlign="TextAlign.Right" Width="160px">
-                    <Template Context="row">@ReportFormat.Amount(row.BalanceDebit)</Template>
+                    <Template Context="row">@Amt(row.BalanceDebit)</Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="TrialBalanceAccountSummary" Property="@nameof(TrialBalanceAccountSummary.BalanceCredit)" Title="Credit balance" TextAlign="TextAlign.Right" Width="160px">
-                    <Template Context="row">@ReportFormat.Amount(row.BalanceCredit)</Template>
+                    <Template Context="row">@Amt(row.BalanceCredit)</Template>
                 </RadzenDataGridColumn>
             </Columns>
         </RadzenDataGrid>
@@ -124,4 +124,6 @@
 
         _isExporting = false;
     }
+
+    private string Amt(decimal v) => MoneyFormat.Amount(v, ShellState.MoneyDecimals);
 }

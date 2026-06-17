@@ -25,7 +25,7 @@
                         <div class="text-fg-subtle text-xs">Statement of open items as of @AsOfText</div>
                     </div>
                     <CitusBadge Color="@(OutstandingTotal > 0m ? "blue" : "green")">
-                        @($"{ReportFormat.Amount(OutstandingTotal)} {BaseCurrencyCode}")
+                        @($"{Amt(OutstandingTotal)} {BaseCurrencyCode}")
                     </CitusBadge>
                 </header>
 
@@ -36,12 +36,12 @@
                 else
                 {
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-                        <CitusStatCard Label="Current" Value="@ReportFormat.Amount(Party.Current)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
-                        <CitusStatCard Label="1-30" Value="@ReportFormat.Amount(Party.Days1To30)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
-                        <CitusStatCard Label="31-60" Value="@ReportFormat.Amount(Party.Days31To60)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
-                        <CitusStatCard Label="61-90" Value="@ReportFormat.Amount(Party.Days61To90)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
-                        <CitusStatCard Label="> 90" Value="@ReportFormat.Amount(Party.DaysOver90)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
-                        <CitusStatCard Label="Total" Value="@ReportFormat.Amount(Party.TotalOutstanding)" Description="Open balance" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
+                        <CitusStatCard Label="Current" Value="@Amt(Party.Current)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
+                        <CitusStatCard Label="1-30" Value="@Amt(Party.Days1To30)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                        <CitusStatCard Label="31-60" Value="@Amt(Party.Days31To60)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                        <CitusStatCard Label="61-90" Value="@Amt(Party.Days61To90)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
+                        <CitusStatCard Label="> 90" Value="@Amt(Party.DaysOver90)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
+                        <CitusStatCard Label="Total" Value="@Amt(Party.TotalOutstanding)" Description="Open balance" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
                     </div>
 
                     <table class="citus-data-table citus-data-table--compact">
@@ -75,17 +75,17 @@
                                     <td class="text-right">@(row.DueDate is null ? "—" : Math.Max(0, row.DaysPastDue).ToString())</td>
                                     <td>@ReportFormat.AgingBucket(row.AgingBucket)</td>
                                     <td class="text-right">
-                                        @ReportFormat.Amount(row.SignedOpenAmountBase)
+                                        @Amt(row.SignedOpenAmountBase)
                                         @if (!string.Equals(row.DocumentCurrencyCode, BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                                         {
-                                            <span class="text-fg-subtle text-xs"> (@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode)</span>
+                                            <span class="text-fg-subtle text-xs"> (@Amt(row.SignedOpenAmountTx) @row.DocumentCurrencyCode)</span>
                                         }
                                     </td>
                                 </tr>
                             }
                             <tr class="citus-data-table__total">
                                 <td colspan="5">Total open balance</td>
-                                <td class="text-right">@ReportFormat.Amount(OutstandingTotal)</td>
+                                <td class="text-right">@Amt(OutstandingTotal)</td>
                             </tr>
                         </tbody>
                     </table>
@@ -106,6 +106,9 @@
     [Parameter] public DateTime? AsOfDate { get; set; }
     [Parameter] public AgingPartyRow? Party { get; set; }
     [Parameter] public IReadOnlyList<AgingOpenItemRow>? Items { get; set; }
+    [Parameter] public int MoneyDecimals { get; set; } = 2;
+
+    private string Amt(decimal v) => MoneyFormat.Amount(v, MoneyDecimals);
 
     private string AsOfText => (AsOfDate ?? DateTime.Today).ToString("yyyy-MM-dd");
     private decimal OutstandingTotal => Party?.TotalOutstanding ?? 0m;

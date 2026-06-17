@@ -29,7 +29,7 @@
             else
             {
                 <p class="text-fg-muted text-sm mb-4">
-                    @($"{View.PartyCount} {PartyLabel.ToLowerInvariant()}s · {View.OpenItemCount} open items · outstanding {ReportFormat.Amount(View.TotalOutstanding)} {View.BaseCurrencyCode} as of {View.AsOfDate:yyyy-MM-dd}")
+                    @($"{View.PartyCount} {PartyLabel.ToLowerInvariant()}s · {View.OpenItemCount} open items · outstanding {Amt(View.TotalOutstanding)} {View.BaseCurrencyCode} as of {View.AsOfDate:yyyy-MM-dd}")
                 </p>
 
                 @foreach (var party in View.PartyRows)
@@ -41,7 +41,7 @@
                             <header class="citus-subpanel__header">
                                 <h3 class="citus-subpanel__title">@party.DisplayName</h3>
                                 <CitusBadge Color="@(party.TotalOutstanding > 0m ? "blue" : "default")">
-                                    @($"{ReportFormat.Amount(party.TotalOutstanding)} {View.BaseCurrencyCode}")
+                                    @($"{Amt(party.TotalOutstanding)} {View.BaseCurrencyCode}")
                                 </CitusBadge>
                             </header>
                             <table class="citus-data-table citus-data-table--compact">
@@ -75,17 +75,17 @@
                                             <td class="text-right">@(row.DueDate is null ? "—" : Math.Max(0, row.DaysPastDue).ToString())</td>
                                             <td>@ReportFormat.AgingBucket(row.AgingBucket)</td>
                                             <td class="text-right">
-                                                @ReportFormat.Amount(row.SignedOpenAmountBase)
+                                                @Amt(row.SignedOpenAmountBase)
                                                 @if (!string.Equals(row.DocumentCurrencyCode, View.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
                                                 {
-                                                    <span class="text-fg-subtle text-xs"> (@ReportFormat.Amount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode)</span>
+                                                    <span class="text-fg-subtle text-xs"> (@Amt(row.SignedOpenAmountTx) @row.DocumentCurrencyCode)</span>
                                                 }
                                             </td>
                                         </tr>
                                     }
                                     <tr class="citus-data-table__total">
                                         <td colspan="5">@($"Total for {party.DisplayName}")</td>
-                                        <td class="text-right">@ReportFormat.Amount(party.TotalOutstanding)</td>
+                                        <td class="text-right">@Amt(party.TotalOutstanding)</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -109,6 +109,9 @@
     [Parameter] public EventCallback<DateTime?> AsOfDateChanged { get; set; }
     [Parameter] public EventCallback OnRun { get; set; }
     [Parameter] public EventCallback OnExport { get; set; }
+    [Parameter] public int MoneyDecimals { get; set; } = 2;
+
+    private string Amt(decimal v) => MoneyFormat.Amount(v, MoneyDecimals);
 
     private async Task OnAsOfDateChanged(DateTime? value)
     {
