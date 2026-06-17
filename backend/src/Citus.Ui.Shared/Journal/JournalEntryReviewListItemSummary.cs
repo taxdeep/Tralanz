@@ -32,6 +32,8 @@ public sealed record class JournalEntryReviewListItemSummary
 
     public int LineCount { get; init; }
 
+    public DateOnly? EntryDate { get; init; }
+
     public DateTimeOffset? PostedAt { get; init; }
 
     public DateTimeOffset? VoidedAt { get; init; }

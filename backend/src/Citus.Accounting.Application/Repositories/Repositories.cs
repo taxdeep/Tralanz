@@ -1238,6 +1238,7 @@ public sealed record JournalEntryReviewListItem(
     decimal TotalDebit,
     decimal TotalCredit,
     int LineCount,
+    DateOnly? EntryDate,
     DateTimeOffset? PostedAt,
     DateTimeOffset? VoidedAt,
     DateTimeOffset? ReversedAt);

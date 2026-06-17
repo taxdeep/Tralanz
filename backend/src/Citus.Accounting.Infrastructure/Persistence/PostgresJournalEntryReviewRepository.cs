@@ -49,6 +49,11 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
               je.posted_at,
               je.voided_at,
               je.reversed_at,
+              (select le.posting_date
+                 from ledger_entries le
+                where le.company_id = je.company_id
+                  and le.journal_entry_id = je.id
+                limit 1) as entry_date,
               count(jel.id)::int as line_count
             from journal_entries je
             left join journal_entry_lines jel
@@ -291,6 +296,11 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
               je.posted_at,
               je.voided_at,
               je.reversed_at,
+              (select le.posting_date
+                 from ledger_entries le
+                where le.company_id = je.company_id
+                  and le.journal_entry_id = je.id
+                limit 1) as entry_date,
               count(jel.id)::int as line_count
             from journal_entries je
             left join journal_entry_lines jel
@@ -347,6 +357,7 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
             reader.GetDecimal(reader.GetOrdinal("total_debit")),
             reader.GetDecimal(reader.GetOrdinal("total_credit")),
             reader.GetInt32(reader.GetOrdinal("line_count")),
+            reader.IsDBNull(reader.GetOrdinal("entry_date")) ? null : reader.GetFieldValue<DateOnly>(reader.GetOrdinal("entry_date")),
             reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
             reader.IsDBNull(reader.GetOrdinal("voided_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("voided_at")),
             reader.IsDBNull(reader.GetOrdinal("reversed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reversed_at")));

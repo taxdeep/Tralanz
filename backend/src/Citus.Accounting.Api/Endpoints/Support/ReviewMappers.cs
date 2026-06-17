@@ -91,6 +91,7 @@ public static class ReviewMappers
             TotalDebit = item.TotalDebit,
             TotalCredit = item.TotalCredit,
             LineCount = item.LineCount,
+            EntryDate = item.EntryDate,
             PostedAt = item.PostedAt,
             VoidedAt = item.VoidedAt,
             ReversedAt = item.ReversedAt

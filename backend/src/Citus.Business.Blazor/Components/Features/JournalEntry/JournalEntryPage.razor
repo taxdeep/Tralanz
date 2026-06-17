@@ -66,7 +66,7 @@
             }
             else if (_recentEntries.Count > 0)
             {
-                <CitusDataGrid TItem="JournalEntryReviewListItemSummary" Data="@_recentEntries" AllowFiltering="true" PageSize="25">
+                <CitusDataGrid TItem="JournalEntryReviewListItemSummary" Data="@_recentEntries" AllowFiltering="false" PageSize="25">
                     <Columns>
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
                                               Property="@nameof(JournalEntryReviewListItemSummary.DisplayNumber)"
@@ -74,9 +74,6 @@
                                               Width="200px">
                             <Template Context="item">
                                 <a class="citus-link" href="@ResolveSourceHref(item)">@item.DisplayNumber</a>
-                                <div class="text-fg-subtle text-xs">
-                                    <span class="citus-inline-code">@item.EntityNumber</span> | @GetLifecycleSummary(item)
-                                </div>
                             </Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
@@ -84,14 +81,13 @@
                                               Title="Source">
                             <Template Context="item">
                                 <div>@item.SourceTypeLabel</div>
-                                <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@item.SourceId</span></div>
                             </Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
-                                              Property="@nameof(JournalEntryReviewListItemSummary.PostedAt)"
-                                              Title="Posted at"
+                                              Property="@nameof(JournalEntryReviewListItemSummary.EntryDate)"
+                                              Title="Date"
                                               Width="180px">
-                            <Template Context="item">@(item.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Pending")</Template>
+                            <Template Context="item">@(item.EntryDate?.ToString("yyyy-MM-dd") ?? "—")</Template>
                         </RadzenDataGridColumn>
                         @* Debit / Credit columns lead with the *transaction-currency* total
                            (what the user typed) labelled with its ISO code; the base-currency
@@ -120,8 +116,12 @@
                             </Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
-                                              Property="@nameof(JournalEntryReviewListItemSummary.LineCount)"
-                                              Title="Lines" TextAlign="TextAlign.Right" Width="90px" />
+                                              Property="@nameof(JournalEntryReviewListItemSummary.Status)"
+                                              Title="Status" Width="120px">
+                            <Template Context="item">
+                                <CitusBadge Color="@StatusColor(item.Status)">@StatusLabel(item.Status)</CitusBadge>
+                            </Template>
+                        </RadzenDataGridColumn>
                     </Columns>
                 </CitusDataGrid>
             }
@@ -249,13 +249,19 @@
         && !string.IsNullOrWhiteSpace(item.BaseCurrencyCode)
         && !string.Equals(item.TransactionCurrencyCode, item.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase);
 
-    private static string GetLifecycleSummary(JournalEntryReviewListItemSummary item) =>
-        item.Status switch
+    private static string StatusColor(string status) =>
+        status switch
         {
-            "voided" => $"voided at {item.VoidedAt?.ToString("yyyy-MM-dd") ?? "unknown"}",
-            "reversed" => $"reversed at {item.ReversedAt?.ToString("yyyy-MM-dd") ?? "unknown"}",
-            _ => $"status {item.Status}"
+            "posted" => "green",
+            "voided" => "red",
+            "reversed" => "orange",
+            _ => "default"
         };
+
+    private static string StatusLabel(string status) =>
+        string.IsNullOrEmpty(status)
+            ? "—"
+            : char.ToUpperInvariant(status[0]) + status[1..];
 
     private sealed record class EndpointRow(string Path, string Purpose);
 
