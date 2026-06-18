@@ -103,6 +103,17 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             throw new InvalidOperationException("Credit application draft base currency does not match company base currency.");
         }
 
+        int moneyDecimals;
+        await using (var mdCmd = connection.CreateCommand())
+        {
+            mdCmd.Transaction = transaction;
+            mdCmd.CommandText = "select money_decimals from companies where id = @cid;";
+            mdCmd.Parameters.AddWithValue("cid", preparation.Context.CompanyId.Value);
+            var raw = await mdCmd.ExecuteScalarAsync(cancellationToken);
+            var d = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+            moneyDecimals = d is 2 or 3 ? d : 2;
+        }
+
         var candidateMap = candidates.ToDictionary(static candidate => candidate.OpenItemId);
         var totalAmount = 0m;
         var realizedFxAmountBase = 0m;
@@ -158,18 +169,20 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             var sourceCarryingAmountBase = CalculateCarryingAmountBase(
                 line.AppliedAmountTx,
                 source.OpenAmountTx,
-                source.OpenAmountBase);
+                source.OpenAmountBase,
+                moneyDecimals);
             var targetCarryingAmountBase = CalculateCarryingAmountBase(
                 line.AppliedAmountTx,
                 target.OpenAmountTx,
-                target.OpenAmountBase);
+                target.OpenAmountBase,
+                moneyDecimals);
 
             totalAmount += line.AppliedAmountTx;
-            realizedFxAmountBase += RoundBase(sourceCarryingAmountBase - targetCarryingAmountBase);
+            realizedFxAmountBase += RoundBase(sourceCarryingAmountBase - targetCarryingAmountBase, moneyDecimals);
         }
 
         totalAmount = Math.Round(totalAmount, 6, MidpointRounding.ToEven);
-        realizedFxAmountBase = RoundBase(realizedFxAmountBase);
+        realizedFxAmountBase = RoundBase(realizedFxAmountBase, moneyDecimals);
 
         var documentId = Guid.NewGuid();
         var year = preparation.Context.ApplicationDate.Year;
@@ -550,7 +563,8 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
     private static decimal CalculateCarryingAmountBase(
         decimal appliedAmountTx,
         decimal openAmountTx,
-        decimal openAmountBase)
+        decimal openAmountBase,
+        int decimals)
     {
         if (appliedAmountTx <= 0m)
         {
@@ -574,12 +588,12 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
 
         if (appliedAmountTx == openAmountTx)
         {
-            return RoundBase(openAmountBase);
+            return RoundBase(openAmountBase, decimals);
         }
 
-        return RoundBase(openAmountBase * (appliedAmountTx / openAmountTx));
+        return RoundBase(openAmountBase * (appliedAmountTx / openAmountTx), decimals);
     }
 
-    private static decimal RoundBase(decimal value) =>
-        Math.Round(value, 2, MidpointRounding.ToEven);
+    private static decimal RoundBase(decimal value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
 }

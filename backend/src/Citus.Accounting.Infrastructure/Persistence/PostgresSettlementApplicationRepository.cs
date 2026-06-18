@@ -30,6 +30,8 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
             return;
         }
 
+        var moneyDecimals = await LoadMoneyDecimalsAsync(document.CompanyId, cancellationToken);
+
         foreach (var line in document.PaymentLines)
         {
             await ApplySingleAsync(
@@ -49,7 +51,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                     : document.FxSnapshot?.Rate,
                 realizedFxAmount: document.TransactionCurrencyCode == document.BaseCurrencyCode
                     ? null
-                    : SettlementAmountMath.RoundBase(line.AppliedAmountBase - line.CarryingAmountBase),
+                    : SettlementAmountMath.RoundBase(line.AppliedAmountBase - line.CarryingAmountBase, moneyDecimals),
                 partyId: document.PartyId,
                 createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
@@ -67,6 +69,8 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         {
             return;
         }
+
+        var moneyDecimals = await LoadMoneyDecimalsAsync(document.CompanyId, cancellationToken);
 
         foreach (var line in document.PaymentLines)
         {
@@ -87,7 +91,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                     : document.FxSnapshot?.Rate,
                 realizedFxAmount: document.TransactionCurrencyCode == document.BaseCurrencyCode
                     ? null
-                    : SettlementAmountMath.RoundBase(line.CarryingAmountBase - line.AppliedAmountBase),
+                    : SettlementAmountMath.RoundBase(line.CarryingAmountBase - line.AppliedAmountBase, moneyDecimals),
                 partyId: document.PartyId,
                 createdByUserId: createdByUserId,
                 cancellationToken: cancellationToken);
@@ -281,6 +285,24 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         }
 
         return items;
+    }
+
+    private async Task<int> LoadMoneyDecimalsAsync(
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            "select money_decimals from companies where id = @cid;");
+        command.Parameters.AddWithValue("cid", companyId.Value);
+
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        var d = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+        return d is 2 or 3 ? d : 2;
     }
 
     private async Task<bool> HasExistingApplicationsAsync(

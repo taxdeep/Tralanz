@@ -1670,6 +1670,16 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 "FX revaluation could not resolve an active foreign-currency Accounts Receivable control account.");
         }
 
+        int moneyDecimals;
+        await using (var mdCommand = scope.CreateCommand(
+            "select money_decimals from companies where id = @cid;"))
+        {
+            mdCommand.Parameters.AddWithValue("cid", companyId.Value);
+            var raw = await mdCommand.ExecuteScalarAsync(cancellationToken);
+            var d = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+            moneyDecimals = d is 2 or 3 ? d : 2;
+        }
+
         var lines = new List<FxRevaluationPreparedLine>();
         await using var command = scope.CreateCommand(
             """
@@ -1700,8 +1710,8 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         {
             var openAmountTx = reader.GetDecimal(reader.GetOrdinal("open_amount_tx"));
             var carryingAmountBase = reader.GetDecimal(reader.GetOrdinal("open_amount_base"));
-            var revaluedAmountBase = SettlementAmountMath.RoundBase(openAmountTx * fxSnapshot.Rate);
-            var unrealizedAmountBase = SettlementAmountMath.RoundBase(revaluedAmountBase - carryingAmountBase);
+            var revaluedAmountBase = SettlementAmountMath.RoundBase(openAmountTx * fxSnapshot.Rate, moneyDecimals);
+            var unrealizedAmountBase = SettlementAmountMath.RoundBase(revaluedAmountBase - carryingAmountBase, moneyDecimals);
             if (unrealizedAmountBase == 0m)
             {
                 continue;
@@ -1755,6 +1765,16 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 "FX revaluation could not resolve an active foreign-currency Accounts Payable control account.");
         }
 
+        int moneyDecimals;
+        await using (var mdCommand = scope.CreateCommand(
+            "select money_decimals from companies where id = @cid;"))
+        {
+            mdCommand.Parameters.AddWithValue("cid", companyId.Value);
+            var raw = await mdCommand.ExecuteScalarAsync(cancellationToken);
+            var d = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+            moneyDecimals = d is 2 or 3 ? d : 2;
+        }
+
         var lines = new List<FxRevaluationPreparedLine>();
         await using var command = scope.CreateCommand(
             """
@@ -1785,8 +1805,8 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         {
             var openAmountTx = reader.GetDecimal(reader.GetOrdinal("open_amount_tx"));
             var carryingAmountBase = reader.GetDecimal(reader.GetOrdinal("open_amount_base"));
-            var revaluedAmountBase = SettlementAmountMath.RoundBase(openAmountTx * fxSnapshot.Rate);
-            var unrealizedAmountBase = SettlementAmountMath.RoundBase(revaluedAmountBase - carryingAmountBase);
+            var revaluedAmountBase = SettlementAmountMath.RoundBase(openAmountTx * fxSnapshot.Rate, moneyDecimals);
+            var unrealizedAmountBase = SettlementAmountMath.RoundBase(revaluedAmountBase - carryingAmountBase, moneyDecimals);
             if (unrealizedAmountBase == 0m)
             {
                 continue;

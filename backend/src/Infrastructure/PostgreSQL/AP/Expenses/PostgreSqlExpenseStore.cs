@@ -598,9 +598,20 @@ public sealed class PostgreSqlExpenseStore(
             throw new InvalidOperationException("At least one active expense line is required.");
         }
 
+        int moneyDecimals;
+        await using (var mdCmd = connection.CreateCommand())
+        {
+            mdCmd.Transaction = transaction;
+            mdCmd.CommandText = "select money_decimals from companies where id = @cid;";
+            mdCmd.Parameters.AddWithValue("cid", companyId.Value);
+            var raw = await mdCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            var d = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+            moneyDecimals = d is 2 or 3 ? d : 2;
+        }
+
         var journalEntryId = Guid.NewGuid();
         var postedAt = DateTimeOffset.UtcNow;
-        var totalBase = RoundBase(totalTx * fxRate);
+        var totalBase = RoundBase(totalTx * fxRate, moneyDecimals);
         var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, companyId, cancellationToken).ConfigureAwait(false);
         var entityNumber = await ReserveEntityNumberAsync(connection, transaction, companyId, input.PaymentDate.Year, cancellationToken).ConfigureAwait(false);
         var idempotencyKey = $"expense:{expenseId:D}";
@@ -658,7 +669,7 @@ public sealed class PostgreSqlExpenseStore(
         // plus any non-recoverable tax; the recoverable tax is a separate Dr
         // to the ITC account. With the flag off expenseAllocationTx == totalTx
         // and recoverableTaxLines is empty, so the JE is unchanged.
-        var lineAllocations = AllocateExpenseLines(activeLines, expenseAllocationTx, discountTx, fxRate);
+        var lineAllocations = AllocateExpenseLines(activeLines, expenseAllocationTx, discountTx, fxRate, moneyDecimals);
         var lineNumber = 1;
         foreach (var allocation in lineAllocations)
         {
@@ -680,6 +691,7 @@ public sealed class PostgreSqlExpenseStore(
                 postingDate: input.PaymentDate,
                 postingRole: "source_line:expense",
                 sourceLineNumber: allocation.Line.Sequence,
+                decimals: moneyDecimals,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -699,11 +711,12 @@ public sealed class PostgreSqlExpenseStore(
                 transactionCurrency,
                 txDebit: taxLine.AmountTx,
                 txCredit: 0m,
-                debit: RoundBase(taxLine.AmountTx * fxRate),
+                debit: RoundBase(taxLine.AmountTx * fxRate, moneyDecimals),
                 credit: 0m,
                 postingDate: input.PaymentDate,
                 postingRole: "tax:purchase_tax_recoverable",
                 sourceLineNumber: null,
+                decimals: moneyDecimals,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -725,6 +738,7 @@ public sealed class PostgreSqlExpenseStore(
             postingDate: input.PaymentDate,
             postingRole: "control:payment_account",
             sourceLineNumber: null,
+            decimals: moneyDecimals,
             cancellationToken).ConfigureAwait(false);
 
         return journalEntryId;
@@ -748,6 +762,7 @@ public sealed class PostgreSqlExpenseStore(
         DateOnly postingDate,
         string postingRole,
         int? sourceLineNumber,
+        int decimals,
         CancellationToken cancellationToken)
     {
         var journalEntryLineId = Guid.NewGuid();
@@ -781,8 +796,8 @@ public sealed class PostgreSqlExpenseStore(
             insertLineCommand.Parameters.AddWithValue("party_id", (object?)partyId ?? DBNull.Value);
             insertLineCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
             insertLineCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
-            insertLineCommand.Parameters.AddWithValue("debit", RoundBase(debit));
-            insertLineCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+            insertLineCommand.Parameters.AddWithValue("debit", RoundBase(debit, decimals));
+            insertLineCommand.Parameters.AddWithValue("credit", RoundBase(credit, decimals));
             insertLineCommand.Parameters.AddWithValue("posting_role", postingRole);
             insertLineCommand.Parameters.AddWithValue("source_line_number", (object?)sourceLineNumber ?? DBNull.Value);
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -810,8 +825,8 @@ public sealed class PostgreSqlExpenseStore(
         insertLedgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
         insertLedgerCommand.Parameters.AddWithValue("posting_date", postingDate);
         insertLedgerCommand.Parameters.AddWithValue("account_id", accountId);
-        insertLedgerCommand.Parameters.AddWithValue("debit", RoundBase(debit));
-        insertLedgerCommand.Parameters.AddWithValue("credit", RoundBase(credit));
+        insertLedgerCommand.Parameters.AddWithValue("debit", RoundBase(debit, decimals));
+        insertLedgerCommand.Parameters.AddWithValue("credit", RoundBase(credit, decimals));
         insertLedgerCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
         insertLedgerCommand.Parameters.AddWithValue("tx_debit", RoundTx(txDebit));
         insertLedgerCommand.Parameters.AddWithValue("tx_credit", RoundTx(txCredit));
@@ -822,7 +837,8 @@ public sealed class PostgreSqlExpenseStore(
         IReadOnlyList<ExpenseLineInput> activeLines,
         decimal totalTx,
         decimal discountTx,
-        decimal fxRate)
+        decimal fxRate,
+        int decimals)
     {
         var subtotalTx = activeLines.Sum(static line => Math.Round(line.Quantity * line.UnitPrice, 4));
         if (subtotalTx <= 0m)
@@ -832,7 +848,7 @@ public sealed class PostgreSqlExpenseStore(
 
         var allocations = new List<ExpenseLineAllocation>(activeLines.Count);
         var remainingTx = RoundTx(totalTx);
-        var remainingBase = RoundBase(totalTx * fxRate);
+        var remainingBase = RoundBase(totalTx * fxRate, decimals);
 
         for (var i = 0; i < activeLines.Count; i++)
         {
@@ -849,7 +865,7 @@ public sealed class PostgreSqlExpenseStore(
             {
                 var lineDiscount = discountTx == 0m ? 0m : Math.Round(discountTx * (lineGross / subtotalTx), 6, MidpointRounding.ToEven);
                 lineTx = RoundTx(lineGross - lineDiscount);
-                lineBase = RoundBase(lineTx * fxRate);
+                lineBase = RoundBase(lineTx * fxRate, decimals);
                 remainingTx -= lineTx;
                 remainingBase -= lineBase;
             }
@@ -951,8 +967,8 @@ public sealed class PostgreSqlExpenseStore(
     private static decimal RoundTx(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
 
-    private static decimal RoundBase(decimal value) =>
-        Math.Round(value, 2, MidpointRounding.ToEven);
+    private static decimal RoundBase(decimal value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
 
     private static decimal RoundRate(decimal value) =>
         Math.Round(value, 10, MidpointRounding.ToEven);
