@@ -87,43 +87,40 @@ else
         {
             <div class="tz-doc-surface">
                 <div class="tz-doc-region">
-                    <div class="tz-doc-header-grid">
-                        <div class="tz-doc-zone">
-                            <div class="tz-doc-field">
-                                <label class="tz-doc-field__label">Customer *</label>
-                                @* Customer is required at create-time so the task is
-                                   immediately billable — TaskDetailPage's "Create invoice"
-                                   affordance only appears when customer_id is set, and
-                                   requiring it here avoids the round-trip back through
-                                   PUT /tasks/{id}. The DB column stays nullable so legacy
-                                   rows and future internal-only flows still parse. *@
-                                <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
-                                                SelectedId="@_customerId"
-                                                SelectedDisplayText="@_customerDisplay"
-                                                Placeholder="Search customers…"
-                                                SourceRoute="/tasks/new"
-                                                OnCustomerSelected="OnCustomerSelected"
-                                                OnCleared="OnCustomerCleared" />
-                            </div>
-                            <div class="tz-doc-field">
-                                <label class="tz-doc-field__label">Title</label>
-                                <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" MaxLength="30" />
-                            </div>
+                    @* Header fields stack vertically, each constrained to half the
+                       page width per the form spec. (Bypasses the shared 3-column
+                       tz-doc-header-grid, which isn't what this form wants.) *@
+                    <div class="tz-doc-zone" style="max-width: 50%;">
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Customer *</label>
+                            @* Customer is required at create-time so the task is
+                               immediately billable — TaskDetailPage's "Create invoice"
+                               affordance only appears when customer_id is set, and
+                               requiring it here avoids the round-trip back through
+                               PUT /tasks/{id}. The DB column stays nullable so legacy
+                               rows and future internal-only flows still parse. *@
+                            <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                            UserId="@(string.IsNullOrEmpty(ShellState.User.Id.Value) ? null : ShellState.User.Id)"
+                                            SelectedId="@_customerId"
+                                            SelectedDisplayText="@_customerDisplay"
+                                            Placeholder="Search customers…"
+                                            SourceRoute="/tasks/new"
+                                            OnCustomerSelected="OnCustomerSelected"
+                                            OnCleared="OnCustomerCleared" />
                         </div>
-                        <div class="tz-doc-zone">
-                            <div class="tz-doc-field-row">
-                                <div class="tz-doc-field">
-                                    <label class="tz-doc-field__label">Service date</label>
-                                    <input type="date" class="citus-form-field__input" @bind="_serviceDate" />
-                                </div>
-                                <div class="tz-doc-field">
-                                    <label class="tz-doc-field__label">Currency</label>
-                                    @* Customer-driven: em-dash until a customer is picked,
-                                       then the customer's default (set in OnCustomerSelected). *@
-                                    <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">@(_customerId is null ? "—" : _currency)</div>
-                                </div>
-                            </div>
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Title</label>
+                            <CitusInput TValue="string" @bind-Value="_title" Placeholder="Q2 audit prep" MaxLength="30" />
+                        </div>
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Service date</label>
+                            <input type="date" class="citus-form-field__input" @bind="_serviceDate" />
+                        </div>
+                        <div class="tz-doc-field">
+                            <label class="tz-doc-field__label">Currency</label>
+                            @* Customer-driven: em-dash until a customer is picked,
+                               then the customer's default (set in OnCustomerSelected). *@
+                            <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">@(_customerId is null ? "—" : _currency)</div>
                         </div>
                     </div>
                 </div>
@@ -238,13 +235,16 @@ else
                 </div>
             </div>
 
+            @* Both buttons cluster on the right: Cancel goes in RightExtras
+               (rendered just before the primary) rather than LeftActions, so the
+               shared action bar's space-between collapses to a right-aligned group. *@
             <TzDocActionBar PrimaryLabel="Create"
                             IsSaving="@_isSaving"
                             ErrorHint="@(string.IsNullOrWhiteSpace(_validation) ? null : "Fix errors above")"
                             OnSave="OnCreateAsync">
-                <LeftActions>
+                <RightExtras>
                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" Disabled="@_isSaving" OnClick="OnCancelAsync">Cancel</CitusButton>
-                </LeftActions>
+                </RightExtras>
             </TzDocActionBar>
         }
     </div>
