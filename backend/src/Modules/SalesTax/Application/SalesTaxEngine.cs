@@ -22,9 +22,6 @@ namespace Citus.Modules.SalesTax.Application;
 
 public sealed class SalesTaxEngine : ISalesTaxEngine
 {
-    private const int CurrencyMinorUnit = 2;
-    private const MidpointRounding RoundingMode = MidpointRounding.ToEven;
-
     private static readonly IReadOnlyDictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>> EmptyRows
         = new Dictionary<Guid, IReadOnlyList<TaxCatalogComponentRow>>();
 
@@ -128,7 +125,7 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
                 : taxableAmountBase;
 
             var taxRaw = componentBase * component.RatePercent / 100m;
-            var taxAmount = Math.Round(taxRaw, CurrencyMinorUnit, RoundingMode);
+            var taxAmount = Math.Round(taxRaw, request.MoneyDecimals is 2 or 3 ? request.MoneyDecimals : 2, MidpointRounding.AwayFromZero);
             if (line.LineAmount < 0m) taxAmount = -taxAmount;
 
             compoundAccrual += taxAmount;
@@ -137,10 +134,11 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
                 request.DocumentSide,
                 taxAmount,
                 component.RecoverabilityMode,
-                component.RecoverablePercent);
+                component.RecoverablePercent,
+                request.MoneyDecimals);
 
             var taxAmountBase = Math.Round(
-                taxAmount * request.FxRateToBase, CurrencyMinorUnit, RoundingMode);
+                taxAmount * request.FxRateToBase, request.MoneyDecimals is 2 or 3 ? request.MoneyDecimals : 2, MidpointRounding.AwayFromZero);
 
             snapshots.Add(new TaxSnapshotDraft(
                 Sequence: i + 1,
@@ -179,7 +177,8 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
         SalesTaxDocumentSide side,
         decimal taxAmount,
         string mode,
-        decimal? recoverablePercent)
+        decimal? recoverablePercent,
+        int moneyDecimals)
     {
         if (side == SalesTaxDocumentSide.Sales)
         {
@@ -191,18 +190,18 @@ public sealed class SalesTaxEngine : ISalesTaxEngine
             TaxRecoverabilityMode.Full => (taxAmount, 0m),
             TaxRecoverabilityMode.None => (0m, taxAmount),
             TaxRecoverabilityMode.Partial when recoverablePercent.HasValue
-                => SplitPartial(taxAmount, recoverablePercent.Value),
+                => SplitPartial(taxAmount, recoverablePercent.Value, moneyDecimals),
             _ => (taxAmount, 0m),
         };
     }
 
     private static (decimal Recoverable, decimal NonRecoverable) SplitPartial(
-        decimal taxAmount, decimal percent)
+        decimal taxAmount, decimal percent, int moneyDecimals)
     {
         var recoverable = Math.Round(
             taxAmount * percent / 100m,
-            CurrencyMinorUnit,
-            RoundingMode);
+            moneyDecimals is 2 or 3 ? moneyDecimals : 2,
+            MidpointRounding.AwayFromZero);
         return (recoverable, taxAmount - recoverable);
     }
 }

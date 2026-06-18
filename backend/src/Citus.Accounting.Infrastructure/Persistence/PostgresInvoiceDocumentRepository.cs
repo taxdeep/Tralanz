@@ -362,9 +362,24 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             && _salesTaxEngine is not null
             && _taxSnapshotPersister is not null;
 
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
         SalesTaxComputationResult? taxResult = null;
         if (salesTaxActive)
         {
+            // load money_decimals (2 or 3, default 2)
+            int moneyDecimals;
+            await using (var mdCmd = connection.CreateCommand())
+            {
+                mdCmd.Transaction = transaction;
+                mdCmd.CommandText = "select money_decimals from companies where id = @cid;";
+                mdCmd.Parameters.AddWithValue("cid", draft.CompanyId.Value);
+                var raw = await mdCmd.ExecuteScalarAsync(cancellationToken);
+                var d = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+                moneyDecimals = d is 2 or 3 ? d : 2;
+            }
+
             taxResult = await _salesTaxEngine!.ComputeAsync(
                 new SalesTaxComputationRequest(
                     draft.CompanyId.Value,
@@ -377,7 +392,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                             Round6(entry.Line.Quantity * entry.Line.UnitPrice),
                             entry.Line.TaxCodeId,
                             entry.Line.TaxCodeSetId))
-                        .ToList()),
+                        .ToList(),
+                    MoneyDecimals: moneyDecimals),
                 cancellationToken);
         }
 
@@ -387,9 +403,6 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                 ? entry.Line.TaxAmount
                 : taxResult.Lines.FirstOrDefault(r => r.LineId == entry.LineId)?.TotalTaxAmount ?? 0m);
         var headerTaxAmount = Round6(resolvedTaxByLineId.Values.Sum());
-
-        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         // Backend guard for SO-linked invoices (mirrors the UI field lock).
         // Runs before any number is reserved so a violation rolls back clean.

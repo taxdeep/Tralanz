@@ -5,10 +5,20 @@ internal static class SettlementAmountMath
     public static decimal RoundBase(decimal value) =>
         Math.Round(value, 2, MidpointRounding.ToEven);
 
+    public static decimal RoundBase(decimal value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+
     public static decimal CalculateCarryingAmountBase(
         decimal appliedAmountTx,
         decimal openAmountTx,
-        decimal openAmountBase)
+        decimal openAmountBase) =>
+        CalculateCarryingAmountBase(appliedAmountTx, openAmountTx, openAmountBase, 2);
+
+    public static decimal CalculateCarryingAmountBase(
+        decimal appliedAmountTx,
+        decimal openAmountTx,
+        decimal openAmountBase,
+        int decimals)
     {
         if (appliedAmountTx <= 0m)
         {
@@ -32,16 +42,23 @@ internal static class SettlementAmountMath
 
         if (appliedAmountTx == openAmountTx)
         {
-            return RoundBase(openAmountBase);
+            return RoundBase(openAmountBase, decimals);
         }
 
-        return RoundBase(openAmountBase * (appliedAmountTx / openAmountTx));
+        return RoundBase(openAmountBase * (appliedAmountTx / openAmountTx), decimals);
     }
 
     public static decimal[] AllocateSettlementBaseAmounts(
         IReadOnlyList<decimal> appliedAmountsTx,
         decimal documentTotalAmountTx,
-        decimal fxRate)
+        decimal fxRate) =>
+        AllocateSettlementBaseAmounts(appliedAmountsTx, documentTotalAmountTx, fxRate, 2);
+
+    public static decimal[] AllocateSettlementBaseAmounts(
+        IReadOnlyList<decimal> appliedAmountsTx,
+        decimal documentTotalAmountTx,
+        decimal fxRate,
+        int decimals)
     {
         ArgumentNullException.ThrowIfNull(appliedAmountsTx);
 
@@ -51,14 +68,14 @@ internal static class SettlementAmountMath
         }
 
         var allocated = appliedAmountsTx
-            .Select(amount => RoundBase(amount * fxRate))
+            .Select(amount => RoundBase(amount * fxRate, decimals))
             .ToArray();
 
-        var targetTotal = RoundBase(documentTotalAmountTx * fxRate);
-        var delta = RoundBase(targetTotal - allocated.Sum());
+        var targetTotal = RoundBase(documentTotalAmountTx * fxRate, decimals);
+        var delta = RoundBase(targetTotal - allocated.Sum(), decimals);
         if (delta != 0m)
         {
-            allocated[^1] = RoundBase(allocated[^1] + delta);
+            allocated[^1] = RoundBase(allocated[^1] + delta, decimals);
             if (allocated[^1] <= 0m)
             {
                 throw new InvalidOperationException(

@@ -32,4 +32,15 @@ public sealed class PostgreSqlCompanyMoneyDecimalsStore(PostgreSqlConnectionFact
             throw new InvalidOperationException("The active company was not found.");
         }
     }
+
+    public async Task<int> GetAsync(CompanyId companyId, CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select money_decimals from companies where id = @company_id;";
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        var decimals = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+        return decimals is 2 or 3 ? decimals : 2;
+    }
 }

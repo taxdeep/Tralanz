@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Abstractions;
+using Citus.Accounting.Application.Companies;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Documents;
 using Citus.Accounting.Domain.Journal;
@@ -9,7 +10,22 @@ namespace Citus.Accounting.Infrastructure.Posting;
 
 public sealed class DefaultPostingValidator : IPostingValidator
 {
-    public Task ValidateAsync(
+    private readonly ICompanyMoneyDecimalsStore? _moneyDecimals;
+
+    public DefaultPostingValidator(ICompanyMoneyDecimalsStore moneyDecimals)
+    {
+        _moneyDecimals = moneyDecimals;
+    }
+
+    // Parameterless ctor for tests that exercise posting logic without a DI
+    // container; money precision defaults to 2. Production resolves the
+    // greedy (reader) ctor via DI.
+    public DefaultPostingValidator()
+    {
+        _moneyDecimals = null;
+    }
+
+    public async Task ValidateAsync(
         IPostingDocument document,
         PostingContext context,
         CancellationToken cancellationToken)
@@ -18,6 +34,8 @@ public sealed class DefaultPostingValidator : IPostingValidator
         {
             throw new InvalidOperationException("Posting document company does not match the active company context.");
         }
+
+        var decimals = _moneyDecimals is null ? 2 : await _moneyDecimals.GetAsync(context.CompanyId, cancellationToken);
 
         if (document.Status is not ("draft" or "posted"))
         {
@@ -203,9 +221,9 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
 
             var expectedBaseTotal = SettlementAmountMath.RoundBase(
-                receivePayment.TotalAmount * (receivePayment.FxSnapshot?.Rate ?? 1m));
+                receivePayment.TotalAmount * (receivePayment.FxSnapshot?.Rate ?? 1m), decimals);
             var appliedBaseTotal = SettlementAmountMath.RoundBase(
-                receivePayment.PaymentLines.Sum(static line => line.AppliedAmountBase));
+                receivePayment.PaymentLines.Sum(static line => line.AppliedAmountBase), decimals);
             if (appliedBaseTotal != expectedBaseTotal)
             {
                 throw new InvalidOperationException(
@@ -264,9 +282,9 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
 
             var expectedBaseTotal = SettlementAmountMath.RoundBase(
-                payBill.TotalAmount * (payBill.FxSnapshot?.Rate ?? 1m));
+                payBill.TotalAmount * (payBill.FxSnapshot?.Rate ?? 1m), decimals);
             var appliedBaseTotal = SettlementAmountMath.RoundBase(
-                payBill.PaymentLines.Sum(static line => line.AppliedAmountBase));
+                payBill.PaymentLines.Sum(static line => line.AppliedAmountBase), decimals);
             if (appliedBaseTotal != expectedBaseTotal)
             {
                 throw new InvalidOperationException(
@@ -360,8 +378,6 @@ public sealed class DefaultPostingValidator : IPostingValidator
                 throw new InvalidOperationException("Receipt GR/IR settlement posting lines must carry positive GR/IR base amounts.");
             }
         }
-
-        return Task.CompletedTask;
     }
 }
 
@@ -377,66 +393,83 @@ public sealed class NullTaxEngine : ITaxEngine
 
 public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 {
-    public Task<IReadOnlyList<PostingFragment>> BuildAsync(
+    private readonly ICompanyMoneyDecimalsStore? _moneyDecimals;
+
+    public AccountingPostingFragmentBuilder(ICompanyMoneyDecimalsStore moneyDecimals)
+    {
+        _moneyDecimals = moneyDecimals;
+    }
+
+    // Parameterless ctor for tests that exercise posting logic without a DI
+    // container; money precision defaults to 2. Production resolves the
+    // greedy (reader) ctor via DI.
+    public AccountingPostingFragmentBuilder()
+    {
+        _moneyDecimals = null;
+    }
+
+    public async Task<IReadOnlyList<PostingFragment>> BuildAsync(
         IPostingDocument document,
         TaxComputationResult taxResult,
         FxResolutionResult fxResult,
         CancellationToken cancellationToken)
     {
+        var decimals = _moneyDecimals is null ? 2 : await _moneyDecimals.GetAsync(document.CompanyId, cancellationToken);
+
         return document switch
         {
-            ManualJournalDocument manualJournal => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildManualJournalFragments(manualJournal, fxResult).AsReadOnly()),
-            InvoiceDocument invoice => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildInvoiceFragments(invoice, fxResult).AsReadOnly()),
-            SalesReceiptDocument salesReceipt => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildSalesReceiptFragments(salesReceipt, fxResult).AsReadOnly()),
-            RefundReceiptDocument refundReceipt => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildRefundReceiptFragments(refundReceipt, fxResult).AsReadOnly()),
-            BankTransferDocument bankTransfer => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildBankTransferFragments(bankTransfer, fxResult).AsReadOnly()),
-            BankDepositDocument bankDeposit => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildBankDepositFragments(bankDeposit, fxResult).AsReadOnly()),
-            TaxReturnDocument taxReturn => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildTaxReturnFragments(taxReturn, fxResult).AsReadOnly()),
-            CreditNoteDocument creditNote => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildCreditNoteFragments(creditNote, fxResult).AsReadOnly()),
-            BillDocument bill => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildBillFragments(bill, fxResult).AsReadOnly()),
-            VendorCreditDocument vendorCredit => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildVendorCreditFragments(vendorCredit, fxResult).AsReadOnly()),
-            CreditApplicationDocument creditApplication => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildCreditApplicationFragments(creditApplication).AsReadOnly()),
-            ReceivePaymentDocument receivePayment => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildReceivePaymentFragments(receivePayment, fxResult).AsReadOnly()),
-            VendorCreditApplicationDocument vendorCreditApplication => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildVendorCreditApplicationFragments(vendorCreditApplication).AsReadOnly()),
-            PayBillDocument payBill => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildPayBillFragments(payBill, fxResult).AsReadOnly()),
-            FxRevaluationDocument fxRevaluation => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildFxRevaluationFragments(fxRevaluation).AsReadOnly()),
-            OpenItemAdjustmentDocument adjustment => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildOpenItemAdjustmentFragments(adjustment).AsReadOnly()),
-            ReceiptGrIrPostingDocument grIrPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildReceiptGrIrPostingFragments(grIrPosting).AsReadOnly()),
-            ReceiptGrIrSettlementPostingDocument grIrSettlement => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildReceiptGrIrSettlementPostingFragments(grIrSettlement).AsReadOnly()),
-            SalesIssueCogsPostingDocument cogsPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildSalesIssueCogsPostingFragments(cogsPosting).AsReadOnly()),
-            InvoiceDropShipCogsPostingDocument dropShipCogs => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildInvoiceDropShipCogsPostingFragments(dropShipCogs).AsReadOnly()),
-            DropShipClearingWriteOffDocument dropShipWriteOff => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildDropShipClearingWriteOffFragments(dropShipWriteOff).AsReadOnly()),
-            CustomerDepositPostingDocument deposit => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildCustomerDepositFragments(deposit).AsReadOnly()),
-            CustomerDepositApplicationDocument depositApp => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildCustomerDepositApplicationFragments(depositApp).AsReadOnly()),
-            ExpenseVoidPostingDocument expenseVoid => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildExpenseVoidFragments(expenseVoid).AsReadOnly()),
-            InvoiceReversePostingDocument invoiceReverse => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildInvoiceReverseFragments(invoiceReverse).AsReadOnly()),
-            BillReversePostingDocument billReverse => Task.FromResult<IReadOnlyList<PostingFragment>>(
-                BuildBillReverseFragments(billReverse).AsReadOnly()),
+            ManualJournalDocument manualJournal =>
+                BuildManualJournalFragments(manualJournal, fxResult, decimals).AsReadOnly(),
+            InvoiceDocument invoice =>
+                BuildInvoiceFragments(invoice, fxResult, decimals).AsReadOnly(),
+            SalesReceiptDocument salesReceipt =>
+                BuildSalesReceiptFragments(salesReceipt, fxResult, decimals).AsReadOnly(),
+            RefundReceiptDocument refundReceipt =>
+                BuildRefundReceiptFragments(refundReceipt, fxResult, decimals).AsReadOnly(),
+            BankTransferDocument bankTransfer =>
+                BuildBankTransferFragments(bankTransfer, fxResult, decimals).AsReadOnly(),
+            BankDepositDocument bankDeposit =>
+                BuildBankDepositFragments(bankDeposit, fxResult, decimals).AsReadOnly(),
+            TaxReturnDocument taxReturn =>
+                BuildTaxReturnFragments(taxReturn, fxResult, decimals).AsReadOnly(),
+            CreditNoteDocument creditNote =>
+                BuildCreditNoteFragments(creditNote, fxResult, decimals).AsReadOnly(),
+            BillDocument bill =>
+                BuildBillFragments(bill, fxResult, decimals).AsReadOnly(),
+            VendorCreditDocument vendorCredit =>
+                BuildVendorCreditFragments(vendorCredit, fxResult, decimals).AsReadOnly(),
+            CreditApplicationDocument creditApplication =>
+                BuildCreditApplicationFragments(creditApplication, decimals).AsReadOnly(),
+            ReceivePaymentDocument receivePayment =>
+                BuildReceivePaymentFragments(receivePayment, fxResult, decimals).AsReadOnly(),
+            VendorCreditApplicationDocument vendorCreditApplication =>
+                BuildVendorCreditApplicationFragments(vendorCreditApplication, decimals).AsReadOnly(),
+            PayBillDocument payBill =>
+                BuildPayBillFragments(payBill, fxResult, decimals).AsReadOnly(),
+            FxRevaluationDocument fxRevaluation =>
+                BuildFxRevaluationFragments(fxRevaluation, decimals).AsReadOnly(),
+            OpenItemAdjustmentDocument adjustment =>
+                BuildOpenItemAdjustmentFragments(adjustment).AsReadOnly(),
+            ReceiptGrIrPostingDocument grIrPosting =>
+                BuildReceiptGrIrPostingFragments(grIrPosting).AsReadOnly(),
+            ReceiptGrIrSettlementPostingDocument grIrSettlement =>
+                BuildReceiptGrIrSettlementPostingFragments(grIrSettlement).AsReadOnly(),
+            SalesIssueCogsPostingDocument cogsPosting =>
+                BuildSalesIssueCogsPostingFragments(cogsPosting).AsReadOnly(),
+            InvoiceDropShipCogsPostingDocument dropShipCogs =>
+                BuildInvoiceDropShipCogsPostingFragments(dropShipCogs).AsReadOnly(),
+            DropShipClearingWriteOffDocument dropShipWriteOff =>
+                BuildDropShipClearingWriteOffFragments(dropShipWriteOff).AsReadOnly(),
+            CustomerDepositPostingDocument deposit =>
+                BuildCustomerDepositFragments(deposit).AsReadOnly(),
+            CustomerDepositApplicationDocument depositApp =>
+                BuildCustomerDepositApplicationFragments(depositApp).AsReadOnly(),
+            ExpenseVoidPostingDocument expenseVoid =>
+                BuildExpenseVoidFragments(expenseVoid).AsReadOnly(),
+            InvoiceReversePostingDocument invoiceReverse =>
+                BuildInvoiceReverseFragments(invoiceReverse).AsReadOnly(),
+            BillReversePostingDocument billReverse =>
+                BuildBillReverseFragments(billReverse).AsReadOnly(),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -534,13 +567,14 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static List<PostingFragment> BuildManualJournalFragments(
         ManualJournalDocument manualJournal,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = manualJournal.JournalLines
             .Select(line =>
             {
-                var baseDebit = Math.Round(line.TxDebit * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
-                var baseCredit = Math.Round(line.TxCredit * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseDebit = RoundMoney(line.TxDebit * fxResult.Snapshot.Rate, decimals);
+                var baseCredit = RoundMoney(line.TxCredit * fxResult.Snapshot.Rate, decimals);
 
                 return new PostingFragment(
                     line.AccountId,
@@ -561,11 +595,12 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static List<PostingFragment> BuildInvoiceFragments(
         InvoiceDocument invoice,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
-        var arDebitBase = Math.Round(invoice.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        var arDebitBase = RoundMoney(invoice.TotalAmount * fxResult.Snapshot.Rate, decimals);
         fragments.Add(new PostingFragment(
             invoice.ReceivableAccountId,
             invoice.TransactionCurrencyCode,
@@ -580,7 +615,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
         foreach (var line in invoice.InvoiceLines)
         {
-            var baseRevenue = Math.Round(line.LineAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            var baseRevenue = RoundMoney(line.LineAmount * fxResult.Snapshot.Rate, decimals);
             fragments.Add(new PostingFragment(
                 line.RevenueAccountId,
                 invoice.TransactionCurrencyCode,
@@ -607,7 +642,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                             continue;
                         }
 
-                        var baseLegTax = Math.Round(snap.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                        var baseLegTax = RoundMoney(snap.TaxAmount * fxResult.Snapshot.Rate, decimals);
                         fragments.Add(new PostingFragment(
                             legPayableAccountId,
                             invoice.TransactionCurrencyCode,
@@ -624,7 +659,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 else
                 {
                     // Legacy single-tax fallback (snapshots empty = SalesTaxV2 off).
-                    var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                    var baseTax = RoundMoney(line.TaxAmount * fxResult.Snapshot.Rate, decimals);
                     fragments.Add(new PostingFragment(
                         line.PayableTaxAccountId!.Value,
                         invoice.TransactionCurrencyCode,
@@ -660,11 +695,12 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     /// </summary>
     private static List<PostingFragment> BuildSalesReceiptFragments(
         SalesReceiptDocument salesReceipt,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
-        var depositDebitBase = Math.Round(salesReceipt.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        var depositDebitBase = RoundMoney(salesReceipt.TotalAmount * fxResult.Snapshot.Rate, decimals);
         fragments.Add(new PostingFragment(
             salesReceipt.DepositToAccountId,
             salesReceipt.TransactionCurrencyCode,
@@ -677,7 +713,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
         foreach (var line in salesReceipt.ReceiptLines)
         {
-            var baseRevenue = Math.Round(line.LineAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            var baseRevenue = RoundMoney(line.LineAmount * fxResult.Snapshot.Rate, decimals);
             fragments.Add(new PostingFragment(
                 line.RevenueAccountId,
                 salesReceipt.TransactionCurrencyCode,
@@ -691,7 +727,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
             if (line.TaxAmount > 0m)
             {
-                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseTax = RoundMoney(line.TaxAmount * fxResult.Snapshot.Rate, decimals);
                 fragments.Add(new PostingFragment(
                     line.PayableTaxAccountId!.Value,
                     salesReceipt.TransactionCurrencyCode,
@@ -723,11 +759,12 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     /// </summary>
     private static List<PostingFragment> BuildRefundReceiptFragments(
         RefundReceiptDocument refundReceipt,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
-        var refundCreditBase = Math.Round(refundReceipt.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        var refundCreditBase = RoundMoney(refundReceipt.TotalAmount * fxResult.Snapshot.Rate, decimals);
         fragments.Add(new PostingFragment(
             refundReceipt.RefundFromAccountId,
             refundReceipt.TransactionCurrencyCode,
@@ -740,7 +777,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
         foreach (var line in refundReceipt.ReceiptLines)
         {
-            var baseRevenue = Math.Round(line.LineAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            var baseRevenue = RoundMoney(line.LineAmount * fxResult.Snapshot.Rate, decimals);
             fragments.Add(new PostingFragment(
                 line.RevenueAccountId,
                 refundReceipt.TransactionCurrencyCode,
@@ -754,7 +791,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
             if (line.TaxAmount > 0m)
             {
-                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseTax = RoundMoney(line.TaxAmount * fxResult.Snapshot.Rate, decimals);
                 fragments.Add(new PostingFragment(
                     line.PayableTaxAccountId!.Value,
                     refundReceipt.TransactionCurrencyCode,
@@ -788,13 +825,14 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     /// </summary>
     private static List<PostingFragment> BuildBankTransferFragments(
         BankTransferDocument bankTransfer,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
         var sameCurrency = bankTransfer.FromCurrencyCode == bankTransfer.ToCurrencyCode;
 
         // From-side credit (cash leaves)
-        var fromBase = Math.Round(bankTransfer.Amount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        var fromBase = RoundMoney(bankTransfer.Amount * fxResult.Snapshot.Rate, decimals);
         fragments.Add(new PostingFragment(
             bankTransfer.FromAccountId,
             bankTransfer.FromCurrencyCode,
@@ -812,7 +850,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             : Math.Round(bankTransfer.Amount * (bankTransfer.FxRate ?? 1m), 6, MidpointRounding.ToEven);
         var toBase = sameCurrency
             ? fromBase
-            : Math.Round(toAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            : RoundMoney(toAmount * fxResult.Snapshot.Rate, decimals);
         fragments.Add(new PostingFragment(
             bankTransfer.ToAccountId,
             bankTransfer.ToCurrencyCode,
@@ -841,10 +879,11 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     /// </summary>
     private static List<PostingFragment> BuildBankDepositFragments(
         BankDepositDocument bankDeposit,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
-        var totalBase = Math.Round(bankDeposit.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        var totalBase = RoundMoney(bankDeposit.TotalAmount * fxResult.Snapshot.Rate, decimals);
 
         fragments.Add(new PostingFragment(
             bankDeposit.DepositToAccountId,
@@ -891,8 +930,10 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     /// </summary>
     private static List<PostingFragment> BuildTaxReturnFragments(
         TaxReturnDocument taxReturn,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
+        _ = decimals;
         var fragments = new List<PostingFragment>();
 
         // 1. Clear the collected-tax accrual (Dr Tax Payable for full
@@ -990,13 +1031,14 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static List<PostingFragment> BuildCreditNoteFragments(
         CreditNoteDocument creditNote,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
         foreach (var line in creditNote.CreditNoteLines)
         {
-            var baseRevenue = Math.Round(line.LineAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            var baseRevenue = RoundMoney(line.LineAmount * fxResult.Snapshot.Rate, decimals);
             fragments.Add(new PostingFragment(
                 line.RevenueAccountId,
                 creditNote.TransactionCurrencyCode,
@@ -1010,7 +1052,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
             if (line.TaxAmount > 0m)
             {
-                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseTax = RoundMoney(line.TaxAmount * fxResult.Snapshot.Rate, decimals);
                 fragments.Add(new PostingFragment(
                     line.PayableTaxAccountId!.Value,
                     creditNote.TransactionCurrencyCode,
@@ -1025,7 +1067,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             }
         }
 
-        var arCreditBase = Math.Round(creditNote.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        var arCreditBase = RoundMoney(creditNote.TotalAmount * fxResult.Snapshot.Rate, decimals);
         fragments.Add(new PostingFragment(
             creditNote.ReceivableAccountId,
             creditNote.TransactionCurrencyCode,
@@ -1044,7 +1086,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static List<PostingFragment> BuildBillFragments(
         BillDocument bill,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
@@ -1062,7 +1105,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 var nonRecoverableTotal = line.TaxSnapshots.Sum(static snap => snap.NonRecoverableAmount);
                 var expenseAmount = line.LineAmount + nonRecoverableTotal;
 
-                var baseExpense = Math.Round(expenseAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseExpense = RoundMoney(expenseAmount * fxResult.Snapshot.Rate, decimals);
                 fragments.Add(new PostingFragment(
                     line.ExpenseAccountId,
                     bill.TransactionCurrencyCode,
@@ -1081,7 +1124,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                         continue;
                     }
 
-                    var baseLegTax = Math.Round(snap.RecoverableAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                    var baseLegTax = RoundMoney(snap.RecoverableAmount * fxResult.Snapshot.Rate, decimals);
                     fragments.Add(new PostingFragment(
                         recoverableAccountId,
                         bill.TransactionCurrencyCode,
@@ -1102,7 +1145,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     ? line.LineAmount
                     : line.LineAmount + line.TaxAmount;
 
-                var baseExpense = Math.Round(expenseAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseExpense = RoundMoney(expenseAmount * fxResult.Snapshot.Rate, decimals);
                 fragments.Add(new PostingFragment(
                     line.ExpenseAccountId,
                     bill.TransactionCurrencyCode,
@@ -1116,7 +1159,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
                 if (line.TaxAmount > 0m && line.IsTaxRecoverable)
                 {
-                    var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                    var baseTax = RoundMoney(line.TaxAmount * fxResult.Snapshot.Rate, decimals);
                     fragments.Add(new PostingFragment(
                         line.RecoverableTaxAccountId!.Value,
                         bill.TransactionCurrencyCode,
@@ -1132,7 +1175,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             }
         }
 
-        var apCreditBase = Math.Round(bill.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        var apCreditBase = RoundMoney(bill.TotalAmount * fxResult.Snapshot.Rate, decimals);
         fragments.Add(new PostingFragment(
             bill.PayableAccountId,
             bill.TransactionCurrencyCode,
@@ -1151,7 +1194,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static List<PostingFragment> BuildVendorCreditFragments(
         VendorCreditDocument vendorCredit,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var fragments = new List<PostingFragment>
         {
@@ -1160,7 +1204,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 vendorCredit.TransactionCurrencyCode,
                 vendorCredit.TotalAmount,
                 0m,
-                Math.Round(vendorCredit.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven),
+                RoundMoney(vendorCredit.TotalAmount * fxResult.Snapshot.Rate, decimals),
                 0m,
                 $"Accounts Payable credit reduction for vendor credit {vendorCredit.DisplayNumber.Value}",
                 ControlRole: "accounts_payable",
@@ -1174,7 +1218,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 ? line.LineAmount
                 : line.LineAmount + line.TaxAmount;
 
-            var baseExpense = Math.Round(expenseAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            var baseExpense = RoundMoney(expenseAmount * fxResult.Snapshot.Rate, decimals);
             fragments.Add(new PostingFragment(
                 line.ExpenseAccountId,
                 vendorCredit.TransactionCurrencyCode,
@@ -1188,7 +1232,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
             if (line.TaxAmount > 0m && line.IsTaxRecoverable)
             {
-                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                var baseTax = RoundMoney(line.TaxAmount * fxResult.Snapshot.Rate, decimals);
                 fragments.Add(new PostingFragment(
                     line.RecoverableTaxAccountId!.Value,
                     vendorCredit.TransactionCurrencyCode,
@@ -1208,7 +1252,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     }
 
     private static List<PostingFragment> BuildCreditApplicationFragments(
-        CreditApplicationDocument creditApplication)
+        CreditApplicationDocument creditApplication,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
@@ -1240,7 +1285,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 PostingRole: "settlement:credit_application_target",
                 SourceLineNumber: line.LineNumber));
 
-            AppendCreditApplicationRealizedFxFragment(creditApplication, line, fragments);
+            AppendCreditApplicationRealizedFxFragment(creditApplication, line, fragments, decimals);
         }
 
         EnsureBalancedBaseCurrency(fragments);
@@ -1249,12 +1294,13 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static List<PostingFragment> BuildReceivePaymentFragments(
         ReceivePaymentDocument receivePayment,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var settlementBaseTotal = SettlementAmountMath.RoundBase(
-            receivePayment.PaymentLines.Sum(static line => line.AppliedAmountBase));
+            receivePayment.PaymentLines.Sum(static line => line.AppliedAmountBase), decimals);
         var carryingBaseTotal = SettlementAmountMath.RoundBase(
-            receivePayment.PaymentLines.Sum(static line => line.CarryingAmountBase));
+            receivePayment.PaymentLines.Sum(static line => line.CarryingAmountBase), decimals);
         var fragments = new List<PostingFragment>
         {
             new(
@@ -1279,13 +1325,14 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 PostingRole: "control:accounts_receivable")
         };
 
-        AppendReceivePaymentRealizedFxFragment(receivePayment, fragments, settlementBaseTotal, carryingBaseTotal);
+        AppendReceivePaymentRealizedFxFragment(receivePayment, fragments, settlementBaseTotal, carryingBaseTotal, decimals);
         EnsureBalancedBaseCurrency(fragments);
         return fragments;
     }
 
     private static List<PostingFragment> BuildVendorCreditApplicationFragments(
-        VendorCreditApplicationDocument vendorCreditApplication)
+        VendorCreditApplicationDocument vendorCreditApplication,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
@@ -1317,7 +1364,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 PostingRole: "settlement:vendor_credit_application_source",
                 SourceLineNumber: line.LineNumber));
 
-            AppendVendorCreditApplicationRealizedFxFragment(vendorCreditApplication, line, fragments);
+            AppendVendorCreditApplicationRealizedFxFragment(vendorCreditApplication, line, fragments, decimals);
         }
 
         EnsureBalancedBaseCurrency(fragments);
@@ -1326,12 +1373,13 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static List<PostingFragment> BuildPayBillFragments(
         PayBillDocument payBill,
-        FxResolutionResult fxResult)
+        FxResolutionResult fxResult,
+        int decimals)
     {
         var settlementBaseTotal = SettlementAmountMath.RoundBase(
-            payBill.PaymentLines.Sum(static line => line.AppliedAmountBase));
+            payBill.PaymentLines.Sum(static line => line.AppliedAmountBase), decimals);
         var carryingBaseTotal = SettlementAmountMath.RoundBase(
-            payBill.PaymentLines.Sum(static line => line.CarryingAmountBase));
+            payBill.PaymentLines.Sum(static line => line.CarryingAmountBase), decimals);
         var fragments = new List<PostingFragment>
         {
             new(
@@ -1356,19 +1404,20 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 PostingRole: "cash:disbursement")
         };
 
-        AppendPayBillRealizedFxFragment(payBill, fragments, settlementBaseTotal, carryingBaseTotal);
+        AppendPayBillRealizedFxFragment(payBill, fragments, settlementBaseTotal, carryingBaseTotal, decimals);
         EnsureBalancedBaseCurrency(fragments);
         return fragments;
     }
 
     private static List<PostingFragment> BuildFxRevaluationFragments(
-        FxRevaluationDocument fxRevaluation)
+        FxRevaluationDocument fxRevaluation,
+        int decimals)
     {
         var fragments = new List<PostingFragment>();
 
         foreach (var line in fxRevaluation.RevaluationLines)
         {
-            AppendBalanceSideAwareRevaluationFragments(fxRevaluation, line, fragments);
+            AppendBalanceSideAwareRevaluationFragments(fxRevaluation, line, fragments, decimals);
         }
 
         EnsureBalancedBaseCurrency(fragments);
@@ -1929,9 +1978,10 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
         ReceivePaymentDocument receivePayment,
         List<PostingFragment> fragments,
         decimal settlementBaseTotal,
-        decimal carryingBaseTotal)
+        decimal carryingBaseTotal,
+        int decimals)
     {
-        var realizedFxAmount = SettlementAmountMath.RoundBase(settlementBaseTotal - carryingBaseTotal);
+        var realizedFxAmount = SettlementAmountMath.RoundBase(settlementBaseTotal - carryingBaseTotal, decimals);
         if (realizedFxAmount > 0m)
         {
             fragments.Add(new PostingFragment(
@@ -1963,9 +2013,10 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     private static void AppendCreditApplicationRealizedFxFragment(
         CreditApplicationDocument creditApplication,
         CreditApplicationDocumentLine line,
-        List<PostingFragment> fragments)
+        List<PostingFragment> fragments,
+        int decimals)
     {
-        var realizedFxAmount = SettlementAmountMath.RoundBase(line.RealizedFxAmountBase);
+        var realizedFxAmount = SettlementAmountMath.RoundBase(line.RealizedFxAmountBase, decimals);
         if (realizedFxAmount > 0m)
         {
             fragments.Add(new PostingFragment(
@@ -2000,9 +2051,10 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
         PayBillDocument payBill,
         List<PostingFragment> fragments,
         decimal settlementBaseTotal,
-        decimal carryingBaseTotal)
+        decimal carryingBaseTotal,
+        int decimals)
     {
-        var realizedFxAmount = SettlementAmountMath.RoundBase(carryingBaseTotal - settlementBaseTotal);
+        var realizedFxAmount = SettlementAmountMath.RoundBase(carryingBaseTotal - settlementBaseTotal, decimals);
         if (realizedFxAmount > 0m)
         {
             fragments.Add(new PostingFragment(
@@ -2034,9 +2086,10 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     private static void AppendVendorCreditApplicationRealizedFxFragment(
         VendorCreditApplicationDocument vendorCreditApplication,
         VendorCreditApplicationDocumentLine line,
-        List<PostingFragment> fragments)
+        List<PostingFragment> fragments,
+        int decimals)
     {
-        var realizedFxAmount = SettlementAmountMath.RoundBase(line.RealizedFxAmountBase);
+        var realizedFxAmount = SettlementAmountMath.RoundBase(line.RealizedFxAmountBase, decimals);
         if (realizedFxAmount > 0m)
         {
             fragments.Add(new PostingFragment(
@@ -2070,9 +2123,10 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     private static void AppendBalanceSideAwareRevaluationFragments(
         FxRevaluationDocument document,
         FxRevaluationDocumentLine line,
-        List<PostingFragment> fragments)
+        List<PostingFragment> fragments,
+        int decimals)
     {
-        var delta = SettlementAmountMath.RoundBase(line.UnrealizedAmountBase);
+        var delta = SettlementAmountMath.RoundBase(line.UnrealizedAmountBase, decimals);
         if (line.IsDebitBalance)
         {
             AppendDebitBalanceRevaluationFragments(document, line, delta, fragments);
@@ -2235,6 +2289,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
 
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static decimal RoundMoney(decimal value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
 }
 
 public sealed class DefaultJournalAggregator : IJournalAggregator

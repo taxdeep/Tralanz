@@ -210,6 +210,17 @@ public sealed class PostgreSqlExpenseStore(
         var recoverableTaxLines = new List<(Guid AccountId, decimal AmountTx)>();
         if (salesTaxActive)
         {
+            // load money_decimals (2 or 3, default 2)
+            int moneyDecimals;
+            await using (var mdCmd = connection.CreateCommand())
+            {
+                mdCmd.CommandText = "select money_decimals from companies where id = @cid;";
+                mdCmd.Parameters.AddWithValue("cid", companyId.Value);
+                var raw = await mdCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                var d = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+                moneyDecimals = d is 2 or 3 ? d : 2;
+            }
+
             var taxResult = await salesTaxEngine!.ComputeAsync(
                 new SalesTaxComputationRequest(
                     companyId.Value,
@@ -222,7 +233,8 @@ public sealed class PostgreSqlExpenseStore(
                             Math.Round(l.Quantity * l.UnitPrice, 4),
                             l.TaxCodeId,
                             l.TaxCodeSetId))
-                        .ToList()),
+                        .ToList(),
+                    MoneyDecimals: moneyDecimals),
                 cancellationToken).ConfigureAwait(false);
 
             engineTax = taxResult.TotalTaxAmount;

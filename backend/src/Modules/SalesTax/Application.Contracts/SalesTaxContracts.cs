@@ -40,7 +40,8 @@ public sealed record SalesTaxComputationRequest(
     string DocumentCurrencyCode,
     SalesTaxDocumentSide DocumentSide,
     IReadOnlyList<SalesTaxLineRequest> Lines,
-    decimal FxRateToBase = 1m);
+    decimal FxRateToBase = 1m,
+    int MoneyDecimals = 2);
 
 public sealed record SalesTaxLineRequest(
     Guid LineId,
