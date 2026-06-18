@@ -48,14 +48,16 @@ read_repo_version() {
 
   local version
   version="$(trim_whitespace "$(head -n 1 "${VERSION_FILE}")")"
-  # Tralanz version format: X.XX.XXX.YYYY.XX.YY where the X segments
-  # are decimal and the Y segments are base-36, every segment zero-
-  # padded to fixed width. See deploy/git-hooks/bump-version.sh for
-  # the auto-bump scheme. This regex is permissive on the trailing
-  # base-36 segments (lower-case included) so 0.00.000.0000.00.06
-  # parses cleanly. Older 4-segment shapes (0.000.000.0015) are also
-  # accepted as a fallback for upgrade-from-pre-2026-04-28 deploys.
-  if ! [[ "${version}" =~ ^[0-9]+\.[0-9]{2}\.[0-9]{3}\.[0-9A-Za-z]{4}\.[0-9]{2}\.[0-9A-Za-z]{2}$ ]] \
+  # Tralanz version format: X.XX.XX.YY where the X segments are decimal
+  # and the trailing Y segment is base-36, every segment zero-padded to
+  # fixed width. See deploy/git-hooks/bump-version.sh for the auto-bump
+  # scheme. This regex is permissive on the trailing base-36 segment
+  # (lower-case included) so 0.00.00.06 parses cleanly. The older
+  # six-segment shape (0.00.000.0000.00.06, pre-2026-06-18) and bare
+  # 4-segment shapes (0.000.000.0015) are also accepted as a fallback
+  # for upgrade-from-older deploys.
+  if ! [[ "${version}" =~ ^[0-9]+\.[0-9]{2}\.[0-9]{2}\.[0-9A-Za-z]{2}$ ]] \
+       && ! [[ "${version}" =~ ^[0-9]+\.[0-9]{2}\.[0-9]{3}\.[0-9A-Za-z]{4}\.[0-9]{2}\.[0-9A-Za-z]{2}$ ]] \
        && ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9A-Za-z]+$ ]]; then
     fail "Unsupported version format in ${VERSION_FILE}: ${version}"
   fi

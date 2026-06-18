@@ -7,29 +7,29 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
     <!--
-      Version scheme reset 2026-04-28: six-segment display.
+      Version scheme trimmed 2026-06-18: four-segment display (was the
+      2026-04-28 six-segment X.XX.XXX.YYYY.XX.YY — the two wide middle
+      segments .XXX.YYYY were dropped; carry chain is otherwise unchanged).
 
       Display form (in VERSION + InformationalVersion):
-          X.XX.XXX.YYYY.XX.YY
-        where the X segments are decimal and the Y segments are base-36:
+          X.XX.XX.YY
+        where the X segments are decimal and the Y segment is base-36:
               segment 1 — 1+ chars decimal (no upper cap),
               segment 2 — 2 chars decimal,    00-99,
-              segment 3 — 3 chars decimal,    000-999,
-              segment 4 — 4 chars base-36,    0000-ZZZZ (36^4 = 1 679 616),
-              segment 5 — 2 chars decimal,    00-99,
-              segment 6 — 2 chars base-36,    00-ZZ   (36^2 = 1 296).
+              segment 3 — 2 chars decimal,    00-99,
+              segment 4 — 2 chars base-36,    00-ZZ   (36^2 = 1 296).
 
       System.Version-compatible numeric fields (Version / AssemblyVersion /
       FileVersion) stay at 0.0.0.0. The auto-bump hook leaves them alone — it
       only updates VERSION + InformationalVersion. MSBuild needs strictly
       decimal Version components and they cap at 65 534 per part, so the
-      base-36 YYYY segment can't be embedded there directly. AssemblyVersion
+      base-36 YY segment can't be embedded there directly. AssemblyVersion
       stability also keeps binding redirects from churning on every push.
     -->
     <Version>0.0.0.0</Version>
     <AssemblyVersion>0.0.0.0</AssemblyVersion>
     <FileVersion>0.0.0.0</FileVersion>
-    <InformationalVersion>0.00.000.0000.00.E9</InformationalVersion>
+    <InformationalVersion>0.00.00.EA</InformationalVersion>
   </PropertyGroup>
   <ItemGroup Condition="'$(MSBuildProjectName)' != 'SharedKernel'">
     <Using Include="SharedKernel.Identity" />
