@@ -302,7 +302,8 @@
         }
     }
 
-    private static bool IsZero(decimal value) => Math.Abs(value) < 0.005m;
+    private bool IsZero(decimal value) =>
+        Math.Round(Math.Abs(value), ShellState.MoneyDecimals, MidpointRounding.AwayFromZero) == 0m;
     private string FormatAmount(decimal amount) => MoneyFormat.Amount(amount, ShellState.MoneyDecimals);
     private static string FormatAccountKind(AccountSummary account) => account.DetailType switch
     {

@@ -79,10 +79,11 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
         var journalEntryId = Guid.NewGuid();
         var postedAt = DateTimeOffset.UtcNow;
         var meaningfulLines = draft.Lines.Where(static line => line.HasContent).ToArray();
-        var totalTxDebit = meaningfulLines.Sum(line => Round2(line.DebitAmount ?? 0m));
-        var totalTxCredit = meaningfulLines.Sum(line => Round2(line.CreditAmount ?? 0m));
-        var totalDebit = meaningfulLines.Sum(line => Round2((line.DebitAmount ?? 0m) * draft.FxRate));
-        var totalCredit = meaningfulLines.Sum(line => Round2((line.CreditAmount ?? 0m) * draft.FxRate));
+        var moneyDecimals = await LoadMoneyDecimalsAsync(connection, transaction, draft.CompanyId, cancellationToken);
+        var totalTxDebit = meaningfulLines.Sum(line => RoundMoney(line.DebitAmount ?? 0m, moneyDecimals));
+        var totalTxCredit = meaningfulLines.Sum(line => RoundMoney(line.CreditAmount ?? 0m, moneyDecimals));
+        var totalDebit = meaningfulLines.Sum(line => RoundMoney((line.DebitAmount ?? 0m) * draft.FxRate, moneyDecimals));
+        var totalCredit = meaningfulLines.Sum(line => RoundMoney((line.CreditAmount ?? 0m) * draft.FxRate, moneyDecimals));
 
         await using (var insertEntryCommand = connection.CreateCommand())
         {
@@ -152,10 +153,10 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             {
                 TypedValue = draft.FxSnapshotId
             });
-            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", Round2(totalTxDebit));
-            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", Round2(totalTxCredit));
-            insertEntryCommand.Parameters.AddWithValue("total_debit", Round2(totalDebit));
-            insertEntryCommand.Parameters.AddWithValue("total_credit", Round2(totalCredit));
+            insertEntryCommand.Parameters.AddWithValue("total_tx_debit", RoundMoney(totalTxDebit, moneyDecimals));
+            insertEntryCommand.Parameters.AddWithValue("total_tx_credit", RoundMoney(totalTxCredit, moneyDecimals));
+            insertEntryCommand.Parameters.AddWithValue("total_debit", RoundMoney(totalDebit, moneyDecimals));
+            insertEntryCommand.Parameters.AddWithValue("total_credit", RoundMoney(totalCredit, moneyDecimals));
             insertEntryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             insertEntryCommand.Parameters.AddWithValue("idempotency_key", $"manual_journal:{draft.DocumentId.Value}");
             insertEntryCommand.Parameters.AddWithValue("posted_at", postedAt);
@@ -165,10 +166,10 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
 
         foreach (var line in meaningfulLines)
         {
-            var txDebit = Round2(line.DebitAmount ?? 0m);
-            var txCredit = Round2(line.CreditAmount ?? 0m);
-            var baseDebit = Round2(txDebit * draft.FxRate);
-            var baseCredit = Round2(txCredit * draft.FxRate);
+            var txDebit = RoundMoney(line.DebitAmount ?? 0m, moneyDecimals);
+            var txCredit = RoundMoney(line.CreditAmount ?? 0m, moneyDecimals);
+            var baseDebit = RoundMoney(txDebit * draft.FxRate, moneyDecimals);
+            var baseCredit = RoundMoney(txCredit * draft.FxRate, moneyDecimals);
             var journalEntryLineId = Guid.NewGuid();
 
             await using (var insertLineCommand = connection.CreateCommand())
@@ -507,11 +508,28 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 
-    private static decimal Round2(decimal value) =>
-        Math.Round(value, 2, MidpointRounding.ToEven);
+    // Money amounts round to the company's configured precision (2 or 3) with
+    // strict round-half-up (away from zero). FX rates stay at 10 decimals.
+    private static decimal RoundMoney(decimal value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
 
     private static decimal Round10(decimal value) =>
         Math.Round(value, 10, MidpointRounding.ToEven);
+
+    private static async Task<int> LoadMoneyDecimalsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select money_decimals from companies where id = @company_id;";
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        var decimals = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+        return decimals is 2 or 3 ? decimals : 2;
+    }
 
     private sealed record LockedManualJournalSource(string DisplayNumber, string Status);
 }

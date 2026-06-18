@@ -24,6 +24,8 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        var moneyDecimals = await LoadMoneyDecimalsAsync(connection, transaction, draft.CompanyId, cancellationToken);
+
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         var documentNumber = draft.DocumentNumber;
         var year = draft.JournalDate.Year;
@@ -180,8 +182,8 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("account_id", line.Account!.AccountId);
             insertLineCommand.Parameters.AddWithValue("description", string.IsNullOrWhiteSpace(line.Description) ? (object)DBNull.Value : line.Description);
-            insertLineCommand.Parameters.AddWithValue("tx_debit", Round2(line.DebitAmount ?? 0m));
-            insertLineCommand.Parameters.AddWithValue("tx_credit", Round2(line.CreditAmount ?? 0m));
+            insertLineCommand.Parameters.AddWithValue("tx_debit", RoundMoney(line.DebitAmount ?? 0m, moneyDecimals));
+            insertLineCommand.Parameters.AddWithValue("tx_credit", RoundMoney(line.CreditAmount ?? 0m, moneyDecimals));
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -300,6 +302,27 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 
+    // FX rate rounding (pre-existing behaviour, left as-is — rates are not money).
     private static decimal Round2(decimal value) =>
         Math.Round(value, 2, MidpointRounding.ToEven);
+
+    // Money line amounts round to the company's configured precision (2 or 3)
+    // with strict round-half-up, so a 3-decimal entry survives the draft save.
+    private static decimal RoundMoney(decimal value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+
+    private static async Task<int> LoadMoneyDecimalsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select money_decimals from companies where id = @company_id;";
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        var decimals = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+        return decimals is 2 or 3 ? decimals : 2;
+    }
 }

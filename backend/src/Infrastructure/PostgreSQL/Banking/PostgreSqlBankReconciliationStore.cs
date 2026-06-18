@@ -91,11 +91,12 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
                     "One or more selected ledger entries are already reconciled, do not belong to this bank account, are after the statement date, or are not posted.");
             }
 
+            var moneyDecimals = await LoadMoneyDecimalsAsync(connection, transaction, companyId, cancellationToken);
             var calculation = BankReconciliationPolicy.Calculate(
                 input.OpeningBalance,
                 input.EndingBalance,
                 lockedEntries);
-            if (!BankReconciliationPolicy.IsZeroDifference(calculation.Difference))
+            if (!BankReconciliationPolicy.IsZeroDifference(calculation.Difference, moneyDecimals))
             {
                 throw new InvalidOperationException(
                     $"Reconciliation difference must be zero before completion. Current difference is {calculation.Difference:N2}.");
@@ -440,6 +441,21 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
         command.Parameters.AddWithValue("signed_amount_bases", signedAmountBases);
         command.Parameters.AddWithValue("signed_amount_transactions", signedAmountTransactions);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<int> LoadMoneyDecimalsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select money_decimals from companies where id = @company_id;";
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        var decimals = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+        return decimals is 2 or 3 ? decimals : 2;
     }
 
     private static string LedgerEntrySelectSql(string predicate) =>
@@ -1211,10 +1227,11 @@ public sealed class PostgreSqlBankReconciliationStore(PostgreSqlConnectionFactor
             var draft = await LoadDraftCoreAsync(connection, transaction, companyId, draftId, cancellationToken)
                 ?? throw new InvalidOperationException("Draft disappeared between lock and load.");
 
-            if (!BankReconciliationPolicy.IsZeroDifference(draft.Difference))
+            var moneyDecimals = await LoadMoneyDecimalsAsync(connection, transaction, companyId, cancellationToken);
+            if (!BankReconciliationPolicy.IsZeroDifference(draft.Difference, moneyDecimals))
             {
                 throw new InvalidOperationException(
-                    $"difference_nonzero: current difference is {draft.Difference:N2}. Reconciliation cannot complete until the difference is within {BankReconciliationPolicy.ZeroTolerance}.");
+                    $"difference_nonzero: current difference is {draft.Difference:N2}. Reconciliation cannot complete until the difference is within {BankReconciliationPolicy.ToleranceFor(moneyDecimals)}.");
             }
 
             var lockedEntries = await LoadDraftLedgerEntriesForUpdateAsync(

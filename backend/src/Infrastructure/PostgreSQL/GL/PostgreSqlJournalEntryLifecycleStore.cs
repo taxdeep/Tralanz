@@ -206,10 +206,11 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             await FindEntitySeedNumberAsync(connection, transaction, companyId, original.EntryDate.Year, cancellationToken),
             cancellationToken);
 
-        var totalTxDebit = originalLines.Sum(line => Round2(line.TransactionCredit));
-        var totalTxCredit = originalLines.Sum(line => Round2(line.TransactionDebit));
-        var totalDebit = originalLines.Sum(line => Round2(line.Credit));
-        var totalCredit = originalLines.Sum(line => Round2(line.Debit));
+        var moneyDecimals = await LoadMoneyDecimalsAsync(connection, transaction, companyId, cancellationToken);
+        var totalTxDebit = originalLines.Sum(line => RoundMoney(line.TransactionCredit, moneyDecimals));
+        var totalTxCredit = originalLines.Sum(line => RoundMoney(line.TransactionDebit, moneyDecimals));
+        var totalDebit = originalLines.Sum(line => RoundMoney(line.Credit, moneyDecimals));
+        var totalCredit = originalLines.Sum(line => RoundMoney(line.Debit, moneyDecimals));
 
         await using (var command = connection.CreateCommand())
         {
@@ -294,10 +295,10 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         foreach (var line in originalLines)
         {
             var compensationLineId = Guid.NewGuid();
-            var txDebit = Round2(line.TransactionCredit);
-            var txCredit = Round2(line.TransactionDebit);
-            var debit = Round2(line.Credit);
-            var credit = Round2(line.Debit);
+            var txDebit = RoundMoney(line.TransactionCredit, moneyDecimals);
+            var txCredit = RoundMoney(line.TransactionDebit, moneyDecimals);
+            var debit = RoundMoney(line.Credit, moneyDecimals);
+            var credit = RoundMoney(line.Debit, moneyDecimals);
             var compensationDescription = BuildCompensationDescription(actionLabel, original.DisplayNumber, line.Description);
 
             await using (var lineCommand = connection.CreateCommand())
@@ -828,8 +829,25 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             : $"{prefix}: {originalDescription}";
     }
 
-    private static decimal Round2(decimal value) =>
-        Math.Round(value, 2, MidpointRounding.ToEven);
+    // Money amounts round to the company's configured precision (2 or 3) with
+    // strict round-half-up (away from zero).
+    private static decimal RoundMoney(decimal value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+
+    private static async Task<int> LoadMoneyDecimalsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select money_decimals from companies where id = @company_id;";
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        var decimals = raw is null or DBNull ? 2 : Convert.ToInt32(raw);
+        return decimals is 2 or 3 ? decimals : 2;
+    }
 
     private static LifecycleBehavior ResolveLifecycleBehavior(
         string sourceType,

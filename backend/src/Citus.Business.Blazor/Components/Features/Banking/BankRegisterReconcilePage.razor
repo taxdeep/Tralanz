@@ -19,7 +19,7 @@
                          OnClick="() => _showEditInfo = !_showEditInfo">
                 @(_showEditInfo ? "Hide info" : "Edit info")
             </CitusButton>
-            @if (BankReconciliationPolicy.IsZeroDifference(_draft.Difference))
+            @if (BankReconciliationPolicy.IsZeroDifference(_draft.Difference, ShellState.MoneyDecimals))
             {
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              Size="CitusButtonSize.Small"
@@ -102,7 +102,7 @@ else if (_draft is null)
             <div>
                 <label class="text-sm font-medium block mb-1">Beginning balance</label>
                 <RadzenNumeric TValue="decimal" @bind-Value="_startOpeningBalance" Format="@MoneyFormat.EditFormat(ShellState.MoneyDecimals)" Class="citus-control-full" />
-                @if (_lastCompleted is not null && Math.Abs(_lastCompleted.EndingBalance - _startOpeningBalance) >= 0.005m)
+                @if (_lastCompleted is not null && Math.Abs(_lastCompleted.EndingBalance - _startOpeningBalance) >= BankReconciliationPolicy.ToleranceFor(ShellState.MoneyDecimals))
                 {
                     <p class="text-xs text-warning mt-1">
                         ⚠ Differs from prior reconciliation's ending balance (@MoneyFormat.Amount(_lastCompleted.EndingBalance, ShellState.MoneyDecimals)). Override will be recorded in audit notes.
@@ -158,10 +158,10 @@ else
             </div>
             <div class="text-center">
                 <p class="text-fg-muted text-xs uppercase">Difference</p>
-                <p class="text-2xl font-semibold @(BankReconciliationPolicy.IsZeroDifference(_draft.Difference) ? "text-success" : "text-warning")">
+                <p class="text-2xl font-semibold @(BankReconciliationPolicy.IsZeroDifference(_draft.Difference, ShellState.MoneyDecimals) ? "text-success" : "text-warning")">
                     @FormatAmount(_draft.Difference)
                 </p>
-                @if (BankReconciliationPolicy.IsZeroDifference(_draft.Difference))
+                @if (BankReconciliationPolicy.IsZeroDifference(_draft.Difference, ShellState.MoneyDecimals))
                 {
                     <CitusBadge Color="green">Ready to finish</CitusBadge>
                 }

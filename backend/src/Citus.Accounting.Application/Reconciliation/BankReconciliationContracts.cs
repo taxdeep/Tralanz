@@ -361,7 +361,13 @@ public interface IBankReconciliationStore
 
 public static class BankReconciliationPolicy
 {
+    // 2-decimal default tolerance, kept for back-compat and message text.
     public const decimal ZeroTolerance = 0.005m;
+
+    // Half of the smallest unit at the company's money precision: 0.005 for 2
+    // decimals, 0.0005 for 3. Shown in "difference must be within X" messages.
+    public static decimal ToleranceFor(int moneyDecimals) =>
+        0.5m * (decimal)Math.Pow(10, -(moneyDecimals is 2 or 3 ? moneyDecimals : 2));
 
     public static BankReconciliationCalculation Calculate(
         decimal openingBalance,
@@ -393,6 +399,12 @@ public static class BankReconciliationPolicy
             statementEndingBalance - calculatedEnding);
     }
 
+    // "Difference rounds to zero at the company's money precision." For 2
+    // decimals this is the classic < 0.005 (0.005 itself rounds up to 0.01, so
+    // it is correctly NOT zero); for 3 decimals it's < 0.0005.
+    public static bool IsZeroDifference(decimal difference, int moneyDecimals) =>
+        Math.Round(Math.Abs(difference), moneyDecimals is 2 or 3 ? moneyDecimals : 2, MidpointRounding.AwayFromZero) == 0m;
+
     public static bool IsZeroDifference(decimal difference) =>
-        Math.Abs(difference) < ZeroTolerance;
+        IsZeroDifference(difference, 2);
 }
